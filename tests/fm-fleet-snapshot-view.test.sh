@@ -601,6 +601,7 @@ test_undated_captain_hold_phrasing_and_aging() {
 - [ ] aged-call - Aged genuine call (repo: sample) (kind: captain) (since 2026-07-01) (hold: choose a sample route) (hold-kind: captain)
 - [ ] recent-call - Recent genuine call (repo: sample) (kind: captain) (since 2026-07-20) (hold: choose a sample route) (hold-kind: captain)
 - [ ] live-gated - Live captain-gated work (repo: sample) (kind: ship) (hold: captain go pending) (hold-kind: captain)
+- [ ] unparked-call - Newly unparked decision (repo: sample) (kind: captain) (hold: unparked; choose a sample route) (hold-kind: captain)
 
 ## Done
 EOF
@@ -628,9 +629,9 @@ EOF
       and .hold_age_days == 5
   ' >/dev/null || fail "a recent undated captain hold must stay a live call: $out"
   printf '%s' "$out" | jq -e '
-    .backlog.records[] | select(.id == "live-gated")
-    | .captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false
-  ' >/dev/null || fail "captain go pending must not match parked-style markers: $out"
+    [.backlog.records[] | select(.id == "live-gated" or .id == "unparked-call")]
+    | all(.captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false)
+  ' >/dev/null || fail "captain go pending and unparked decisions must not match parked-style markers: $out"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
     FM_SNAPSHOT_NOW=2026-07-25T00:00:00Z FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=30 "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '

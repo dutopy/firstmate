@@ -334,7 +334,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     --argjson age_days "$FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS" '
     def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
     def prose_deferred:
-      test("SUPERSEDED|NOT[- ]REQUIRED|DEFERRED|parked|awaiting captain go|do not (auto-)?dispatch|not urgent|de-prioritized|queued opportunity|captain-gated"; "i");
+      test("SUPERSEDED|NOT[- ]REQUIRED|DEFERRED|\\bparked\\b|awaiting captain go|do not (auto-)?dispatch|not urgent|de-prioritized|queued opportunity|captain-gated"; "i");
     def ymd_epoch($d):
       if ($d | type) != "string" then null
       else try (($d + "T00:00:00Z") | fromdateiso8601) catch null end;
