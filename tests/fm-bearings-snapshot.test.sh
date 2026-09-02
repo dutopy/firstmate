@@ -1151,6 +1151,45 @@ EOF
   pass "captain-held tasks of any kind reach Captain's Call, deferral is honored, and landed excludes answered calls"
 }
 
+test_undated_hold_phrasing_and_aging_projection() {
+  local home fakebin json
+  home=$(make_home undated-aging-proj)
+  mkdir -p "$home/data"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (hold: parked for a later pass) (hold-kind: captain)
+- [ ] aged-call - Aged genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
+- [ ] recent-call - Recent genuine call (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose a sample route) (hold-kind: captain)
+
+## Done
+EOF
+  fakebin=$(make_fakebin "$home")
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    (.decisions_open | any(.[]; .id == "recent-call"))
+      and (.decisions_open | any(.[]; .id == "parked-hold") | not)
+      and (.decisions_open | any(.[]; .id == "aged-call") | not)
+      and (.gates | any(.[]; .id == "parked-hold") | not)
+      and (.gates | any(.[]; .id == "aged-call" and (.reason | startswith("held 40d"))))
+      and (.gates | any(.[]; .id == "recent-call") | not)
+      and (.omitted | any(.[]; .surface | startswith("captain holds marked deferred")))
+  ' >/dev/null || fail "parked-style and aged undated holds must leave Captain's Call: $json"
+  json=$(run "$home" "$fakebin" --json --all-decisions)
+  printf '%s' "$json" | jq -e '
+    (.decisions_open | any(.[]; .id == "parked-hold"))
+      and (.decisions_open | any(.[]; .id == "aged-call"))
+      and (.decisions_open | any(.[]; .id == "recent-call"))
+  ' >/dev/null || fail "--all-decisions must reveal parked-style and aged undated holds: $json"
+  json=$(FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=50 run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    (.decisions_open | any(.[]; .id == "aged-call"))
+      and (.gates | any(.[]; .id == "aged-call") | not)
+  ' >/dev/null || fail "raising the age threshold must restore an undated hold to Captain's Call: $json"
+  pass "parked-style and aged undated captain holds project to Charted Next/omitted, not live Captain's Call"
+}
+
 test_include_prs_is_the_only_fetch_path() {
   local home fakebin json
   home=$(make_home prs); write_fixture "$home"
@@ -2325,6 +2364,7 @@ test_partial_github_failure_degrades
 test_perl_fallback_bounds_github_call
 test_section_caps_and_expansion_flags
 test_collapsed_captain_call_deferral_and_landed
+test_undated_hold_phrasing_and_aging_projection
 test_pr_repository_cap_and_expansion
 test_per_repository_pr_cap_is_disclosed
 test_projection_and_toon_fail_closed

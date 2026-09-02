@@ -34,6 +34,12 @@
 # bearings_state. A home classified captain_decision because it has an open
 # captain hold still contributes each working child as its own Underway row;
 # the home row on secondmates[] keeps the decision and gate classification.
+# An undated captain hold the canonical snapshot marks aged_undated_hold
+# (since date at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old) leaves default
+# Captain's Call, renders as a Charted Next gate showing its age, is disclosed
+# in omitted[], and is revealed by --all-decisions. That aging is a
+# projection safety net only; the durable deferral remains re-holding with
+# --until.
 #
 # Main-home inventory validity comes from the canonical snapshot's main_inventory
 # object (orphan structured in-flight without meta, unstructured current rows).
@@ -324,6 +330,18 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson candidate_prs "$CANDIDATE_PRS" '
   def trunc($n): if . == null then null else
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
+  def live_captain_call:
+    (.deferred_marker != true) and (.aged_undated_hold != true);
+  def hold_gate_reason:
+    if .aged_undated_hold == true and .hold_age_days != null then
+      ("held " + (.hold_age_days | tostring) + "d: " + (.hold_reason // .blocked_reason // "-"))
+    elif (.hold_until // null) != null and .hold_until > $today then
+      ("until " + .hold_until + ": " + (.hold_reason // .blocked_reason // "-"))
+    else (.hold_reason // .blocked_reason // "-") end;
+  def as_gate($owner):
+    {id, title:(.title | trunc(60)),
+     blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
+     reason:(hold_gate_reason | trunc(40)), owner:$owner};
   def round_robin_landed($n):
     . as $groups
     | [range(0; (($groups | map(length) | max) // 0)) as $i
@@ -358,7 +376,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | {id:($m.id + "/" + .id),backend:"secondmate-home",target:(.endpoint.target // "-"),exists:.endpoint.exists,agent:.endpoint.agent_alive} ]) as $unhealthy_all
   | ([ (.secondmate_current.records // [])[]
        | ([.decisions_open[]? | select(.source == "backlog" and .verb == "captain-hold"
-            and .deferred_marker != true)]) as $captain_holds
+            and live_captain_call)]) as $captain_holds
        | ([.holds[]? | select(.source == "backlog")]) as $backlog_holds
        | . + {
            bearings_captain_holds:$captain_holds,
@@ -410,18 +428,20 @@ MODEL=$(printf '%s' "$SNAP" | jq \
             doing:((.doing // .state) | trunc(90))} ]) as $in_flight_all
   | ([ .backlog.records[]
          | select(.structured and .captain_actionable == true)
-         | select(($all_decisions == 1) or (.deferred_marker != true))
+         | select(($all_decisions == 1) or live_captain_call)
          | {id,key:.id,verb:"captain-hold",
             summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)"} ]
      + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
          | select(.source == "backlog" and .verb == "captain-hold")
-         | select(($all_decisions == 1) or (.deferred_marker != true))
+         | select(($all_decisions == 1) or live_captain_call)
          | {id:($m.id + "/" + .id),key,verb,
             summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id} ]) as $decisions_all
   | ([ .backlog.records[]
-         | select(.structured and .captain_actionable == true and .deferred_marker == true) ]
+         | select(.structured and .captain_actionable == true
+                  and (.deferred_marker == true or .aged_undated_hold == true)) ]
      + [ (.secondmate_current.records // [])[] | .decisions_open[]?
-         | select(.source == "backlog" and .verb == "captain-hold" and .deferred_marker == true) ]
+         | select(.source == "backlog" and .verb == "captain-hold"
+                  and (.deferred_marker == true or .aged_undated_hold == true)) ]
      | length) as $decisions_marked_deferred
   | ((if (.main_inventory.valid == false) then
         [{id:"(main-inventory)",
@@ -438,22 +458,22 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | select(.captain_actionable != true)
          | select(($all_queued == 1) or (.deferred_marker != true)
                   or ((.hold_until // null) != null and .hold_until > $today))
-         | {id, title:(.title | trunc(60)),
-            blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
-            reason:((if (.hold_until // null) != null and .hold_until > $today
-                     then ("until " + .hold_until + ": " + (.hold_reason // .blocked_reason // "-"))
-                     else (.hold_reason // .blocked_reason // "-") end) | trunc(40)),owner:"(main)"} ]
+         | as_gate("(main)") ]
+     + [ .backlog.records[]
+         | select(.structured and .captain_actionable == true and .aged_undated_hold == true)
+         | as_gate("(main)") ]
      + [ (.secondmate_current.records // [])[] as $m
          | select($m.provenance.selected == "structured-home")
          | $m.queued[]?
          | select(.captain_actionable != true)
          | select(($all_queued == 1) or (.deferred_marker != true)
                   or ((.hold_until // null) != null and .hold_until > $today))
-         | {id,title:(.title | trunc(60)),
-            blocked_by:((.unresolved_blocker_ids // []) | if length > 0 then join(",") else "-" end | trunc(120)),
-            reason:((if (.hold_until // null) != null and .hold_until > $today
-                     then ("until " + .hold_until + ": " + (.hold_reason // .blocked_reason // "-"))
-                     else (.hold_reason // .blocked_reason // "-") end) | trunc(40)),owner:$m.id} ]) as $gates_all
+         | as_gate($m.id) ]
+     + [ (.secondmate_current.records // [])[] as $m
+         | select($m.provenance.selected == "structured-home")
+         | $m.queued[]?
+         | select(.captain_actionable == true and .aged_undated_hold == true)
+         | as_gate($m.id) ]) as $gates_all
   | ([ .scout_reports[]
        | . as $r
        | select(($all_reports == 1) or (($rel_ids | index($r.id)) != null))
@@ -515,7 +535,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
         (([($snap.secondmate_current.records // [])[] | select(.parent_event.activity_scan.input_truncated == true or .parent_event.activity_scan.retained_truncated == true)] | length) as $n | if $n > 0 then {surface:("secondmate parent activity evidence truncated for \($n) record(s)"), reveal:"raise FM_SNAPSHOT_PARENT_ACTIVITY_LINES, FM_SNAPSHOT_PARENT_ACTIVITY_BYTES, or FM_SNAPSHOT_PARENT_ACTIVITIES"} else empty end),
         (([($snap.secondmate_current.records // [])[] | select(.parent_event.activity_scan.available == false)] | length) as $n | if $n > 0 then {surface:("secondmate parent activity evidence unavailable for \($n) record(s)"), reveal:"inspect the parent status logs"} else empty end),
         (if $all_decisions == 0 and ($decisions_all | length) > $decisions_n then {surface:("decisions_open showing \($decisions_n) of \($decisions_all | length)"), reveal:"--all-decisions"} else empty end),
-        (if $all_decisions == 0 and $decisions_marked_deferred > 0 then {surface:("captain holds marked deferred or superseded: \($decisions_marked_deferred)"), reveal:"--all-decisions"} else empty end),
+        (if $all_decisions == 0 and $decisions_marked_deferred > 0 then {surface:("captain holds marked deferred, superseded, or aged: \($decisions_marked_deferred)"), reveal:"--all-decisions"} else empty end),
         (if $all_queued == 0 and ($gates_all | length) > $gates_n then {surface:("gates showing \($gates_n) of \($gates_all | length)"), reveal:"--all-queued"} else empty end),
         (if $all_reports == 0 and ($reports_all | length) > $reports_n then {surface:("reports showing \($reports_n) of \($reports_all | length)"), reveal:"--all-reports"} else empty end),
         (if $all_recorded_prs == 0 and ($recorded_prs_all | length) > $recorded_prs_n then {surface:("recorded_prs showing \($recorded_prs_n) of \($recorded_prs_all | length)"), reveal:"--all-recorded-prs"} else empty end),

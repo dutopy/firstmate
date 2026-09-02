@@ -582,6 +582,70 @@ EOF
   pass "snapshot parses tasks-axi rows and respects operational overrides"
 }
 
+test_undated_captain_hold_phrasing_and_aging() {
+  local home fakebin out
+  home=$(make_home undated-aging)
+  mkdir -p "$home/data"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] parked-hold - Parked style call (repo: sample) (kind: ship) (hold: parked for a later pass) (hold-kind: captain)
+- [ ] awaiting-go - Awaiting go call (repo: sample) (kind: ship) (hold: awaiting captain go) (hold-kind: captain)
+- [ ] no-dispatch - No dispatch call (repo: sample) (kind: ship) (hold: do not dispatch) (hold-kind: captain)
+- [ ] no-auto - No auto-dispatch call (repo: sample) (kind: ship) (hold: do not auto-dispatch) (hold-kind: captain)
+- [ ] not-urgent - Not urgent call (repo: sample) (kind: ship) (hold: not urgent) (hold-kind: captain)
+- [ ] deprior - Deprioritized call (repo: sample) (kind: ship) (hold: de-prioritized) (hold-kind: captain)
+- [ ] queued-opp - Queued opportunity call (repo: sample) (kind: ship) (hold: queued opportunity) (hold-kind: captain)
+- [ ] gated-hold - Captain-gated phrasing (repo: sample) (kind: ship) (hold: captain-gated) (hold-kind: captain)
+- [ ] aged-call - Aged genuine call (repo: sample) (kind: captain) (since 2026-07-01) (hold: choose a sample route) (hold-kind: captain)
+- [ ] recent-call - Recent genuine call (repo: sample) (kind: captain) (since 2026-07-20) (hold: choose a sample route) (hold-kind: captain)
+- [ ] live-gated - Live captain-gated work (repo: sample) (kind: ship) (hold: captain go pending) (hold-kind: captain)
+
+## Done
+EOF
+  fakebin=$(make_fakebin "$home")
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
+    FM_SNAPSHOT_NOW=2026-07-25T00:00:00Z "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    ([.backlog.records[] | select(.id == "parked-hold" or .id == "awaiting-go" or .id == "no-dispatch"
+        or .id == "no-auto" or .id == "not-urgent" or .id == "deprior" or .id == "queued-opp"
+        or .id == "gated-hold")]
+     | all(.captain_actionable == true and .deferred_marker == true and .aged_undated_hold == false))
+  ' >/dev/null || fail "parked-style undated holds must carry deferred_marker without aging: $out"
+  printf '%s' "$out" | jq -e '
+    .backlog.records[] | select(.id == "aged-call")
+    | .captain_actionable == true
+      and .deferred_marker == false
+      and .aged_undated_hold == true
+      and .hold_age_days == 24
+  ' >/dev/null || fail "an undated captain hold older than the default 14-day threshold must age: $out"
+  printf '%s' "$out" | jq -e '
+    .backlog.records[] | select(.id == "recent-call")
+    | .captain_actionable == true
+      and .deferred_marker == false
+      and .aged_undated_hold == false
+      and .hold_age_days == 5
+  ' >/dev/null || fail "a recent undated captain hold must stay a live call: $out"
+  printf '%s' "$out" | jq -e '
+    .backlog.records[] | select(.id == "live-gated")
+    | .captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false
+  ' >/dev/null || fail "captain go pending must not match parked-style markers: $out"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
+    FM_SNAPSHOT_NOW=2026-07-25T00:00:00Z FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=30 "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .backlog.records[] | select(.id == "aged-call")
+    | .aged_undated_hold == false and .hold_age_days == 24
+  ' >/dev/null || fail "raising the age threshold must leave a 24-day hold unaged: $out"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
+    FM_SNAPSHOT_NOW=2026-07-25T00:00:00Z FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=5 "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .backlog.records[] | select(.id == "recent-call")
+    | .aged_undated_hold == true and .hold_age_days == 5
+  ' >/dev/null || fail "lowering the age threshold to 5 must age a 5-day hold: $out"
+  pass "undated captain holds age after a configurable threshold and parked phrasing marks deferred"
+}
+
 test_view_renders_snapshot() {
   local home fakebin view
   home=$(make_home view)
@@ -899,6 +963,7 @@ EOF
 test_empty_fleet_json
 test_fixture_snapshot_json
 test_home_summary_excludes_secondmate_from_child_inventory
+test_undated_captain_hold_phrasing_and_aging
 test_main_inventory_orphan_and_unstructured_disclosure
 test_normalized_roles_and_plural_blocker_readiness
 test_event_hints_follow_reconciled_current_state

@@ -30,9 +30,18 @@
 #     There is no separate decision type: any captain-held task is the same
 #     primitive, whatever kind its row carries.
 #     deferred_marker is a presentation hint only: the row's hold reason or
-#     body carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker.
-#     It never changes captain_actionable; renderers may use it to keep
-#     prose-deferred rows out of default views.
+#     body carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker, or a
+#     parked-style phrasing (parked, awaiting captain go, do not dispatch /
+#     do not auto-dispatch, not urgent, de-prioritized, queued opportunity,
+#     captain-gated). It never changes captain_actionable; renderers may use it
+#     to keep prose-deferred rows out of default views.
+#     aged_undated_hold is a second presentation hint for an undated captain
+#     hold whose `since` date is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
+#     old (default 14). hold_age_days is that age when computable, else null.
+#     This is a projection safety net only: the durable deferral remains
+#     re-holding with --until. Renderers project an aged undated hold as a
+#     Charted Next gate showing its age, disclose it in omitted[], and reveal
+#     it with --all-decisions; it stays captain_actionable.
 #   tasks[]: one row per state/<id>.meta, sorted by id.
 #     Local current_state is parsed from bin/fm-crew-state.sh <id> and preserves
 #     state, source, detail, and raw line separately. Remote secondmate rows use
@@ -159,6 +168,13 @@ validate_positive_bound FM_SNAPSHOT_REGISTRY_LINES "$FM_SNAPSHOT_REGISTRY_LINES"
 validate_positive_bound FM_SNAPSHOT_REGISTRY_BYTES "$FM_SNAPSHOT_REGISTRY_BYTES"
 validate_positive_bound FM_SNAPSHOT_REGISTRY_RECORDS "$FM_SNAPSHOT_REGISTRY_RECORDS"
 validate_positive_bound FM_SNAPSHOT_REGISTRY_TIMEOUT "$FM_SNAPSHOT_REGISTRY_TIMEOUT"
+FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=${FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS:-14}
+case "$FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS" in
+  ''|*[!0-9]*)
+    echo "fm-fleet-snapshot: FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS must be a non-negative integer" >&2
+    exit 2
+    ;;
+esac
 
 # shellcheck source=bin/fm-backend.sh
 # shellcheck disable=SC1091
@@ -212,6 +228,10 @@ FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT, with truncation disclosed in the result.
 The registered secondmate table uses FM_SNAPSHOT_REGISTRY_LINES,
 FM_SNAPSHOT_REGISTRY_BYTES, FM_SNAPSHOT_REGISTRY_RECORDS, and
 FM_SNAPSHOT_REGISTRY_TIMEOUT, with unavailability and truncation disclosed.
+An undated captain hold whose since date is at least
+FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old (default 14, 0 ages every dated-since
+undated captain hold) carries aged_undated_hold and hold_age_days as
+presentation hints; re-holding with --until remains the durable deferral.
 EOF
 }
 
@@ -310,8 +330,19 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
   fi
 
   # shellcheck disable=SC2094
-  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" '
+  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" \
+    --argjson age_days "$FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS" '
     def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
+    def prose_deferred:
+      test("SUPERSEDED|NOT[- ]REQUIRED|DEFERRED|parked|awaiting captain go|do not (auto-)?dispatch|not urgent|de-prioritized|queued opportunity|captain-gated"; "i");
+    def ymd_epoch($d):
+      if ($d | type) != "string" then null
+      else try (($d + "T00:00:00Z") | fromdateiso8601) catch null end;
+    def days_between($from; $to):
+      (ymd_epoch($from)) as $a
+      | (ymd_epoch($to)) as $b
+      | if $a == null or $b == null then null
+        else (($b - $a) / 86400 | floor) end;
     def section_state:
       if . == "In flight" then "in_flight"
       elif . == "Queued" then "queued"
@@ -449,9 +480,13 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
               (.state == "queued" and .hold_kind == "captain"
                and .hold_reason != null and (.unresolved_blocker_ids | length) == 0
                and (.hold_until == null or .hold_until <= $today))
+          | .hold_age_days = days_between(.since; $today)
+          | .aged_undated_hold =
+              (.hold_kind == "captain" and .hold_until == null
+               and .hold_age_days != null and .hold_age_days >= $age_days)
           | .deferred_marker =
               ((((.hold_reason // "") + " " + (.body_excerpt // ""))
-                | test("SUPERSEDED|NOT REQUIRED|NOT-REQUIRED|DEFERRED"; "i")))
+                | prose_deferred))
         else . end)
     | del(.section,.order)
   ' < "$backlog"
@@ -710,7 +745,9 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
          | {id,key:.id,verb:"captain-hold",summary:(.title | trunc(160)),
             reason:(.hold_reason | trunc(160)),
             hold_until:(.hold_until // null),
-            deferred_marker:(.deferred_marker // false),source:"backlog"} ]) as $captain_holds_all
+            deferred_marker:(.deferred_marker // false),
+            aged_undated_hold:(.aged_undated_hold // false),
+            hold_age_days:(.hold_age_days // null),source:"backlog"} ]) as $captain_holds_all
     | ([ $backlog.records[]? | select(.state == "done" and .structured and .hold_kind != "captain")
          | {id:(.id | trunc(120)),title:(.title | trunc(120)),
             pr_url:((.pr_url // null) | if . == null then null else trunc(500) end),
@@ -818,6 +855,8 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
           hold_kind:((.hold_kind // null) | if . == null then null else trunc(40) end),
           hold_until:((.hold_until // null) | if . == null then null else trunc(40) end),
           deferred_marker:(.deferred_marker // false),
+          aged_undated_hold:(.aged_undated_hold // false),
+          hold_age_days:(.hold_age_days // null),
           captain_actionable:(.captain_actionable // false),
           repo:((.repo // null) | if . == null then null else trunc(120) end),
           kind:((.kind // null) | if . == null then null else trunc(40) end)}][:$queued_n]),
