@@ -463,6 +463,14 @@ if [ "${1:-}" = done ] && [ "${2:-}" = sample-interrupted-call ] \
   : > "$FM_HOME/close-failed-once"
   exit 92
 fi
+if [ "${1:-}" = update ] && [ "${2:-}" = sample-interrupted-call ] \
+  && [ ! -e "$FM_HOME/normalize-failed-once" ]; then
+  state=$("$REAL_TASKS_AXI" show "$2" --full | sed -n 's/^  state: //p' | head -1)
+  if [ "$state" = done ]; then
+    : > "$FM_HOME/normalize-failed-once"
+    exit 94
+  fi
+fi
 exec "$REAL_TASKS_AXI" "$@"
 EOF
   chmod +x "$home/fakebin/tasks-axi"
@@ -484,13 +492,18 @@ EOF
       and .deferred_marker == false
   ' >/dev/null || fail "an interrupted answer lost the fresh hold age basis: $snap"
 
+  if run_captain "$home" answer sample-interrupted-call \
+    --decision-file "$home/interrupted-answer.txt" > "$home/normalize.out" 2> "$home/normalize.err"; then
+    fail "the forced post-close normalization failure reported success"
+  fi
+  show=$(tasks_in "$home" show sample-interrupted-call --full)
+  assert_contains "$show" "state: done" "the normalization failure undid the successful close"
   run_captain "$home" answer sample-interrupted-call \
     --decision-file "$home/interrupted-answer.txt" >/dev/null \
-    || fail "the interrupted answer could not finish on retry"
+    || fail "the closed answer could not normalize on retry"
   show=$(tasks_in "$home" show sample-interrupted-call --full)
-  assert_contains "$show" "state: done" "the interrupted answer retry did not close the task"
   assert_contains "$show" 'body: "Resolution recorded by fm-captain-hold.' \
-    "the successful retry did not restore resolution-first body ordering"
+    "the matching done retry did not restore resolution-first body ordering"
   pass "an interrupted answer preserves its hold age until close retry"
 }
 
