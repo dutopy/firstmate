@@ -71,7 +71,7 @@
 #   --all-secondmates include every aggregated secondmate record
 #   --all-landed     include every landed record from every home (default: bounded)
 #   --all-reports    include the full scout-report inventory (default: relevant only)
-#   --all-queued     include superseded queued items (default: dropped)
+#   --all-queued     include every prose-deferred queued item present in the bounded snapshot
 #   --all-recorded-prs include every locally recorded PR
 #   --all-unhealthy  include every unhealthy endpoint
 #   --all-pr-repos   query every discovered repository under --include-prs

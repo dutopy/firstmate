@@ -31,8 +31,9 @@
 #     There is no separate decision type: any captain-held task is the same
 #     primitive, whatever kind its row carries.
 #     deferred_marker is a presentation hint only: the row's hold reason or
-#     first 240 characters of body prose (excluding the machine-generated
-#     hold-set stamp) carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED
+#     first 240 characters of current body prose (excluding the machine-generated
+#     hold-set stamp and preserved historical resolution blocks) carries an
+#     explicit SUPERSEDED / NOT REQUIRED / DEFERRED
 #     marker, or a parked-style phrasing (parked, awaiting captain go, do not
 #     dispatch / do not auto-dispatch, not urgent, de-prioritized, queued
 #     opportunity, captain-gated). It never changes captain_actionable;
