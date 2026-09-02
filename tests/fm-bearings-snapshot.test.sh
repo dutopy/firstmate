@@ -1164,6 +1164,14 @@ test_undated_hold_phrasing_and_aging_projection() {
   Captain hold set: 2026-06-01T00:00:00Z
 - [ ] recent-call - Recent genuine call (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose a sample route) (hold-kind: captain)
   Captain hold set: 2026-07-10T00:00:00Z
+- [ ] reheld-current-call - Re-held genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a current sample route) (hold-kind: captain)
+  Captain hold set: 2026-07-10T00:00:00Z
+  Current decision prose lists route north or route south.
+  Resolution recorded by fm-captain-hold.
+  Decision digest: historical-sample
+  Resolution mode: released
+  Captain decision:
+  Not urgent at the time of the previous call.
 - [ ] legacy-old-hold - Legacy unstamped hold (repo: firstmate) (kind: ship) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
 
 ## Done
@@ -1172,6 +1180,7 @@ EOF
   json=$(run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.[]; .id == "recent-call"))
+      and (.decisions_open | any(.[]; .id == "reheld-current-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold") | not)
       and (.decisions_open | any(.[]; .id == "parked-hold") | not)
       and (.decisions_open | any(.[]; .id == "aged-call") | not)
@@ -1186,6 +1195,7 @@ EOF
     (.decisions_open | any(.[]; .id == "parked-hold"))
       and (.decisions_open | any(.[]; .id == "aged-call"))
       and (.decisions_open | any(.[]; .id == "recent-call"))
+      and (.decisions_open | any(.[]; .id == "reheld-current-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold"))
       and (.gates | any(.[]; .id == "aged-call" or .id == "legacy-old-hold") | not)
   ' >/dev/null || fail "--all-decisions must reveal aged holds without duplicating their gates: $json"

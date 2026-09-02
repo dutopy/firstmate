@@ -355,8 +355,10 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     def resolution_leader:
       test("^Resolution recorded by fm-(captain|decision)-hold\\.$");
     def current_prose_lines:
-      (if length > 0 and (.[0] | hold_stamp_line) then .[1:] else . end)
-      | if length > 0 and (.[0] | resolution_leader) then [] else . end;
+      (if length > 0 and (.[0] | hold_stamp_line) then .[1:] else . end) as $lines
+      | (($lines | map(resolution_leader) | index(true))
+         // ($lines | length)) as $resolution
+      | $lines[:$resolution];
     def section_state:
       if . == "In flight" then "in_flight"
       elif . == "Queued" then "queued"
