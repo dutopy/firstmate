@@ -44,9 +44,9 @@ Board answers are acted on later under the normal authority rules; this skill's 
    A parent event or bounded terminal contradiction is fallback evidence, never authority over readable structured home state.
    A decision is simply a task held for the captain (`captain-hold-lifecycle`); every due, unblocked captain-held task is canonically actionable whatever its kind, before the presentation-only filters below.
    A captain hold deferred by date sits under `gates` with its `until <date>:` reason until it is due.
-   A hold whose reason or bounded body excerpt carries an explicit deferred or superseded marker, or whose complete reason is a parked-style marker, is suppressed from the default view with an `omitted` disclosure. Contextual parked-style wording does not suppress a live decision.
-   An undated hold aged past the configured snapshot threshold leaves Captain's Call for an age-labelled Charted Next gate unless a parked-style marker suppresses it; this is only a presentation safety net, and re-holding with `--until` remains the durable deferral.
-   Use `--all-decisions` to reveal actionable holds hidden by either presentation hint, removing any revealed aged hold from Charted Next so the buckets remain exclusive, subject to the snapshot's documented cross-home summary bounds.
+   An actionable undated hold whose reason or bounded body excerpt carries an explicit deferred or superseded marker, or whose complete reason is a parked-style marker, leaves Captain's Call for a Charted Next gate with an `omitted` disclosure. Contextual parked-style wording does not suppress a live decision.
+   An undated hold aged past the configured snapshot threshold likewise leaves Captain's Call for an age-labelled Charted Next gate; these are only presentation safety nets, and re-holding with `--until` remains the durable deferral.
+   Use `--all-decisions` to reveal actionable holds hidden by either presentation hint, removing each revealed safety gate from Charted Next so the buckets remain exclusive, subject to the snapshot's documented cross-home summary bounds.
    Do not scrape reports, visual-review artifacts, raw status-event tails, or visible conversation history to supplement current state.
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.
    Until then it stays queued with the reason.

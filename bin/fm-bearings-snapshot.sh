@@ -27,10 +27,10 @@
 # held for the captain, whatever its kind, before the presentation-only filters
 # below. A captain hold deferred by date
 # (hold-until in the future) is not actionable and renders as a Charted Next
-# gate with its date; a row the canonical snapshot marks prose-deferred
-# (deferred_marker) leaves the default decisions and gates views and is
-# disclosed in omitted[]. --all-decisions reveals an actionable prose-deferred
-# hold, while --all-queued reveals a non-actionable prose-deferred row.
+# gate with its date; an actionable undated row the canonical snapshot marks
+# prose-deferred (deferred_marker) leaves Captain's Call for a Charted Next gate
+# and is disclosed in omitted[]. --all-decisions reveals it without retaining
+# the gate, while --all-queued reveals a non-actionable prose-deferred row.
 # Underway (in_flight) projects every main live worker plus every active child
 # from every readable secondmate ledger, independently of that home's
 # bearings_state. A home classified captain_decision because it has an open
@@ -41,9 +41,9 @@
 # falling back to since for a legacy unstamped hold) leaves default Captain's
 # Call, renders as a Charted Next gate showing its floored age, is disclosed in
 # omitted[], and is revealed by --all-decisions without retaining its safety
-# gate. Prose deferral takes precedence over aging, so a hold with both hints
-# is omitted rather than gated. Aging is a projection safety net only; the durable deferral remains
-# re-holding with --until.
+# gate. Parked-style and aging hints use the same undated-hold gate projection.
+# This is a projection safety net only; the durable deferral remains re-holding
+# with --until.
 #
 # Main-home inventory validity comes from the canonical snapshot's main_inventory
 # object (orphan structured in-flight without meta, unstructured current rows).
@@ -337,6 +337,9 @@ MODEL=$(printf '%s' "$SNAP" | jq \
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
   def live_captain_call:
     (.deferred_marker != true) and (.aged_undated_hold != true);
+  def projected_undated_hold:
+    (.hold_until == null)
+    and (.deferred_marker == true or .aged_undated_hold == true);
   def hold_gate_reason:
     if .aged_undated_hold == true and .hold_age_days != null then
       ("held " + (.hold_age_days | tostring) + "d: " + (.hold_reason // .blocked_reason // "-"))
@@ -466,7 +469,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | as_gate("(main)") ]
      + [ .backlog.records[]
          | select($all_decisions == 0 and .structured and .captain_actionable == true
-                  and .aged_undated_hold == true and .deferred_marker != true)
+                  and projected_undated_hold)
          | as_gate("(main)") ]
      + [ (.secondmate_current.records // [])[] as $m
          | select($m.provenance.selected == "structured-home")
@@ -479,7 +482,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | select($m.provenance.selected == "structured-home")
          | $m.queued[]?
          | select($all_decisions == 0 and .captain_actionable == true
-                  and .aged_undated_hold == true and .deferred_marker != true)
+                  and projected_undated_hold)
          | as_gate($m.id) ]) as $gates_all
   | ([ .scout_reports[]
        | . as $r

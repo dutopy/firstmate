@@ -69,9 +69,8 @@ The durable deferral remains re-holding with `--until`.
 Its secondmate-home summary classifies an actionable captain hold as `captain_decision` and preserves blocked or deferred captain holds as queued work in the owning home.
 
 `bin/fm-bearings-snapshot.sh` projects actionable captain holds into `decisions_open` and leaves blocked captain holds in ordinary queued gates.
-A date-deferred captain hold renders as a gate with its `until <date>:` reason; an actionable prose-deferred one leaves the default views with an `omitted[]` disclosure and is revealed by `--all-decisions`, while `--all-queued` reveals non-actionable prose-deferred queued rows.
-An aged undated captain hold without prose-deferred phrasing leaves default Captain's Call, renders as a Charted Next gate showing its age, and is disclosed in `omitted[]`; `--all-decisions` reveals it in Captain's Call and removes its safety gate so the buckets remain exclusive.
-Prose deferral takes precedence when both hints apply.
+A date-deferred captain hold renders as a gate with its `until <date>:` reason; an actionable undated prose-deferred one leaves default Captain's Call for a Charted Next gate with an `omitted[]` disclosure, while `--all-queued` reveals non-actionable prose-deferred queued rows.
+An aged undated captain hold likewise leaves default Captain's Call, renders as a Charted Next gate showing its age, and is disclosed in `omitted[]`; `--all-decisions` reveals parked-style and aged holds in Captain's Call and removes their safety gates so the buckets remain exclusive.
 Cross-home summaries remain bounded by `FM_SNAPSHOT_SECONDMATE_DECISIONS` and `FM_SNAPSHOT_SECONDMATE_QUEUED`, so a remote captain hold beyond those bounds may not project as a Charted Next gate.
 A remote or secondmate hold also retains the producer home's age and aging decision from the summary's capture time and threshold rather than being recomputed by the parent; re-holding it through the wrapper with `--until` remains the durable fix for both limits.
 Recently Landed excludes a record that closed while still held for the captain (surviving `hold-kind: captain` on a Done row), so answered questions do not masquerade as shipped work; a work item released before completion keeps no hold annotations and lands normally.

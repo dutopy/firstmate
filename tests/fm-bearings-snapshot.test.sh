@@ -1107,8 +1107,8 @@ test_superseded_queued_item_dropped_by_default() {
 
 # The collapsed captain-call contract: any due, unblocked captain-held task is
 # Captain's Call whatever its kind; a date-deferred hold is a dated gate until
-# due; a prose-deferred hold leaves the default views with a disclosure; and
-# Recently Landed excludes only what closed while still held for the captain.
+# due; an undated prose-deferred hold becomes a disclosed gate; and Recently
+# Landed excludes only what closed while still held for the captain.
 test_collapsed_captain_call_deferral_and_landed() {
   local home fakebin json
   home=$(make_home collapsed-call)
@@ -1137,7 +1137,7 @@ EOF
       and (.decisions_open | any(.[]; .id == "external-gate") | not)
       and (.gates | any(.[]; .id == "later-call" and (.reason | startswith("until 2026-08-01"))))
       and (.gates | any(.[]; .id == "work-gate") | not)
-      and (.gates | any(.[]; .id == "parked-call") | not)
+      and (.gates | any(.[]; .id == "parked-call" and .reason == "DEFERRED by captain revisit later"))
       and (.gates | any(.[]; .id == "external-gate"))
       and (.landed | any(.[]; .id == "shipped-work"))
       and (.landed | any(.[]; .id == "answered-call") | not)
@@ -1159,7 +1159,7 @@ test_undated_hold_phrasing_and_aging_projection() {
 ## In flight
 
 ## Queued
-- [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (since 2026-06-01) (hold: parked) (hold-kind: captain)
+- [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (since 2026-07-10) (hold: not urgent) (hold-kind: captain)
 - [ ] aged-call - Aged genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
   Captain hold set: 2026-06-01T00:00:00Z
 - [ ] recent-call - Recent genuine call (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose a sample route) (hold-kind: captain)
@@ -1197,7 +1197,7 @@ EOF
       and (.decisions_open | any(.[]; .id == "legacy-old-hold") | not)
       and (.decisions_open | any(.[]; .id == "parked-hold") | not)
       and (.decisions_open | any(.[]; .id == "aged-call") | not)
-      and (.gates | any(.[]; .id == "parked-hold") | not)
+      and (.gates | any(.[]; .id == "parked-hold" and .reason == "not urgent"))
       and (.gates | any(.[]; .id == "aged-call" and (.reason | startswith("held 40d"))))
       and (.gates | any(.[]; .id == "legacy-old-hold" and (.reason | startswith("held 40d"))))
       and (.gates | any(.[]; .id == "recent-call") | not)
@@ -1214,8 +1214,8 @@ EOF
       and (.decisions_open | any(.[]; .id == "contextual-gated"))
       and (.decisions_open | any(.[]; .id == "reheld-current-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold"))
-      and (.gates | any(.[]; .id == "aged-call" or .id == "legacy-old-hold") | not)
-  ' >/dev/null || fail "--all-decisions must reveal aged holds without duplicating their gates: $json"
+      and (.gates | any(.[]; .id == "parked-hold" or .id == "aged-call" or .id == "legacy-old-hold") | not)
+  ' >/dev/null || fail "--all-decisions must reveal parked-style and aged holds without duplicating their gates: $json"
   json=$(FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=50 run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.[]; .id == "aged-call"))
