@@ -359,7 +359,7 @@ test_release_frees_held_work() {
     "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail "fleet snapshot failed after re-hold"
   printf '%s' "$snap" | jq -e '
     .backlog.records[] | select(.id == "sample-widget")
-    | .hold_set == "2026-07-14" and .hold_age_days == 0 and .aged_undated_hold == false
+    | .hold_set == "2026-07-14T12:00:00Z" and .hold_age_days == 0 and .aged_undated_hold == false
   ' >/dev/null || fail "a new hold lifecycle reused the released hold timestamp: $snap"
   printf 'Price it at nine dollars.\n' > "$home/price.txt"
   run_captain "$home" answer sample-widget --decision-file "$home/price.txt" --release >/dev/null \
@@ -392,6 +392,9 @@ test_deferral_leaves_captains_call_until_due() {
 
 ## Queued
 - [ ] sample-existing-call - Decide an existing sample task (repo: sample) (kind: captain) (since 2026-06-01)
+- [ ] sample-near-marker - Decide a deferred sample route (repo: sample) (kind: captain) (since 2026-07-14) (hold: choose the sample route) (hold-kind: captain)
+  Captain hold set: 2026-07-14T12:00:00Z
+  abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij DEFERRED
 - [ ] sample-late-marker - Decide a documented sample route (repo: sample) (kind: captain) (since 2026-07-14) (hold: choose the sample route) (hold-kind: captain)
   This deliberately long decision context fills the bounded display excerpt without changing the durable classification contract. Additional synthetic context keeps extending the body beyond that display boundary while remaining ordinary task prose. More synthetic context places the presentation marker after the excerpt cutoff. DEFERRED
 
@@ -424,9 +427,10 @@ EOF
     | ([.backlog.records[] | select(.id == "sample-existing-call")][0]) as $existing
     | $later.captain_actionable == false and $later.hold_until == "2026-08-01"
       and $now.captain_actionable == true and $now.hold_until == null
-      and $existing.since == "2026-06-01" and $existing.hold_set == "2026-07-14"
+      and $existing.since == "2026-06-01" and $existing.hold_set == "2026-07-14T12:00:00Z"
       and $existing.hold_age_days == 0 and $existing.aged_undated_hold == false
-      and ([.backlog.records[] | select(.id == "sample-late-marker")][0].deferred_marker == true)
+      and ([.backlog.records[] | select(.id == "sample-near-marker")][0].deferred_marker == true)
+      and ([.backlog.records[] | select(.id == "sample-late-marker")][0].deferred_marker == false)
       and ($later.title | contains("hold-until") | not)
   ' >/dev/null || fail "the due gate, hold-set age, or hold-until parsing is wrong: $snap"
 

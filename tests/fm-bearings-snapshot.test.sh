@@ -1159,7 +1159,7 @@ test_undated_hold_phrasing_and_aging_projection() {
 ## In flight
 
 ## Queued
-- [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (hold: parked for a later pass) (hold-kind: captain)
+- [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (since 2026-06-01) (hold: parked for a later pass) (hold-kind: captain)
 - [ ] aged-call - Aged genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
 - [ ] recent-call - Recent genuine call (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose a sample route) (hold-kind: captain)
 

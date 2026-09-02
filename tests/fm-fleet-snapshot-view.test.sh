@@ -600,6 +600,8 @@ test_undated_captain_hold_phrasing_and_aging() {
 - [ ] gated-hold - Captain-gated phrasing (repo: sample) (kind: ship) (hold: captain-gated) (hold-kind: captain)
 - [ ] aged-call - Aged genuine call (repo: sample) (kind: captain) (since 2026-07-01) (hold: choose a sample route) (hold-kind: captain)
 - [ ] recent-call - Recent genuine call (repo: sample) (kind: captain) (since 2026-07-20) (hold: choose a sample route) (hold-kind: captain)
+- [ ] boundary-call - Almost aged genuine call (repo: sample) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
+  Captain hold set: 2026-07-11T00:01:00Z
 - [ ] live-gated - Live captain-gated work (repo: sample) (kind: ship) (hold: captain go pending) (hold-kind: captain)
 - [ ] unparked-call - Newly unparked decision (repo: sample) (kind: captain) (hold: unparked; choose a sample route) (hold-kind: captain)
 
@@ -628,6 +630,11 @@ EOF
       and .aged_undated_hold == false
       and .hold_age_days == 5
   ' >/dev/null || fail "a recent undated captain hold must stay a live call: $out"
+  printf '%s' "$out" | jq -e '
+    .backlog.records[] | select(.id == "boundary-call")
+    | .hold_set == "2026-07-11T00:01:00Z"
+      and .hold_age_days == 13 and .aged_undated_hold == false
+  ' >/dev/null || fail "a hold one minute short of 14 days must not age early: $out"
   printf '%s' "$out" | jq -e '
     [.backlog.records[] | select(.id == "live-gated" or .id == "unparked-call")]
     | all(.captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false)

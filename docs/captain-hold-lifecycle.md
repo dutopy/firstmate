@@ -10,8 +10,8 @@ A decision is not a separate thing in this system: it is an ordinary backlog tas
 The command addresses the active home's configured data directory the same way `bin/fm-backlog-transition-lib.sh` addresses every backlog transition, so the existing backlog remains the only durable work database and a secondmate-owned captain call stays in the secondmate home.
 It never reads report bodies, review artifacts, terminal output, or chat.
 
-The `hold` subcommand places an existing task under an active captain hold, or creates the task when nothing exists to hold, then verifies the hold through `tasks-axi hold <id> --reason <reason> --kind captain` and records its UTC hold-set date in the task body.
-Retries of an active hold preserve its hold-set date, while re-holding released work starts a new dated lifecycle; a closed task is refused rather than reopened, and `--until` stores the captain's own deferral date through tasks-axi's date gate.
+The `hold` subcommand places an existing task under an active captain hold, or creates the task when nothing exists to hold, then verifies the hold through `tasks-axi hold <id> --reason <reason> --kind captain` and records its UTC hold-set timestamp in the task body.
+Retries of an active hold preserve its hold-set timestamp, while re-holding released work starts a new timestamped lifecycle; a closed task is refused rather than reopened, and `--until` stores the captain's own deferral date through tasks-axi's date gate.
 
 The `answer` subcommand records the captain's exact words and closes the call in the same act.
 It requires a non-empty captain decision file of at most 8192 bytes, writes a resolution block carrying the decision digest and a `Resolution mode:` at the top of the task body (the previous body is preserved below the block and archived through tasks-axi `--archive-body`), then runs `tasks-axi done` - or `tasks-axi unhold` under `--release`, so a captain-gated work item resumes instead of closing.
@@ -58,7 +58,7 @@ Trusted external process-event adapters intentionally expose no answer operation
 `bin/fm-fleet-snapshot.sh` parses canonical tasks-axi `(hold: ...)`, `(hold-kind: ...)`, and `(hold-until: ...)` metadata alongside existing backlog fields.
 It resolves every repeated `blocked-by:` edge against structured Done records, keeps missing blockers unresolved, and classifies a captain hold as `captain_actionable` - waiting on the captain now - only when it is queued, unblocked, and due, whatever kind its row carries.
 It also emits a presentation-only `deferred_marker` when a hold's reason or body carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker or a parked-style phrasing (parked, awaiting captain go, do not dispatch / do not auto-dispatch, not urgent, de-prioritized, queued opportunity, captain-gated).
-An undated captain hold whose recorded hold-set date is at least `FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS` old (default 14) also carries `aged_undated_hold` and `hold_age_days`.
+An undated captain hold whose recorded hold-set timestamp is at least `FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS` old (default 14, using floored elapsed days) also carries `aged_undated_hold` and `hold_age_days`.
 Existing undated holds without a hold-set stamp fall back to the task's `since` date.
 That aging is a projection safety net only.
 The durable deferral remains re-holding with `--until`.
@@ -66,7 +66,7 @@ Its secondmate-home summary classifies an actionable captain hold as `captain_de
 
 `bin/fm-bearings-snapshot.sh` projects actionable captain holds into `decisions_open` and leaves blocked captain holds in ordinary queued gates.
 A date-deferred captain hold renders as a gate with its `until <date>:` reason; a prose-deferred one leaves the default views with an `omitted[]` disclosure, revealed by `--all-decisions` / `--all-queued`.
-An aged undated captain hold leaves default Captain's Call, renders as a Charted Next gate showing its age, is disclosed in `omitted[]`, and is revealed by `--all-decisions`.
+An aged undated captain hold without prose-deferred phrasing leaves default Captain's Call, renders as a Charted Next gate showing its age, is disclosed in `omitted[]`, and is revealed by `--all-decisions`; prose deferral takes precedence when both hints apply.
 Cross-home summaries remain bounded by `FM_SNAPSHOT_SECONDMATE_DECISIONS` and `FM_SNAPSHOT_SECONDMATE_QUEUED`, so a remote captain hold beyond those bounds may not project as a Charted Next gate; re-holding with `--until` remains the durable fix.
 Recently Landed excludes a record that closed while still held for the captain (surviving `hold-kind: captain` on a Done row), so answered questions do not masquerade as shipped work; a work item released before completion keeps no hold annotations and lands normally.
 The projection remains read-only and does not inspect historical prose beyond the canonical snapshot's marker.

@@ -460,7 +460,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
                   or ((.hold_until // null) != null and .hold_until > $today))
          | as_gate("(main)") ]
      + [ .backlog.records[]
-         | select(.structured and .captain_actionable == true and .aged_undated_hold == true)
+         | select(.structured and .captain_actionable == true
+                  and .aged_undated_hold == true and .deferred_marker != true)
          | as_gate("(main)") ]
      + [ (.secondmate_current.records // [])[] as $m
          | select($m.provenance.selected == "structured-home")
@@ -472,7 +473,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
      + [ (.secondmate_current.records // [])[] as $m
          | select($m.provenance.selected == "structured-home")
          | $m.queued[]?
-         | select(.captain_actionable == true and .aged_undated_hold == true)
+         | select(.captain_actionable == true
+                  and .aged_undated_hold == true and .deferred_marker != true)
          | as_gate($m.id) ]) as $gates_all
   | ([ .scout_reports[]
        | . as $r

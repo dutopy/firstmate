@@ -451,21 +451,24 @@ resolve_entry() {  # <origin-or-empty> <entry>; prints the resolved id or fails
   fail "no captain-held task $entry in $CAPTAIN_BACKLOG_FILE"
 }
 
-body_hold_set_date() {  # <decoded-task-body>
+body_hold_set_timestamp() {  # <decoded-task-body>
   printf '%s\n' "$1" \
-    | sed -n 's/^Captain hold set: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/\1/p' \
+    | sed -n \
+      -e 's/^Captain hold set: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\)$/\1/p' \
+      -e 's/^Captain hold set: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/\1/p' \
     | head -1
 }
 
-write_hold_set_stamp() {  # <task-id> <shown-body> <date> <preserve-existing-0-or-1>
+write_hold_set_stamp() {  # <task-id> <shown-body> <timestamp> <preserve-existing-0-or-1>
   local id=$1 body=$2 hold_set=$3 preserve=$4 new_body tmp
   body=$(decode_shown_value "$body") \
     || fail "could not decode the existing body for $id"
-  if [ "$preserve" = 1 ] && [ -n "$(body_hold_set_date "$body")" ]; then
+  if [ "$preserve" = 1 ] && [ -n "$(body_hold_set_timestamp "$body")" ]; then
     return 0
   fi
   body=$(printf '%s\n' "$body" \
-    | sed '/^Captain hold set: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/d')
+    | sed -e '/^Captain hold set: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/d' \
+      -e '/^Captain hold set: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/d')
   case "$body" in $'\n'*) body=${body#$'\n'} ;; esac
   new_body=$(printf 'Captain hold set: %s' "$hold_set")
   if [ -n "$body" ]; then
@@ -513,10 +516,9 @@ command_hold() {
     esac
   fi
   hold_set=${FM_CAPTAIN_HOLD_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
-  hold_set=${hold_set%%T*}
   case "$hold_set" in
-    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) : ;;
-    *) fail "FM_CAPTAIN_HOLD_NOW must begin with a YYYY-MM-DD date" ;;
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) : ;;
+    *) fail "FM_CAPTAIN_HOLD_NOW must be a UTC YYYY-MM-DDTHH:MM:SSZ timestamp" ;;
   esac
   acquire_task_control_lock "$id"
   require_tasks_axi
@@ -568,7 +570,7 @@ command_hold() {
   hold_kind=$(show_field_value "$show" hold_kind)
   [ "$hold_kind" = captain ] || fail "task $id did not retain its captain hold"
   occurrence=$(( $(resolution_record_count "$(show_field "$show" body)") + 1 ))
-  [ -n "$(body_hold_set_date "$(show_field_value "$show" body)")" ] \
+  [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id lost its hold-set stamp while being held"
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason"
   printf '%s\n' "$id"

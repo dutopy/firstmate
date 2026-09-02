@@ -36,7 +36,7 @@
 #     captain-gated). It never changes captain_actionable; renderers may use it
 #     to keep prose-deferred rows out of default views.
 #     aged_undated_hold is a second presentation hint for an undated captain
-#     hold whose hold-set date is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
+#     hold whose hold-set timestamp is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
 #     old (default 14). Legacy unstamped holds fall back to `since`.
 #     hold_age_days is that age when computable, else null.
 #     This is a projection safety net only: the durable deferral remains
@@ -229,10 +229,10 @@ FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT, with truncation disclosed in the result.
 The registered secondmate table uses FM_SNAPSHOT_REGISTRY_LINES,
 FM_SNAPSHOT_REGISTRY_BYTES, FM_SNAPSHOT_REGISTRY_RECORDS, and
 FM_SNAPSHOT_REGISTRY_TIMEOUT, with unavailability and truncation disclosed.
-An undated captain hold whose hold-set date is at least
-FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old (default 14, 0 ages every dated
-undated captain hold) carries aged_undated_hold and hold_age_days as
-presentation hints. Legacy holds without a stamp fall back to their since date;
+An undated captain hold whose hold-set timestamp is at least
+FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old (default 14; 0 ages every hold with a
+hold-set timestamp or fallback date) carries aged_undated_hold and hold_age_days
+as presentation hints. Legacy holds without a stamp fall back to their since date;
 re-holding with --until remains the durable deferral.
 EOF
 }
@@ -332,17 +332,18 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
   fi
 
   # shellcheck disable=SC2094
-  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" \
+  jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" --arg now "$SNAPSHOT_NOW" \
     --argjson age_days "$FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS" '
     def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
     def prose_deferred:
       test("SUPERSEDED|NOT[- ]REQUIRED|DEFERRED|\\bparked\\b|awaiting captain go|do not (auto-)?dispatch|not urgent|de-prioritized|queued opportunity|captain-gated"; "i");
-    def ymd_epoch($d):
+    def timestamp_epoch($d):
       if ($d | type) != "string" then null
+      elif ($d | test("T")) then try ($d | fromdateiso8601) catch null
       else try (($d + "T00:00:00Z") | fromdateiso8601) catch null end;
     def days_between($from; $to):
-      (ymd_epoch($from)) as $a
-      | (ymd_epoch($to)) as $b
+      (timestamp_epoch($from)) as $a
+      | (timestamp_epoch($to)) as $b
       | if $a == null or $b == null then null
         else (($b - $a) / 86400 | floor) end;
     def section_state:
@@ -459,8 +460,10 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
        end)
     | .records |= map(
         if (.body_lines | length) > 0 then
-          .body_excerpt = ((.body_lines | join(" "))[:240])
-          | .hold_set = cap((.body_lines | join(" ")); "Captain hold set:[[:space:]]*(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})")
+          .body_excerpt = ((.body_lines
+            | map(select(test("^Captain hold set: [0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$") | not))
+            | join(" "))[:240])
+          | .hold_set = cap((.body_lines | join(" ")); "Captain hold set:[[:space:]]*(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?)")
         else . end)
     | .records as $records
     | (reduce ($records[] | select(.structured)) as $record ({};
@@ -484,13 +487,13 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
               (.state == "queued" and .hold_kind == "captain"
                and .hold_reason != null and (.unresolved_blocker_ids | length) == 0
                and (.hold_until == null or .hold_until <= $today))
-          | .hold_age_days = days_between((.hold_set // .since); $today)
+          | .hold_age_days = days_between((.hold_set // .since); $now)
           | .aged_undated_hold =
               (.hold_kind == "captain" and .hold_until == null
                and .hold_age_days != null and .hold_age_days >= $age_days)
           | .deferred_marker =
               (((.hold_reason // "") | prose_deferred)
-               or ((.body_lines | join(" ")) | prose_deferred))
+               or ((.body_excerpt // "") | prose_deferred))
         else . end)
     | del(.section,.order)
   ' < "$backlog"
