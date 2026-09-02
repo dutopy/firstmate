@@ -306,8 +306,12 @@ test_answer_records_and_closes() {
 test_release_frees_held_work() {
   local home show out snap
   home=$(make_home release-work)
+  cat > "$home/widget-body.txt" <<'EOF'
+The widget plan body. Literal escape: \n. Unicode: café.
+Captain hold set: 2025-01-02T03:04:05Z
+EOF
   tasks_in "$home" add sample-widget "Ship the sample widget" --kind ship --repo sample \
-    --body 'The widget plan body. Literal escape: \n. Unicode: café.' >/dev/null \
+    --body-file "$home/widget-body.txt" >/dev/null \
     || fail "could not create the held work item"
   FM_CAPTAIN_HOLD_NOW=2026-06-01T12:00:00Z run_captain "$home" hold sample-widget \
     --reason "captain go needed before shipping" >/dev/null \
@@ -323,6 +327,8 @@ test_release_frees_held_work() {
   assert_contains "$show" "The widget plan body." "the release destroyed the work item body"
   assert_contains "$show" 'Literal escape: \\n. Unicode: café.' \
     "the release corrupted escaped or Unicode body text"
+  assert_contains "$show" "Captain hold set: 2025-01-02T03:04:05Z" \
+    "hold stamping deleted matching user content outside the leading stamp"
   run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
     || fail "identical release retry was not idempotent"
   if run_captain "$home" answer sample-widget --decision-file "$home/go.txt" \

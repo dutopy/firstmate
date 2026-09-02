@@ -463,10 +463,9 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
        end)
     | .records |= map(
         if (.body_lines | length) > 0 then
-          .body_excerpt = ((.body_lines
-            | map(select(test("^Captain hold set: [0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$") | not))
+          .hold_set = cap(.body_lines[0]; "^Captain hold set:[[:space:]]*(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?)$")
+          | .body_excerpt = (((if .hold_set != null then .body_lines[1:] else .body_lines end)
             | join(" "))[:240])
-          | .hold_set = cap((.body_lines | join(" ")); "Captain hold set:[[:space:]]*(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?)")
         else . end)
     | .records as $records
     | (reduce ($records[] | select(.structured)) as $record ({};

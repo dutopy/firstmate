@@ -603,6 +603,8 @@ test_undated_captain_hold_phrasing_and_aging() {
 - [ ] recent-call - Recent genuine call (repo: sample) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
   Captain hold set: 2026-07-20T00:00:00Z
 - [ ] legacy-old-hold - Legacy unstamped hold (repo: sample) (kind: ship) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
+  Historical notes remain ordinary task content.
+  Captain hold set: 2026-07-24T00:00:00Z
 - [ ] boundary-call - Almost aged genuine call (repo: sample) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
   Captain hold set: 2026-07-11T00:01:00Z
 - [ ] live-gated - Live captain-gated work (repo: sample) (kind: ship) (hold: captain go pending) (hold-kind: captain)
@@ -634,6 +636,7 @@ EOF
       and $recent.aged_undated_hold == false
       and $recent.hold_age_days == 5
       and $legacy.captain_actionable == true
+      and $legacy.hold_set == null
       and $legacy.aged_undated_hold == true
       and $legacy.hold_age_days == 54
   ' >/dev/null || fail "recent stamped and legacy unstamped hold ages are wrong: $out"

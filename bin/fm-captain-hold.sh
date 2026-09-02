@@ -456,22 +456,26 @@ resolve_entry() {  # <origin-or-empty> <entry>; prints the resolved id or fails
 body_hold_set_timestamp() {  # <decoded-task-body>
   printf '%s\n' "$1" \
     | sed -n \
-      -e 's/^Captain hold set: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\)$/\1/p' \
-      -e 's/^Captain hold set: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/\1/p' \
+      -e '1s/^Captain hold set: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\)$/\1/p' \
+      -e '1s/^Captain hold set: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/\1/p' \
     | head -1
 }
 
 write_hold_set_stamp() {  # <task-id> <shown-body> <timestamp> <preserve-existing-0-or-1>
-  local id=$1 body=$2 hold_set=$3 preserve=$4 new_body tmp
+  local id=$1 body=$2 hold_set=$3 preserve=$4 existing new_body tmp
   body=$(decode_shown_value "$body") \
     || fail "could not decode the existing body for $id"
-  if [ "$preserve" = 1 ] && [ -n "$(body_hold_set_timestamp "$body")" ]; then
+  existing=$(body_hold_set_timestamp "$body")
+  if [ "$preserve" = 1 ] && [ -n "$existing" ]; then
     return 0
   fi
-  body=$(printf '%s\n' "$body" \
-    | sed -e '/^Captain hold set: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/d' \
-      -e '/^Captain hold set: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/d')
-  case "$body" in $'\n'*) body=${body#$'\n'} ;; esac
+  if [ -n "$existing" ]; then
+    body=${body#"Captain hold set: $existing"}
+    case "$body" in
+      $'\n\n'*) body=${body#$'\n\n'} ;;
+      $'\n'*) body=${body#$'\n'} ;;
+    esac
+  fi
   new_body=$(printf 'Captain hold set: %s' "$hold_set")
   if [ -n "$body" ]; then
     new_body=$(printf '%s\n\n%s' "$new_body" "$body")
