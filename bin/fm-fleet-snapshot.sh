@@ -33,10 +33,11 @@
 #     deferred_marker is a presentation hint only: the row's hold reason or
 #     first 240 characters of current body prose (excluding the machine-generated
 #     hold-set stamp and preserved historical resolution blocks) carries an
-#     explicit SUPERSEDED / NOT REQUIRED / DEFERRED
-#     marker, or a parked-style phrasing (parked, awaiting captain go, do not
+#     explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker. A hold reason that
+#     begins with a parked-style phrasing (parked, awaiting captain go, do not
 #     dispatch / do not auto-dispatch, not urgent, de-prioritized, queued
-#     opportunity, captain-gated). It never changes captain_actionable;
+#     opportunity, captain-gated) is also deferred; incidental mentions later in
+#     a reason or body do not adjudicate the decision. It never changes captain_actionable;
 #     renderers may use it to keep prose-deferred rows out of default views.
 #     aged_undated_hold is a second presentation hint for an undated captain
 #     hold whose hold-set timestamp is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
@@ -339,8 +340,10 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
   jq -Rn --arg path "$backlog" --arg today "$SNAPSHOT_TODAY" --arg now "$SNAPSHOT_NOW" \
     --argjson age_days "$FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS" '
     def trim: gsub("^[[:space:]]+|[[:space:]]+$"; "");
-    def prose_deferred:
-      test("SUPERSEDED|NOT[- ]REQUIRED|DEFERRED|\\bparked\\b|awaiting captain go|do not (auto-)?dispatch|not urgent|de-prioritized|queued opportunity|captain-gated"; "i");
+    def explicitly_deferred:
+      test("SUPERSEDED|NOT[- ]REQUIRED|DEFERRED"; "i");
+    def parked_style_reason:
+      test("^(parked(\\b|$)|awaiting captain go(\\b|$)|do not (auto-)?dispatch(\\b|$)|not urgent(\\b|$)|de-prioritized(\\b|$)|queued opportunity(\\b|$)|captain-gated(\\b|$))"; "i");
     def timestamp_epoch($d):
       if ($d | type) != "string" then null
       elif ($d | test("T")) then try ($d | fromdateiso8601) catch null
@@ -503,8 +506,9 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
               (.hold_kind == "captain" and .hold_until == null
                and .hold_age_days != null and .hold_age_days >= $age_days)
           | .deferred_marker =
-              (((.hold_reason // "") | prose_deferred)
-               or ((.body_excerpt // "") | prose_deferred))
+              (((.hold_reason // "") | explicitly_deferred)
+               or ((.hold_reason // "") | parked_style_reason)
+               or ((.body_excerpt // "") | explicitly_deferred))
         else . end)
     | del(.section,.order)
   ' < "$backlog"

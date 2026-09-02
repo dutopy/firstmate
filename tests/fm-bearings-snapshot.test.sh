@@ -1164,6 +1164,9 @@ test_undated_hold_phrasing_and_aging_projection() {
   Captain hold set: 2026-06-01T00:00:00Z
 - [ ] recent-call - Recent genuine call (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose a sample route) (hold-kind: captain)
   Captain hold set: 2026-07-10T00:00:00Z
+- [ ] contextual-call - Context is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose whether to pursue this queued opportunity) (hold-kind: captain)
+  Captain hold set: 2026-07-10T00:00:00Z
+  This is not urgent context, but the captain decision is current.
 - [ ] reheld-current-call - Re-held genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a current sample route) (hold-kind: captain)
   Captain hold set: 2026-07-10T00:00:00Z
   Current decision prose lists route north or route south.
@@ -1180,6 +1183,7 @@ EOF
   json=$(run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.[]; .id == "recent-call"))
+      and (.decisions_open | any(.[]; .id == "contextual-call"))
       and (.decisions_open | any(.[]; .id == "reheld-current-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold") | not)
       and (.decisions_open | any(.[]; .id == "parked-hold") | not)
@@ -1195,6 +1199,7 @@ EOF
     (.decisions_open | any(.[]; .id == "parked-hold"))
       and (.decisions_open | any(.[]; .id == "aged-call"))
       and (.decisions_open | any(.[]; .id == "recent-call"))
+      and (.decisions_open | any(.[]; .id == "contextual-call"))
       and (.decisions_open | any(.[]; .id == "reheld-current-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold"))
       and (.gates | any(.[]; .id == "aged-call" or .id == "legacy-old-hold") | not)

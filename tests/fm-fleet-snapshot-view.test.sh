@@ -609,6 +609,8 @@ test_undated_captain_hold_phrasing_and_aging() {
   Captain hold set: 2026-07-11T00:01:00Z
 - [ ] live-gated - Live captain-gated work (repo: sample) (kind: ship) (hold: captain go pending) (hold-kind: captain)
 - [ ] unparked-call - Newly unparked decision (repo: sample) (kind: captain) (hold: unparked; choose a sample route) (hold-kind: captain)
+- [ ] contextual-call - Context is not a deferral (repo: sample) (kind: captain) (hold: choose whether to pursue this queued opportunity) (hold-kind: captain)
+  This is not urgent context, but the captain decision is current.
 
 ## Done
 EOF
@@ -646,9 +648,9 @@ EOF
       and .hold_age_days == 13 and .aged_undated_hold == false
   ' >/dev/null || fail "a hold one minute short of 14 days must not age early: $out"
   printf '%s' "$out" | jq -e '
-    [.backlog.records[] | select(.id == "live-gated" or .id == "unparked-call")]
+    [.backlog.records[] | select(.id == "live-gated" or .id == "unparked-call" or .id == "contextual-call")]
     | all(.captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false)
-  ' >/dev/null || fail "captain go pending and unparked decisions must not match parked-style markers: $out"
+  ' >/dev/null || fail "contextual parked-style wording must not hide current decisions: $out"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
     FM_SNAPSHOT_NOW=2026-07-25T00:00:00Z FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=30 "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
