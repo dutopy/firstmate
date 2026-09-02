@@ -39,9 +39,8 @@
 #     renderers may use it to keep prose-deferred rows out of default views.
 #     aged_undated_hold is a second presentation hint for an undated captain
 #     hold whose hold-set timestamp is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
-#     old (default 14). Unstamped holds cannot be aged safely because `since`
-#     predates a fresh hold on an existing task. hold_age_days is the stamped
-#     hold's age when computable, else null.
+#     old (default 14). Legacy unstamped holds fall back to `since`.
+#     hold_age_days is that age when computable, else null.
 #     This is a projection safety net only: the durable deferral remains
 #     re-holding with --until. Renderers project an aged undated hold as a
 #     Charted Next gate showing its age, disclose it in omitted[], and reveal
@@ -235,9 +234,9 @@ FM_SNAPSHOT_REGISTRY_BYTES, FM_SNAPSHOT_REGISTRY_RECORDS, and
 FM_SNAPSHOT_REGISTRY_TIMEOUT, with unavailability and truncation disclosed.
 An undated captain hold whose hold-set timestamp is at least
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old (default 14; 0 ages every hold with a
-hold-set timestamp) carries aged_undated_hold and hold_age_days as presentation
-hints. Unstamped holds stay unaged because the task's since date is not the hold
-set date; re-holding with --until remains the durable deferral.
+hold-set timestamp or fallback date) carries aged_undated_hold and hold_age_days
+as presentation hints. Legacy holds without a stamp fall back to their since date;
+re-holding with --until remains the durable deferral.
 EOF
 }
 
@@ -491,7 +490,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
               (.state == "queued" and .hold_kind == "captain"
                and .hold_reason != null and (.unresolved_blocker_ids | length) == 0
                and (.hold_until == null or .hold_until <= $today))
-          | .hold_age_days = days_between(.hold_set; $now)
+          | .hold_age_days = days_between((.hold_set // .since); $now)
           | .aged_undated_hold =
               (.hold_kind == "captain" and .hold_until == null
                and .hold_age_days != null and .hold_age_days >= $age_days)
