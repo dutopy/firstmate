@@ -10,8 +10,8 @@
 # keyed-answer intake every channel feeds.
 #
 # There is no separate decision type. A captain call is an ordinary backlog
-# task held for the captain (`tasks-axi hold <id> --kind captain`), and its
-# identity is simply the task id. Older installs created derived
+# task held for the captain through this script's mandatory `hold` subcommand,
+# and its identity is simply the task id. Older installs created derived
 # `<origin>-decision-<key>` identities through bin/fm-decision-hold.sh; those
 # rows are already plain task ids, so they keep working here unchanged, and
 # the legacy inputs noted below resolve them without a migration.
@@ -44,12 +44,14 @@
 # later" answer is stored as a date instead of a live card.
 #
 # `answer` records the captain's exact words and closes the call in the same
-# act. It requires a non-empty captain decision file of at most 8192 bytes,
-# writes a resolution block at the top of the task body (the previous body is
-# preserved below the block and archived through tasks-axi --archive-body),
-# then closes the task with `tasks-axi done` - or, with `--release`, lifts the
-# hold with `tasks-axi unhold` so a captain-gated WORK item resumes instead of
-# closing. An exact retry is idempotent only when its requested close mode
+# act. It requires a non-empty captain decision file of at most 8192 bytes and
+# writes a resolution block while preserving the leading hold-set stamp until
+# the close succeeds (the previous body is preserved and archived through
+# tasks-axi --archive-body). It then closes the task with `tasks-axi done` - or,
+# with `--release`, lifts the hold with `tasks-axi unhold` so a captain-gated
+# WORK item resumes instead of closing - and restores resolution-first body
+# ordering. An exact retry also completes unfinished ordering normalization and
+# is idempotent only when its requested close mode
 # matches the newest record; a changed decision or a mode mismatch is rejected.
 # A re-held task may record a new answer on top. On a task already closed outside this script,
 # `answer` records the missing resolution block (the old `repair` path) only
@@ -585,8 +587,9 @@ command_hold() {
   printf '%s\n' "$id"
 }
 
-# Record a resolution block at the top of the task body, preserving the
-# previous body below it and archiving the pristine original.
+# Record a resolution block beneath any leading active hold-set stamp,
+# preserving the previous body below it and archiving the pristine original.
+# Successful closure removes the stamp to restore resolution-first ordering.
 write_resolution_record() {  # <task-id> <mode> <shown-body>
   local id=$1 mode=$2 body=$3 new_body tmp hold_set
   new_body=$(resolution_block "$mode")
