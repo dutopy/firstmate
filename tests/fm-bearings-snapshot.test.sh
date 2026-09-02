@@ -1161,7 +1161,10 @@ test_undated_hold_phrasing_and_aging_projection() {
 ## Queued
 - [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (since 2026-06-01) (hold: parked for a later pass) (hold-kind: captain)
 - [ ] aged-call - Aged genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
+  Captain hold set: 2026-06-01T00:00:00Z
 - [ ] recent-call - Recent genuine call (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose a sample route) (hold-kind: captain)
+  Captain hold set: 2026-07-10T00:00:00Z
+- [ ] fresh-old-task - Fresh hold on old work (repo: firstmate) (kind: ship) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
 
 ## Done
 EOF
@@ -1169,6 +1172,7 @@ EOF
   json=$(run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.[]; .id == "recent-call"))
+      and (.decisions_open | any(.[]; .id == "fresh-old-task"))
       and (.decisions_open | any(.[]; .id == "parked-hold") | not)
       and (.decisions_open | any(.[]; .id == "aged-call") | not)
       and (.gates | any(.[]; .id == "parked-hold") | not)
@@ -1181,6 +1185,7 @@ EOF
     (.decisions_open | any(.[]; .id == "parked-hold"))
       and (.decisions_open | any(.[]; .id == "aged-call"))
       and (.decisions_open | any(.[]; .id == "recent-call"))
+      and (.decisions_open | any(.[]; .id == "fresh-old-task"))
   ' >/dev/null || fail "--all-decisions must reveal parked-style and aged undated holds: $json"
   json=$(FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=50 run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '

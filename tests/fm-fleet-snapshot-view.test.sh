@@ -599,7 +599,10 @@ test_undated_captain_hold_phrasing_and_aging() {
 - [ ] queued-opp - Queued opportunity call (repo: sample) (kind: ship) (hold: queued opportunity) (hold-kind: captain)
 - [ ] gated-hold - Captain-gated phrasing (repo: sample) (kind: ship) (hold: captain-gated) (hold-kind: captain)
 - [ ] aged-call - Aged genuine call (repo: sample) (kind: captain) (since 2026-07-01) (hold: choose a sample route) (hold-kind: captain)
-- [ ] recent-call - Recent genuine call (repo: sample) (kind: captain) (since 2026-07-20) (hold: choose a sample route) (hold-kind: captain)
+  Captain hold set: 2026-07-01T00:00:00Z
+- [ ] recent-call - Recent genuine call (repo: sample) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
+  Captain hold set: 2026-07-20T00:00:00Z
+- [ ] fresh-old-task - Fresh hold on old work (repo: sample) (kind: ship) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
 - [ ] boundary-call - Almost aged genuine call (repo: sample) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
   Captain hold set: 2026-07-11T00:01:00Z
 - [ ] live-gated - Live captain-gated work (repo: sample) (kind: ship) (hold: captain go pending) (hold-kind: captain)
@@ -624,12 +627,16 @@ EOF
       and .hold_age_days == 24
   ' >/dev/null || fail "an undated captain hold older than the default 14-day threshold must age: $out"
   printf '%s' "$out" | jq -e '
-    .backlog.records[] | select(.id == "recent-call")
-    | .captain_actionable == true
-      and .deferred_marker == false
-      and .aged_undated_hold == false
-      and .hold_age_days == 5
-  ' >/dev/null || fail "a recent undated captain hold must stay a live call: $out"
+    ([.backlog.records[] | select(.id == "recent-call")][0]) as $recent
+    | ([.backlog.records[] | select(.id == "fresh-old-task")][0]) as $fresh
+    | $recent.captain_actionable == true
+      and $recent.deferred_marker == false
+      and $recent.aged_undated_hold == false
+      and $recent.hold_age_days == 5
+      and $fresh.captain_actionable == true
+      and $fresh.aged_undated_hold == false
+      and $fresh.hold_age_days == null
+  ' >/dev/null || fail "recent and unstamped fresh holds must stay live calls: $out"
   printf '%s' "$out" | jq -e '
     .backlog.records[] | select(.id == "boundary-call")
     | .hold_set == "2026-07-11T00:01:00Z"
