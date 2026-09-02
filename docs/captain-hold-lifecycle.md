@@ -11,7 +11,7 @@ The command addresses the active home's configured data directory the same way `
 It never reads report bodies, review artifacts, terminal output, or chat.
 
 The `hold` subcommand places an existing task under an active captain hold, or creates the task when nothing exists to hold, then verifies the hold through `tasks-axi hold <id> --reason <reason> --kind captain` and records its UTC hold-set date in the task body.
-Repeats preserve the original hold-set date, a closed task is refused rather than reopened, and `--until` stores the captain's own deferral date through tasks-axi's date gate.
+Retries of an active hold preserve its hold-set date, while re-holding released work starts a new dated lifecycle; a closed task is refused rather than reopened, and `--until` stores the captain's own deferral date through tasks-axi's date gate.
 
 The `answer` subcommand records the captain's exact words and closes the call in the same act.
 It requires a non-empty captain decision file of at most 8192 bytes, writes a resolution block carrying the decision digest and a `Resolution mode:` at the top of the task body (the previous body is preserved below the block and archived through tasks-axi `--archive-body`), then runs `tasks-axi done` - or `tasks-axi unhold` under `--release`, so a captain-gated work item resumes instead of closing.

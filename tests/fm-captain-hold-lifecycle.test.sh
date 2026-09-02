@@ -304,12 +304,13 @@ test_answer_records_and_closes() {
 # --release lifts the hold instead of closing, preserving the work item's own
 # body under the record; a re-held task later accepts a new answer.
 test_release_frees_held_work() {
-  local home show out
+  local home show out snap
   home=$(make_home release-work)
   tasks_in "$home" add sample-widget "Ship the sample widget" --kind ship --repo sample \
     --body 'The widget plan body. Literal escape: \n. Unicode: café.' >/dev/null \
     || fail "could not create the held work item"
-  run_captain "$home" hold sample-widget --reason "captain go needed before shipping" >/dev/null \
+  FM_CAPTAIN_HOLD_NOW=2026-06-01T12:00:00Z run_captain "$home" hold sample-widget \
+    --reason "captain go needed before shipping" >/dev/null \
     || fail "could not hold the work item for the captain"
   printf 'Go: ship it as planned.\n' > "$home/go.txt"
   run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
@@ -349,8 +350,17 @@ test_release_frees_held_work() {
     "an empty-label release recorded the wrong close mode"
 
   # A NEW captain gate on the same task later takes a NEW answer.
-  run_captain "$home" hold sample-widget --reason "captain pricing call needed" >/dev/null \
+  FM_CAPTAIN_HOLD_NOW=2026-07-14T12:00:00Z run_captain "$home" hold sample-widget \
+    --reason "captain pricing call needed" >/dev/null \
     || fail "could not re-hold the released work item"
+  snap=$(PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_SNAPSHOT_NOW=2026-07-14T12:00:00Z \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail "fleet snapshot failed after re-hold"
+  printf '%s' "$snap" | jq -e '
+    .backlog.records[] | select(.id == "sample-widget")
+    | .hold_set == "2026-07-14" and .hold_age_days == 0 and .aged_undated_hold == false
+  ' >/dev/null || fail "a new hold lifecycle reused the released hold timestamp: $snap"
   printf 'Price it at nine dollars.\n' > "$home/price.txt"
   run_captain "$home" answer sample-widget --decision-file "$home/price.txt" --release >/dev/null \
     || fail "a re-held task refused a new answer"
@@ -382,6 +392,8 @@ test_deferral_leaves_captains_call_until_due() {
 
 ## Queued
 - [ ] sample-existing-call - Decide an existing sample task (repo: sample) (kind: captain) (since 2026-06-01)
+- [ ] sample-late-marker - Decide a documented sample route (repo: sample) (kind: captain) (since 2026-07-14) (hold: choose the sample route) (hold-kind: captain)
+  This deliberately long decision context fills the bounded display excerpt without changing the durable classification contract. Additional synthetic context keeps extending the body beyond that display boundary while remaining ordinary task prose. More synthetic context places the presentation marker after the excerpt cutoff. DEFERRED
 
 ## Done
 EOF
@@ -414,6 +426,7 @@ EOF
       and $now.captain_actionable == true and $now.hold_until == null
       and $existing.since == "2026-06-01" and $existing.hold_set == "2026-07-14"
       and $existing.hold_age_days == 0 and $existing.aged_undated_hold == false
+      and ([.backlog.records[] | select(.id == "sample-late-marker")][0].deferred_marker == true)
       and ($later.title | contains("hold-until") | not)
   ' >/dev/null || fail "the due gate, hold-set age, or hold-until parsing is wrong: $snap"
 

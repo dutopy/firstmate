@@ -489,8 +489,8 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
               (.hold_kind == "captain" and .hold_until == null
                and .hold_age_days != null and .hold_age_days >= $age_days)
           | .deferred_marker =
-              ((((.hold_reason // "") + " " + (.body_excerpt // ""))
-                | prose_deferred))
+              (((.hold_reason // "") | prose_deferred)
+               or ((.body_lines | join(" ")) | prose_deferred))
         else . end)
     | del(.section,.order)
   ' < "$backlog"

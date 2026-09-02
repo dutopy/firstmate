@@ -457,11 +457,16 @@ body_hold_set_date() {  # <decoded-task-body>
     | head -1
 }
 
-write_hold_set_stamp() {  # <task-id> <shown-body> <date>
-  local id=$1 body=$2 hold_set=$3 new_body tmp
+write_hold_set_stamp() {  # <task-id> <shown-body> <date> <preserve-existing-0-or-1>
+  local id=$1 body=$2 hold_set=$3 preserve=$4 new_body tmp
   body=$(decode_shown_value "$body") \
     || fail "could not decode the existing body for $id"
-  [ -z "$(body_hold_set_date "$body")" ] || return 0
+  if [ "$preserve" = 1 ] && [ -n "$(body_hold_set_date "$body")" ]; then
+    return 0
+  fi
+  body=$(printf '%s\n' "$body" \
+    | sed '/^Captain hold set: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/d')
+  case "$body" in $'\n'*) body=${body#$'\n'} ;; esac
   new_body=$(printf 'Captain hold set: %s' "$hold_set")
   if [ -n "$body" ]; then
     new_body=$(printf '%s\n\n%s' "$new_body" "$body")
@@ -481,6 +486,7 @@ write_hold_set_stamp() {  # <task-id> <shown-body> <date>
 
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
+  local existing_hold_kind='' existing_held='' preserve_hold_set=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -518,6 +524,11 @@ command_hold() {
     state=$(show_field "$show" state)
     [ "$state" != "done" ] \
       || fail "task $id is already closed; a new captain call needs its own task"
+    existing_hold_kind=$(show_field_value "$show" hold_kind)
+    existing_held=$(show_field_value "$show" held)
+    if [ "$existing_hold_kind" = captain ] && [ "$existing_held" = yes ]; then
+      preserve_hold_set=1
+    fi
     if [ -n "$title" ]; then
       existing_title=$(show_field_value "$show" title)
       [ "$existing_title" = "$title" ] || fail "existing task $id has a different title"
@@ -542,7 +553,7 @@ command_hold() {
     fi
   fi
   show=$(task_show "$id") || fail "task $id disappeared before recording its hold-set stamp"
-  write_hold_set_stamp "$id" "$(show_field "$show" body)" "$hold_set"
+  write_hold_set_stamp "$id" "$(show_field "$show" body)" "$hold_set" "$preserve_hold_set"
   show=$(task_show "$id") || fail "task $id disappeared while recording its hold-set stamp"
   [ -n "$(body_hold_set_date "$(show_field_value "$show" body)")" ] \
     || fail "task $id did not retain its hold-set stamp"
