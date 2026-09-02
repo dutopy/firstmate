@@ -454,10 +454,12 @@ EOF
     --reason "captain route choice pending" >/dev/null \
     || fail "could not hold the interrupted-answer fixture"
   printf 'Not urgent in the historical answer.\n' > "$home/interrupted-answer.txt"
+  mkdir -p "$home/at-close"
   cat > "$home/fakebin/tasks-axi" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = done ] && [ "${2:-}" = sample-interrupted-call ] \
   && [ ! -e "$FM_HOME/close-failed-once" ]; then
+  cp "$FM_HOME/data/backlog.md" "$FM_HOME/at-close/backlog.md" || exit 93
   : > "$FM_HOME/close-failed-once"
   exit 92
 fi
@@ -470,9 +472,9 @@ EOF
     fail "the forced answer close failure reported success"
   fi
   snap=$(PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
-    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_DATA_OVERRIDE="$home/at-close" FM_CONFIG_OVERRIDE="$home/config" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_SNAPSHOT_NOW=2026-07-14T12:00:00Z \
-    "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail "fleet snapshot failed after interrupted answer"
+    "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail "fleet snapshot failed at interrupted close boundary"
   printf '%s' "$snap" | jq -e '
     .backlog.records[] | select(.id == "sample-interrupted-call")
     | .captain_actionable == true
@@ -487,6 +489,8 @@ EOF
     || fail "the interrupted answer could not finish on retry"
   show=$(tasks_in "$home" show sample-interrupted-call --full)
   assert_contains "$show" "state: done" "the interrupted answer retry did not close the task"
+  assert_contains "$show" 'body: "Resolution recorded by fm-captain-hold.' \
+    "the successful retry did not restore resolution-first body ordering"
   pass "an interrupted answer preserves its hold age until close retry"
 }
 

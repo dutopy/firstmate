@@ -588,10 +588,19 @@ command_hold() {
 # Record a resolution block at the top of the task body, preserving the
 # previous body below it and archiving the pristine original.
 write_resolution_record() {  # <task-id> <mode> <shown-body>
-  local id=$1 mode=$2 body=$3 new_body tmp
+  local id=$1 mode=$2 body=$3 new_body tmp hold_set
   new_body=$(resolution_block "$mode")
   body=$(decode_shown_value "$body") \
     || fail "could not decode the existing body for $id"
+  hold_set=$(body_hold_set_timestamp "$body")
+  if [ -n "$hold_set" ]; then
+    body=${body#"Captain hold set: $hold_set"}
+    case "$body" in
+      $'\n\n'*) body=${body#$'\n\n'} ;;
+      $'\n'*) body=${body#$'\n'} ;;
+    esac
+    new_body=$(printf 'Captain hold set: %s\n\n%s' "$hold_set" "$new_body")
+  fi
   if [ -n "$body" ]; then
     new_body=$(printf '%s\n\n%s' "$new_body" "$body")
   fi
@@ -614,13 +623,6 @@ close_answered() {  # <task-id> <release-0-or-1>
   else
     tasks_axi "done" "$1" >/dev/null
   fi
-}
-
-repair_interrupted_answer_stamp() {  # <task-id> <hold-set-timestamp>
-  local id=$1 hold_set=$2 show
-  [ -n "$hold_set" ] || return 0
-  show=$(task_show "$id") || fail "task $id disappeared after its answer close failed"
-  write_hold_set_stamp "$id" "$(show_field "$show" body)" "$hold_set" 0
 }
 
 remove_interrupted_answer_stamp() {  # <task-id>
@@ -646,7 +648,7 @@ remove_interrupted_answer_stamp() {  # <task-id>
 }
 
 command_answer() {
-  local id=${1:-} decision_file='' release=0 show state hold_kind body outcome recorded_mode occurrence hold_set
+  local id=${1:-} decision_file='' release=0 show state hold_kind body outcome recorded_mode occurrence
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -665,7 +667,6 @@ command_answer() {
   state=$(show_field "$show" state)
   hold_kind=$(show_field_value "$show" hold_kind)
   body=$(show_field "$show" body)
-  hold_set=$(body_hold_set_timestamp "$(decode_shown_value "$body")")
   if [ "$release" = 1 ]; then outcome=released; else outcome=answered; fi
   # The occurrence the parent line names: the record about to be written is
   # one past those already in the body, and a retry names the newest one.
@@ -696,6 +697,7 @@ command_answer() {
     [ "$hold_kind" = captain ] \
       || fail "task $id was never held for the captain; nothing to record an answer on"
     write_resolution_record "$id" repaired "$body"
+    remove_interrupted_answer_stamp "$id"
     show=$(task_show "$id") || fail "task $id disappeared while recording the answer"
     [ "$(show_field "$show" state)" = "done" ] || fail "recording the answer reopened closed task $id"
     body_has_resolution_record "$(show_field "$show" body)" \
@@ -720,7 +722,6 @@ command_answer() {
         answered) [ "$release" = 0 ] || fail "task $id records this answer as a close; retry without --release" ;;
       esac
       if ! close_answered "$id" "$release"; then
-        repair_interrupted_answer_stamp "$id" "$hold_set"
         fail "could not close answered captain-held task $id"
       fi
       remove_interrupted_answer_stamp "$id"
@@ -730,9 +731,9 @@ command_answer() {
     fi
     write_resolution_record "$id" "$outcome" "$body"
     if ! close_answered "$id" "$release"; then
-      repair_interrupted_answer_stamp "$id" "$hold_set"
       fail "could not close answered captain-held task $id"
     fi
+    remove_interrupted_answer_stamp "$id"
     show=$(task_show "$id") || fail "task $id disappeared after closing"
     body_has_resolution_record "$(show_field "$show" body)" \
       || fail "captain-held task $id did not retain its durable resolution record"
