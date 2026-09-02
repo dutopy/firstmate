@@ -68,7 +68,7 @@ Its secondmate-home summary classifies an actionable captain hold as `captain_de
 A date-deferred captain hold renders as a gate with its `until <date>:` reason; an actionable prose-deferred one leaves the default views with an `omitted[]` disclosure and is revealed by `--all-decisions`, while `--all-queued` reveals non-actionable prose-deferred queued rows.
 An aged undated captain hold without prose-deferred phrasing leaves default Captain's Call, renders as a Charted Next gate showing its age, and is disclosed in `omitted[]`; `--all-decisions` reveals it in Captain's Call and removes its safety gate so the buckets remain exclusive.
 Prose deferral takes precedence when both hints apply.
-Cross-home summaries remain bounded by `FM_SNAPSHOT_SECONDMATE_DECISIONS` and `FM_SNAPSHOT_SECONDMATE_QUEUED`, so a remote captain hold beyond those bounds may not project as a Charted Next gate; re-holding with `--until` remains the durable fix.
+Cross-home summaries remain bounded by `FM_SNAPSHOT_SECONDMATE_DECISIONS` and `FM_SNAPSHOT_SECONDMATE_QUEUED`, so a remote captain hold beyond those bounds may not project as a Charted Next gate. A remote or secondmate hold also retains the producer home's age and aging decision from the summary's capture time and threshold rather than being recomputed by the parent; re-holding with `--until` remains the durable fix for both limits.
 Recently Landed excludes a record that closed while still held for the captain (surviving `hold-kind: captain` on a Done row), so answered questions do not masquerade as shipped work; a work item released before completion keeps no hold annotations and lands normally.
 The projection remains read-only and does not inspect historical prose beyond the canonical snapshot's marker.
 

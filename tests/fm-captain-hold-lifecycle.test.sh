@@ -439,6 +439,57 @@ EOF
   pass "captain holds become visible only after their hold-set timestamp is durable"
 }
 
+test_interrupted_answer_preserves_hold_age() {
+  local home snap show
+  home=$(make_home interrupted-answer-age)
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] sample-interrupted-call - Existing old task (repo: sample) (kind: ship) (since 2026-01-01)
+
+## Done
+EOF
+  FM_CAPTAIN_HOLD_NOW=2026-07-14T12:00:00Z run_captain "$home" hold sample-interrupted-call \
+    --reason "captain route choice pending" >/dev/null \
+    || fail "could not hold the interrupted-answer fixture"
+  printf 'Not urgent in the historical answer.\n' > "$home/interrupted-answer.txt"
+  cat > "$home/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = done ] && [ "${2:-}" = sample-interrupted-call ] \
+  && [ ! -e "$FM_HOME/close-failed-once" ]; then
+  : > "$FM_HOME/close-failed-once"
+  exit 92
+fi
+exec "$REAL_TASKS_AXI" "$@"
+EOF
+  chmod +x "$home/fakebin/tasks-axi"
+
+  if run_captain "$home" answer sample-interrupted-call \
+    --decision-file "$home/interrupted-answer.txt" > "$home/answer.out" 2> "$home/answer.err"; then
+    fail "the forced answer close failure reported success"
+  fi
+  snap=$(PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_SNAPSHOT_NOW=2026-07-14T12:00:00Z \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail "fleet snapshot failed after interrupted answer"
+  printf '%s' "$snap" | jq -e '
+    .backlog.records[] | select(.id == "sample-interrupted-call")
+    | .captain_actionable == true
+      and .hold_set == "2026-07-14T12:00:00Z"
+      and .hold_age_days == 0
+      and .aged_undated_hold == false
+      and .deferred_marker == false
+  ' >/dev/null || fail "an interrupted answer lost the fresh hold age basis: $snap"
+
+  run_captain "$home" answer sample-interrupted-call \
+    --decision-file "$home/interrupted-answer.txt" >/dev/null \
+    || fail "the interrupted answer could not finish on retry"
+  show=$(tasks_in "$home" show sample-interrupted-call --full)
+  assert_contains "$show" "state: done" "the interrupted answer retry did not close the task"
+  pass "an interrupted answer preserves its hold age until close retry"
+}
+
 # Deferral is a date, not a live card: hold --until keeps the task out of
 # captain_actionable until due, tasks-axi's own date-gate expiry keeps the task
 # answerable, and Bearings renders the wait as a dated gate.
@@ -1624,6 +1675,7 @@ test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
 test_release_frees_held_work
 test_hold_stamp_precedes_hold_visibility
+test_interrupted_answer_preserves_hold_age
 test_deferral_leaves_captains_call_until_due
 test_out_of_band_close_is_recordable
 test_visual_review_uses_shared_completion_owner
