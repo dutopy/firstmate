@@ -1187,7 +1187,8 @@ EOF
       and (.decisions_open | any(.[]; .id == "aged-call"))
       and (.decisions_open | any(.[]; .id == "recent-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold"))
-  ' >/dev/null || fail "--all-decisions must reveal parked-style and aged undated holds: $json"
+      and (.gates | any(.[]; .id == "aged-call" or .id == "legacy-old-hold") | not)
+  ' >/dev/null || fail "--all-decisions must reveal aged holds without duplicating their gates: $json"
   json=$(FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=50 run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.[]; .id == "aged-call"))

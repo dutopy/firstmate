@@ -57,7 +57,7 @@ Trusted external process-event adapters intentionally expose no answer operation
 
 `bin/fm-fleet-snapshot.sh` parses canonical tasks-axi `(hold: ...)`, `(hold-kind: ...)`, and `(hold-until: ...)` metadata alongside existing backlog fields.
 It resolves every repeated `blocked-by:` edge against structured Done records, keeps missing blockers unresolved, and classifies a captain hold as `captain_actionable` - waiting on the captain now - only when it is queued, unblocked, and due, whatever kind its row carries.
-It also emits a presentation-only `deferred_marker` when a hold's reason or the first 240 characters of its body prose, excluding the machine-generated hold-set stamp, carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker or a parked-style phrasing (parked, awaiting captain go, do not dispatch / do not auto-dispatch, not urgent, de-prioritized, queued opportunity, captain-gated).
+It also emits a presentation-only `deferred_marker` when a hold's reason or the first 240 characters of its current decision prose, excluding the machine-generated hold-set stamp and preserved historical resolution blocks, carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker or a parked-style phrasing (parked, awaiting captain go, do not dispatch / do not auto-dispatch, not urgent, de-prioritized, queued opportunity, captain-gated).
 An undated captain hold whose recorded hold-set timestamp is at least `FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS` old (default 14, using floored elapsed days) also carries `aged_undated_hold` and `hold_age_days`.
 Existing undated holds without a hold-set stamp fall back to the task's `since` date.
 That aging is a projection safety net only.
@@ -66,7 +66,7 @@ Its secondmate-home summary classifies an actionable captain hold as `captain_de
 
 `bin/fm-bearings-snapshot.sh` projects actionable captain holds into `decisions_open` and leaves blocked captain holds in ordinary queued gates.
 A date-deferred captain hold renders as a gate with its `until <date>:` reason; an actionable prose-deferred one leaves the default views with an `omitted[]` disclosure and is revealed by `--all-decisions`, while `--all-queued` reveals non-actionable prose-deferred queued rows.
-An aged undated captain hold without prose-deferred phrasing leaves default Captain's Call, renders as a Charted Next gate showing its age, is disclosed in `omitted[]`, and is revealed by `--all-decisions`; prose deferral takes precedence when both hints apply.
+An aged undated captain hold without prose-deferred phrasing leaves default Captain's Call, renders as a Charted Next gate showing its age, and is disclosed in `omitted[]`; `--all-decisions` reveals it in Captain's Call and removes its safety gate so the buckets remain exclusive. Prose deferral takes precedence when both hints apply.
 Cross-home summaries remain bounded by `FM_SNAPSHOT_SECONDMATE_DECISIONS` and `FM_SNAPSHOT_SECONDMATE_QUEUED`, so a remote captain hold beyond those bounds may not project as a Charted Next gate; re-holding with `--until` remains the durable fix.
 Recently Landed excludes a record that closed while still held for the captain (surviving `hold-kind: captain` on a Done row), so answered questions do not masquerade as shipped work; a work item released before completion keeps no hold annotations and lands normally.
 The projection remains read-only and does not inspect historical prose beyond the canonical snapshot's marker.

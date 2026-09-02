@@ -40,9 +40,9 @@
 # (recorded hold-set timestamp at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old,
 # falling back to since for a legacy unstamped hold) leaves default Captain's
 # Call, renders as a Charted Next gate showing its floored age, is disclosed in
-# omitted[], and is revealed by --all-decisions. Prose deferral takes
-# precedence over aging, so a hold with both hints is omitted rather than
-# gated. Aging is a projection safety net only; the durable deferral remains
+# omitted[], and is revealed by --all-decisions without retaining its safety
+# gate. Prose deferral takes precedence over aging, so a hold with both hints
+# is omitted rather than gated. Aging is a projection safety net only; the durable deferral remains
 # re-holding with --until.
 #
 # Main-home inventory validity comes from the canonical snapshot's main_inventory
@@ -465,7 +465,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
                   or ((.hold_until // null) != null and .hold_until > $today))
          | as_gate("(main)") ]
      + [ .backlog.records[]
-         | select(.structured and .captain_actionable == true
+         | select($all_decisions == 0 and .structured and .captain_actionable == true
                   and .aged_undated_hold == true and .deferred_marker != true)
          | as_gate("(main)") ]
      + [ (.secondmate_current.records // [])[] as $m
@@ -478,7 +478,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
      + [ (.secondmate_current.records // [])[] as $m
          | select($m.provenance.selected == "structured-home")
          | $m.queued[]?
-         | select(.captain_actionable == true
+         | select($all_decisions == 0 and .captain_actionable == true
                   and .aged_undated_hold == true and .deferred_marker != true)
          | as_gate($m.id) ]) as $gates_all
   | ([ .scout_reports[]

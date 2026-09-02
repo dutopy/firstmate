@@ -46,7 +46,7 @@ Board answers are acted on later under the normal authority rules; this skill's 
    A captain hold deferred by date sits under `gates` with its `until <date>:` reason until it is due.
    A hold whose reason or bounded body excerpt carries a deferred, superseded, or parked-style marker is suppressed from the default view with an `omitted` disclosure.
    An undated hold aged past the configured snapshot threshold leaves Captain's Call for an age-labelled Charted Next gate unless a parked-style marker suppresses it; this is only a presentation safety net, and re-holding with `--until` remains the durable deferral.
-   Use `--all-decisions` to reveal actionable holds hidden by either presentation hint, subject to the snapshot's documented cross-home summary bounds.
+   Use `--all-decisions` to reveal actionable holds hidden by either presentation hint, removing any revealed aged hold from Charted Next so the buckets remain exclusive, subject to the snapshot's documented cross-home summary bounds.
    Do not scrape reports, visual-review artifacts, raw status-event tails, or visible conversation history to supplement current state.
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.
    Until then it stays queued with the reason.

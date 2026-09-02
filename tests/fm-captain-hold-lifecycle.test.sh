@@ -316,14 +316,14 @@ EOF
   FM_CAPTAIN_HOLD_NOW=2026-06-01T12:00:00Z run_captain "$home" hold sample-widget \
     --reason "captain go needed before shipping" >/dev/null \
     || fail "could not hold the work item for the captain"
-  printf 'Go: ship it as planned.\n' > "$home/go.txt"
+  printf 'Not urgent; ship it as planned.\n' > "$home/go.txt"
   run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
     || fail "answer --release failed on the held work item"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "state: queued" "a released work item did not stay queued"
   assert_contains "$show" "held: no" "a released work item kept its hold"
   assert_contains "$show" "Resolution mode: released" "the release did not record its close path"
-  assert_contains "$show" "Go: ship it as planned." "the release lost the captain's words"
+  assert_contains "$show" "Not urgent; ship it as planned." "the release lost the captain's words"
   assert_contains "$show" "The widget plan body." "the release destroyed the work item body"
   assert_contains "$show" 'Literal escape: \\n. Unicode: café.' \
     "the release corrupted escaped or Unicode body text"
@@ -365,14 +365,17 @@ EOF
     "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail "fleet snapshot failed after re-hold"
   printf '%s' "$snap" | jq -e '
     .backlog.records[] | select(.id == "sample-widget")
-    | .hold_set == "2026-07-14T12:00:00Z" and .hold_age_days == 0 and .aged_undated_hold == false
-  ' >/dev/null || fail "a new hold lifecycle reused the released hold timestamp: $snap"
+    | .hold_set == "2026-07-14T12:00:00Z"
+      and .hold_age_days == 0
+      and .aged_undated_hold == false
+      and .deferred_marker == false
+  ' >/dev/null || fail "a new hold lifecycle reused historical timestamp or answer text: $snap"
   printf 'Price it at nine dollars.\n' > "$home/price.txt"
   run_captain "$home" answer sample-widget --decision-file "$home/price.txt" --release >/dev/null \
     || fail "a re-held task refused a new answer"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "Price it at nine dollars." "the new answer was not recorded"
-  assert_contains "$show" "Go: ship it as planned." "the new answer erased the earlier record"
+  assert_contains "$show" "Not urgent; ship it as planned." "the new answer erased the earlier record"
 
   tasks_in "$home" "done" sample-widget >/dev/null \
     || fail "could not complete the released work item normally"

@@ -349,6 +349,13 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
       | (timestamp_epoch($to)) as $b
       | if $a == null or $b == null then null
         else (($b - $a) / 86400 | floor) end;
+    def hold_stamp_line:
+      test("^Captain hold set: [0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$");
+    def resolution_leader:
+      test("^Resolution recorded by fm-(captain|decision)-hold\\.$");
+    def current_prose_lines:
+      (if length > 0 and (.[0] | hold_stamp_line) then .[1:] else . end)
+      | if length > 0 and (.[0] | resolution_leader) then [] else . end;
     def section_state:
       if . == "In flight" then "in_flight"
       elif . == "Queued" then "queued"
@@ -464,8 +471,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     | .records |= map(
         if (.body_lines | length) > 0 then
           .hold_set = cap(.body_lines[0]; "^Captain hold set:[[:space:]]*(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?)$")
-          | .body_excerpt = (((if .hold_set != null then .body_lines[1:] else .body_lines end)
-            | join(" "))[:240])
+          | .body_excerpt = ((.body_lines | current_prose_lines | join(" "))[:240])
         else . end)
     | .records as $records
     | (reduce ($records[] | select(.structured)) as $record ({};
