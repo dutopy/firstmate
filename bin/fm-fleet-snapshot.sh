@@ -36,8 +36,9 @@
 #     captain-gated). It never changes captain_actionable; renderers may use it
 #     to keep prose-deferred rows out of default views.
 #     aged_undated_hold is a second presentation hint for an undated captain
-#     hold whose `since` date is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
-#     old (default 14). hold_age_days is that age when computable, else null.
+#     hold whose hold-set date is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
+#     old (default 14). Legacy unstamped holds fall back to `since`.
+#     hold_age_days is that age when computable, else null.
 #     This is a projection safety net only: the durable deferral remains
 #     re-holding with --until. Renderers project an aged undated hold as a
 #     Charted Next gate showing its age, disclose it in omitted[], and reveal
@@ -228,10 +229,11 @@ FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT, with truncation disclosed in the result.
 The registered secondmate table uses FM_SNAPSHOT_REGISTRY_LINES,
 FM_SNAPSHOT_REGISTRY_BYTES, FM_SNAPSHOT_REGISTRY_RECORDS, and
 FM_SNAPSHOT_REGISTRY_TIMEOUT, with unavailability and truncation disclosed.
-An undated captain hold whose since date is at least
-FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old (default 14, 0 ages every dated-since
+An undated captain hold whose hold-set date is at least
+FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old (default 14, 0 ages every dated
 undated captain hold) carries aged_undated_hold and hold_age_days as
-presentation hints; re-holding with --until remains the durable deferral.
+presentation hints. Legacy holds without a stamp fall back to their since date;
+re-holding with --until remains the durable deferral.
 EOF
 }
 
@@ -421,6 +423,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
              hold_reason:metadata($rest; "hold"),
              hold_kind:metadata($rest; "hold-kind"),
              hold_until:metadata($rest; "hold-until"),
+             hold_set:null,
              blocked_by:cap($rest; ".*blocked-by:[[:space:]]*(?<v>[^[:space:])]+).*"),
              blocked_by_ids:blocked_by_ids($rest),
              blocked_reason:blocked_reason($rest),
@@ -457,6 +460,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     | .records |= map(
         if (.body_lines | length) > 0 then
           .body_excerpt = ((.body_lines | join(" "))[:240])
+          | .hold_set = cap((.body_lines | join(" ")); "Captain hold set:[[:space:]]*(?<v>[0-9]{4}-[0-9]{2}-[0-9]{2})")
         else . end)
     | .records as $records
     | (reduce ($records[] | select(.structured)) as $record ({};
@@ -480,7 +484,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
               (.state == "queued" and .hold_kind == "captain"
                and .hold_reason != null and (.unresolved_blocker_ids | length) == 0
                and (.hold_until == null or .hold_until <= $today))
-          | .hold_age_days = days_between(.since; $today)
+          | .hold_age_days = days_between((.hold_set // .since); $today)
           | .aged_undated_hold =
               (.hold_kind == "captain" and .hold_until == null
                and .hold_age_days != null and .hold_age_days >= $age_days)

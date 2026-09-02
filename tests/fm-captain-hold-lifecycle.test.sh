@@ -377,6 +377,20 @@ test_release_frees_held_work() {
 test_deferral_leaves_captains_call_until_due() {
   local home json snap show
   home=$(make_home deferral)
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] sample-existing-call - Decide an existing sample task (repo: sample) (kind: captain) (since 2026-06-01)
+
+## Done
+EOF
+  FM_CAPTAIN_HOLD_NOW=2026-07-14T12:00:00Z run_captain "$home" hold sample-existing-call \
+    --reason "captain choice on existing work" >/dev/null \
+    || fail "could not hold the existing task"
+  FM_CAPTAIN_HOLD_NOW=2026-07-20T12:00:00Z run_captain "$home" hold sample-existing-call \
+    --reason "captain choice on existing work" >/dev/null \
+    || fail "could not repeat the existing task hold"
   run_captain "$home" hold sample-later-call --title "Revisit the sample plan" \
     --reason "captain deferred revisit later" --repo sample --until 2026-08-01 >/dev/null \
     || fail "could not register the deferred captain call"
@@ -395,14 +409,18 @@ test_deferral_leaves_captains_call_until_due() {
   printf '%s' "$snap" | jq -e '
     ([.backlog.records[] | select(.id == "sample-later-call")][0]) as $later
     | ([.backlog.records[] | select(.id == "sample-now-call")][0]) as $now
+    | ([.backlog.records[] | select(.id == "sample-existing-call")][0]) as $existing
     | $later.captain_actionable == false and $later.hold_until == "2026-08-01"
       and $now.captain_actionable == true and $now.hold_until == null
+      and $existing.since == "2026-06-01" and $existing.hold_set == "2026-07-14"
+      and $existing.hold_age_days == 0 and $existing.aged_undated_hold == false
       and ($later.title | contains("hold-until") | not)
-  ' >/dev/null || fail "the due gate or hold-until parsing is wrong: $snap"
+  ' >/dev/null || fail "the due gate, hold-set age, or hold-until parsing is wrong: $snap"
 
   json=$(run_bearings "$home") || fail "Bearings failed with a deferred call"
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.id == "sample-now-call"))
+      and (.decisions_open | any(.id == "sample-existing-call"))
       and (.decisions_open | any(.id == "sample-later-call") | not)
       and (.gates | any(.id == "sample-later-call" and (.reason | startswith("until 2026-08-01"))))
   ' >/dev/null || fail "the deferred call did not render as a dated gate: $json"
@@ -414,8 +432,11 @@ test_deferral_leaves_captains_call_until_due() {
     FM_PROJECTS_OVERRIDE="$home/projects" FM_SNAPSHOT_NOW=2026-08-01T12:00:00Z \
     "$ROOT/bin/fm-fleet-snapshot.sh" --json) || fail "fleet snapshot failed at the due date"
   printf '%s' "$snap" | jq -e '
-    [.backlog.records[] | select(.id == "sample-later-call")][0].captain_actionable == true
-  ' >/dev/null || fail "a due deferral did not resurface as captain-actionable"
+    ([.backlog.records[] | select(.id == "sample-later-call")][0]) as $later
+    | ([.backlog.records[] | select(.id == "sample-existing-call")][0]) as $existing
+    | $later.captain_actionable == true
+      and $existing.hold_age_days == 18 and $existing.aged_undated_hold == true
+  ' >/dev/null || fail "a due deferral did not resurface or a stamped hold did not age from its hold date"
   show=$(tasks_in "$home" show sample-later-call --full)
   assert_contains "$show" "hold_kind: captain" "the expired deferral lost its captain-hold annotations"
   printf 'Answered on the due date.\n' > "$home/due.txt"
