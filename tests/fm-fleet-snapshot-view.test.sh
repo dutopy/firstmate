@@ -590,7 +590,7 @@ test_undated_captain_hold_phrasing_and_aging() {
 ## In flight
 
 ## Queued
-- [ ] parked-hold - Parked style call (repo: sample) (kind: ship) (hold: parked for a later pass) (hold-kind: captain)
+- [ ] parked-hold - Parked style call (repo: sample) (kind: ship) (hold: parked) (hold-kind: captain)
 - [ ] awaiting-go - Awaiting go call (repo: sample) (kind: ship) (hold: awaiting captain go) (hold-kind: captain)
 - [ ] no-dispatch - No dispatch call (repo: sample) (kind: ship) (hold: do not dispatch) (hold-kind: captain)
 - [ ] no-auto - No auto-dispatch call (repo: sample) (kind: ship) (hold: do not auto-dispatch) (hold-kind: captain)
@@ -611,6 +611,9 @@ test_undated_captain_hold_phrasing_and_aging() {
 - [ ] unparked-call - Newly unparked decision (repo: sample) (kind: captain) (hold: unparked; choose a sample route) (hold-kind: captain)
 - [ ] contextual-call - Context is not a deferral (repo: sample) (kind: captain) (hold: choose whether to pursue this queued opportunity) (hold-kind: captain)
   This is not urgent context, but the captain decision is current.
+- [ ] contextual-not-urgent - Leading context is not a deferral (repo: sample) (kind: captain) (hold: not urgent but choose the route now) (hold-kind: captain)
+- [ ] contextual-opportunity - Leading opportunity is not a deferral (repo: sample) (kind: captain) (hold: queued opportunity: choose whether to proceed) (hold-kind: captain)
+- [ ] contextual-gated - Leading gate is not a deferral (repo: sample) (kind: captain) (hold: captain-gated decision needs current approval) (hold-kind: captain)
 
 ## Done
 EOF
@@ -648,8 +651,10 @@ EOF
       and .hold_age_days == 13 and .aged_undated_hold == false
   ' >/dev/null || fail "a hold one minute short of 14 days must not age early: $out"
   printf '%s' "$out" | jq -e '
-    [.backlog.records[] | select(.id == "live-gated" or .id == "unparked-call" or .id == "contextual-call")]
-    | all(.captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false)
+    [.backlog.records[] | select(.id == "live-gated" or .id == "unparked-call" or .id == "contextual-call"
+        or .id == "contextual-not-urgent" or .id == "contextual-opportunity" or .id == "contextual-gated")]
+    | length == 6
+      and all(.captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false)
   ' >/dev/null || fail "contextual parked-style wording must not hide current decisions: $out"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
     FM_SNAPSHOT_NOW=2026-07-25T00:00:00Z FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=30 "$SNAPSHOT" --json)

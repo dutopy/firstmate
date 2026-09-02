@@ -1159,7 +1159,7 @@ test_undated_hold_phrasing_and_aging_projection() {
 ## In flight
 
 ## Queued
-- [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (since 2026-06-01) (hold: parked for a later pass) (hold-kind: captain)
+- [ ] parked-hold - Parked style call (repo: firstmate) (kind: ship) (since 2026-06-01) (hold: parked) (hold-kind: captain)
 - [ ] aged-call - Aged genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a sample route) (hold-kind: captain)
   Captain hold set: 2026-06-01T00:00:00Z
 - [ ] recent-call - Recent genuine call (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose a sample route) (hold-kind: captain)
@@ -1167,6 +1167,12 @@ test_undated_hold_phrasing_and_aging_projection() {
 - [ ] contextual-call - Context is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: choose whether to pursue this queued opportunity) (hold-kind: captain)
   Captain hold set: 2026-07-10T00:00:00Z
   This is not urgent context, but the captain decision is current.
+- [ ] contextual-not-urgent - Leading context is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: not urgent but choose the route now) (hold-kind: captain)
+  Captain hold set: 2026-07-10T00:00:00Z
+- [ ] contextual-opportunity - Leading opportunity is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: queued opportunity: choose whether to proceed) (hold-kind: captain)
+  Captain hold set: 2026-07-10T00:00:00Z
+- [ ] contextual-gated - Leading gate is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: captain-gated decision needs current approval) (hold-kind: captain)
+  Captain hold set: 2026-07-10T00:00:00Z
 - [ ] reheld-current-call - Re-held genuine call (repo: firstmate) (kind: captain) (since 2026-06-01) (hold: choose a current sample route) (hold-kind: captain)
   Captain hold set: 2026-07-10T00:00:00Z
   Current decision prose lists route north or route south.
@@ -1184,6 +1190,9 @@ EOF
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.[]; .id == "recent-call"))
       and (.decisions_open | any(.[]; .id == "contextual-call"))
+      and (.decisions_open | any(.[]; .id == "contextual-not-urgent"))
+      and (.decisions_open | any(.[]; .id == "contextual-opportunity"))
+      and (.decisions_open | any(.[]; .id == "contextual-gated"))
       and (.decisions_open | any(.[]; .id == "reheld-current-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold") | not)
       and (.decisions_open | any(.[]; .id == "parked-hold") | not)
@@ -1200,6 +1209,9 @@ EOF
       and (.decisions_open | any(.[]; .id == "aged-call"))
       and (.decisions_open | any(.[]; .id == "recent-call"))
       and (.decisions_open | any(.[]; .id == "contextual-call"))
+      and (.decisions_open | any(.[]; .id == "contextual-not-urgent"))
+      and (.decisions_open | any(.[]; .id == "contextual-opportunity"))
+      and (.decisions_open | any(.[]; .id == "contextual-gated"))
       and (.decisions_open | any(.[]; .id == "reheld-current-call"))
       and (.decisions_open | any(.[]; .id == "legacy-old-hold"))
       and (.gates | any(.[]; .id == "aged-call" or .id == "legacy-old-hold") | not)

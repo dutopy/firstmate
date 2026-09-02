@@ -33,11 +33,12 @@
 #     deferred_marker is a presentation hint only: the row's hold reason or
 #     first 240 characters of current body prose (excluding the machine-generated
 #     hold-set stamp and preserved historical resolution blocks) carries an
-#     explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker. A hold reason that
-#     begins with a parked-style phrasing (parked, awaiting captain go, do not
-#     dispatch / do not auto-dispatch, not urgent, de-prioritized, queued
-#     opportunity, captain-gated) is also deferred; incidental mentions later in
-#     a reason or body do not adjudicate the decision. It never changes captain_actionable;
+#     explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker. A hold reason whose
+#     complete value is a parked-style marker (parked, awaiting captain go, do
+#     not dispatch / do not auto-dispatch, not urgent, de-prioritized, queued
+#     opportunity, captain-gated) is also deferred; contextual prose containing
+#     or beginning with those words does not adjudicate the decision. It never
+#     changes captain_actionable;
 #     renderers may use it to keep prose-deferred rows out of default views.
 #     aged_undated_hold is a second presentation hint for an undated captain
 #     hold whose hold-set timestamp is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
@@ -343,7 +344,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     def explicitly_deferred:
       test("SUPERSEDED|NOT[- ]REQUIRED|DEFERRED"; "i");
     def parked_style_reason:
-      test("^(parked(\\b|$)|awaiting captain go(\\b|$)|do not (auto-)?dispatch(\\b|$)|not urgent(\\b|$)|de-prioritized(\\b|$)|queued opportunity(\\b|$)|captain-gated(\\b|$))"; "i");
+      test("^(parked|awaiting captain go|do not (auto-)?dispatch|not urgent|de-prioritized|queued opportunity|captain-gated)[.!]?$"; "i");
     def timestamp_epoch($d):
       if ($d | type) != "string" then null
       elif ($d | test("T")) then try ($d | fromdateiso8601) catch null
