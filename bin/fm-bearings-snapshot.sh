@@ -23,23 +23,27 @@
 # This wrapper consumes canonical status decisions plus canonically normalized
 # backlog roles, unresolved blockers, and captain actionability. It never infers
 # decisions from report or visual-review prose or reimplements snapshot semantics.
-# Captain's Call is captain actionability itself: every due, unblocked task held
-# for the captain, whatever its kind. A captain hold deferred by date
+# Captain's Call starts from captain actionability: every due, unblocked task
+# held for the captain, whatever its kind, before the presentation-only filters
+# below. A captain hold deferred by date
 # (hold-until in the future) is not actionable and renders as a Charted Next
 # gate with its date; a row the canonical snapshot marks prose-deferred
 # (deferred_marker) leaves the default decisions and gates views and is
-# disclosed in omitted[], revealed by --all-decisions / --all-queued.
+# disclosed in omitted[]. --all-decisions reveals an actionable prose-deferred
+# hold, while --all-queued reveals a non-actionable prose-deferred row.
 # Underway (in_flight) projects every main live worker plus every active child
 # from every readable secondmate ledger, independently of that home's
 # bearings_state. A home classified captain_decision because it has an open
 # captain hold still contributes each working child as its own Underway row;
 # the home row on secondmates[] keeps the decision and gate classification.
 # An undated captain hold the canonical snapshot marks aged_undated_hold
-# (since date at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old) leaves default
-# Captain's Call, renders as a Charted Next gate showing its age, is disclosed
-# in omitted[], and is revealed by --all-decisions. That aging is a
-# projection safety net only; the durable deferral remains re-holding with
-# --until.
+# (recorded hold-set timestamp at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old,
+# falling back to since for a legacy unstamped hold) leaves default Captain's
+# Call, renders as a Charted Next gate showing its floored age, is disclosed in
+# omitted[], and is revealed by --all-decisions. Prose deferral takes
+# precedence over aging, so a hold with both hints is omitted rather than
+# gated. Aging is a projection safety net only; the durable deferral remains
+# re-holding with --until.
 #
 # Main-home inventory validity comes from the canonical snapshot's main_inventory
 # object (orphan structured in-flight without meta, unstructured current rows).
@@ -63,7 +67,7 @@
 #   --include-prs    ALSO do live GitHub open-PR discovery + checks
 #   --fields <list>  opt in to dropped surfaces: bodies,paths,actions,endpoints
 #   --all-in-flight  include every in-flight task
-#   --all-decisions  include every open decision
+#   --all-decisions  include every open decision present in the bounded snapshot
 #   --all-secondmates include every aggregated secondmate record
 #   --all-landed     include every landed record from every home (default: bounded)
 #   --all-reports    include the full scout-report inventory (default: relevant only)
@@ -143,7 +147,8 @@ For every registered secondmate, readable structured facts from its own home are
   evidence and never become current work. The provenance and freshness fields
   distinguish live and cached ledgers; a home without either is explicitly unreadable.
 Opt-in surfaces: --fields bodies|paths|actions|endpoints, --all-in-flight,
-  --all-decisions, --all-secondmates, --all-landed, --all-reports, --all-queued, --all-recorded-prs,
+  --all-decisions (all open decisions present in the bounded snapshot),
+  --all-secondmates, --all-landed, --all-reports, --all-queued, --all-recorded-prs,
   --all-unhealthy, --all-pr-repos, --include-prs (adds candidate_prs).
 Raise FM_BEARINGS_PR_LIMIT to expand per-repository open-PR results.
 EOF

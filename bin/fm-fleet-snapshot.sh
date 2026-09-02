@@ -21,7 +21,8 @@
 #     Structured rows preserve captain-hold metadata such as hold_kind,
 #     hold_reason, and hold_until when tasks-axi emits it. They also carry
 #     normalized current_role, requires_child_metadata, blocked_by_ids,
-#     unresolved_blocker_ids, captain_actionable, and deferred_marker fields.
+#     unresolved_blocker_ids, captain_actionable, hold_set, hold_age_days,
+#     aged_undated_hold, and deferred_marker fields.
 #     Repeated blocker tokens remain ordered; a blocker resolves only when its
 #     structured record is Done, and missing ids stay open.
 #     captain_actionable means "waiting on the captain now": queued, held for
@@ -30,11 +31,12 @@
 #     There is no separate decision type: any captain-held task is the same
 #     primitive, whatever kind its row carries.
 #     deferred_marker is a presentation hint only: the row's hold reason or
-#     body carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED marker, or a
-#     parked-style phrasing (parked, awaiting captain go, do not dispatch /
-#     do not auto-dispatch, not urgent, de-prioritized, queued opportunity,
-#     captain-gated). It never changes captain_actionable; renderers may use it
-#     to keep prose-deferred rows out of default views.
+#     first 240 characters of body prose (excluding the machine-generated
+#     hold-set stamp) carries an explicit SUPERSEDED / NOT REQUIRED / DEFERRED
+#     marker, or a parked-style phrasing (parked, awaiting captain go, do not
+#     dispatch / do not auto-dispatch, not urgent, de-prioritized, queued
+#     opportunity, captain-gated). It never changes captain_actionable;
+#     renderers may use it to keep prose-deferred rows out of default views.
 #     aged_undated_hold is a second presentation hint for an undated captain
 #     hold whose hold-set timestamp is at least FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS
 #     old (default 14). Legacy unstamped holds fall back to `since`.
@@ -207,8 +209,9 @@ kind=secondmate meta records are not child inventory for unowned_current or
 terminal_in_flight; they never have backlog rows.
 Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
-queued with hold_reason, hold_kind, hold_until, deferred_marker, and plural
-blocker fields for downstream projections. A captain hold is actionable only
+queued with hold_reason, hold_kind, hold_until, deferred_marker,
+aged_undated_hold, hold_age_days, and plural blocker fields for downstream
+projections. A captain hold is actionable only
 when every blocker is Done and any hold-until date has arrived.
 Cross-home collection uses FM_SNAPSHOT_SECONDMATES (default 20, 0 lifts the
 count bound) and FM_SNAPSHOT_SECONDMATE_MAX_BYTES.
