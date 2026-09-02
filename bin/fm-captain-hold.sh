@@ -560,10 +560,13 @@ command_hold() {
         || fail "could not create task $id"
     fi
   fi
+  # Publish the timestamp before the captain-hold annotation. A concurrent
+  # snapshot may see the harmless stamp by itself, but can never see a newly
+  # held task without the timestamp that defines this hold lifecycle's age.
   show=$(task_show "$id") || fail "task $id disappeared before recording its hold-set stamp"
   write_hold_set_stamp "$id" "$(show_field "$show" body)" "$hold_set" "$preserve_hold_set"
   show=$(task_show "$id") || fail "task $id disappeared while recording its hold-set stamp"
-  [ -n "$(body_hold_set_date "$(show_field_value "$show" body)")" ] \
+  [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id did not retain its hold-set stamp"
   if [ -n "$until" ]; then
     tasks_axi hold "$id" --reason "$reason" --kind captain --until "$until" >/dev/null \

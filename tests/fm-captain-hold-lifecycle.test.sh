@@ -390,6 +390,55 @@ EOF
   pass "release frees held work with the captain's words recorded and the body preserved"
 }
 
+# The hold-set stamp must be durable before the captain hold becomes visible.
+# A wrapper observes the real tasks-axi hold boundary, and a forced stamp-write
+# failure proves the command never publishes the hold without its timestamp.
+test_hold_stamp_precedes_hold_visibility() {
+  local home show
+  home=$(make_home hold-stamp-order)
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] sample-old-call - Existing old task (repo: sample) (kind: ship) (since 2026-01-01)
+- [ ] sample-stamp-failure - Existing task whose stamp fails (repo: sample) (kind: ship) (since 2026-01-01)
+
+## Done
+EOF
+  cat > "$home/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = update ] && [ "${2:-}" = sample-stamp-failure ]; then
+  exit 92
+fi
+if [ "${1:-}" = hold ] && [ "${2:-}" = sample-old-call ]; then
+  show=$("$REAL_TASKS_AXI" show "$2" --full) || exit 93
+  printf '%s\n' "$show" | grep -F 'Captain hold set: 2026-07-14T12:00:00Z' >/dev/null || exit 94
+  : > "$FM_HOME/hold-observed-after-stamp"
+fi
+exec "$REAL_TASKS_AXI" "$@"
+EOF
+  chmod +x "$home/fakebin/tasks-axi"
+
+  FM_CAPTAIN_HOLD_NOW=2026-07-14T12:00:00Z run_captain "$home" hold sample-old-call \
+    --reason "captain route choice pending" >/dev/null \
+    || fail "hold was published before its hold-set stamp"
+  assert_present "$home/hold-observed-after-stamp" \
+    "the tasks-axi hold boundary was not observed"
+  show=$(tasks_in "$home" show sample-old-call --full)
+  assert_contains "$show" "hold_kind: captain" "the stamped task was not captain-held"
+  assert_contains "$show" "Captain hold set: 2026-07-14T12:00:00Z" \
+    "the visible captain hold lost its timestamp"
+
+  if FM_CAPTAIN_HOLD_NOW=2026-07-14T12:00:00Z run_captain "$home" hold sample-stamp-failure \
+    --reason "captain route choice pending" > "$home/stamp-failure.out" 2> "$home/stamp-failure.err"; then
+    fail "hold succeeded after its timestamp update failed"
+  fi
+  show=$(tasks_in "$home" show sample-stamp-failure --full)
+  assert_contains "$show" "held: no" "a failed timestamp update still published the hold"
+  assert_contains "$show" 'hold_kind: "-"' "a failed timestamp update retained captain-hold provenance"
+  pass "captain holds become visible only after their hold-set timestamp is durable"
+}
+
 # Deferral is a date, not a live card: hold --until keeps the task out of
 # captain_actionable until due, tasks-axi's own date-gate expiry keeps the task
 # answerable, and Bearings renders the wait as a dated gate.
@@ -1574,6 +1623,7 @@ test_uninventoried_report_decision_refuses_completion
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
 test_release_frees_held_work
+test_hold_stamp_precedes_hold_visibility
 test_deferral_leaves_captains_call_until_due
 test_out_of_band_close_is_recordable
 test_visual_review_uses_shared_completion_owner

@@ -10,7 +10,7 @@ A decision is not a separate thing in this system: it is an ordinary backlog tas
 The command addresses the active home's configured data directory the same way `bin/fm-backlog-transition-lib.sh` addresses every backlog transition, so the existing backlog remains the only durable work database and a secondmate-owned captain call stays in the secondmate home.
 It never reads report bodies, review artifacts, terminal output, or chat.
 
-The `hold` subcommand is the mandatory captain-hold creation path: it places an existing task under an active captain hold, or creates the task when nothing exists to hold, then invokes the underlying tasks-axi hold operation, verifies the result, and records its UTC hold-set timestamp as the leading line of the task body.
+The `hold` subcommand is the mandatory captain-hold creation path: it uses an existing task or creates one when nothing exists to hold, records its UTC hold-set timestamp as the leading line of the task body, then invokes the underlying tasks-axi hold operation and verifies both records. Publishing the stamp first ensures a snapshot cannot observe a newly captain-held task without the timestamp that defines its age.
 Retries of an active hold preserve its hold-set timestamp, while re-holding released work starts a new timestamped lifecycle; a closed task is refused rather than reopened, and `--until` stores the captain's own deferral date through tasks-axi's date gate.
 
 The `answer` subcommand records the captain's exact words and closes the call in the same act.
