@@ -1133,7 +1133,10 @@ def cmd_followup(args: argparse.Namespace, env: Env) -> int:
                 "status": "pending",
             }
             write_same_or_refuse(pending_path, pending, "pending final follow-up")
-        print("pending final follow-up: present")
+        if pending.get("status") == "delivered":
+            print("final follow-up already delivered")
+        else:
+            print("pending final follow-up: present")
     if args.record_discord_message_id:
         msg_id = validate_snowflake(args.record_discord_message_id, "--record-discord-message-id") or ""
         print(record_receipt(env, nonce, receipt, msg_id))
@@ -1149,6 +1152,8 @@ def cmd_followup(args: argparse.Namespace, env: Env) -> int:
             }
             atomic_json(pending_followup_path(env, args.task_id), delivered)
             print("pending final follow-up delivered")
+    elif args.final and pending.get("status") == "delivered":
+        print("dry-run only; final follow-up was already delivered.")
     else:
         print("dry-run only; pending final follow-up remains unresolved.")
     return 0
