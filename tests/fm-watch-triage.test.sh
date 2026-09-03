@@ -1568,7 +1568,7 @@ test_routine_signal_payload_not_marked_needs_decision() {
   dir=$(make_case routine-signal-payload); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"
   status_file="$state/task.status"
-  printf 'working: setup\ndone: shipped\n' > "$status_file"
+  printf 'working: setup\ndone: migration complete ; needs-decision: documented in follow-up\n' > "$status_file"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
   wait_for_exit "$pid" 100 || fail "watcher did not exit for an actionable done signal"
@@ -1576,7 +1576,7 @@ test_routine_signal_payload_not_marked_needs_decision() {
     && fail "a routine done signal was incorrectly payload-marked needs-decision: $(cat "$state/.wake-queue")"
   grep -F "$(printf 'signal\ttask.status\tsignal:')" "$state/.wake-queue" >/dev/null \
     || fail "a routine signal lost its ordinary payload: $(cat "$state/.wake-queue")"
-  pass "a routine captain-relevant signal keeps its ordinary payload, unmarked"
+  pass "a routine event containing a needs-decision phrase keeps its ordinary payload, unmarked"
 }
 
 # The reported bug, end to end through a real watcher: a crew reports something

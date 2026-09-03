@@ -1204,31 +1204,6 @@ run_check_capture() {
   fm_check_output_cleanup
 }
 
-# 0 if the classified-events text (the " ; "-joined captain-relevant lines
-# status_span_first_actionable_record returns as its third field) carries a
-# needs-decision event. Reuses status_line_verb's per-line parsing so every
-# key/corr/bracket shape it already recognizes is honored here too, instead of
-# re-deriving a second verb parser. A "reconciliation-required: " wrapper
-# (status_span_first_actionable_record's rejected-key-transition prefix) is
-# stripped first so a needs-decision whose key bookkeeping was rejected still
-# counts here - it is still a needs-decision the captain must see directly,
-# not a routine reconciliation note.
-_signal_events_have_needs_decision() {  # <events-text>
-  local events=$1 chunk verb
-  [ -n "$events" ] || return 1
-  while :; do
-    chunk=${events%%" ; "*}
-    case "$chunk" in "reconciliation-required: "*) chunk=${chunk#"reconciliation-required: "} ;; esac
-    verb=$(status_line_verb "$chunk")
-    [ "$verb" = needs-decision ] && return 0
-    case "$events" in
-      *" ; "*) events=${events#*" ; "} ;;
-      *) break ;;
-    esac
-  done
-  return 1
-}
-
 # 0 when any signaled status file carries a captain-relevant event in the bytes
 # appended since this watcher last classified it. The start offset is the
 # classified-position field in that file's .seen-* marker, and fm-classify-lib.sh's
@@ -1247,15 +1222,16 @@ _signal_events_have_needs_decision() {  # <events-text>
 # as main-only (docs/pi-supervision-branch.md; every needs-decision must reach
 # main directly, never the supervision branch).
 signal_files_actionable() {  # <status-file> ...
-  local f task record rest endpoint ident events rc found=1
+  local f task record rest endpoint ident needs_decision rc found=1
   FM_SIGNAL_SURFACE_ENDPOINTS=''
   FM_SIGNAL_NEEDS_DECISION_FILES=''
   for f in "$@"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
-    record=$(status_span_first_actionable_record "$f" \
-      "$(fm_wake_signal_seen_size "$STATE" "$f")")
+    record=''; needs_decision=0
+    status_span_first_actionable_record "$f" \
+      "$(fm_wake_signal_seen_size "$STATE" "$f")" record needs_decision
     rc=$?
     [ "$rc" -eq 1 ] && [ -z "$record" ] && continue
     if [ "$rc" -eq 2 ]; then
@@ -1270,8 +1246,7 @@ signal_files_actionable() {  # <status-file> ...
     FM_SIGNAL_SURFACE_ENDPOINTS="${FM_SIGNAL_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
     if [ "$rc" -eq 0 ]; then
       found=0
-      events=${rest#*$'\t'}
-      if _signal_events_have_needs_decision "$events"; then
+      if [ "$needs_decision" -eq 1 ]; then
         FM_SIGNAL_NEEDS_DECISION_FILES="${FM_SIGNAL_NEEDS_DECISION_FILES} ${f}"
       fi
     fi
@@ -1310,13 +1285,14 @@ EOF
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
 heartbeat_scan_finds_actionable() {
-  local f task record rest endpoint ident events rc found=1 sig marker
+  local f task record rest endpoint ident needs_decision rc found=1 sig marker
   FM_HEARTBEAT_SURFACE_ENDPOINTS=''
   FM_HEARTBEAT_HAS_NEEDS_DECISION=0
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
-    record=$(status_span_first_actionable_record "$f" "$(hb_surfaced_offset "$task")")
+    record=''; needs_decision=0
+    status_span_first_actionable_record "$f" "$(hb_surfaced_offset "$task")" record needs_decision
     rc=$?
     [ "$rc" -eq 1 ] && [ -z "$record" ] && continue
     if [ "$rc" -eq 2 ]; then
@@ -1331,8 +1307,7 @@ heartbeat_scan_finds_actionable() {
     FM_HEARTBEAT_SURFACE_ENDPOINTS="${FM_HEARTBEAT_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
     if [ "$rc" -eq 0 ]; then
       found=0
-      events=${rest#*$'\t'}
-      _signal_events_have_needs_decision "$events" && FM_HEARTBEAT_HAS_NEEDS_DECISION=1
+      [ "$needs_decision" -eq 1 ] && FM_HEARTBEAT_HAS_NEEDS_DECISION=1
     fi
   done
   return "$found"
