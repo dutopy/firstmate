@@ -237,7 +237,7 @@ FM_SNAPSHOT_REGISTRY_BYTES, FM_SNAPSHOT_REGISTRY_RECORDS, and
 FM_SNAPSHOT_REGISTRY_TIMEOUT, with unavailability and truncation disclosed.
 An undated captain hold whose hold-set timestamp is at least
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS old (default 14; 0 ages every hold with a
-hold-set timestamp or fallback date) carries aged_undated_hold and hold_age_days
+non-negative computed age) carries aged_undated_hold and hold_age_days
 as presentation hints. Legacy holds without a stamp fall back to their since date;
 re-holding with --until remains the durable deferral.
 EOF
