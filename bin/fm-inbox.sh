@@ -255,9 +255,10 @@ queue_note() {
     lock_held=1
     # shellcheck disable=SC2064
     trap "[ '$lock_held' -eq 0 ] || fm_lock_release '$lock'" RETURN
+    die_locked() { fm_lock_release "$lock"; lock_held=0; trap - RETURN; die "$1"; }
     if [ -f "$map" ] && [ ! -L "$map" ]; then
       existing=$(sed -n 's/^note_id=//p' "$map" | head -1)
-      [ -n "$existing" ] || die "external inbox map is malformed: $map"
+      [ -n "$existing" ] || die_locked "external inbox map is malformed: $map"
       printf 'queued %s\n' "$existing"
       printf '  duplicate external id; no new wake was appended.\n'
       fm_lock_release "$lock"
@@ -265,12 +266,12 @@ queue_note() {
       trap - RETURN
       return 0
     fi
-    [ ! -e "$map" ] && [ ! -L "$map" ] || die "external inbox map is unsafe: $map"
+    [ ! -e "$map" ] && [ ! -L "$map" ] || die_locked "external inbox map is unsafe: $map"
     metadata_dst=""
     if [ -n "$metadata_file" ]; then
       metadata_dst="${map%.map}.metadata.json"
-      cp "$metadata_file" "$metadata_dst" || die "cannot copy metadata file"
-      chmod 600 "$metadata_dst" || die "cannot protect metadata file"
+      cp "$metadata_file" "$metadata_dst" || die_locked "cannot copy metadata file"
+      chmod 600 "$metadata_dst" || die_locked "cannot protect metadata file"
       extra="${extra}${extra:+$'\n'}external_metadata=$metadata_dst"
     fi
     extra="${extra}${extra:+$'\n'}external_source=$source
@@ -284,8 +285,8 @@ external_id=$external_id"
       printf 'note_id=%s\n' "$id"
       [ -z "$metadata_dst" ] || printf 'metadata=%s\n' "$metadata_dst"
     } > "$tmp_map"
-    chmod 600 "$tmp_map" || die "cannot protect external inbox map"
-    mv "$tmp_map" "$map" || die "cannot publish external inbox map"
+    chmod 600 "$tmp_map" || die_locked "cannot protect external inbox map"
+    mv "$tmp_map" "$map" || die_locked "cannot publish external inbox map"
     summary=$(printf '%s' "$body" | tr '\n\t' '  ' | cut -c1-100)
     printf 'queued %s\n' "$id"
     printf '  %s\n' "$summary"
