@@ -373,6 +373,11 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
       | if $v == null then null else ($v | trim) end;
     def metadata($rest; $key):
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + ":[[:space:]]*(?<v>[^,)]*)");
+    def hold_metadata($rest):
+      cap($rest; ".*(?:\\(|,[[:space:]]*)hold:[[:space:]]*(?<v>[^)]*)")
+      | if . == null then null
+        else sub(",[[:space:]]*(?:repo|kind|priority|hold-kind|hold-until):.*$"; "") | trim
+        end;
     def metadata_word($rest; $key):
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + "[[:space:]]+(?<v>[^,)]*)");
     def url_pattern: "https?://[^[:space:])\"<>]+";
@@ -438,7 +443,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
              repo:metadata($rest; "repo"),
              kind:metadata($rest; "kind"),
              priority:metadata($rest; "priority"),
-             hold_reason:metadata($rest; "hold"),
+             hold_reason:hold_metadata($rest),
              hold_kind:metadata($rest; "hold-kind"),
              hold_until:metadata($rest; "hold-until"),
              hold_set:null,

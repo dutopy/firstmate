@@ -1181,6 +1181,8 @@ test_undated_hold_phrasing_and_aging_projection() {
   This is not urgent context, but the captain decision is current.
 - [ ] contextual-not-urgent - Leading context is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: not urgent but choose the route now) (hold-kind: captain)
   Captain hold set: 2026-07-10T00:00:00Z
+- [ ] contextual-comma - Comma context is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: not urgent, choose the launch route now) (hold-kind: captain)
+  Captain hold set: 2026-07-10T00:00:00Z
 - [ ] contextual-opportunity - Leading opportunity is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: queued opportunity: choose whether to proceed) (hold-kind: captain)
   Captain hold set: 2026-07-10T00:00:00Z
 - [ ] contextual-gated - Leading gate is not a deferral (repo: firstmate) (kind: captain) (since 2026-07-10) (hold: captain-gated decision needs current approval) (hold-kind: captain)
@@ -1203,6 +1205,7 @@ EOF
     (.decisions_open | any(.[]; .id == "recent-call"))
       and (.decisions_open | any(.[]; .id == "contextual-call"))
       and (.decisions_open | any(.[]; .id == "contextual-not-urgent"))
+      and (.decisions_open | any(.[]; .id == "contextual-comma" and .summary == "Comma context is not a deferral: not urgent, choose the launch route now"))
       and (.decisions_open | any(.[]; .id == "contextual-opportunity"))
       and (.decisions_open | any(.[]; .id == "contextual-gated"))
       and (.decisions_open | any(.[]; .id == "reheld-current-call"))
@@ -1222,6 +1225,7 @@ EOF
       and (.decisions_open | any(.[]; .id == "recent-call"))
       and (.decisions_open | any(.[]; .id == "contextual-call"))
       and (.decisions_open | any(.[]; .id == "contextual-not-urgent"))
+      and (.decisions_open | any(.[]; .id == "contextual-comma" and .summary == "Comma context is not a deferral: not urgent, choose the launch route now"))
       and (.decisions_open | any(.[]; .id == "contextual-opportunity"))
       and (.decisions_open | any(.[]; .id == "contextual-gated"))
       and (.decisions_open | any(.[]; .id == "reheld-current-call"))

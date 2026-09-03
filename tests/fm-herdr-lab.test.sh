@@ -44,9 +44,11 @@ case "$1 ${2:-}" in
     ;;
   "server --session")
     if [ "${FM_FAKE_HERDR_NEVER_START:-}" = 1 ]; then
-      printf '%s\n' "$$" > "$state/$session.server-pid"
       : > "$state/$session.server-blocked"
-      kill -STOP "$$"
+      trap 'exit 0' TERM INT
+      while [ ! -f "$state/$session.server-release" ]; do
+        "$FM_FAKE_HERDR_REAL_SLEEP" 0.05
+      done
     fi
     printf '%s\n' running > "$state/$session"
     ;;
@@ -211,7 +213,7 @@ test_failed_delete_retains_tripwire() {
 }
 
 test_timed_out_provision_cancels_late_launch() {
-  local name="fm-lab-late-launch-$$" status=0 server_pid
+  local name="fm-lab-late-launch-$$" status=0
   cat > "$FAKEBIN/sleep" <<'SH'
 #!/usr/bin/env bash
 if [ "${FM_FAKE_HERDR_FAST_POLL:-}" = 1 ]; then
@@ -226,9 +228,10 @@ SH
   expect_code 1 "$status" "timed-out provision must fail"
   assert_present "$FAKE_STATE/$name.server-blocked" \
     "timed-out provision never observed the blocked server launch"
-  server_pid=$(cat "$FAKE_STATE/$name.server-pid")
-  if kill -0 "$server_pid" 2>/dev/null; then
-    fail "timed-out provision left its blocked server process alive"
+  : > "$FAKE_STATE/$name.server-release"
+  "$REAL_SLEEP" 0.2
+  if [ -f "$FAKE_STATE/$name" ] && [ "$(cat "$FAKE_STATE/$name")" = running ]; then
+    fail "timed-out provision left a launch that could become live"
   fi
   assert_present "$TRIPWIRES/$name.fleet-state.json" \
     "timed-out provision must retain its tripwire until teardown"
