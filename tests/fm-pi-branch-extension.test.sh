@@ -3533,6 +3533,39 @@ for (const row of mainOnlyRows) {
   if (scope.corrupted) throw new Error(`an ordinary main-only row must not read as corrupted: ${row}`);
 }
 
+// A needs-decision signal row is a main-only class too, marked by payload
+// rather than kind (docs/pi-supervision-branch.md "Autonomy"): it is excluded
+// from eligibleSeqs, named in needsDecisionKeys, and never vetoes an unrelated
+// eligible row sharing the queue.
+writeFileSync(
+  `${state}/.wake-queue`,
+  [
+    "1\t1\tsignal\ttask-a.status\tneeds-decision: task-a.status",
+    "1\t2\tstale\tfm-window\tstale: fm-window",
+  ].join("\n"),
+);
+const needsDecisionMixed = scopeForUnreadWake(state, false);
+if (!needsDecisionMixed.eligible) {
+  throw new Error(`a needs-decision row must not veto an unrelated eligible row: ${JSON.stringify(needsDecisionMixed)}`);
+}
+if (needsDecisionMixed.eligibleSeqs.join(",") !== "2") {
+  throw new Error(`a needs-decision row must be excluded from eligibleSeqs: ${JSON.stringify(needsDecisionMixed)}`);
+}
+if (needsDecisionMixed.needsDecisionKeys.join(",") !== "task-a.status") {
+  throw new Error(`needsDecisionKeys must name the excluded row: ${JSON.stringify(needsDecisionMixed)}`);
+}
+if (needsDecisionMixed.corrupted) {
+  throw new Error(`a needs-decision row must not read as corrupted: ${JSON.stringify(needsDecisionMixed)}`);
+}
+
+// A queue holding only a needs-decision row is ordinary main-only absence,
+// exactly like a queue holding only a check row.
+writeFileSync(`${state}/.wake-queue`, "1\t1\tsignal\ttask-a.status\tneeds-decision: task-a.status");
+const needsDecisionOnly = scopeForUnreadWake(state, false);
+if (needsDecisionOnly.eligible || needsDecisionOnly.eligibleSeqs.length !== 0 || needsDecisionOnly.corrupted) {
+  throw new Error(`a needs-decision-only queue must be ordinary main-only absence: ${JSON.stringify(needsDecisionOnly)}`);
+}
+
 writeFileSync(
   `${state}/.wake-queue`,
   [

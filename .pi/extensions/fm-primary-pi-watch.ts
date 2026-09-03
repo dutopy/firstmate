@@ -606,7 +606,25 @@ export default function (pi: ExtensionAPI) {
     // also let a check-kind trigger itself slip past main's delivery.
     const isCheckTrigger = /^check:/.test(message);
     const scope = scopeForUnreadWake(state, heartbeat);
-    const eligible = !isCheckTrigger && scope.eligible;
+    // A needs-decision status append (bin/fm-watch.sh's
+    // signal_files_actionable) gets the identical main-only treatment as a
+    // check-kind trigger: every needs-decision must reach the captain
+    // directly, never taking the supervision-branch hop first
+    // (docs/pi-supervision-branch.md "Autonomy"). The wake message text stays
+    // the ordinary "signal:<files>" shape every harness-arm script already
+    // recognizes; only this cycle's own file list is cross-referenced against
+    // scope.needsDecisionKeys (the status-file basenames scopeForUnreadWake
+    // just excluded for a needs-decision payload) to detect that THIS trigger
+    // is one of them.
+    const isNeedsDecisionTrigger =
+      scope.needsDecisionKeys.length > 0 &&
+      /^signal:/.test(message) &&
+      message
+        .slice("signal:".length)
+        .split(/\s+/)
+        .filter(Boolean)
+        .some((path) => scope.needsDecisionKeys.includes(path.split("/").pop() ?? path));
+    const eligible = !isCheckTrigger && !isNeedsDecisionTrigger && scope.eligible;
     const offer = createBranchDispatchOffer(message, scope.projects, heartbeat, eligible);
     pi.events?.emit?.(FM_BRANCH_DISPATCH_EVENT, offer);
     return offer.accepted ? offer.settlement : null;

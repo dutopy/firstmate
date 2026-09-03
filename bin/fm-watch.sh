@@ -1202,6 +1202,31 @@ run_check_capture() {
   fm_check_output_cleanup
 }
 
+# 0 if the classified-events text (the " ; "-joined captain-relevant lines
+# status_span_first_actionable_record returns as its third field) carries a
+# needs-decision event. Reuses status_line_verb's per-line parsing so every
+# key/corr/bracket shape it already recognizes is honored here too, instead of
+# re-deriving a second verb parser. A "reconciliation-required: " wrapper
+# (status_span_first_actionable_record's rejected-key-transition prefix) is
+# stripped first so a needs-decision whose key bookkeeping was rejected still
+# counts here - it is still a needs-decision the captain must see directly,
+# not a routine reconciliation note.
+_signal_events_have_needs_decision() {  # <events-text>
+  local events=$1 chunk verb
+  [ -n "$events" ] || return 1
+  while :; do
+    chunk=${events%%" ; "*}
+    case "$chunk" in "reconciliation-required: "*) chunk=${chunk#"reconciliation-required: "} ;; esac
+    verb=$(status_line_verb "$chunk")
+    [ "$verb" = needs-decision ] && return 0
+    case "$events" in
+      *" ; "*) events=${events#*" ; "} ;;
+      *) break ;;
+    esac
+  done
+  return 1
+}
+
 # 0 when any signaled status file carries a captain-relevant event in the bytes
 # appended since this watcher last classified it. The start offset is the
 # classified-position field in that file's .seen-* marker, and fm-classify-lib.sh's
@@ -1214,9 +1239,15 @@ run_check_capture() {
 # no verb) are skipped. A 1 here is NOT "benign" on its own: a no-verb signal
 # still needs the authoritative working proof or the eligible opt-in bare
 # turn-end pane-churn proof before it is benign.
+# Also populates FM_SIGNAL_NEEDS_DECISION_FILES (space-separated status-file
+# paths) with exactly the files whose newly classified span carries a
+# needs-decision event, so the caller can route those - and only those - rows
+# as main-only (docs/pi-supervision-branch.md; every needs-decision must reach
+# main directly, never the supervision branch).
 signal_files_actionable() {  # <status-file> ...
-  local f task record rest endpoint ident rc found=1
+  local f task record rest endpoint ident events rc found=1
   FM_SIGNAL_SURFACE_ENDPOINTS=''
+  FM_SIGNAL_NEEDS_DECISION_FILES=''
   for f in "$@"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || [ -L "$f" ] || continue
@@ -1235,7 +1266,13 @@ signal_files_actionable() {  # <status-file> ...
     fi
     endpoint=${record%%$'\t'*}; rest=${record#*$'\t'}; ident=${rest%%$'\t'*}
     FM_SIGNAL_SURFACE_ENDPOINTS="${FM_SIGNAL_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
-    [ "$rc" -eq 0 ] && found=0
+    if [ "$rc" -eq 0 ]; then
+      found=0
+      events=${rest#*$'\t'}
+      if _signal_events_have_needs_decision "$events"; then
+        FM_SIGNAL_NEEDS_DECISION_FILES="${FM_SIGNAL_NEEDS_DECISION_FILES} ${f}"
+      fi
+    fi
   done
   return "$found"
 }
@@ -1737,15 +1774,27 @@ EOF
     # ordering evaluates them ONLY for a non-afk signal with no captain-relevant
     # status span, and the capture only once the authoritative verdict comes up short.
     FM_SIGNAL_SURFACE_ENDPOINTS=''
+    FM_SIGNAL_NEEDS_DECISION_FILES=''
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
     signal_files_actionable $files
     signal_actionable=$?
+    # A needs-decision file's queued row payload is marked "needs-decision:"
+    # instead of the ordinary "signal:" below (other files in the same batch
+    # keep the ordinary payload). The wake reason line itself, and every
+    # harness-arm consumer that pattern-matches it, stays byte-identical -
+    # only the per-row payload changes, which is what
+    # docs/pi-supervision-branch.md's Pi-only branch dispatcher reads to keep a
+    # needs-decision row off the supervision branch (fm-branch-dispatch.ts,
+    # fm-primary-pi-watch.ts). Every other harness and script keeps seeing the
+    # exact same "signal:$files" wake it always has.
     # shellcheck disable=SC2086  # same space-separated status-path list
     if afk_present || [ "$signal_actionable" -eq 0 ] \
       || { ! signal_crew_provably_working $files && ! signal_turnend_panes_churned $files; }; then
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
-        fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
+        file_reason="$reason"
+        case " $FM_SIGNAL_NEEDS_DECISION_FILES " in *" $f "*) file_reason="needs-decision:$files" ;; esac
+        fm_wake_append signal "$(basename "$f")" "$file_reason" || exit 1
       done <<EOF
 $pending
 EOF
