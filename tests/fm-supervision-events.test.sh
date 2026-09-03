@@ -70,6 +70,14 @@ grep -Fx 'stale: default:wG:pQ (herdr: agent blocked - waiting on human, escalat
 pass "handle_push_transition: a decision-bearing stale wake is marked main-only without changing its public message"
 
 reset_state
+fm_write_meta "$STATE_DIR/tk1h.meta" "window=default:wG:pQ" "backend=herdr" "kind=ship"
+printf 'captain-held [key=route]: tracked by held-decision-route\n' > "$STATE_DIR/tk1h.status"
+fm_wake_append_stale "default:wG:pQ" "stale: default:wG:pQ"
+awk -F '\t' '$3 == "stale" && $5 ~ /^needs-decision:/' "$STATE_DIR/.wake-queue" | grep . >/dev/null \
+  || fail "the shared stale appender did not mark a captain-held wake main-only: $(cat "$STATE_DIR/.wake-queue")"
+pass "the shared stale appender marks captain-held wakes main-only"
+
+reset_state
 fm_write_meta "$STATE_DIR/tk1.meta" "window=default:wG:pQ" "backend=herdr" "kind=ship"
 (
   # shellcheck disable=SC2329 # Runtime override called by the isolated production owner.

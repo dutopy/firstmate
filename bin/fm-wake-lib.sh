@@ -1491,6 +1491,19 @@ fm_wake_clean_field() {
   LC_ALL=C tr '\t\r\n' '   '
 }
 
+fm_wake_append_stale() {  # <window> <reason>
+  local window=$1 reason=$2 task status record='' needs_decision=0 payload
+  _fm_wake_require_classify
+  task=$(window_to_task "$window" "$STATE")
+  status="$STATE/$task.status"
+  status_span_first_actionable_record "$status" 0 record needs_decision || true
+  payload="$reason"
+  if [ "$needs_decision" -eq 1 ] || status_is_captain_held "$(last_status_line "$status")"; then
+    payload="needs-decision:$reason"
+  fi
+  fm_wake_append stale "$window" "$payload"
+}
+
 fm_wake_append() {
   local kind=$1 key=$2 payload=$3 clean_key clean_payload epoch seq seq_file status
   local recovery_marker

@@ -1745,7 +1745,7 @@ test_terminal_stale_surfaced() {
   window="test:fm-done"
   printf 'finished, awaiting review' > "$capture_file"
   printf 'window=%s\nkind=ship\n' "$window" > "$state/done.meta"
-  printf 'done: PR https://example.test/pr/3\n' > "$state/done.status"
+  printf 'needs-decision: choose the release target\n' > "$state/done.status"
   sig=$(seen_sig "$state/done.status"); printf '%s' "$sig" > "$state/.seen-done_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
   pane_hash=$(hash_text "finished, awaiting review")
@@ -1758,7 +1758,9 @@ test_terminal_stale_surfaced() {
   grep -Fx "stale: $window" "$out" >/dev/null || fail "watcher did not print the terminal stale wake"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the terminal stale failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "terminal stale was not queued"
-  pass "a stale pane sitting on a terminal status is surfaced (queue + exit)"
+  awk -F '\t' '$3 == "stale" && $5 ~ /^needs-decision:/' "$drain_out" | grep . >/dev/null \
+    || fail "a needs-decision terminal stale was not marked main-only: $(cat "$drain_out")"
+  pass "a stale pane sitting on a needs-decision status is surfaced main-only"
 }
 
 # --- stale pane, STALE terminal status overridden by an active run: absorbed ---
@@ -2220,7 +2222,7 @@ parked_watch_round() {  # <state> <fakebin> <out> <capture> <window> <exit|absor
 # so a forgotten wait cannot rot invisibly.
 test_live_declared_wait_churn_honors_the_resurface_throttle() {
   local spec name status_line dir state fakebin out capture_file statusf window key
-  local sig round wakes bare text throttle replacement
+  local sig round wakes bare marked text throttle replacement
   for spec in \
     'paused-pipeline-churn|paused: waiting on the validation run to finish' \
     'captain-held-churn|captain-held [key=route]: awaiting the captain on the routing call'
@@ -2278,8 +2280,13 @@ test_live_declared_wait_churn_honors_the_resurface_throttle() {
       "$state/.wake-queue" 2>/dev/null || echo 0)
     bare=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 == "stale: " w { n++ } END { print n + 0 }' \
       "$state/.wake-queue" 2>/dev/null || echo 0)
+    marked=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 ~ /^needs-decision:/ { n++ } END { print n + 0 }' \
+      "$state/.wake-queue" 2>/dev/null || echo 0)
     [ "$wakes" -eq 1 ] || fail "[$name] replacement declared wait produced $wakes first wakes instead of one"
-    [ "$bare" -eq 1 ] || fail "[$name] replacement declared wait changed the wake identity: $(cat "$state/.wake-queue")"
+    case "$name" in
+      captain-held-churn) [ "$marked" -eq 1 ] && [ "$bare" -eq 0 ] || fail "[$name] replacement wake was not marked main-only: $(cat "$state/.wake-queue")" ;;
+      *) [ "$bare" -eq 1 ] && [ "$marked" -eq 0 ] || fail "[$name] replacement wake changed routing: $(cat "$state/.wake-queue")" ;;
+    esac
     ack_stopped_cycle "$state" || fail "[$name] could not acknowledge the replacement wait's first surface"
 
     printf 'replacement wait, elapsed 2s' > "$capture_file"
@@ -2299,8 +2306,13 @@ test_live_declared_wait_churn_honors_the_resurface_throttle() {
       "$state/.wake-queue" 2>/dev/null || echo 0)
     bare=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 == "stale: " w { n++ } END { print n + 0 }' \
       "$state/.wake-queue" 2>/dev/null || echo 0)
+    marked=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 ~ /^needs-decision:/ { n++ } END { print n + 0 }' \
+      "$state/.wake-queue" 2>/dev/null || echo 0)
     [ "$wakes" -eq 1 ] || fail "[$name] elapsed re-surface window produced $wakes wakes instead of one"
-    [ "$bare" -eq 1 ] || fail "[$name] elapsed re-surface changed the wake identity: $(cat "$state/.wake-queue")"
+    case "$name" in
+      captain-held-churn) [ "$marked" -eq 1 ] && [ "$bare" -eq 0 ] || fail "[$name] elapsed wake was not marked main-only: $(cat "$state/.wake-queue")" ;;
+      *) [ "$bare" -eq 1 ] && [ "$marked" -eq 0 ] || fail "[$name] elapsed wake changed routing: $(cat "$state/.wake-queue")" ;;
+    esac
   done
   pass "a parked live worker surfaces once, absorbs pane churn for the whole re-surface window, then re-surfaces when it elapses"
 }

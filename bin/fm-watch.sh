@@ -366,7 +366,7 @@ inbox_steer_check() {  # <window> <task>
         fi
         if [ -d "${rec%/*}" ]; then
           reason="stale: $w (steering-inbox ladder bookkeeping unwritable: ${rec%/*}/.ring-state cannot be written while $rec stays unhandled; the doorbell cannot advance toward escalation - inspect the inbox directory)"
-          fm_wake_append stale "$w" "$reason" || exit 1
+          fm_wake_append_stale "$w" "$reason" || exit 1
           wake "$reason"
         fi
       fi
@@ -378,7 +378,7 @@ inbox_steer_check() {  # <window> <task>
         fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
         return 0
       fi
-      fm_wake_append stale "$w" "$reason" || exit 1
+      fm_wake_append_stale "$w" "$reason" || exit 1
       if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
         echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
         exit 1
@@ -703,14 +703,14 @@ FM_WEDGE_DEMAND_INSPECT_COUNT=${FM_WEDGE_DEMAND_INSPECT_COUNT:-3}
 # drift apart; each caller owns its own marker and reason.
 # Returns without waking while either the absorb or the throttle is inside the
 # window; wake() itself exits the cycle, exactly as it does inline.
-resurface_absorbed() {  # <window> <throttle-marker> <age> <reason> [scope] [payload]
-  local win=$1 throttle=$2 age=$3 reason=$4 scope=${5-} payload=${6:-$4}
+resurface_absorbed() {  # <window> <throttle-marker> <age> <reason> [scope]
+  local win=$1 throttle=$2 age=$3 reason=$4 scope=${5-}
   if [ -z "$scope" ] || [ ! -e "$throttle" ] \
     || [ "$(cat "$throttle" 2>/dev/null || true)" = "$scope" ]; then
     [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] || return 0
     [ "$(age_of "$throttle")" -ge "$PAUSE_RESURFACE_SECS" ] || return 0   # 999999 when no prior re-surface
   fi
-  fm_wake_append stale "$win" "$payload" || exit 1
+  fm_wake_append_stale "$win" "$reason" || exit 1
   if [ -n "$scope" ]; then printf '%s' "$scope" > "$throttle"; else date +%s > "$throttle"; fi
   wake "$reason"
 }
@@ -784,7 +784,7 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
         if [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
           reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
         fi
-        fm_wake_append stale "$win" "$reason" || exit 1
+        fm_wake_append_stale "$win" "$reason" || exit 1
         rm -f "$since_file"
         clear_write_tracking "$(window_key "$win")"
         wake "$reason"
@@ -823,7 +823,7 @@ busy_turn_over_age() {  # <task>
 # wording; a caller that reached the bounded cadence off pause tracking alone, with
 # no declaring verb left on the log, keeps the external-wait wording it always had.
 handle_paused_stale() {  # <window> <task> <hash>
-  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration payload
+  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration
   key=$(window_key "$win")
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
@@ -836,14 +836,12 @@ handle_paused_stale() {  # <window> <task> <hash>
   if status_is_captain_held "$(last_status_line "$statusf")"; then
     detail="captain-held, awaiting the captain"
     reason="captain-held ${age}s, awaiting the captain - verified hold transfer, rechecked on a long cadence not a wedge; answer the held decision or release the hold"
-    payload="needs-decision:stale: $win ($reason)"
   else
     detail="paused, awaiting external"
     reason="paused ${age}s, awaiting external - declared pause, rechecked on a long cadence not a wedge; confirm the wait still holds"
-    payload="stale: $win ($reason)"
   fi
   declaration="declared:$(fm_wake_signal_sig "$statusf" || true)"
-  resurface_absorbed "$win" "$STATE/.paused-resurfaced-$key" "$age" "stale: $win ($reason)" "$declaration" "$payload"
+  resurface_absorbed "$win" "$STATE/.paused-resurfaced-$key" "$age" "stale: $win ($reason)" "$declaration"
   triage_log "absorbed stale ($detail, age ${age}s): $win"
 }
 
@@ -891,7 +889,7 @@ busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-fil
       clear_write_tracking "$key"
       declared="declared:$(fm_wake_signal_sig "$statusf" || true)"
       if [ "$(cat "$STATE/.stale-$key" 2>/dev/null || true)" != "$declared" ]; then
-        fm_wake_append stale "$win" "stale: $win" || exit 1
+        fm_wake_append_stale "$win" "stale: $win" || exit 1
         printf '%s' "$declared" > "$STATE/.stale-$key"
         wake "stale: $win"
       fi
@@ -1015,7 +1013,7 @@ surface_nonterminal_stale() {  # <window> <hash>
     fi
   fi
   if [ "$throttled" -ne 0 ]; then
-    fm_wake_append stale "$win" "stale: $win" || exit 1
+    fm_wake_append_stale "$win" "stale: $win" || exit 1
   fi
   printf '%s' "$h" > "$STATE/.stale-$key"
   rm -f "$STATE/.stale-since-$key"
@@ -1888,7 +1886,7 @@ EOF
         elif afk_present; then
           # Daemon owns triage: one-shot per distinct stale hash, as before.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            fm_wake_append stale "$w" "stale: $w" || exit 1
+            fm_wake_append_stale "$w" "stale: $w" || exit 1
             printf '%s' "$h" > "$sf"
             wake "stale: $w"
           fi
@@ -1914,7 +1912,7 @@ EOF
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
             else
-              fm_wake_append stale "$w" "stale: $w" || exit 1
+              fm_wake_append_stale "$w" "stale: $w" || exit 1
               printf '%s' "$h" > "$sf"
               rm -f "$ssf"
               clear_write_tracking "$key"
