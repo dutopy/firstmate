@@ -697,6 +697,26 @@ The session-start digest separately prints a "Public commitments" subsection fro
 `FM_PF_RETRY_BACKOFF_SECS` (default 900) sets the next-attempt time recorded with a retryable delivery error.
 See [verification/public-followup.md](verification/public-followup.md) for the current maintainer evidence behind restart recovery, retained-loop disposition, and the relay-disabled zero-overhead guarantee.
 
+## Discord workspace (config/discord-workspace.json)
+
+The private Discord operations workspace is configured by the local, gitignored `config/discord-workspace.json` file under the effective `FM_HOME`.
+It is separate from Relay, Hermes, and any client or audience Discord bot.
+The repository-supported phase is offline only: it validates config, renders setup and health dry-runs, plans replies and artifacts, links requests to tasks, preserves pending final replies, and exercises intake through fixtures.
+`bin/fm-discord-workspace.sh` owns the exact schema, fields, state files, receipt formats, artifact checks, final-reply guard, and command mechanics.
+`docs/discord-workspace.md` is the operator guide for the presentation contract, security boundary, dry-run setup, artifact policy, audio policy, and rollback.
+The supported presentation is one private operations guild with ProApplis, Folium, and ARFAL categories, each with exchanges and artifacts forum channels.
+LBDB and Maratone Labs stay configured only as disabled inventory entries until a later captain approval activates them.
+The config carries non-secret ids, profile metadata, allowlists, forum tag vocabularies, and disabled live choices only.
+Secret values never belong in this file, argv, logs, process-event records, receipts, artifact records, or inbox metadata.
+Secret references may name `config/discord-workspace.secrets.sops.yaml` and key names for a later sops+age live task, but this phase never decrypts or reads that file.
+Live choices are represented but inert for Discord `MESSAGE_CONTENT`, Omarchy versus VPS host, hosted Groq transcription, artifact access and expiry, temporary setup permissions, Community-mode requirement, live polling, and live posting.
+Apply mode for setup, live Discord health, live transcription, and non-dry-run process-event arming refuses until a later activation task supplies every approval.
+The built-in `discord-workspace` process-event adapter lives at `bin/fm-procevent-discord-workspace.sh` and uses the existing `bin/fm-procevent.sh` owner for source registration, capture, durable result acknowledgement, and retirement.
+Its offline source reads only `FM_DISCORD_WORKSPACE_FIXTURE` or `poll.fixture_file`, accepts only allowlisted operations-guild exchange forum posts or threads from allowlisted captain users, and turns accepted results into idempotent `bin/fm-inbox.sh note` records.
+The idempotency seam is `bin/fm-inbox.sh note --source <name> --external-id <id> [--metadata-file <json>]`, which records a private map under `state/inbox/external/` so replay returns the original note id and appends no second wake.
+Outbound dry-run state lives under `state/discord-workspace/`, including request records, task links, nonce-keyed receipts, pending final replies, and artifact records.
+`bin/fm-teardown.sh` refuses to clean up a task while `state/discord-workspace/pending-followups/<task-id>.json` still records an unresolved private Discord final reply, unless explicit discard authority is carried by `--force`.
+
 ## Trusted external process-event adapters (config/extensions.d)
 
 A home can explicitly enable a trusted external `process-event-adapter/1` package without adding package code to Firstmate.
