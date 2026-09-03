@@ -261,6 +261,17 @@ while IFS= read -r -d '' arg; do args+=("$arg"); done \
   < <(perl -MMIME::Base64=decode_base64 -e 'print decode_base64($ARGV[0])' "$4")
 printf '%s\t%s\n' "$remote_home" "${args[0]:-}" >> "$FM_TEST_LEDGER_CALL_LOG"
 if [ -f "$remote_home/state/slow-ledger-read" ]; then
+  active_marker="$FM_TEST_LEDGER_ACTIVE_DIR/collector-$$"
+  : > "$active_marker"
+  trap 'rm -f "$active_marker"' EXIT
+  while [ ! -f "$FM_TEST_LEDGER_ACTIVE_DIR/overlap-proved" ]; do
+    set -- "$FM_TEST_LEDGER_ACTIVE_DIR"/collector-*
+    if [ "$#" -ge 5 ] && [ -e "$1" ]; then
+      : > "$FM_TEST_LEDGER_ACTIVE_DIR/overlap-proved"
+      break
+    fi
+    sleep 0.05
+  done
   sleep 30 &
   sleeper=$!
   printf '%s %s\n' "$$" "$sleeper" >> "$FM_TEST_LEDGER_PID_LOG"
@@ -287,6 +298,7 @@ run_remote_ledger_bearings() {  # <parent-home> <fakebin> <epoch>
   FM_HOME="$parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$fakebin/fake-ssh" \
     FM_TEST_LEDGER_CALL_LOG="$parent/ledger-calls.log" \
     FM_TEST_LEDGER_PID_LOG="$parent/ledger-pids.log" \
+    FM_TEST_LEDGER_ACTIVE_DIR="$parent/ledger-active" \
     FM_SNAPSHOT_CACHE_DIR="$parent/state/summary-cache" \
     FM_SNAPSHOT_BUDGET=3 FM_SNAPSHOT_NOW_EPOCH="$epoch" \
     FM_BEARINGS_NOW=2026-09-01T22:00:00Z "$BEARINGS" --json
@@ -2237,10 +2249,11 @@ EOF
 }
 
 test_remote_ledgers_share_one_concurrent_budget_and_fall_back_to_cache() {
-  local parent fakebin json started elapsed i remote_home pid collector_pid sleeper_pid duplicate_base
+  local parent fakebin json i remote_home pid collector_pid sleeper_pid duplicate_base
   parent=$(make_home concurrent-remote-ledgers)
   make_remote_ledger_fleet "$parent" 5
   fakebin=$(make_remote_ledger_ssh "$parent/remote-ssh")
+  mkdir -p "$parent/ledger-active"
   : > "$parent/ledger-calls.log"
   : > "$parent/ledger-pids.log"
 
@@ -2284,14 +2297,10 @@ test_remote_ledgers_share_one_concurrent_budget_and_fall_back_to_cache() {
   done
   : > "$parent/ledger-calls.log"
   : > "$parent/ledger-pids.log"
-  started=$(date +%s)
+  rm -f "$parent/ledger-active/overlap-proved" "$parent/ledger-active"/collector-*
   json=$(run_remote_ledger_bearings "$parent" "$fakebin" 2000)
-  elapsed=$(( $(date +%s) - started ))
-  # The three-second bound covers remote collection, while setup, cache validation,
-  # and projection run outside it. Keep the end-to-end ceiling well below the
-  # fifteen seconds that five serial three-second reads would require, without
-  # treating slower stock-macOS jq/process startup as collector serialization.
-  [ "$elapsed" -lt 12 ] || fail "five wedged remote reads behaved serially despite the shared three-second budget (${elapsed}s)"
+  [ -f "$parent/ledger-active/overlap-proved" ] \
+    || fail "five wedged remote reads never overlapped within the shared three-second budget"
   printf '%s' "$json" | jq -e '
     (.secondmates | length) == 5
       and all(.secondmates[]; .freshness == "cached" and .age_seconds == 1000
