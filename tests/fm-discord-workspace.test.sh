@@ -155,6 +155,11 @@ assert_contains "$out" "remains unresolved" "dry-run final follow-up does not cl
 out=$(fw followup discord-task --config "$CFG" --final --text-file "$TEXT" --record-discord-message-id 123456789012345679)
 assert_contains "$out" "pending final follow-up delivered" "recorded final follow-up clears the pending state"
 fw guard-work discord-task >/dev/null || fail "guard-work refused after final delivery"
+out=$(fw followup discord-task --config "$CFG" --final --text-file "$TEXT")
+assert_contains "$out" "final follow-up already delivered" "dry-run final follow-up after delivery reports delivered status"
+assert_contains "$out" "was already delivered" "dry-run final follow-up after delivery does not claim it is unresolved"
+assert_not_contains "$out" "pending final follow-up: present" "dry-run final follow-up after delivery does not claim it is pending"
+assert_not_contains "$out" "remains unresolved" "dry-run final follow-up after delivery does not claim it remains unresolved"
 pass "request links preserve and clear pending final replies"
 
 REPORT="$HOME1/data/report.md"
