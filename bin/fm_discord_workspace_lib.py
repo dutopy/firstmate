@@ -1646,9 +1646,9 @@ def procevent_cmd_autohandle(args: argparse.Namespace, env: Env) -> int:
     cls = event_class(event)
     if cls == "malformed":
         raise FMError("result is malformed")
-    if event.get("profile") and event.get("channel_id") and event.get("message_id"):
-        write_cursor(env, str(event["profile"]), str(event["channel_id"]), str(event["message_id"]))
     if cls == "ignored":
+        if event.get("profile") and event.get("channel_id") and event.get("message_id"):
+            write_cursor(env, str(event["profile"]), str(event["channel_id"]), str(event["message_id"]))
         procevent_mark_handled(env, source_id, sequence)
         print("handled ignored Discord workspace event")
         return 0
@@ -1687,6 +1687,8 @@ def procevent_cmd_autohandle(args: argparse.Namespace, env: Env) -> int:
     if cls == "message":
         request = request_record_from_event(event)
         write_same_or_refuse(request_record_path(env, str(event.get("external_id"))), request, "request record")
+    if event.get("profile") and event.get("channel_id") and event.get("message_id"):
+        write_cursor(env, str(event["profile"]), str(event["channel_id"]), str(event["message_id"]))
     procevent_mark_handled(env, source_id, sequence)
     print("autohandled Discord workspace event through fm-inbox")
     return 0
