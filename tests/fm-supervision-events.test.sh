@@ -60,6 +60,16 @@ grep -q 'herdr: agent blocked' "$STATE_DIR/.wake-queue" || fail "the stale paylo
 pass "handle_push_transition: a blocked crew enqueues a stale wake naming its window and wakes the supervisor"
 
 reset_state
+fm_write_meta "$STATE_DIR/tk1d.meta" "window=default:wG:pQ" "backend=herdr" "kind=ship"
+printf 'needs-decision: choose the release target\nworking: preparing both targets\n' > "$STATE_DIR/tk1d.status"
+handle_push_transition herdr default "$(mkrec wG:pQ blocked)"
+awk -F '\t' '$3 == "stale" && $4 == "default:wG:pQ" && $5 ~ /^needs-decision:/' "$STATE_DIR/.wake-queue" | grep . >/dev/null \
+  || fail "a decision-bearing push transition was not marked main-only: $(cat "$STATE_DIR/.wake-queue")"
+grep -Fx 'stale: default:wG:pQ (herdr: agent blocked - waiting on human, escalated immediately, not via wedge timer)' "$WAKE_LOG" >/dev/null \
+  || fail "a decision-bearing push transition changed its public wake message: $(cat "$WAKE_LOG")"
+pass "handle_push_transition: a decision-bearing stale wake is marked main-only without changing its public message"
+
+reset_state
 fm_write_meta "$STATE_DIR/tk1.meta" "window=default:wG:pQ" "backend=herdr" "kind=ship"
 (
   # shellcheck disable=SC2329 # Runtime override called by the isolated production owner.
