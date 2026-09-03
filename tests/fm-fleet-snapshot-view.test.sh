@@ -613,6 +613,7 @@ test_undated_captain_hold_phrasing_and_aging() {
   This is not urgent context, but the captain decision is current.
 - [ ] contextual-not-urgent - Leading context is not a deferral (repo: sample) (kind: captain) (hold: not urgent but choose the route now) (hold-kind: captain)
 - [ ] contextual-comma - Comma context is not a deferral (repo: sample) (kind: captain) (hold: not urgent, choose the launch route now) (hold-kind: captain)
+- [ ] metadata-context - Metadata-like context is not a deferral (repo: sample) (kind: captain) (hold: not urgent, priority: decide P1 or P2) (hold-kind: captain)
 - [ ] contextual-opportunity - Leading opportunity is not a deferral (repo: sample) (kind: captain) (hold: queued opportunity: choose whether to proceed) (hold-kind: captain)
 - [ ] contextual-gated - Leading gate is not a deferral (repo: sample) (kind: captain) (hold: captain-gated decision needs current approval) (hold-kind: captain)
 
@@ -653,11 +654,12 @@ EOF
   ' >/dev/null || fail "a hold one minute short of 14 days must not age early: $out"
   printf '%s' "$out" | jq -e '
     [.backlog.records[] | select(.id == "live-gated" or .id == "unparked-call" or .id == "contextual-call"
-        or .id == "contextual-not-urgent" or .id == "contextual-comma"
+        or .id == "contextual-not-urgent" or .id == "contextual-comma" or .id == "metadata-context"
         or .id == "contextual-opportunity" or .id == "contextual-gated")]
-    | length == 7
+    | length == 8
       and all(.captain_actionable == true and .deferred_marker == false and .aged_undated_hold == false)
       and (map(select(.id == "contextual-comma" and .hold_reason == "not urgent, choose the launch route now")) | length == 1)
+      and (map(select(.id == "metadata-context" and .hold_reason == "not urgent, priority: decide P1 or P2")) | length == 1)
   ' >/dev/null || fail "contextual parked-style wording must not hide current decisions: $out"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
     FM_SNAPSHOT_NOW=2026-07-25T00:00:00Z FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=30 "$SNAPSHOT" --json)

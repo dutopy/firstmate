@@ -374,10 +374,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
     def metadata($rest; $key):
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + ":[[:space:]]*(?<v>[^,)]*)");
     def hold_metadata($rest):
-      cap($rest; ".*(?:\\(|,[[:space:]]*)hold:[[:space:]]*(?<v>[^)]*)")
-      | if . == null then null
-        else sub(",[[:space:]]*(?:repo|kind|priority|hold-kind|hold-until):.*$"; "") | trim
-        end;
+      cap($rest; ".*\\(hold:[[:space:]]*(?<v>[^)]*)");
     def metadata_word($rest; $key):
       cap($rest; ".*(?:\\(|,[[:space:]]*)" + $key + "[[:space:]]+(?<v>[^,)]*)");
     def url_pattern: "https?://[^[:space:])\"<>]+";
