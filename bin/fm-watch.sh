@@ -703,14 +703,14 @@ FM_WEDGE_DEMAND_INSPECT_COUNT=${FM_WEDGE_DEMAND_INSPECT_COUNT:-3}
 # drift apart; each caller owns its own marker and reason.
 # Returns without waking while either the absorb or the throttle is inside the
 # window; wake() itself exits the cycle, exactly as it does inline.
-resurface_absorbed() {  # <window> <throttle-marker> <age> <reason> [scope]
-  local win=$1 throttle=$2 age=$3 reason=$4 scope=${5-}
+resurface_absorbed() {  # <window> <throttle-marker> <age> <reason> [scope] [payload]
+  local win=$1 throttle=$2 age=$3 reason=$4 scope=${5-} payload=${6:-$4}
   if [ -z "$scope" ] || [ ! -e "$throttle" ] \
     || [ "$(cat "$throttle" 2>/dev/null || true)" = "$scope" ]; then
     [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] || return 0
     [ "$(age_of "$throttle")" -ge "$PAUSE_RESURFACE_SECS" ] || return 0   # 999999 when no prior re-surface
   fi
-  fm_wake_append stale "$win" "$reason" || exit 1
+  fm_wake_append stale "$win" "$payload" || exit 1
   if [ -n "$scope" ]; then printf '%s' "$scope" > "$throttle"; else date +%s > "$throttle"; fi
   wake "$reason"
 }
@@ -823,7 +823,7 @@ busy_turn_over_age() {  # <task>
 # wording; a caller that reached the bounded cadence off pause tracking alone, with
 # no declaring verb left on the log, keeps the external-wait wording it always had.
 handle_paused_stale() {  # <window> <task> <hash>
-  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration
+  local win=$1 task=$2 h=$3 key statusf mtime age detail reason declaration payload
   key=$(window_key "$win")
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
@@ -836,12 +836,14 @@ handle_paused_stale() {  # <window> <task> <hash>
   if status_is_captain_held "$(last_status_line "$statusf")"; then
     detail="captain-held, awaiting the captain"
     reason="captain-held ${age}s, awaiting the captain - verified hold transfer, rechecked on a long cadence not a wedge; answer the held decision or release the hold"
+    payload="needs-decision:stale: $win ($reason)"
   else
     detail="paused, awaiting external"
     reason="paused ${age}s, awaiting external - declared pause, rechecked on a long cadence not a wedge; confirm the wait still holds"
+    payload="stale: $win ($reason)"
   fi
   declaration="declared:$(fm_wake_signal_sig "$statusf" || true)"
-  resurface_absorbed "$win" "$STATE/.paused-resurfaced-$key" "$age" "stale: $win ($reason)" "$declaration"
+  resurface_absorbed "$win" "$STATE/.paused-resurfaced-$key" "$age" "stale: $win ($reason)" "$declaration" "$payload"
   triage_log "absorbed stale ($detail, age ${age}s): $win"
 }
 
@@ -1308,8 +1310,9 @@ EOF
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
 heartbeat_scan_finds_actionable() {
-  local f task record rest endpoint ident rc found=1 sig marker
+  local f task record rest endpoint ident events rc found=1 sig marker
   FM_HEARTBEAT_SURFACE_ENDPOINTS=''
+  FM_HEARTBEAT_HAS_NEEDS_DECISION=0
   for f in "$STATE"/*.status; do
     [ -e "$f" ] || [ -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
@@ -1326,7 +1329,11 @@ heartbeat_scan_finds_actionable() {
     fi
     endpoint=${record%%$'\t'*}; rest=${record#*$'\t'}; ident=${rest%%$'\t'*}
     FM_HEARTBEAT_SURFACE_ENDPOINTS="${FM_HEARTBEAT_SURFACE_ENDPOINTS}${f}"$'\t'"${endpoint}"$'\t'"${ident}"$'\n'
-    [ "$rc" -eq 0 ] && found=0
+    if [ "$rc" -eq 0 ]; then
+      found=0
+      events=${rest#*$'\t'}
+      _signal_events_have_needs_decision "$events" && FM_HEARTBEAT_HAS_NEEDS_DECISION=1
+    fi
   done
   return "$found"
 }
@@ -2078,7 +2085,9 @@ EOF
       # Enqueue first, then record every status log surfaced through its end so the
       # next heartbeat does not re-fire it (enqueue-before-suppress preserved);
       # this wake sends firstmate to the whole fleet, so every log is read.
-      fm_wake_append heartbeat heartbeat heartbeat || exit 1
+      heartbeat_payload=heartbeat
+      [ "$FM_HEARTBEAT_HAS_NEEDS_DECISION" -eq 1 ] && heartbeat_payload=needs-decision:heartbeat
+      fm_wake_append heartbeat heartbeat "$heartbeat_payload" || exit 1
       touch "$STATE/.last-heartbeat"
       mark_all_captain_relevant_surfaced || true
       wake "heartbeat"

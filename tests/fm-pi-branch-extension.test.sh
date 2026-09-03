@@ -3566,6 +3566,17 @@ if (needsDecisionOnly.eligible || needsDecisionOnly.eligibleSeqs.length !== 0 ||
   throw new Error(`a needs-decision-only queue must be ordinary main-only absence: ${JSON.stringify(needsDecisionOnly)}`);
 }
 
+for (const [row, key, heartbeat] of [
+  ["1\t1\tstale\tfm-window\tneeds-decision:stale: fm-window", "fm-window", false],
+  ["1\t1\theartbeat\theartbeat\tneeds-decision:heartbeat", "heartbeat", true],
+]) {
+  writeFileSync(`${state}/.wake-queue`, row);
+  const scope = scopeForUnreadWake(state, heartbeat);
+  if (scope.eligible || scope.eligibleSeqs.length !== 0 || scope.corrupted || scope.needsDecisionKeys.join(",") !== key) {
+    throw new Error(`a marked ${key} row must be ordinary main-only absence: ${JSON.stringify(scope)}`);
+  }
+}
+
 writeFileSync(
   `${state}/.wake-queue`,
   [

@@ -46,9 +46,9 @@ export interface UnreadWakeScope {
    */
   corrupted: boolean;
   /**
-   * The exact "key" field (status-file basename) of every signal row this scan
-   * excluded because its payload is "needs-decision:"-prefixed
-   * (bin/fm-watch.sh's signal_files_actionable). fm-primary-pi-watch.ts's
+   * The exact "key" field of every signal, stale, or heartbeat row this scan
+   * excluded because its payload is "needs-decision:"-prefixed.
+   * fm-primary-pi-watch.ts's
    * offerWakeToBranch cross-references this against the current trigger's own
    * file list so a needs-decision trigger is forced to main exactly like a
    * check-kind trigger, without the wake message text itself ever changing.
@@ -86,8 +86,7 @@ const UNSAFE_SCOPE: UnreadWakeScope = {
 // (fm-primary-pi-watch.ts forces every check-kind TRIGGER to main), so nothing
 // starves by being left behind.
 //
-// A signal-kind row whose payload is "needs-decision:"-prefixed - a task-local
-// needs-decision status append (bin/fm-watch.sh's signal_files_actionable) -
+// A signal, stale, or heartbeat row whose payload is "needs-decision:"-prefixed
 // gets the identical treatment: excluded from eligibleSeqs, never a scan veto,
 // and forced to main on its own triggering close
 // (fm-primary-pi-watch.ts's offerWakeToBranch). Every needs-decision must reach
@@ -146,6 +145,11 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean): UnreadWak
     const seq = fields[1];
     const kind = fields[2];
     const key = fields[3];
+    const payload = fields[4] ?? "";
+    if ((kind === "signal" || kind === "stale" || kind === "heartbeat") && /^needs-decision:/.test(payload)) {
+      needsDecisionKeys.push(key);
+      continue;
+    }
     if (kind === "heartbeat") {
       if (heartbeat) eligibleSeqs.push(seq);
       continue;
@@ -158,16 +162,6 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean): UnreadWak
     }
     let project = "";
     if (kind === "signal") {
-      const payload = fields[4] ?? "";
-      if (/^needs-decision:/.test(payload)) {
-        // Always main-owned, exactly like a check-kind row above: a
-        // needs-decision status append must reach main directly rather than
-        // taking the supervision-branch hop, so it is excluded from what the
-        // branch may claim without vetoing the rest of the scan
-        // (docs/pi-supervision-branch.md "Autonomy").
-        needsDecisionKeys.push(key);
-        continue;
-      }
       const task = key.replace(/\.(?:status|turn-ended)$/, "");
       project = metadata.get(task) ?? "";
     } else if (kind === "stale") {

@@ -809,41 +809,42 @@ CLASSES
   pass "every main-only check class still reaches main, never the supervision branch"
 }
 
-# A needs-decision status append must reach main directly, exactly like a
-# check-kind trigger, never taking the supervision-branch hop first
-# (docs/pi-supervision-branch.md "Autonomy"). Unlike a check row it shares the
-# ordinary "signal:" kind and wake-message shape, so the dispatcher tells it
-# apart by payload (fm-branch-dispatch.ts's needsDecisionKeys) instead of by
-# message prefix - this exercises that cross-reference end to end. An unrelated
-# eligible stale row sits in the same queue to prove it is only the
-# needs-decision TRIGGER itself that stays on main, not the whole scan.
+# A marked needs-decision trigger keeps its existing public wake message but
+# reaches main directly for every watcher path that can surface it.
 test_pi_needs_decision_signal_stays_on_main() {
-  local repo home plugin log stop out status
-  repo="$TMP_ROOT/pi-needs-decision-root"
-  home="$TMP_ROOT/pi-needs-decision-home"
-  log="$TMP_ROOT/pi-needs-decision.log"
-  stop="$TMP_ROOT/pi-needs-decision.stop"
-  mkdir -p "$repo/bin" "$home/state" "$home/config" "$home/projects/approved"
-  install_pi_watch_extension_fixture "$repo"
-  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
-  printf 'project=%s/projects/approved\nwindow=fm-window\n' "$home" > "$home/state/task-a.meta"
-  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+  local spec name wake repo home plugin log stop out status
+  for spec in 'signal|signal: task-a.status' 'stale|stale: fm-window' 'heartbeat|heartbeat'; do
+    name=${spec%%|*}; wake=${spec#*|}
+    repo="$TMP_ROOT/pi-needs-decision-$name-root"
+    home="$TMP_ROOT/pi-needs-decision-$name-home"
+    log="$TMP_ROOT/pi-needs-decision-$name.log"
+    stop="$TMP_ROOT/pi-needs-decision-$name.stop"
+    mkdir -p "$repo/bin" "$home/state" "$home/config" "$home/projects/approved"
+    install_pi_watch_extension_fixture "$repo"
+    plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+    printf 'project=%s/projects/approved\nwindow=fm-window\n' "$home" > "$home/state/task-a.meta"
+    case "$name" in
+      signal) printf '1\t1\tstale\tfm-window\tstale: fm-window\n2\t2\tsignal\ttask-a.status\tneeds-decision: task-a.status\n' ;;
+      stale) printf '1\t1\tsignal\ttask-a.status\tsignal: task-a.status\n2\t2\tstale\tfm-window\tneeds-decision:stale: fm-window\n' ;;
+      heartbeat) printf '1\t1\tsignal\ttask-a.status\tsignal: task-a.status\n2\t2\theartbeat\theartbeat\tneeds-decision:heartbeat\n' ;;
+    esac > "$home/state/.wake-queue"
+    cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 count=$(grep -c '^arm=' "$FM_ARM_LOG")
 if [ "$count" -eq 1 ]; then
   printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
-  printf 'signal: task-a.status\n'
+  printf '%s\n' "${FM_TEST_WAKE:?}"
   exit 0
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
-  chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" \
-    node --input-type=module 2>&1 <<'EOF'
+    chmod +x "$repo/bin/fm-watch-arm.sh"
+    out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_TEST_WAKE="$wake" \
+      node --input-type=module 2>&1 <<'EOF'
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -876,12 +877,6 @@ const pi = {
   },
 };
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
-// the task-a.status row (the needs-decision trigger) sits alongside an
-// unrelated eligible stale row for the same project.
-writeFileSync(
-  `${process.env.FM_HOME}/state/.wake-queue`,
-  "1\t1\tstale\tfm-window\tstale: fm-window\n2\t2\tsignal\ttask-a.status\tneeds-decision: task-a.status\n",
-);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-needs-decision", {}, undefined, undefined, {});
@@ -891,17 +886,18 @@ for (let i = 0; i < 250 && !prompt; i += 1) {
 if (offers.length !== 1 || offers[0].eligible !== false) {
   throw new Error(`a needs-decision trigger was offered to the branch: ${JSON.stringify(offers)}`);
 }
-if (!prompt.includes("FIRSTMATE WATCHER WAKE: signal: task-a.status")) {
+if (!prompt.includes(`FIRSTMATE WATCHER WAKE: ${process.env.FM_TEST_WAKE}`)) {
   throw new Error(`a needs-decision trigger did not reach main: ${prompt}`);
 }
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
 EOF
-  )
-  status=$?
-  expect_code 0 "$status" "a needs-decision signal trigger must stay on main: $out"
-  [ -z "$out" ] || fail "Pi needs-decision test printed output: $out"
-  pass "a needs-decision signal trigger reaches main, never the supervision branch, without vetoing an unrelated eligible row"
+    )
+    status=$?
+    expect_code 0 "$status" "a needs-decision $name trigger must stay on main: $out"
+    [ -z "$out" ] || fail "Pi needs-decision $name test printed output: $out"
+  done
+  pass "needs-decision signal, stale, and heartbeat triggers reach main without vetoing unrelated eligible rows"
 }
 
 test_pi_heartbeat_restoration_failure_stays_on_main() {

@@ -2064,6 +2064,8 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
     || fail "captain-held dead-agent pane surfaced as a stopped crew instead of a captain-owned recheck: $(cat "$state/.wake-queue")"
   grep -F "awaiting external" "$state/.wake-queue" >/dev/null \
     && fail "captain-held dead-agent pane borrowed the pause verb's external-wait wording"
+  awk -F '\t' '$3 == "stale" && $5 ~ /^needs-decision:/' "$state/.wake-queue" | grep . >/dev/null \
+    || fail "captain-held stale recheck was not marked main-only: $(cat "$state/.wake-queue")"
 
   dir=$(make_case alive-decision-gate); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/gate.status"
@@ -3910,6 +3912,8 @@ test_heartbeat_backstop_surfaces_a_masked_status() {
   wait_for_exit "$pid" 100 \
     || fail "heartbeat backstop missed a decision hidden behind a later working: line"
   grep -Fx "heartbeat" "$out" >/dev/null || fail "backstop did not exit with a heartbeat wake"
+  awk -F '\t' '$3 == "heartbeat" && $5 ~ /^needs-decision:/' "$state/.wake-queue" | grep . >/dev/null \
+    || fail "decision-bearing heartbeat was not marked main-only: $(cat "$state/.wake-queue")"
   [ "$(status_presentation_marker_offset "$state/.hb-surfaced-miss" "$state/miss.status")" = \
     "$(size_of "$state/miss.status")" ] \
     || fail "backstop did not record the masked status as surfaced through its end"
