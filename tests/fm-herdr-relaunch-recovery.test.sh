@@ -300,6 +300,13 @@ source_match=0
 for arg in "$@"; do
   case "$arg" in *.meta.relaunch.*) source_match=1 ;; esac
 done
+if [ -n "${FM_FAKE_MV_PROVENANCE_MARKER:-}" ] \
+   && [ "$target" = "${FM_FAKE_MV_PROVENANCE_TARGET:-}" ]; then
+  "$real_mv" "$@" || exit 1
+  : > "$FM_FAKE_MV_PROVENANCE_MARKER"
+  while [ ! -e "${FM_FAKE_MV_PROVENANCE_RELEASE:?}" ]; do sleep 0.01; done
+  exit 0
+fi
 if [ -n "${FM_FAKE_MV_PUBLISH_MARKER:-}" ] \
    && [ "$target" = "${FM_FAKE_MV_PUBLISH_TARGET:-}" ] \
    && [ "$source_match" = 1 ]; then
@@ -818,6 +825,44 @@ grep -q '^phase=published$' "$DIRECT_HOME/state/direct.control-relaunch-candidat
 pass "fm-spawn relaunch: hard-crash rollback restores deterministic prior wiring"
 
 reset_direct_meta
+mkdir -p "$DIRECT_WT/.claude"
+printf '%s\n' prior-provenance-wiring > "$DIRECT_WT/.claude/settings.local.json"
+write_state "$DIRECT_WT" shell true
+PROVENANCE_MARKER="$TMP_ROOT/provenance-window.marker"
+PROVENANCE_RELEASE="$TMP_ROOT/provenance-window.release"
+PROVENANCE_OUT="$TMP_ROOT/provenance-window.out"
+PROVENANCE_TARGET="$DIRECT_HOME/state/direct.control-relaunch-candidate.launch/launch"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_MV_PROVENANCE_MARKER="$PROVENANCE_MARKER" FM_FAKE_MV_PROVENANCE_RELEASE="$PROVENANCE_RELEASE" \
+  FM_FAKE_MV_PROVENANCE_TARGET="$PROVENANCE_TARGET" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch > "$PROVENANCE_OUT" 2>&1 &
+provenance_pid=$!
+for _ in {1..500}; do [ ! -e "$PROVENANCE_MARKER" ] || break; sleep 0.01; done
+[ -e "$PROVENANCE_MARKER" ] || fail "provenance crash simulation never reached atomic installation"
+kill -KILL "$provenance_pid" 2>/dev/null || fail "could not stop relaunch during provenance installation"
+touch "$PROVENANCE_RELEASE"
+wait "$provenance_pid" 2>/dev/null || true
+[ -d "$DIRECT_HOME/state/direct.control-relaunch-candidate.launch/prior-snapshot" ] \
+  || fail "atomic provenance installation lost the prior wiring snapshot"
+jq '.candidate_exists=false | .candidate_registered=false | .candidate_process="dead"' \
+  "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+printf '%s\n' interrupted-replacement-wiring > "$DIRECT_WT/.claude/settings.local.json"
+PROVENANCE_FAILURE="$TMP_ROOT/provenance-restore.failure"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_EXPECT_WIRING_PATH="$DIRECT_WT/.claude/settings.local.json" \
+  FM_FAKE_EXPECT_WIRING_VALUE=prior-provenance-wiring FM_FAKE_EXPECT_WIRING_FAILURE="$PROVENANCE_FAILURE" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not restore wiring after missing post-wiring candidate: $DIRECT_OUT"
+[ ! -e "$PROVENANCE_FAILURE" ] \
+  || fail "retry created a replacement before restoring the preserved wiring snapshot"
+case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "post-wiring missing-candidate recovery did not complete: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: atomic provenance preserves missing-candidate rollback"
+
+reset_direct_meta
 write_state "$DIRECT_WT" shell true
 jq '.candidate_run_unregistered=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
@@ -843,6 +888,19 @@ fi
 cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
   || fail "unregistered adoption changed the authoritative binding"
 pass "fm-spawn relaunch: adoption requires registration and live process proof"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+write_direct_candidate_record created
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not roll back an exactly recorded missing pre-wiring candidate: $DIRECT_OUT"
+[ "$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)" -eq 1 ] \
+  || fail "missing pre-wiring candidate recovery did not create exactly one replacement"
+case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "missing pre-wiring candidate recovery did not complete: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: a missing pre-wiring candidate rolls back cleanly"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
