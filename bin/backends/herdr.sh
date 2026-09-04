@@ -2600,15 +2600,18 @@ fm_backend_herdr_current_path() {  # <target>
     | jq -r '.result.pane.foreground_cwd // empty' 2>/dev/null
 }
 
-# fm_backend_herdr_prepare_relaunch_path: restore an agent-free endpoint shell
-# only to the exact recorded worktree already validated by the control plane.
-# Herdr's atomic `pane run` executes `cd` non-persistently, so this uses the
-# interactive shell's literal-input path and submits only after a second exact
-# shell-owner check. The single-quote transform is data-only shell quoting; no
-# byte from the path can become syntax. Success requires the live foreground cwd
-# to converge to the physical recorded path while the endpoint remains
-# positively agent-free and owned by the same shell pid. Repeated calls are a
-# verified no-op once the path already matches.
+# fm_backend_herdr_prepare_relaunch_path: prepare an agent-free endpoint shell
+# for the exact recorded worktree already validated by the launch caller.
+# It first cancels any pending input while the same idle shell owns the pane,
+# including when the cwd already matches. Herdr's atomic `pane run` executes
+# `cd` non-persistently, so a mismatched cwd uses the interactive shell's
+# literal-input path and submits only after a second exact shell-owner check.
+# The single-quote transform is data-only shell quoting; no byte from the path
+# can become syntax. Every pre-Enter failure attempts to cancel this function's
+# buffered command only while that same idle shell still owns the pane. Success
+# requires the live foreground cwd to converge to the physical recorded path
+# while the endpoint remains positively agent-free and owned by the same shell
+# pid. Repeated calls converge safely and never append to pending input.
 fm_backend_herdr_clear_idle_shell_input() {  # <target> <shell-pid>
   local target=$1 shell_pid=$2 resampled
   [ "$(fm_backend_herdr_recovery_agent_state "$target")" = dead ] || return 1

@@ -275,8 +275,9 @@ Unlike tmux process-name inspection, native registration can classify Pi without
 Lifecycle control adds one process-level reconciliation because Herdr can retain Pi's native registration after Pi exits.
 A registered pane becomes agent-free for exit or replacement only when `pane process-info` and the operating-system process table prove the exact pane contains one lone idle recognized shell.
 A distinct foreground process group remains alive, and any contradictory or unreadable process evidence refuses recovery.
-After that proof, relaunch may return the same shell to the physical recorded worktree by sending a quoted `cd` through literal input, rechecking the same shell before Enter, and verifying the exact resulting foreground path.
-This backend-owned repair is idempotent and never selects a path itself; the control plane supplies the worktree only after validating the task endpoint, worktree root, and separation from the primary project copy.
+After that proof, relaunch cancels any pending input while that same idle shell owns the pane, including when its path already matches the recorded worktree.
+For a mismatched path it then sends a quoted `cd` through literal input, rechecks the same shell before Enter, clears its own buffered command after a pre-Enter failure only if that shell still owns the pane, and verifies the exact resulting foreground path.
+This backend-owned preparation is idempotent and never selects a path itself; both the control transaction and the shared launch owner validate the task endpoint, plus a ship or scout's worktree root and separation from the primary project copy, before any pane input.
 
 The session-start sweep uses the ordinary probe.
 Mid-session secondmate agent-process liveness is not implemented because idle secondmates are deliberately exempt from stale-pane escalation and need a separate periodic identity signal.
