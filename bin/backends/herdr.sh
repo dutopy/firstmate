@@ -1994,8 +1994,7 @@ fm_backend_herdr_recovery_agent_state() {  # <target>
   pane_state=$(fm_backend_herdr_pane_agent_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
   case "$pane_state" in
     dead) printf 'missing' ;;
-    no-agent) printf 'dead' ;;
-    live)
+    no-agent|live)
       process_state=$(fm_backend_herdr_registered_process_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
       case "$process_state" in
         live) printf 'alive' ;;
@@ -2102,6 +2101,47 @@ fm_backend_herdr_relaunch_candidate_matches() {  # <session> <workspace-id> <tab
       and .result.pane.tab_id == $tab
       and .result.pane.pane_id == $pane
     ' >/dev/null 2>&1
+}
+
+fm_backend_herdr_relaunch_candidate_discover() {  # <session> <workspace-id> <label> <validated-worktree>
+  local session=$1 workspace_id=$2 label=$3 expected=$4 expected_real tabs panes match tab_id pane_id info
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID=
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+  expected_real=$(CDPATH='' cd -- "$expected" 2>/dev/null && pwd -P) || return 1
+  tabs=$(fm_backend_herdr_cli "$session" tab list --workspace "$workspace_id" 2>/dev/null) || return 1
+  match=$(printf '%s' "$tabs" | jq -r --arg label "$label" '
+    if (.result.tabs | type) == "array"
+    then [.result.tabs[] | select(.label == $label)]
+    else error("missing result.tabs") end
+    | if length == 0 then "absent"
+      elif length == 1 then .[0].tab_id
+      else "ambiguous" end
+  ' 2>/dev/null) || return 1
+  case "$match" in
+    absent) return 2 ;;
+    ambiguous|'') return 1 ;;
+  esac
+  fm_backend_endpoint_atom_valid "${match//:/_}" || return 1
+  tab_id=$match
+  panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$workspace_id" 2>/dev/null) || return 1
+  pane_id=$(printf '%s' "$panes" | jq -r --arg tab "$tab_id" '
+    if (.result.panes | type) == "array"
+    then [.result.panes[] | select(.tab_id == $tab)]
+    else error("missing result.panes") end
+    | if length == 1 then .[0].pane_id else empty end
+  ' 2>/dev/null) || return 1
+  [ -n "$pane_id" ] && fm_backend_endpoint_atom_valid "${pane_id//:/_}" || return 1
+  info=$(fm_backend_herdr_cli "$session" pane get "$pane_id" 2>/dev/null) || return 1
+  printf '%s' "$info" | jq -e \
+    --arg workspace "$workspace_id" --arg tab "$tab_id" --arg pane "$pane_id" --arg cwd "$expected_real" '
+      .result.type == "pane_info"
+      and .result.pane.workspace_id == $workspace
+      and .result.pane.tab_id == $tab
+      and .result.pane.pane_id == $pane
+      and .result.pane.foreground_cwd == $cwd
+    ' >/dev/null 2>&1 || return 1
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID=$tab_id
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID=$pane_id
 }
 
 fm_backend_herdr_relaunch_candidate_cleanup() {  # <session> <workspace-id> <tab-id> <pane-id>

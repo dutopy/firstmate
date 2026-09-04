@@ -46,6 +46,13 @@ case "${1:-} ${2:-}" in
       if [ "$(jq -r '.candidate_exists // false' "$state")" != true ]; then
         printf '{"id":"cli:pane:get","error":{"code":"pane_not_found"}}\n'
       else
+        if [ "$(jq -r '.candidate_registered // false' "$state")" = true ] \
+           && [ -n "${FM_FAKE_HERDR_POST_LIVE_MARKER:-}" ] \
+           && [ ! -e "$FM_FAKE_HERDR_POST_LIVE_MARKER.done" ]; then
+          : > "$FM_FAKE_HERDR_POST_LIVE_MARKER"
+          while [ ! -e "${FM_FAKE_HERDR_POST_LIVE_RELEASE:?}" ]; do sleep 0.01; done
+          : > "$FM_FAKE_HERDR_POST_LIVE_MARKER.done"
+        fi
         jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,tab_id:"w1:t2",workspace_id:"w1",foreground_cwd:.candidate_cwd}}}' "$state"
         jq '
           .candidate_pane_gets=((.candidate_pane_gets // 0) + 1)
@@ -154,6 +161,20 @@ case "${1:-} ${2:-}" in
       fi
     fi
     ;;
+  "tab list")
+    if [ "$(jq -r '.candidate_exists // false' "$state")" = true ]; then
+      jq '{id:"cli:tab:list",result:{type:"tab_list",tabs:[{tab_id:"w1:t1",label:"fm-direct"},{tab_id:"w1:t2",label:.candidate_label}]}}' "$state"
+    else
+      printf '{"id":"cli:tab:list","result":{"type":"tab_list","tabs":[{"tab_id":"w1:t1","label":"fm-direct"}]}}\n'
+    fi
+    ;;
+  "pane list")
+    if [ "$(jq -r '.candidate_exists // false' "$state")" = true ]; then
+      printf '{"id":"cli:pane:list","result":{"type":"pane_list","panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"},{"pane_id":"w1:p2","tab_id":"w1:t2"}]}}\n'
+    else
+      printf '{"id":"cli:pane:list","result":{"type":"pane_list","panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"}]}}\n'
+    fi
+    ;;
   "tab create")
     workspace=
     cwd=
@@ -175,6 +196,10 @@ case "${1:-} ${2:-}" in
       | .candidate_process="shell"
       | .candidate_registered=false
     ' "$state" | save_state
+    if [ -n "${FM_FAKE_HERDR_CREATE_MARKER:-}" ]; then
+      : > "$FM_FAKE_HERDR_CREATE_MARKER"
+      while [ ! -e "${FM_FAKE_HERDR_CREATE_RELEASE:?}" ]; do sleep 0.01; done
+    fi
     jq -n --arg cwd "$cwd" --arg label "$label" '{id:"cli:tab:create",result:{type:"tab_created",tab:{tab_id:"w1:t2",workspace_id:"w1",label:$label},root_pane:{pane_id:"w1:p2",tab_id:"w1:t2",workspace_id:"w1",foreground_cwd:$cwd}}}'
     ;;
   "pane close")
@@ -258,6 +283,11 @@ write_state "$OLD" live true
 recovery=$(run_backend fm_backend_recovery_agent_state herdr fmtest:w1:p1)
 [ "$recovery" = alive ] || fail "a registered agent with a distinct foreground process group must remain alive, got '$recovery'"
 pass "Herdr relaunch recovery: a real foreground agent remains alive and cannot be replaced"
+
+write_state "$OLD" live false
+recovery=$(run_backend fm_backend_recovery_agent_state herdr fmtest:w1:p1)
+[ "$recovery" = alive ] || fail "an unregistered pane with a distinct foreground process group must remain alive, got '$recovery'"
+pass "Herdr relaunch recovery: an unregistered live process cannot be replaced"
 
 write_state "$OLD" ambiguous true
 recovery=$(run_backend fm_backend_recovery_agent_state herdr fmtest:w1:p1)
@@ -420,6 +450,61 @@ pass "fm-spawn relaunch: fresh endpoint becomes authoritative only after launch 
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
+CREATE_MARKER="$TMP_ROOT/create-window.marker"
+CREATE_RELEASE="$TMP_ROOT/create-window.release"
+CREATE_OUT="$TMP_ROOT/create-window.out"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_HERDR_CREATE_MARKER="$CREATE_MARKER" FM_FAKE_HERDR_CREATE_RELEASE="$CREATE_RELEASE" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch > "$CREATE_OUT" 2>&1 &
+create_pid=$!
+for _ in {1..500}; do [ ! -e "$CREATE_MARKER" ] || break; sleep 0.01; done
+[ -e "$CREATE_MARKER" ] || fail "pre-journal crash simulation never reached endpoint creation"
+kill -KILL "$create_pid" 2>/dev/null || fail "could not stop relaunch in the pre-journal window"
+touch "$CREATE_RELEASE"
+wait "$create_pid" 2>/dev/null || true
+[ "$(jq -r '.candidate_exists' "$STATE")" = true ] || fail "pre-journal crash simulation left no candidate to discover"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not discover and retire the pre-journal candidate: $DIRECT_OUT"
+case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "pre-journal recovery did not complete relaunch: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: retry discovers the exact pre-journal candidate"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+LIVE_MARKER="$TMP_ROOT/post-live-window.marker"
+LIVE_RELEASE="$TMP_ROOT/post-live-window.release"
+LIVE_OUT="$TMP_ROOT/post-live-window.out"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_HERDR_POST_LIVE_MARKER="$LIVE_MARKER" FM_FAKE_HERDR_POST_LIVE_RELEASE="$LIVE_RELEASE" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch > "$LIVE_OUT" 2>&1 &
+live_pid=$!
+for _ in {1..500}; do [ ! -e "$LIVE_MARKER" ] || break; sleep 0.01; done
+[ -e "$LIVE_MARKER" ] || fail "post-live crash simulation never reached launch proof"
+kill -KILL "$live_pid" 2>/dev/null || fail "could not stop relaunch in the post-live window"
+touch "$LIVE_RELEASE"
+wait "$live_pid" 2>/dev/null || true
+[ "$(jq -r '.candidate_registered' "$STATE")" = true ] || fail "post-live crash simulation left no live candidate to adopt"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not adopt the exact post-live candidate: $DIRECT_OUT"
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "post-live adoption did not publish the discovered candidate"
+create_count=$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)
+[ "$create_count" -eq 1 ] || fail "post-live adoption created a duplicate replacement endpoint"
+grep -q '^candidate_state=adopted-alive$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "post-live adoption did not persist its reconciliation"
+pass "fm-spawn relaunch: retry adopts the exact post-live candidate"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
 jq '.candidate_take_over_after_pane_get=1' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
@@ -482,20 +567,18 @@ write_state "$DIRECT_WT" shell true
 jq '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="live" | .candidate_registered=true' \
   --arg cwd "$DIRECT_WT" "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 write_direct_candidate_record quarantined
-if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
-    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
-  fail "retry should refuse a prior exact candidate with a real live agent: $DIRECT_OUT"
-fi
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry should adopt a proven exact live candidate: $DIRECT_OUT"
 ! grep -Fq $'\x1ftab\x1fcreate\x1f' "$LOG" \
-  || fail "retry created a duplicate endpoint beside a live quarantined candidate"
+  || fail "retry created a duplicate endpoint beside an adoptable live candidate"
 [ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
-  || fail "retry removed a real live quarantined candidate"
-cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
-  || fail "live-candidate refusal changed the authoritative old binding"
-case "$DIRECT_OUT" in *"prior Herdr replacement candidate cannot be proved safe"*) : ;; *) fail "live-candidate refusal was not explicit: $DIRECT_OUT" ;; esac
-pass "fm-spawn relaunch: retry refuses a real-live candidate without duplication or cleanup"
+  || fail "retry removed the live candidate it adopted"
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "live-candidate adoption did not advance the authoritative binding"
+pass "fm-spawn relaunch: retry adopts a proven live candidate without duplication"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true

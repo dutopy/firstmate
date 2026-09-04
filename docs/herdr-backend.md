@@ -272,17 +272,18 @@ The generic Herdr agent-liveness probe reuses the same classifier.
 A structurally gone pane becomes `missing`, a restored agent-less shell becomes `dead`, a registered agent becomes `alive`, and an unexpected read becomes `unreadable`.
 Unlike tmux process-name inspection, native registration can classify Pi without guessing from a generic interpreter name.
 
-Lifecycle control adds one process-level reconciliation because Herdr can retain Pi's native registration after Pi exits.
-A registered pane becomes agent-free for exit or replacement only when `pane process-info` and the operating-system process table prove the exact pane contains one lone idle recognized shell.
-A distinct foreground process group remains alive, and any contradictory or unreadable process evidence refuses recovery.
+Lifecycle control adds one process-level reconciliation because Herdr can retain Pi's native registration after Pi exits or lose registration while a foreground process remains.
+A pane becomes agent-free for exit or replacement only when `pane process-info` and the operating-system process table prove the exact pane contains one lone idle recognized shell.
+A distinct foreground process group remains alive regardless of registration, and any contradictory or unreadable process evidence refuses recovery.
 Herdr 0.8.2 exposes no generic pane launch operation conditioned on an expected shell owner, so lifecycle recovery never injects a replacement command into the old pane.
 After the stopped-agent proof, the launch owner takes the named-session mutation lock and revalidates the recorded pane's exact workspace and tab relation.
-It creates one fresh tab directly in that recorded workspace with its shell rooted at the validated worktree, retains only the response-derived candidate ids, and never lists, classifies, adopts, renames, closes, or recycles an unrelated workspace or endpoint.
+It creates one fresh tab directly in that recorded workspace with its shell rooted at the validated worktree and records a unique attempt label before creation.
+Recovery may list only that recorded workspace to resolve exactly one tab carrying the recorded label, and it leaves every unrelated workspace or endpoint untouched.
 The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, the environment plus launch command are queued, and a live replacement agent is proved at that exact endpoint.
 Only then does metadata advance atomically to the candidate.
 A prepublication failure leaves the old endpoint and metadata unchanged, restores prior harness wiring, and closes only a response-identified candidate that is still provably agent-free.
-An ambiguous or live failed candidate remains quarantined under its exact recorded id instead of granting cleanup authority.
-A later retry reads only that journaled id: an agent-free or already-gone candidate is retired idempotently, while a live or unreadable candidate refuses duplication.
+An ambiguous failed candidate remains quarantined under its exact recorded identity instead of granting cleanup authority.
+A later retry retires an exact agent-free candidate idempotently, adopts an exact live candidate only after unchanged identity and physical recorded-worktree proof, and refuses every unreadable, mismatched, or multiply matched candidate.
 After publication, the old pane is retired only when its exact identity and agent-free state remain provable.
 
 The session-start sweep uses the ordinary probe.

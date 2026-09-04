@@ -29,7 +29,7 @@
 #   fresh endpoint in the recorded endpoint's exact workspace, keeps it
 #   unpublished while launch is proved, then atomically advances the task
 #   binding; any prepublication failure leaves the old endpoint and record
-#   untouched and retires only a response-identified agent-free candidate. It
+#   untouched and retires only an exactly identified agent-free candidate. It
 #   is the launch half of the control plane (bin/fm-control.sh relaunch), which
 #   owns the checkpoint, progress note, old-agent stop, and transaction; call
 #   fm-control rather than this flag directly unless deliberately re-launching
@@ -749,6 +749,7 @@ HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
 HERDR_RELAUNCH_CANDIDATE_RECORD=
 HERDR_RELAUNCH_CANDIDATE_TAB_ID=
 HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+HERDR_RELAUNCH_RECOVERED_STATE=
 HERDR_RELAUNCH_OLD_WORKSPACE_ID=
 HERDR_RELAUNCH_OLD_TAB_ID=
 HERDR_RELAUNCH_OLD_PANE_ID=
@@ -1120,12 +1121,74 @@ herdr_relaunch_candidate_record_write() {  # <phase> [extra-line]...
   } > "$tmp" && mv -f "$tmp" "$HERDR_RELAUNCH_CANDIDATE_RECORD"
 }
 
-# Reconcile only a previously journaled exact candidate for this same task and
-# old binding. A live or ambiguous candidate refuses a duplicate launch; an
-# agent-free or already-gone candidate is idempotently retired before a fresh
-# transaction starts. No workspace or endpoint enumeration is permitted.
+herdr_relaunch_candidate_adopt_live() {
+  local current current_real expected_real busy_gen spawn_gen tmp old_retirement=retained
+  [ "$HERDR_RELAUNCH_RECOVERED_STATE" = alive ] || return 1
+  fm_backend_herdr_relaunch_candidate_matches \
+    "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
+    "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" || return 1
+  [ "$(fm_backend_herdr_recovery_agent_state "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID")" = alive ] || return 1
+  current=$(fm_backend_herdr_current_path "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID" || true)
+  current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || return 1
+  expected_real=$(CDPATH='' cd -- "$WT" 2>/dev/null && pwd -P) || return 1
+  [ "$current_real" = "$expected_real" ] || return 1
+  busy_gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
+  spawn_gen="s$(date +%s).${BASHPID:-$$}.$RANDOM"
+  tmp="$STATE/.$ID.meta.relaunch-adopt.${BASHPID:-$$}"
+  {
+    echo "window=$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID"
+    echo "endpoint_task_id=$ID"
+    echo "worktree=$WT"
+    echo "project=$PROJ_ABS"
+    echo "harness=$HARNESS"
+    echo "kind=$KIND"
+    [ -z "$MODE" ] || echo "mode=$MODE"
+    [ -z "$YOLO" ] || echo "yolo=$YOLO"
+    echo "tasktmp=/tmp/fm-$ID"
+    echo "model=${MODEL:-default}"
+    echo "effort=${EFFORT:-default}"
+    [ -z "$busy_gen" ] || echo "busy_gen=$busy_gen"
+    echo "spawn_gen=$spawn_gen"
+    echo "backend=herdr"
+    echo "herdr_session=$HERDR_SES"
+    echo "herdr_workspace_id=$HERDR_WORKSPACE_ID"
+    echo "herdr_tab_id=$HERDR_RELAUNCH_CANDIDATE_TAB_ID"
+    echo "herdr_pane_id=$HERDR_RELAUNCH_CANDIDATE_PANE_ID"
+    awk -F= '
+      BEGIN {
+        split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id control_relaunch_tx", keys, " ")
+        for (i in keys) owned[keys[i]] = 1
+      }
+      !($1 in owned)
+    ' "$RELAUNCH_META"
+    [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] || echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
+  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  fm_backlog_atomic_transition publish "$tmp" "$STATE/$ID.meta" "task record" "$STATE" || {
+    rm -f "$tmp"
+    return 1
+  }
+  herdr_relaunch_candidate_record_write published "candidate_state=adopted-alive" || true
+  if [ -n "${HERDR_PRESENTATION_JOURNAL:-}" ] \
+     && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
+    fm_backend_herdr_projection_journal_replace_endpoint \
+      "$HERDR_PRESENTATION_JOURNAL" "$ID" \
+      "$HERDR_RELAUNCH_OLD_TAB_ID" "$HERDR_RELAUNCH_OLD_PANE_ID" \
+      "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" || true
+  fi
+  if fm_backend_herdr_relaunch_candidate_cleanup \
+      "$HERDR_SES" "$HERDR_RELAUNCH_OLD_WORKSPACE_ID" \
+      "$HERDR_RELAUNCH_OLD_TAB_ID" "$HERDR_RELAUNCH_OLD_PANE_ID"; then
+    old_retirement=retired
+  fi
+  herdr_relaunch_candidate_record_write published \
+    "candidate_state=adopted-alive" "old_endpoint=$old_retirement" || true
+  spawn_herdr_presentation_order_lock_release
+  echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID worktree=$WT"
+  exit 0
+}
+
 herdr_relaunch_candidate_reconcile_prior() {
-  local phase task session workspace old_tab old_pane worktree candidate_tab candidate_pane
+  local phase task session workspace old_tab old_pane worktree candidate_tab candidate_pane candidate_label state current current_real expected_real discover_status replacement_harness replacement_model replacement_effort
   [ ! -e "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] \
     && [ ! -L "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] && return 0
   [ -f "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] \
@@ -1139,6 +1202,10 @@ herdr_relaunch_candidate_reconcile_prior() {
   worktree=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" worktree) || return 1
   candidate_tab=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" candidate_tab) || candidate_tab=
   candidate_pane=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" candidate_pane) || candidate_pane=
+  candidate_label=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" candidate_label) || candidate_label=
+  replacement_harness=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" replacement_harness) || return 1
+  replacement_model=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" replacement_model) || return 1
+  replacement_effort=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" replacement_effort) || return 1
   [ "$task" = "$ID" ] && [ "$session" = "$HERDR_SES" ] \
     && [ "$workspace" = "$HERDR_WORKSPACE_ID" ] && [ "$worktree" = "$WT" ] || return 1
   case "$phase" in
@@ -1149,8 +1216,29 @@ herdr_relaunch_candidate_reconcile_prior() {
       return 0
       ;;
     creating|created|creation-failed|quarantined)
-      [ -n "$candidate_tab" ] && [ -n "$candidate_pane" ] \
-        && fm_backend_endpoint_atom_valid "${candidate_tab//:/_}" \
+      [ "$replacement_harness" = "$HARNESS" ] \
+        && [ "$replacement_model" = "${MODEL:-default}" ] \
+        && [ "$replacement_effort" = "${EFFORT:-default}" ] || return 1
+      [ "$old_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
+        && [ "$old_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
+      if [ -z "$candidate_tab" ] || [ -z "$candidate_pane" ]; then
+        [ "$phase" = creating ] && [ -n "$candidate_label" ] || return 1
+        fm_backend_herdr_relaunch_candidate_discover \
+          "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_label" "$WT"
+        discover_status=$?
+        if [ "$discover_status" -eq 2 ]; then
+          herdr_relaunch_candidate_record_write rolled-back "candidate_state=absent" || return 1
+          return 0
+        fi
+        [ "$discover_status" -eq 0 ] || return 1
+        candidate_tab=$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID
+        candidate_pane=$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID
+        HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
+        HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
+        herdr_relaunch_candidate_record_write created \
+          "candidate_label=$candidate_label" "candidate_state=discovered" || return 1
+      fi
+      fm_backend_endpoint_atom_valid "${candidate_tab//:/_}" \
         && fm_backend_endpoint_atom_valid "${candidate_pane//:/_}" || return 1
       HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
       HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
@@ -1162,8 +1250,18 @@ herdr_relaunch_candidate_reconcile_prior() {
         HERDR_RELAUNCH_CANDIDATE_PANE_ID=
         return 0
       fi
-      [ "$old_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
-        && [ "$old_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
+      fm_backend_herdr_relaunch_candidate_matches \
+        "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane" || return 1
+      current=$(fm_backend_herdr_current_path "$HERDR_SES:$candidate_pane" || true)
+      current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || return 1
+      expected_real=$(CDPATH='' cd -- "$WT" 2>/dev/null && pwd -P) || return 1
+      [ "$current_real" = "$expected_real" ] || return 1
+      state=$(fm_backend_herdr_recovery_agent_state "$HERDR_SES:$candidate_pane")
+      if [ "$state" = alive ]; then
+        HERDR_RELAUNCH_RECOVERED_STATE=alive
+        return 0
+      fi
+      case "$state" in dead|missing) ;; *) return 1 ;; esac
       fm_backend_herdr_relaunch_candidate_cleanup \
         "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane" || return 1
       herdr_relaunch_candidate_record_write rolled-back "candidate_state=dead" || return 1
@@ -2444,6 +2542,12 @@ elif [ "$RELAUNCH" -eq 1 ]; then
     echo "error: a prior Herdr replacement candidate cannot be proved safe to retire or already published; refusing a duplicate launch" >&2
     exit 1
   }
+  if [ "$HERDR_RELAUNCH_RECOVERED_STATE" = alive ]; then
+    herdr_relaunch_candidate_adopt_live || {
+      echo "error: the discovered Herdr replacement no longer proves its exact live identity and recorded worktree; refusing adoption" >&2
+      exit 1
+    }
+  fi
   HERDR_RELAUNCH_LABEL="fm-relaunch-${BASHPID:-$$}-${RANDOM}"
   herdr_relaunch_candidate_record_write creating "candidate_label=$HERDR_RELAUNCH_LABEL" || {
     echo "error: could not persist the Herdr replacement attempt before endpoint creation" >&2

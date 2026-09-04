@@ -69,16 +69,16 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    A ship or scout relaunch requires `--note`, because the replacement inherits the local copy but none of the conversation; the note is appended to the instructions it reads.
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
-   Herdr lifecycle recovery corroborates a retained native registration against the exact foreground process, so a lone idle shell proves an exited agent while a non-shell process remains alive and an ambiguous process read refuses.
+   Herdr lifecycle recovery corroborates native registration against the exact foreground process, so a lone idle shell proves an exited agent while a non-shell process remains alive even without registration and an ambiguous process read refuses.
 5. **Prepare the endpoint where required.**
    Herdr's generic pane input cannot condition launch on an expected shell owner, so relaunch never injects into the old pane.
-   Under the named-session mutation lock, the launch owner revalidates the recorded pane's exact workspace and tab, creates one fresh unpublished tab in that workspace with its shell already rooted at the validated worktree, and addresses only response-derived candidate ids.
-   It never enumerates or adopts another workspace or endpoint.
+   Under the named-session mutation lock, the launch owner revalidates the recorded pane's exact workspace and tab, records a unique attempt label, and creates one fresh unpublished tab in that workspace with its shell already rooted at the validated worktree.
+   Crash recovery may list only the recorded workspace to resolve exactly one tab carrying that attempt label; it never searches or adopts another workspace.
    Tmux keeps its existing recorded endpoint and path check.
 6. **Launch and publish the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`.
    Herdr snapshots the prior harness wiring, launches in the provisional endpoint, proves a live agent at the exact candidate and worktree, then atomically publishes the new endpoint metadata and retires the old agent-free pane when that exact cleanup remains provable.
-   A prepublication failure restores prior wiring, leaves old metadata and endpoint untouched, and closes only a response-identified agent-free candidate; an ambiguous or live candidate is quarantined by exact id instead of being guessed safe to close.
-   A retry addresses only that journaled id: an agent-free or already-gone candidate is retired idempotently, while a live or unreadable candidate refuses a duplicate launch.
+   A prepublication failure restores prior wiring, leaves old metadata and endpoint untouched, and closes only an exact agent-free candidate; an ambiguous candidate is quarantined instead of being guessed safe to close.
+   A retry retires an exact agent-free candidate idempotently, adopts an exact live candidate only after unchanged identity and physical recorded-worktree proof, and refuses unreadable or mismatched candidates.
    Tmux retains its existing reuse behavior.
 
 Switching harness is therefore one ordinary relaunch rather than a separate mechanism.
