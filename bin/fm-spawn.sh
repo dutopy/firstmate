@@ -2480,10 +2480,21 @@ kimi_spawn_fail() {  # <detail>
 
 if [ "$RELAUNCH" -eq 1 ]; then
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
-  fm_backend_prepare_relaunch_path "$BACKEND" "$WT_TARGET" "$WT" || {
-    echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
-    exit 1
-  }
+  if [ "$BACKEND" = herdr ]; then
+    spawn_herdr_presentation_order_lock_acquire "$SES" || {
+      echo "error: herdr relaunch could not acquire its session mutation lock; refusing unlocked replacement delivery" >&2
+      exit 1
+    }
+    fm_backend_herdr_prepare_relaunch_path_serialized "$WT_TARGET" "$WT" || {
+      echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
+      exit 1
+    }
+  else
+    fm_backend_prepare_relaunch_path "$BACKEND" "$WT_TARGET" "$WT" || {
+      echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
+      exit 1
+    }
+  fi
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
   # that worktree, so the replacement agent starts where the work is rather
@@ -3140,9 +3151,12 @@ spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   HERDR_PROJECTION_ABORT_CLEANUP=0
-  spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
+# A Herdr create or relaunch keeps the session mutation lock through command
+# submission, so no competing lifecycle input can separate launch bytes from
+# their Enter or redirect them after endpoint preparation.
+spawn_herdr_presentation_order_lock_release
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "kimi did not show a verified ready signal before brief delivery"
