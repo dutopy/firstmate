@@ -259,6 +259,12 @@ exit 0
 SH
 chmod +x "$TMP_ROOT/fakebin/claude"
 
+cat > "$TMP_ROOT/fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$TMP_ROOT/fakebin/pi"
+
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
     '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
@@ -506,6 +512,43 @@ create_count=$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)
 grep -q '^candidate_state=adopted-alive$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
   || fail "post-live adoption did not persist its reconciliation"
 pass "fm-spawn relaunch: retry adopts the exact post-live candidate"
+
+reset_direct_meta
+mkdir -p "$DIRECT_WT/.claude"
+printf '%s\n' prior-claude-wiring > "$DIRECT_WT/.claude/settings.local.json"
+rm -f "$DIRECT_HOME/state/direct.pi-ext.ts"
+write_state "$DIRECT_WT" shell true
+SWITCH_MARKER="$TMP_ROOT/post-live-switch.marker"
+SWITCH_RELEASE="$TMP_ROOT/post-live-switch.release"
+SWITCH_OUT="$TMP_ROOT/post-live-switch.out"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_HERDR_POST_LIVE_MARKER="$SWITCH_MARKER" FM_FAKE_HERDR_POST_LIVE_RELEASE="$SWITCH_RELEASE" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness pi > "$SWITCH_OUT" 2>&1 &
+switch_pid=$!
+for _ in {1..500}; do [ ! -e "$SWITCH_MARKER" ] || break; sleep 0.01; done
+[ -e "$SWITCH_MARKER" ] || fail "harness-switch crash simulation never reached launch proof"
+kill -KILL "$switch_pid" 2>/dev/null || fail "could not stop harness-switch relaunch after live launch"
+touch "$SWITCH_RELEASE"
+wait "$switch_pid" 2>/dev/null || true
+[ -f "$DIRECT_WT/.claude/settings.local.json" ] \
+  || fail "crash simulation unexpectedly retired prior Claude wiring"
+[ -f "$DIRECT_HOME/state/direct.pi-ext.ts" ] \
+  || fail "crash simulation did not leave replacement Pi wiring"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness pi 2>&1) \
+  || fail "retry could not adopt the harness-switched candidate: $DIRECT_OUT"
+[ ! -e "$DIRECT_WT/.claude/settings.local.json" ] \
+  || fail "crash adoption retained prior Claude wiring"
+[ -f "$DIRECT_HOME/state/direct.pi-ext.ts" ] \
+  || fail "crash adoption removed replacement Pi wiring"
+[ "$(awk -F= '$1 == "harness" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = pi ] \
+  || fail "crash adoption did not publish the replacement harness"
+pass "fm-spawn relaunch: crash adoption retires only prior harness wiring"
+rm -f "$DIRECT_HOME/state/direct.pi-ext.ts"
 
 reset_direct_meta
 awk '

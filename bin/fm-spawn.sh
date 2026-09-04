@@ -1129,6 +1129,8 @@ herdr_relaunch_launch_provenance_persist() {
   rm -rf "$tmp" || return 1
   (umask 077; mkdir "$tmp") || return 1
   cp -p "$SPAWN_META_TMP" "$tmp/meta" || { rm -rf "$tmp"; return 1; }
+  printf 'prior_auth_path=%s\n' "${RELAUNCH_PRIOR_AUTH_PATH:-none}" > "$tmp/prior-auth" \
+    || { rm -rf "$tmp"; return 1; }
   : > "$tmp/manifest" || { rm -rf "$tmp"; return 1; }
   family=$(fm_control_harness_family "$HARNESS") || family=
   {
@@ -1195,7 +1197,7 @@ herdr_relaunch_launch_provenance_restore() {
 }
 
 herdr_relaunch_candidate_adopt_live() {
-  local current current_real expected_real busy_gen staged_busy tmp old_retirement=retained provenance_meta
+  local current current_real expected_real busy_gen staged_busy state_real tmp old_retirement=retained provenance_meta
   [ "$HERDR_RELAUNCH_RECOVERED_STATE" = alive ] || return 1
   fm_backend_herdr_relaunch_candidate_matches \
     "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
@@ -1207,6 +1209,11 @@ herdr_relaunch_candidate_adopt_live() {
   expected_real=$(CDPATH='' cd -- "$WT" 2>/dev/null && pwd -P) || return 1
   [ "$current_real" = "$expected_real" ] || return 1
   provenance_meta="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/meta"
+  RELAUNCH_PRIOR_AUTH_PATH=$(fm_backend_meta_exact_value \
+    "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-auth" prior_auth_path) || return 1
+  [ "$RELAUNCH_PRIOR_AUTH_PATH" != none ] || RELAUNCH_PRIOR_AUTH_PATH=
+  case "$RELAUNCH_PRIOR_AUTH_PATH" in ''|/*) ;; *) return 1 ;; esac
+  case "$RELAUNCH_PRIOR_AUTH_PATH" in *$'\n'*|*$'\r'*|*$'\t'*) return 1 ;; esac
   [ "$(fm_backend_meta_exact_value "$provenance_meta" window)" = "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" worktree)" = "$WT" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" harness)" = "$HARNESS" ] \
@@ -1221,6 +1228,9 @@ herdr_relaunch_candidate_adopt_live() {
   staged_busy=$(fm_backend_meta_exact_value "$provenance_meta" busy_gen) || staged_busy=
   busy_gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
   [ "$busy_gen" = "$staged_busy" ] || return 1
+  state_real=$(CDPATH='' cd -- "$STATE" 2>/dev/null && pwd -P) || return 1
+  retire_prior_relaunch_wiring \
+    "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$state_real" "$ID" || return 1
   tmp="$STATE/.$ID.meta.relaunch-adopt.${BASHPID:-$$}"
   awk -F= '$1 != "control_relaunch_tx"' "$provenance_meta" > "$tmp" \
     || { rm -f "$tmp"; return 1; }
