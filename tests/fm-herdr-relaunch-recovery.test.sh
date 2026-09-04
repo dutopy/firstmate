@@ -209,7 +209,7 @@ case "${1:-} ${2:-}" in
   "pane close")
     pane=${3:-}
     if [ "$pane" = w1:p2 ]; then
-      jq '.candidate_exists=false | .candidate_registered=false | .candidate_process="dead"' "$state" | save_state
+      jq '.candidate_exists=false | .candidate_registered=false | .candidate_process="dead" | .frozen=false' "$state" | save_state
     fi
     ;;
 esac
@@ -401,6 +401,25 @@ fi
 [ -n "$(jq -r '.pending // empty' "$STATE")" ] || fail "cleanup sent input after the pane stopped belonging to the exact idle shell"
 pass "Herdr relaunch recovery: cleanup refuses a changed shell owner"
 
+write_state "$TARGET" shell true
+jq --arg cwd "$TARGET" '
+  .candidate_exists=true
+  | .candidate_cwd=$cwd
+  | .candidate_label="cleanup-candidate"
+  | .candidate_process="shell"
+  | .candidate_registered=false
+  | .candidate_take_over_on_stop=true
+' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if run_backend fm_backend_herdr_relaunch_candidate_cleanup \
+    fmtest w1 w1:t2 w1:p2 >/dev/null 2>&1; then
+  fail "candidate cleanup closed a pane whose shell owner changed at the close boundary"
+fi
+[ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
+  || fail "candidate cleanup removed the taken-over pane"
+[ "$(jq -r '.frozen' "$STATE")" = false ] \
+  || fail "candidate cleanup refusal left the shell stopped"
+pass "Herdr relaunch recovery: candidate cleanup freezes and revalidates its shell"
+
 DIRECT_HOME="$TMP_ROOT/direct-home"
 DIRECT_PROJECT="$TMP_ROOT/direct-project"
 DIRECT_WT="$TMP_ROOT/direct-worktree"
@@ -586,26 +605,6 @@ pass "fm-spawn relaunch: crash adoption retires only prior harness wiring"
 rm -f "$DIRECT_HOME/state/direct.pi-ext.ts"
 
 reset_direct_meta
-awk '
-  /^window=/{print "window=fmtest:w1:p2"; next}
-  /^herdr_tab_id=/{print "herdr_tab_id=w1:t2"; next}
-  /^herdr_pane_id=/{print "herdr_pane_id=w1:p2"; next}
-  {print}
-' "$DIRECT_HOME/state/direct.meta" > "$DIRECT_HOME/state/direct.meta.tmp"
-mv "$DIRECT_HOME/state/direct.meta.tmp" "$DIRECT_HOME/state/direct.meta"
-write_state "$DIRECT_WT" shell true
-jq --arg cwd "$DIRECT_WT" '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="shell" | .candidate_registered=false' \
-  "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
-write_direct_candidate_record launch-attempt
-DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
-  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
-  || fail "retry stranded a candidate already named by authoritative metadata: $DIRECT_OUT"
-case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "authoritative candidate reconciliation did not permit the next relaunch: $DIRECT_OUT" ;; esac
-pass "fm-spawn relaunch: authoritative candidate reconciles before prior-old comparison"
-
-reset_direct_meta
 write_state "$DIRECT_WT" shell true
 jq '.candidate_take_over_after_pane_get=1' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
@@ -783,6 +782,18 @@ pass "fm-spawn relaunch: Herdr session mutation lock spans candidate creation th
 pass "fm-spawn relaunch: replacement stays exact-record scoped and ignores unmanaged workspaces"
 
 reset_direct_meta
+mkdir -p "$DIRECT_WT/.claude"
+printf '%s\n' prior-claude-wiring > "$DIRECT_WT/.claude/settings.local.json"
+rm -f "$DIRECT_HOME/state/direct.pi-ext.ts" "$DIRECT_HOME/state/direct.herdr-presentation"
+bash -c '
+  . "$0/bin/backends/herdr.sh"
+  token=$(fm_backend_herdr_projection_journal_create "$1" direct) || exit 1
+  label=$(fm_backend_herdr_projection_workspace_label direct "$token")
+  fm_backend_herdr_projection_journal_bind \
+    "$1/direct.herdr-presentation" direct "$2" fmtest \
+    w1 w1:t1 w1:p1 w0 firstmate "$label" fm-direct
+' "$ROOT" "$DIRECT_HOME/state" "$DIRECT_HOME" \
+  || fail "could not seed the post-publication presentation binding"
 write_state "$DIRECT_WT" shell true
 PUBLISH_MARKER="$TMP_ROOT/publish-window.marker"
 PUBLISH_RELEASE="$TMP_ROOT/publish-window.release"
@@ -792,7 +803,7 @@ PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STAT
   FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
   FM_FAKE_MV_PUBLISH_MARKER="$PUBLISH_MARKER" FM_FAKE_MV_PUBLISH_RELEASE="$PUBLISH_RELEASE" \
   FM_FAKE_MV_PUBLISH_TARGET="$DIRECT_HOME/state/direct.meta" \
-  "$ROOT/bin/fm-spawn.sh" direct --relaunch > "$PUBLISH_OUT" 2>&1 &
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness pi > "$PUBLISH_OUT" 2>&1 &
 publish_pid=$!
 for _ in {1..500}; do [ ! -e "$PUBLISH_MARKER" ] || break; sleep 0.01; done
 [ -e "$PUBLISH_MARKER" ] || fail "publication crash simulation never committed candidate metadata"
@@ -802,15 +813,24 @@ touch "$PUBLISH_RELEASE"
 wait "$publish_pid" 2>/dev/null || true
 [ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
   || fail "post-publication interruption rolled back authoritative metadata"
+[ "$(awk -F= '$1 == "harness" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = pi ] \
+  || fail "post-publication interruption lost the replacement harness"
 [ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
   || fail "post-publication interruption closed the authoritative candidate"
+grep -q '^pane_id=w1:p1$' "$DIRECT_HOME/state/direct.herdr-presentation" \
+  || fail "post-publication interruption unexpectedly advanced the presentation binding"
 DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
   FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
   FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness pi 2>&1) \
   || fail "retry could not finish the interrupted binding commit: $DIRECT_OUT"
 case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "post-publication recovery did not permit the next relaunch: $DIRECT_OUT" ;; esac
+[ ! -e "$DIRECT_WT/.claude/settings.local.json" ] \
+  || fail "post-publication recovery lost the original prior harness identity"
+grep -q '^pane_id=w1:p2$' "$DIRECT_HOME/state/direct.herdr-presentation" \
+  || fail "post-publication recovery left the presentation binding stale"
 pass "fm-spawn relaunch: post-publication abort preserves and reconciles candidate binding"
+rm -f "$DIRECT_HOME/state/direct.pi-ext.ts" "$DIRECT_HOME/state/direct.herdr-presentation"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true

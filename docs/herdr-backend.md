@@ -282,12 +282,12 @@ Recovery may list only that recorded workspace to resolve exactly one tab carryi
 The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, and the staged metadata plus harness wiring are persisted immediately before the environment and launch command are queued.
 Publication and crash adoption both require an exact live Herdr agent registration plus corroborating live foreground-process state at that endpoint.
 Only then does metadata advance atomically to the candidate, immediately relinquishing provisional cleanup authority.
-Prior-harness wiring retirement remains a required, journaled part of that binding commit, and an interruption or cleanup failure must be reconciled before another relaunch can proceed.
+The original prior harness remains in launch provenance until its wiring retirement commits, and an interruption or cleanup failure must reconcile that identity plus any presentation binding before another relaunch can proceed.
 A prepublication failure leaves the old endpoint and metadata unchanged, restores prior harness wiring, and closes only a response-identified candidate that is still provably agent-free.
 An ambiguous failed candidate remains quarantined under its exact recorded identity instead of granting cleanup authority.
 A later retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
 It refuses every live pre-launch or quarantined candidate and every unreadable, mismatched, or multiply matched candidate.
-After publication, the old pane is retired only when its exact identity and agent-free state remain provable.
+Before any candidate or old pane is retired, its exact idle shell is frozen and revalidated for identity, ownership, and child absence immediately at the close boundary; refusal always resumes it.
 
 The session-start sweep uses the ordinary probe.
 Mid-session secondmate agent-process liveness is not implemented because idle secondmates are deliberately exempt from stale-pane escalation and need a separate periodic identity signal.

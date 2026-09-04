@@ -1119,6 +1119,7 @@ herdr_relaunch_candidate_record_write() {  # <phase> [extra-line]...
     echo "candidate_tab=$HERDR_RELAUNCH_CANDIDATE_TAB_ID"
     echo "candidate_pane=$HERDR_RELAUNCH_CANDIDATE_PANE_ID"
     echo "worktree=$WT"
+    echo "prior_harness=$RELAUNCH_PRIOR_HARNESS"
     echo "replacement_harness=$HARNESS"
     echo "replacement_model=${MODEL:-default}"
     echo "replacement_effort=${EFFORT:-default}"
@@ -1151,6 +1152,8 @@ herdr_relaunch_launch_provenance_persist() {
       || { rm -rf "$tmp"; return 1; }
   fi
   printf 'prior_auth_path=%s\n' "${RELAUNCH_PRIOR_AUTH_PATH:-none}" > "$tmp/prior-auth" \
+    || { rm -rf "$tmp"; return 1; }
+  printf 'prior_harness=%s\n' "$RELAUNCH_PRIOR_HARNESS" > "$tmp/prior-harness" \
     || { rm -rf "$tmp"; return 1; }
   : > "$tmp/manifest" || { rm -rf "$tmp"; return 1; }
   family=$(fm_control_harness_family "$HARNESS") || family=
@@ -1218,8 +1221,16 @@ herdr_relaunch_launch_provenance_restore() {
 }
 
 herdr_relaunch_authoritative_wiring_finalize() {
-  local provenance_meta staged_busy busy_gen state_real
+  local provenance_meta staged_busy busy_gen state_real prior_harness
   provenance_meta="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/meta"
+  [ "$(fm_backend_meta_exact_value "$provenance_meta" worktree)" = "$WT" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" harness)" = "$HARNESS" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_session)" = "$HERDR_SES" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_workspace_id)" = "$HERDR_WORKSPACE_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_tab_id)" = "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_pane_id)" = "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] || return 1
+  prior_harness=$(fm_backend_meta_exact_value \
+    "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-harness" prior_harness) || return 1
   RELAUNCH_PRIOR_AUTH_PATH=$(fm_backend_meta_exact_value \
     "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-auth" prior_auth_path) || return 1
   [ "$RELAUNCH_PRIOR_AUTH_PATH" != none ] || RELAUNCH_PRIOR_AUTH_PATH=
@@ -1231,7 +1242,7 @@ herdr_relaunch_authoritative_wiring_finalize() {
   [ "$busy_gen" = "$staged_busy" ] || return 1
   state_real=$(CDPATH='' cd -- "$STATE" 2>/dev/null && pwd -P) || return 1
   retire_prior_relaunch_wiring \
-    "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$state_real" "$ID"
+    "$prior_harness" "$HARNESS" "$WT" "$state_real" "$ID"
 }
 
 herdr_relaunch_candidate_adopt_live() {
@@ -1327,6 +1338,17 @@ herdr_relaunch_candidate_reconcile_prior() {
            && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ]; then
           HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
           HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
+          if [ -n "${HERDR_PRESENTATION_JOURNAL:-}" ] \
+             && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
+            fm_backend_herdr_projection_journal_snapshot \
+              "$HERDR_PRESENTATION_JOURNAL" "$ID" || return 1
+            if [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$candidate_tab" ] \
+               || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$candidate_pane" ]; then
+              fm_backend_herdr_projection_journal_replace_endpoint \
+                "$HERDR_PRESENTATION_JOURNAL" "$ID" \
+                "$old_tab" "$old_pane" "$candidate_tab" "$candidate_pane" || return 1
+            fi
+          fi
           herdr_relaunch_authoritative_wiring_finalize || return 1
           herdr_relaunch_candidate_record_write published \
             "candidate_state=reconciled-from-authoritative-binding" || return 1

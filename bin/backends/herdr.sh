@@ -2158,6 +2158,52 @@ fm_backend_herdr_relaunch_candidate_discover() {  # <session> <workspace-id> <la
   FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID=$pane_id
 }
 
+fm_backend_herdr_relaunch_candidate_close_on_shell() {  # <session> <workspace-id> <tab-id> <pane-id> <shell-pid>
+  local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 expected_pid=$5
+  local info shell_pid foreground_pgid count process_pid rows stat ps_bin kill_bin watchdog result=1
+  ps_bin=${FM_HERDR_PS_BIN:-ps}
+  kill_bin=${FM_HERDR_KILL_BIN:-kill}
+  command -v "$ps_bin" >/dev/null 2>&1 || return 1
+  command -v "$kill_bin" >/dev/null 2>&1 || return 1
+  "$kill_bin" -STOP "$expected_pid" 2>/dev/null || return 1
+  (
+    sleep "${FM_BACKEND_HERDR_RELAUNCH_CONT_WATCHDOG_SECS:-5}"
+    "$kill_bin" -CONT "$expected_pid" >/dev/null 2>&1 || true
+  ) &
+  watchdog=$!
+  info=$(fm_backend_herdr_cli "$session" pane process-info --pane "$pane_id" 2>/dev/null) || info=
+  shell_pid=$(printf '%s' "$info" | jq -er '.result.process_info.shell_pid | select(type == "number" and . > 1) | floor' 2>/dev/null) || shell_pid=
+  foreground_pgid=$(printf '%s' "$info" | jq -er '.result.process_info.foreground_process_group_id | select(type == "number" and . > 1) | floor' 2>/dev/null) || foreground_pgid=
+  count=$(printf '%s' "$info" | jq -er '.result.process_info.foreground_processes | select(type == "array") | length' 2>/dev/null) || count=
+  process_pid=$(printf '%s' "$info" | jq -er '.result.process_info.foreground_processes[0].pid | select(type == "number") | floor' 2>/dev/null) || process_pid=
+  rows=$("$ps_bin" -axo pid=,ppid= 2>/dev/null) || rows=
+  stat=$("$ps_bin" -p "$expected_pid" -o stat= 2>/dev/null | tr -d '[:space:]') || stat=
+  if fm_backend_herdr_relaunch_candidate_matches "$session" "$workspace_id" "$tab_id" "$pane_id" \
+     && printf '%s' "$info" | jq -e --arg pane "$pane_id" '
+          .result.type == "pane_process_info" and .result.process_info.pane_id == $pane
+        ' >/dev/null 2>&1 \
+     && [ "$shell_pid" = "$expected_pid" ] \
+     && [ "$foreground_pgid" = "$expected_pid" ] \
+     && [ "$count" = 1 ] \
+     && [ "$process_pid" = "$expected_pid" ] \
+     && printf '%s\n' "$rows" | awk -v shell="$expected_pid" '
+          $1 == shell { found++ }
+          $2 == shell { child++ }
+          END { exit(found == 1 && child == 0 ? 0 : 1) }
+        ' \
+     && case "$stat" in T*) true ;; *) false ;; esac \
+     && fm_backend_herdr_pid_is_bare_shell "$ps_bin" "$expected_pid" \
+     && fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane_id"; then
+    result=0
+  fi
+  if [ "$result" -ne 0 ]; then
+    "$kill_bin" -CONT "$expected_pid" >/dev/null 2>&1 || true
+  fi
+  kill "$watchdog" >/dev/null 2>&1 || true
+  wait "$watchdog" 2>/dev/null || true
+  return "$result"
+}
+
 fm_backend_herdr_relaunch_candidate_cleanup() {  # <session> <workspace-id> <tab-id> <pane-id>
   local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 presence state shell_pid
   presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane_id")
@@ -2177,7 +2223,8 @@ fm_backend_herdr_relaunch_candidate_cleanup() {  # <session> <workspace-id> <tab
       ;;
     *) return 1 ;;
   esac
-  fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane_id"
+  fm_backend_herdr_relaunch_candidate_close_on_shell \
+    "$session" "$workspace_id" "$tab_id" "$pane_id" "$shell_pid"
 }
 
 # fm_backend_herdr_create_task: create the task's tab (one pane) in
