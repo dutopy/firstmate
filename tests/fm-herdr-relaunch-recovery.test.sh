@@ -129,6 +129,16 @@ case "${1:-} ${2:-}" in
       fi
       [ "$(jq -r '.candidate_run_fail // false' "$state")" != true ] || exit 1
       cwd=$(jq -r '.candidate_cwd' "$state")
+      delay=$(jq -r '.candidate_run_ambiguous_delay // 0' "$state")
+      if [ "$delay" != 0 ]; then
+        (
+          sleep "$delay"
+          (cd "$cwd" && bash -c "$text") || exit 1
+          jq '.candidate_pending="" | .candidate_process="live" | .candidate_registered=true' \
+            "$state" > "$state.delayed.$$" && mv "$state.delayed.$$" "$state"
+        ) >/dev/null 2>&1 &
+        exit 1
+      fi
       (cd "$cwd" && bash -c "$text") || exit 1
       jq '
         .candidate_pending=""
@@ -206,6 +216,10 @@ case "${1:-} ${2:-}" in
       | .candidate_process="shell"
       | .candidate_registered=false
     ' "$state" | save_state
+    if [ "$(jq -r '.candidate_create_ambiguous_once // false' "$state")" = true ]; then
+      jq '.candidate_create_ambiguous_once=false' "$state" | save_state
+      exit 1
+    fi
     if [ -n "${FM_FAKE_HERDR_CREATE_MARKER:-}" ]; then
       : > "$FM_FAKE_HERDR_CREATE_MARKER"
       while [ ! -e "${FM_FAKE_HERDR_CREATE_RELEASE:?}" ]; do sleep 0.01; done
@@ -319,7 +333,7 @@ chmod +x "$TMP_ROOT/fakebin/git"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_delay:0,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -559,6 +573,30 @@ pass "fm-spawn relaunch: retry discovers the exact pre-journal candidate"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
+jq '.candidate_create_ambiguous_once=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "ambiguous candidate creation should require recovery: $DIRECT_OUT"
+fi
+grep -q '^phase=creation-failed$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "ambiguous candidate creation did not retain recoverable label provenance"
+[ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
+  || fail "ambiguous candidate creation did not commit its endpoint"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not discover and retire the ambiguously created candidate: $DIRECT_OUT"
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "retry did not publish a replacement after ambiguous creation recovery"
+[ "$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)" -eq 2 ] \
+  || fail "ambiguous creation recovery did not retire before creating one replacement"
+pass "fm-spawn relaunch: retry recovers ambiguous candidate creation"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
 LIVE_MARKER="$TMP_ROOT/post-live-window.marker"
 LIVE_RELEASE="$TMP_ROOT/post-live-window.release"
 LIVE_OUT="$TMP_ROOT/post-live-window.out"
@@ -694,10 +732,11 @@ pass "fm-spawn relaunch: failed candidate launch rolls back endpoint, binding, a
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
-jq '.candidate_run_ambiguous=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+jq '.candidate_run_ambiguous_delay=0.2' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
-    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_HERDR_RELAUNCH_ABORT_POLLS=10 \
+    FM_HERDR_RELAUNCH_ABORT_INTERVAL=0.05 FM_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
   fail "ambiguous candidate submission should require retry adoption: $DIRECT_OUT"
 fi
@@ -781,9 +820,9 @@ cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta
   || fail "an unregistered foreground process changed the authoritative binding"
 [ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
   || fail "failed launch proof closed an unregistered foreground process"
-grep -q '^phase=quarantined$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
-  || fail "failed launch proof did not quarantine the unregistered foreground process"
-pass "fm-spawn relaunch: publication requires registration and live process proof"
+grep -q '^phase=launch-attempt$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "failed launch proof discarded recoverable launch-attempt provenance"
+pass "fm-spawn relaunch: publication requires registration and preserves launch provenance"
 write_direct_candidate_record launch-attempt
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \

@@ -806,7 +806,7 @@ parse_orca_worktree_result() {
 }
 
 spawn_abort_cleanup() {
-  local status=$? candidate_state candidate_phase= rollback_ready=1
+  local status=$? candidate_state candidate_phase= rollback_ready=1 rollback_launch_attempt=0
   if [ -n "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
      && herdr_relaunch_candidate_is_authoritative; then
     HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
@@ -816,12 +816,23 @@ spawn_abort_cleanup() {
   if [ "$HERDR_RELAUNCH_CANDIDATE_CLEANUP" = 1 ]; then
     candidate_phase=$(fm_backend_meta_exact_value \
       "$HERDR_RELAUNCH_CANDIDATE_RECORD" phase 2>/dev/null || true)
-    if [ "$candidate_phase" = launch-attempt ] \
-       && herdr_relaunch_candidate_launch_attempt_live; then
-      HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
-      RELAUNCH_REPLACEMENT_PENDING=0
-      RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
-      echo "warning: preserving live Herdr replacement endpoint $HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID for verified retry adoption" >&2
+    if [ "$candidate_phase" = launch-attempt ]; then
+      herdr_relaunch_candidate_launch_attempt_settle
+      case "$HERDR_RELAUNCH_SETTLED_STATE" in
+        adoptable)
+          HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
+          RELAUNCH_REPLACEMENT_PENDING=0
+          RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
+          echo "warning: preserving live Herdr replacement endpoint $HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID for verified retry adoption" >&2
+          ;;
+        rollback) rollback_launch_attempt=1 ;;
+        *)
+          HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
+          RELAUNCH_REPLACEMENT_PENDING=0
+          RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
+          echo "warning: preserving unsettled Herdr launch attempt $HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID for strict retry reconciliation" >&2
+          ;;
+      esac
     fi
   fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
@@ -860,7 +871,6 @@ spawn_abort_cleanup() {
         if restore_persisted_relaunch_wiring_snapshot \
            && herdr_relaunch_candidate_record_write wiring-restored "candidate_state=unpublished"; then
           candidate_phase=wiring-restored
-          rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-snapshot" || status=1
         else
           rollback_ready=0
           echo "warning: could not durably restore prior wiring before retiring Herdr replacement endpoint $HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID" >&2
@@ -873,11 +883,19 @@ spawn_abort_cleanup() {
       if fm_backend_herdr_relaunch_candidate_cleanup \
           "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
           "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID"; then
+        rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-snapshot" || status=1
         herdr_relaunch_candidate_record_write rolled-back "candidate_state=dead" 2>/dev/null || true
       else
         candidate_state=$(fm_backend_herdr_pane_agent_state "$HERDR_SES" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" 2>/dev/null || printf unknown)
-        herdr_relaunch_candidate_record_write quarantined \
-          "candidate_state=$candidate_state" "wiring_state=restored" 2>/dev/null || true
+        if [ "$rollback_launch_attempt" = 1 ] \
+           && herdr_relaunch_launch_provenance_restore \
+           && herdr_relaunch_candidate_record_write launch-attempt \
+             "candidate_state=settlement-raced"; then
+          RELAUNCH_REPLACEMENT_PENDING=0
+        else
+          herdr_relaunch_candidate_record_write quarantined \
+            "candidate_state=$candidate_state" "wiring_state=restored" 2>/dev/null || true
+        fi
         echo "warning: uncommitted Herdr replacement endpoint $HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID could not be safely retired (state=$candidate_state); its exact identity remains in $HERDR_RELAUNCH_CANDIDATE_RECORD" >&2
         status=1
       fi
@@ -1212,6 +1230,37 @@ herdr_relaunch_candidate_launch_attempt_live() {
   [ "$current_real" = "$expected_real" ]
 }
 
+herdr_relaunch_candidate_launch_attempt_settle() {
+  local polls=${FM_HERDR_RELAUNCH_ABORT_POLLS:-5} interval=${FM_HERDR_RELAUNCH_ABORT_INTERVAL:-0.1}
+  local state=unreadable current current_real expected_real
+  HERDR_RELAUNCH_SETTLED_STATE=refuse
+  while [ "$polls" -gt 0 ]; do
+    if herdr_relaunch_candidate_launch_attempt_live; then
+      HERDR_RELAUNCH_SETTLED_STATE=adoptable
+      return 0
+    fi
+    if fm_backend_herdr_relaunch_candidate_matches \
+         "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
+         "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID"; then
+      current=$(fm_backend_herdr_current_path \
+        "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID" || true)
+      current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || current_real=
+      expected_real=$(CDPATH='' cd -- "$WT" 2>/dev/null && pwd -P) || expected_real=
+      if [ -n "$current_real" ] && [ "$current_real" = "$expected_real" ]; then
+        state=$(fm_backend_herdr_recovery_agent_state \
+          "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID")
+      else
+        state=unreadable
+      fi
+    else
+      state=unreadable
+    fi
+    polls=$((polls - 1))
+    [ "$polls" -eq 0 ] || sleep "$interval"
+  done
+  [ "$state" = dead ] && HERDR_RELAUNCH_SETTLED_STATE=rollback
+}
+
 herdr_relaunch_launch_provenance_persist() {
   local dir tmp family path token_path token auth index=0 seen
   dir=$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR
@@ -1434,7 +1483,8 @@ herdr_relaunch_candidate_reconcile_prior() {
       [ "$old_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
         && [ "$old_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
       if [ -z "$candidate_tab" ] || [ -z "$candidate_pane" ]; then
-        [ "$phase" = creating ] && [ -n "$candidate_label" ] || return 1
+        case "$phase" in creating|creation-failed) ;; *) return 1 ;; esac
+        [ -n "$candidate_label" ] || return 1
         fm_backend_herdr_relaunch_candidate_discover \
           "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_label" "$WT"
         discover_status=$?
@@ -1487,6 +1537,7 @@ herdr_relaunch_candidate_reconcile_prior() {
       esac
       fm_backend_herdr_relaunch_candidate_cleanup \
         "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane" || return 1
+      rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-snapshot" || return 1
       herdr_relaunch_candidate_record_write rolled-back "candidate_state=dead" || return 1
       HERDR_RELAUNCH_CANDIDATE_TAB_ID=
       HERDR_RELAUNCH_CANDIDATE_PANE_ID=
