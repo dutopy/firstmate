@@ -76,7 +76,7 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    Crash recovery may list only the recorded workspace to resolve exactly one tab carrying that attempt label; it never searches or adopts another workspace.
    Tmux keeps its existing recorded endpoint and path check.
 6. **Launch and publish the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`.
-   Herdr snapshots the prior harness wiring, persists the staged replacement metadata and wiring immediately before launch submission, proves a live agent at the exact candidate and worktree, then atomically publishes the new endpoint metadata and retires the old agent-free pane when that exact cleanup remains provable.
+   Herdr snapshots the prior harness wiring, persists the staged replacement metadata and wiring immediately before launch submission, proves both an exact live Herdr registration and corroborating live foreground process at the candidate and worktree, then atomically publishes the new endpoint metadata and retires the old agent-free pane when that exact cleanup remains provable.
    A prepublication failure restores prior wiring, leaves old metadata and endpoint untouched, and closes only an exact agent-free candidate; an ambiguous candidate is quarantined instead of being guessed safe to close.
    A retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
    It refuses live pre-launch or quarantined candidates and unreadable or mismatched candidates.

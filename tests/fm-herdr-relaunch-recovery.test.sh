@@ -130,7 +130,11 @@ case "${1:-} ${2:-}" in
       [ "$(jq -r '.candidate_run_fail // false' "$state")" != true ] || exit 1
       cwd=$(jq -r '.candidate_cwd' "$state")
       (cd "$cwd" && bash -c "$text") || exit 1
-      jq '.candidate_pending="" | .candidate_process="live" | .candidate_registered=true' "$state" | save_state
+      jq '
+        .candidate_pending=""
+        | .candidate_process="live"
+        | .candidate_registered=((.candidate_run_unregistered // false) | not)
+      ' "$state" | save_state
     else
       pending=$(jq -r '.pending // empty' "$state")
       cwd=$(jq -r '.cwd' "$state")
@@ -257,7 +261,7 @@ chmod +x "$TMP_ROOT/fakebin/claude"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -576,6 +580,33 @@ grep -q '^phase=rolled-back$' "$DIRECT_HOME/state/direct.control-relaunch-candid
 grep -q 'gen=prior-busy-gen seq=7 state=idle' "$DIRECT_HOME/state/direct.busy-state" \
   || fail "failed candidate launch did not restore prior busy state"
 pass "fm-spawn relaunch: failed candidate launch rolls back endpoint, binding, and supervision wiring"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+jq '.candidate_run_unregistered=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_HERDR_RELAUNCH_LAUNCH_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "an unregistered foreground process passed replacement launch proof: $DIRECT_OUT"
+fi
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "an unregistered foreground process changed the authoritative binding"
+[ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
+  || fail "failed launch proof closed an unregistered foreground process"
+grep -q '^phase=quarantined$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "failed launch proof did not quarantine the unregistered foreground process"
+pass "fm-spawn relaunch: publication requires registration and live process proof"
+write_direct_candidate_record launch-attempt
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "adoption accepted an unregistered foreground process: $DIRECT_OUT"
+fi
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "unregistered adoption changed the authoritative binding"
+pass "fm-spawn relaunch: adoption requires registration and live process proof"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true

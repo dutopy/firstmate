@@ -1200,7 +1200,8 @@ herdr_relaunch_candidate_adopt_live() {
   fm_backend_herdr_relaunch_candidate_matches \
     "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
     "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" || return 1
-  [ "$(fm_backend_herdr_recovery_agent_state "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID")" = alive ] || return 1
+  fm_backend_herdr_relaunch_candidate_live \
+    "$HERDR_SES" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" || return 1
   current=$(fm_backend_herdr_current_path "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID" || true)
   current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || return 1
   expected_real=$(CDPATH='' cd -- "$WT" 2>/dev/null && pwd -P) || return 1
@@ -3817,10 +3818,12 @@ if [ "$HARNESS" = kimi ]; then
   fi
 fi
 if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
-  HERDR_RELAUNCH_LAUNCH_STATE=
+  HERDR_RELAUNCH_LAUNCH_STATE=unproved
   for _ in $(seq 1 "${FM_HERDR_RELAUNCH_LAUNCH_POLLS:-180}"); do
-    HERDR_RELAUNCH_LAUNCH_STATE=$(fm_backend_recovery_agent_state herdr "$T")
-    [ "$HERDR_RELAUNCH_LAUNCH_STATE" != alive ] || break
+    if fm_backend_herdr_relaunch_candidate_live "$HERDR_SES" "$HERDR_PANE_ID"; then
+      HERDR_RELAUNCH_LAUNCH_STATE=alive
+      break
+    fi
     sleep 0.5
   done
   [ "$HERDR_RELAUNCH_LAUNCH_STATE" = alive ] || {

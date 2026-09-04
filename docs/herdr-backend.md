@@ -280,7 +280,7 @@ After the stopped-agent proof, the launch owner takes the named-session mutation
 It creates one fresh tab directly in that recorded workspace with its shell rooted at the validated worktree and records a unique attempt label before creation.
 Recovery may list only that recorded workspace to resolve exactly one tab carrying the recorded label, and it leaves every unrelated workspace or endpoint untouched.
 The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, and the staged metadata plus harness wiring are persisted immediately before the environment and launch command are queued.
-A live replacement agent must then be proved at that exact endpoint.
+Publication and crash adoption both require an exact live Herdr agent registration plus corroborating live foreground-process state at that endpoint.
 Only then does metadata advance atomically to the candidate.
 A prepublication failure leaves the old endpoint and metadata unchanged, restores prior harness wiring, and closes only a response-identified candidate that is still provably agent-free.
 An ambiguous failed candidate remains quarantined under its exact recorded identity instead of granting cleanup authority.

@@ -1988,6 +1988,20 @@ fm_backend_herdr_registered_process_state() {  # <session> <pane-id>
 # pane independently proves that only its lone idle shell remains. An unreadable
 # or contradictory process surface stays unreadable rather than turning either
 # a live agent or an arbitrary foreground command into a recovery candidate.
+fm_backend_herdr_relaunch_candidate_live() {  # <session> <pane-id>
+  local session=$1 pane=$2 out
+  out=$(fm_backend_herdr_cli "$session" agent get "$pane" 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -e --arg pane "$pane" '
+    .result.type == "agent_info"
+    and .result.agent.pane_id == $pane
+    and (.result.agent.agent_status == "working"
+      or .result.agent.agent_status == "idle"
+      or .result.agent.agent_status == "done"
+      or .result.agent.agent_status == "blocked")
+  ' >/dev/null 2>&1 || return 1
+  [ "$(fm_backend_herdr_registered_process_state "$session" "$pane")" = live ]
+}
+
 fm_backend_herdr_recovery_agent_state() {  # <target>
   local target=$1 pane_state process_state
   fm_backend_herdr_parse_target "$target" || { printf 'unreadable'; return 0; }
@@ -2156,8 +2170,7 @@ fm_backend_herdr_relaunch_candidate_cleanup() {  # <session> <workspace-id> <tab
   state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
   case "$state" in
     dead) return 0 ;;
-    no-agent) ;;
-    live)
+    no-agent|live)
       [ "$(fm_backend_herdr_recovery_agent_state "$session:$pane_id")" = dead ] || return 1
       shell_pid=$(fm_backend_herdr_pane_idle_shell_pid "$session" "$pane_id") || return 1
       [ -n "$shell_pid" ] || return 1
