@@ -43,6 +43,10 @@ case "${1:-} ${2:-}" in
   "pane get")
     pane=${3:-}
     jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,foreground_cwd:.cwd}}}' "$state"
+    jq '
+      .pane_gets=((.pane_gets // 0) + 1)
+      | if .pane_gets == (.take_over_after_pane_get // -1) then .process="live" else . end
+    ' "$state" | save_state
     ;;
   "agent get")
     pane=${3:-}
@@ -121,13 +125,16 @@ chmod +x "$TMP_ROOT/fakebin/ps"
 
 cat > "$TMP_ROOT/fakebin/claude" <<'SH'
 #!/usr/bin/env bash
+if [ -n "${FM_FAKE_CLAUDE_ENV_LOG:-}" ]; then
+  printf 'GOTMPDIR=%s\n' "${GOTMPDIR:-}" > "$FM_FAKE_CLAUDE_ENV_LOG"
+fi
 exit 0
 SH
 chmod +x "$TMP_ROOT/fakebin/claude"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:""}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1}' > "$STATE"
   : > "$LOG"
 }
 
@@ -239,6 +246,7 @@ DIRECT_HOME="$TMP_ROOT/direct-home"
 DIRECT_PROJECT="$TMP_ROOT/direct-project"
 DIRECT_WT="$TMP_ROOT/direct-worktree"
 DIRECT_MARKER="$TMP_ROOT/direct-marker"
+DIRECT_ENV_LOG="$TMP_ROOT/direct-env.log"
 fm_git_worktree "$DIRECT_PROJECT" "$DIRECT_WT" direct-relaunch
 mkdir -p "$DIRECT_HOME/state" "$DIRECT_HOME/data/direct"
 cat > "$DIRECT_HOME/data/direct/brief.md" <<'EOF'
@@ -268,11 +276,26 @@ write_state "$DIRECT_WT" shell true
 jq --arg pending "touch '$DIRECT_MARKER'; " '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
   FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+  FM_FAKE_CLAUDE_ENV_LOG="$DIRECT_ENV_LOG" \
   FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1) \
   || fail "direct Herdr relaunch should prepare its endpoint before launch: $DIRECT_OUT"
 [ ! -e "$DIRECT_MARKER" ] || fail "direct Herdr relaunch executed buffered shell input before launch"
+[ "$(cat "$DIRECT_ENV_LOG" 2>/dev/null)" = "GOTMPDIR=/tmp/fm-direct/gotmp" ] \
+  || fail "direct Herdr relaunch did not deliver its environment with the atomic launch command"
 case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "direct Herdr relaunch did not complete: $DIRECT_OUT" ;; esac
 pass "fm-spawn relaunch: direct Herdr entry prepares buffered shell input"
+
+write_state "$DIRECT_WT" shell true
+jq '.take_over_after_pane_get=6' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+  fail "direct Herdr relaunch should refuse after foreground ownership changes: $DIRECT_OUT"
+fi
+run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
+[ "$run_count" -eq 0 ] || fail "owner-change refusal sent input after foreground ownership changed"
+case "$DIRECT_OUT" in *"shell owner changed before launch delivery"*) : ;; *) fail "owner-change refusal was not explicit: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: foreground-owner change before launch delivery fails closed"
 
 write_state "$DIRECT_WT" shell true
 DIRECT_CONCURRENT_OUT="$TMP_ROOT/direct-concurrent.out"
