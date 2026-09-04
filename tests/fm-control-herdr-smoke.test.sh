@@ -152,6 +152,42 @@ SEEN=$(fm_backend_herdr_current_path "$SESSION:$PANE_ID")
 [ "$SEEN" = "$WT" ] || fail "the restored pane path should be '$WT', got '$SEEN'"
 pass "real herdr: an agent-free pane shell returns persistently to the exact recorded worktree"
 
+UNMANAGED_DIR="$SCRATCH/unmanaged"
+mkdir -p "$UNMANAGED_DIR"
+UNMANAGED_RAW=$(lab workspace create --cwd "$UNMANAGED_DIR" --label unmanaged-fixture --no-focus) \
+  || fail "could not create the unrelated-workspace fixture"
+UNMANAGED_PANE=$(printf '%s' "$UNMANAGED_RAW" | jq -r '.result.root_pane.pane_id // empty')
+[ -n "$UNMANAGED_PANE" ] || fail "unrelated-workspace fixture returned no pane id"
+UNMANAGED_BEFORE=$(lab pane get "$UNMANAGED_PANE" | jq -c '.result.pane | {pane_id,tab_id,workspace_id,foreground_cwd}') \
+  || fail "could not snapshot the unrelated-workspace fixture"
+fm_backend_herdr_relaunch_candidate_create \
+  "$SESSION" "$WORKSPACE_ID" replacement-fixture "$WT" \
+  || fail "could not create an exact replacement candidate"
+CANDIDATE_TAB=$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID
+CANDIDATE_PANE=$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID
+fm_backend_herdr_relaunch_candidate_matches \
+  "$SESSION" "$WORKSPACE_ID" "$CANDIDATE_TAB" "$CANDIDATE_PANE" \
+  || fail "replacement candidate did not retain its response-derived binding"
+[ "$(fm_backend_herdr_current_path "$SESSION:$CANDIDATE_PANE")" = "$WT" ] \
+  || fail "replacement candidate did not start in the recorded worktree"
+lab pane get "$PANE_ID" >/dev/null 2>&1 \
+  || fail "replacement candidate creation removed the recorded endpoint"
+UNMANAGED_AFTER=$(lab pane get "$UNMANAGED_PANE" | jq -c '.result.pane | {pane_id,tab_id,workspace_id,foreground_cwd}') \
+  || fail "replacement candidate creation removed the unrelated endpoint"
+[ "$UNMANAGED_AFTER" = "$UNMANAGED_BEFORE" ] \
+  || fail "replacement candidate creation mutated the unrelated workspace"
+fm_backend_herdr_relaunch_candidate_cleanup \
+  "$SESSION" "$WORKSPACE_ID" "$CANDIDATE_TAB" "$CANDIDATE_PANE" \
+  || fail "could not retire the exact agent-free replacement candidate"
+fm_backend_herdr_relaunch_candidate_cleanup \
+  "$SESSION" "$WORKSPACE_ID" "$CANDIDATE_TAB" "$CANDIDATE_PANE" \
+  || fail "repeated exact candidate rollback should be idempotent"
+lab pane get "$PANE_ID" >/dev/null 2>&1 \
+  || fail "candidate rollback removed the recorded endpoint"
+[ "$(lab pane get "$UNMANAGED_PANE" | jq -c '.result.pane | {pane_id,tab_id,workspace_id,foreground_cwd}')" = "$UNMANAGED_BEFORE" ] \
+  || fail "candidate rollback mutated the unrelated workspace"
+pass "real herdr: replacement candidate creation and rollback stay exact-record scoped"
+
 # A different foreground process group makes the same registration live again.
 # This is the structural refusal that prevents a genuine agent process from
 # being mistaken for the shell-only stale-registration case.

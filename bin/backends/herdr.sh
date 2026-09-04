@@ -2017,6 +2017,116 @@ fm_backend_herdr_agent_alive() {  # <target>
   esac
 }
 
+# fm_backend_herdr_relaunch_candidate_create creates a fresh, unpublished task
+# endpoint in one exact recorded workspace and starts its shell in the already
+# validated worktree. It never looks up, adopts, renames, or closes an existing
+# task endpoint. Complete response-derived identities plus a matching pane read
+# are required before cleanup authority is exposed to the caller.
+fm_backend_herdr_relaunch_candidate_create() {  # <session> <workspace-id> <label> <validated-worktree>
+  local session=$1 workspace_id=$2 label=$3 expected=$4 expected_real out pane
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID=""
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID=""
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_CLEANUP_SAFE=0
+  case "$expected" in
+    /*) ;;
+    *) echo "error: herdr replacement worktree must be absolute" >&2; return 1 ;;
+  esac
+  case "$expected" in *$'\n'*|*$'\r'*|*$'\t'*) echo "error: herdr replacement worktree contains unsupported control whitespace" >&2; return 1 ;; esac
+  case "$label" in ''|*[!A-Za-z0-9._-]*) echo "error: herdr replacement label is invalid" >&2; return 1 ;; esac
+  if ! fm_backend_endpoint_atom_valid "$session" \
+     || ! fm_backend_endpoint_atom_valid "$workspace_id"; then
+    echo "error: herdr replacement session or workspace identity is invalid" >&2
+    return 1
+  fi
+  expected_real=$(CDPATH='' cd -- "$expected" 2>/dev/null && pwd -P) || return 1
+  fm_backend_herdr_server_ensure "$session" || return 1
+  out=$(fm_backend_herdr_cli "$session" tab create \
+    --workspace "$workspace_id" --cwd "$expected_real" --label "$label" --no-focus 2>/dev/null) || {
+    echo "error: herdr replacement endpoint creation failed ambiguously" >&2
+    return 1
+  }
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
+  if [ -z "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID" ] \
+     || [ -z "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
+     || ! fm_backend_endpoint_atom_valid "${FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID//:/_}" \
+     || ! fm_backend_endpoint_atom_valid "${FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID//:/_}"; then
+    echo "error: herdr replacement endpoint returned incomplete or invalid identities" >&2
+    return 1
+  fi
+  if ! printf '%s' "$out" | jq -e \
+      --arg workspace "$workspace_id" \
+      --arg tab "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID" \
+      --arg pane "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID" '
+        .result.type == "tab_created"
+        and .result.tab.tab_id == $tab
+        and .result.tab.workspace_id == $workspace
+        and .result.root_pane.pane_id == $pane
+        and .result.root_pane.workspace_id == $workspace
+        and .result.root_pane.tab_id == $tab
+      ' >/dev/null 2>&1; then
+    echo "error: herdr replacement endpoint returned contradictory identities" >&2
+    return 1
+  fi
+  # shellcheck disable=SC2034  # caller consumes the response-derived cleanup authority
+  FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_CLEANUP_SAFE=1
+  pane=$(fm_backend_herdr_cli "$session" pane get "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID" 2>/dev/null) || return 1
+  if ! printf '%s' "$pane" | jq -e \
+      --arg workspace "$workspace_id" \
+      --arg tab "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID" \
+      --arg pane "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID" \
+      --arg cwd "$expected_real" '
+        .result.type == "pane_info"
+        and .result.pane.workspace_id == $workspace
+        and .result.pane.tab_id == $tab
+        and .result.pane.pane_id == $pane
+        and .result.pane.foreground_cwd == $cwd
+      ' >/dev/null 2>&1; then
+    echo "error: herdr replacement endpoint did not verify in its recorded workspace and worktree" >&2
+    return 1
+  fi
+  [ "$(fm_backend_herdr_pane_agent_state "$session" "$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID")" = no-agent ] || {
+    echo "error: herdr replacement endpoint acquired an agent before launch ownership was established" >&2
+    return 1
+  }
+  return 0
+}
+
+fm_backend_herdr_relaunch_candidate_matches() {  # <session> <workspace-id> <tab-id> <pane-id>
+  local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 out
+  out=$(fm_backend_herdr_cli "$session" pane get "$pane_id" 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -e \
+    --arg workspace "$workspace_id" --arg tab "$tab_id" --arg pane "$pane_id" '
+      .result.type == "pane_info"
+      and .result.pane.workspace_id == $workspace
+      and .result.pane.tab_id == $tab
+      and .result.pane.pane_id == $pane
+    ' >/dev/null 2>&1
+}
+
+fm_backend_herdr_relaunch_candidate_cleanup() {  # <session> <workspace-id> <tab-id> <pane-id>
+  local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 presence state shell_pid
+  presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane_id")
+  case "$presence" in
+    dead) return 0 ;;
+    present) ;;
+    *) return 1 ;;
+  esac
+  fm_backend_herdr_relaunch_candidate_matches "$session" "$workspace_id" "$tab_id" "$pane_id" || return 1
+  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
+  case "$state" in
+    dead) return 0 ;;
+    no-agent) ;;
+    live)
+      [ "$(fm_backend_herdr_recovery_agent_state "$session:$pane_id")" = dead ] || return 1
+      shell_pid=$(fm_backend_herdr_pane_idle_shell_pid "$session" "$pane_id") || return 1
+      [ -n "$shell_pid" ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane_id"
+}
+
 # fm_backend_herdr_create_task: create the task's tab (one pane) in
 # <container> ("session:workspace_id"). Herdr does NOT enforce label
 # uniqueness itself (verified: two tabs can share a label), so the duplicate

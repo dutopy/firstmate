@@ -918,7 +918,7 @@ Polling remained active and is covered as the fallback for capability, connect, 
 ### Agent lifecycle control
 
 Herdr is one of the two backends whose recovery-grade agent-state classifier the control plane may trust ([agent-control.md](../agent-control.md)), so its lifecycle gating is measured against the real binary.
-The retained-registration and path-restoration behavior was verified on 2026-09-04 with Herdr 0.8.2; the original registry-only lifecycle behavior was first measured on 2026-08-02 with Herdr 0.7.5.
+The retained-registration, path-restoration, and exact-workspace replacement behavior was verified on 2026-09-04 with Herdr 0.8.2; the original registry-only lifecycle behavior was first measured on 2026-08-02 with Herdr 0.7.5.
 
 ```sh
 HERDR_LAB_HELPER=bin/fm-herdr-lab.sh tests/fm-control-herdr-smoke.test.sh
@@ -931,13 +931,14 @@ ok - real herdr: exit on a pane with no registered agent is idempotent success
 ok - real herdr: interrupt refuses when herdr's own agent registry reports no agent
 ok - real herdr: lifecycle recovery reconciles a retained registration after the agent process exits
 ok - real herdr: an agent-free pane shell returns persistently to the exact recorded worktree
+ok - real herdr: replacement candidate creation and rollback stay exact-record scoped
 ok - real herdr: a non-shell foreground process remains live and cannot be replaced
 ok - real herdr: no control verb removed the endpoint or the task's local copy
 ok - real herdr: an agent process that does not stop fails closed instead of being reported as stopped
 ```
 
-The smoke test registers a stale Pi lifecycle report over a real idle shell, drives a persistent path mismatch and restoration, then places a real non-shell process group in the pane to prove that the same registration remains live and refuses replacement.
-`tests/fm-herdr-relaunch-recovery.test.sh` supplies portable quoting, injection, pending-input cancellation, pre-Enter retry cleanup, direct-launch validation, preparation-through-launch mutation serialization, frozen-shell delivery-boundary takeover refusal, idempotence, ambiguous-state, live-process, and non-Herdr regression coverage.
+The smoke test registers a stale Pi lifecycle report over a real idle shell, drives a persistent path mismatch and restoration, creates and retires one response-identified replacement candidate while proving an unrelated workspace unchanged, then places a real non-shell process group in the pane to prove that the same registration remains live and refuses replacement.
+`tests/fm-herdr-relaunch-recovery.test.sh` supplies portable stale-registration, live-process, ambiguous-state, exact-worktree, quoting, replacement publication, rollback, wiring restoration, idempotent candidate retry, candidate-takeover, exact-record scoping, unmanaged-workspace noninterference, and non-Herdr regression coverage.
 The smoke command is the guard that refreshes this record; run it after every Herdr upgrade rather than trusting the version above.
 
 ### Away-mode transport

@@ -275,10 +275,15 @@ Unlike tmux process-name inspection, native registration can classify Pi without
 Lifecycle control adds one process-level reconciliation because Herdr can retain Pi's native registration after Pi exits.
 A registered pane becomes agent-free for exit or replacement only when `pane process-info` and the operating-system process table prove the exact pane contains one lone idle recognized shell.
 A distinct foreground process group remains alive, and any contradictory or unreadable process evidence refuses recovery.
-After that proof, the launch owner takes the named-session mutation lock and cancels any pending input while that same idle shell owns the pane, including when its path already matches the recorded worktree.
-For a mismatched path it then sends a quoted `cd` through literal input, rechecks the same shell before Enter, clears its own buffered command after a pre-Enter failure only if that shell still owns the pane, verifies the exact resulting foreground path, and keeps the lock until the replacement launch command is submitted.
-At final delivery it stops the exact prepared shell, verifies that the stopped process still exclusively owns the pane and worktree, atomically queues the environment plus launch command and Enter, and resumes the shell; a bounded watchdog resumes it if the launch process dies mid-boundary.
-This backend-owned preparation is idempotent and never selects a path itself; both the control transaction and the shared launch owner validate the task endpoint, plus a ship or scout's worktree root and separation from the primary project copy, before any pane input.
+Herdr 0.8.2 exposes no generic pane launch operation conditioned on an expected shell owner, so lifecycle recovery never injects a replacement command into the old pane.
+After the stopped-agent proof, the launch owner takes the named-session mutation lock and revalidates the recorded pane's exact workspace and tab relation.
+It creates one fresh tab directly in that recorded workspace with its shell rooted at the validated worktree, retains only the response-derived candidate ids, and never lists, classifies, adopts, renames, closes, or recycles an unrelated workspace or endpoint.
+The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, the environment plus launch command are queued, and a live replacement agent is proved at that exact endpoint.
+Only then does metadata advance atomically to the candidate.
+A prepublication failure leaves the old endpoint and metadata unchanged, restores prior harness wiring, and closes only a response-identified candidate that is still provably agent-free.
+An ambiguous or live failed candidate remains quarantined under its exact recorded id instead of granting cleanup authority.
+A later retry reads only that journaled id: an agent-free or already-gone candidate is retired idempotently, while a live or unreadable candidate refuses duplication.
+After publication, the old pane is retired only when its exact identity and agent-free state remain provable.
 
 The session-start sweep uses the ordinary probe.
 Mid-session secondmate agent-process liveness is not implemented because idle secondmates are deliberately exempt from stale-pane escalation and need a separate periodic identity signal.

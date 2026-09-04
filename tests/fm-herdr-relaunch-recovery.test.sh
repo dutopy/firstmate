@@ -42,16 +42,31 @@ case "${1:-} ${2:-}" in
     ;;
   "pane get")
     pane=${3:-}
-    jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,foreground_cwd:.cwd}}}' "$state"
-    jq '
-      .pane_gets=((.pane_gets // 0) + 1)
-      | if .pane_gets == (.take_over_after_pane_get // -1) then .process="live" else . end
-    ' "$state" | save_state
+    if [ "$pane" = w1:p2 ]; then
+      if [ "$(jq -r '.candidate_exists // false' "$state")" != true ]; then
+        printf '{"id":"cli:pane:get","error":{"code":"pane_not_found"}}\n'
+      else
+        jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,tab_id:"w1:t2",workspace_id:"w1",foreground_cwd:.candidate_cwd}}}' "$state"
+        jq '
+          .candidate_pane_gets=((.candidate_pane_gets // 0) + 1)
+          | if .candidate_pane_gets == (.candidate_take_over_after_pane_get // -1)
+            then .candidate_process="live" | .candidate_registered=true
+            else . end
+        ' "$state" | save_state
+      fi
+    else
+      jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,tab_id:"w1:t1",workspace_id:"w1",foreground_cwd:.cwd}}}' "$state"
+      jq '
+        .pane_gets=((.pane_gets // 0) + 1)
+        | if .pane_gets == (.take_over_after_pane_get // -1) then .process="live" else . end
+      ' "$state" | save_state
+    fi
     ;;
   "agent get")
     pane=${3:-}
-    if [ "$(jq -r '.registered' "$state")" = true ]; then
-      jq --arg pane "$pane" '{id:"cli:agent:get",result:{type:"agent_info",agent:{pane_id:$pane,agent:"pi",agent_status:"idle"}}}' "$state"
+    if { [ "$pane" = w1:p2 ] && [ "$(jq -r '.candidate_registered // false' "$state")" = true ]; } \
+       || { [ "$pane" != w1:p2 ] && [ "$(jq -r '.registered' "$state")" = true ]; }; then
+      jq -n --arg pane "$pane" '{id:"cli:agent:get",result:{type:"agent_info",agent:{pane_id:$pane,agent:"pi",agent_status:"idle"}}}'
     else
       printf '{"id":"cli:agent:get","error":{"code":"agent_not_found"}}\n'
     fi
@@ -67,45 +82,105 @@ case "${1:-} ${2:-}" in
       printf '{"id":"cli:pane:process_info","result":{"type":"pane_process_info","process_info":{"pane_id":"wrong"}}}\n'
       exit 0
     fi
-    mode=$(jq -r '.process' "$state")
+    if [ "$pane" = w1:p2 ]; then
+      mode=$(jq -r '.candidate_process // "shell"' "$state")
+    else
+      mode=$(jq -r '.process' "$state")
+    fi
+    if [ "$pane" = w1:p2 ]; then shell_pid=42001; live_pid=42002; else shell_pid=41001; live_pid=41002; fi
     case "$mode" in
       shell)
-        jq -n --arg pane "$pane" '{id:"cli:pane:process_info",result:{type:"pane_process_info",process_info:{pane_id:$pane,shell_pid:41001,foreground_process_group_id:41001,foreground_processes:[{pid:41001,name:"bash",argv:["/bin/bash"]}]}}}'
+        jq -n --arg pane "$pane" --argjson shell "$shell_pid" '{id:"cli:pane:process_info",result:{type:"pane_process_info",process_info:{pane_id:$pane,shell_pid:$shell,foreground_process_group_id:$shell,foreground_processes:[{pid:$shell,name:"bash",argv:["/bin/bash"]}]}}}'
         ;;
       live)
-        jq -n --arg pane "$pane" '{id:"cli:pane:process_info",result:{type:"pane_process_info",process_info:{pane_id:$pane,shell_pid:41001,foreground_process_group_id:41002,foreground_processes:[{pid:41002,name:"pi",argv:["/opt/pi/bin/pi"]}]}}}'
+        jq -n --arg pane "$pane" --argjson shell "$shell_pid" --argjson live "$live_pid" '{id:"cli:pane:process_info",result:{type:"pane_process_info",process_info:{pane_id:$pane,shell_pid:$shell,foreground_process_group_id:$live,foreground_processes:[{pid:$live,name:"pi",argv:["/opt/pi/bin/pi"]}]}}}'
         ;;
       *) printf '{"id":"cli:pane:process_info","result":{"type":"pane_process_info","process_info":{"pane_id":"wrong"}}}\n' ;;
     esac
     ;;
   "pane send-text")
+    pane=${3:-}
     text=${4:-}
-    jq --arg text "$text" '
-      .pending=((.pending // "") + $text)
-      | if .fail_after_send_once then .fail_after_send_once=false | .process_info_failures=1 else . end
-      | if ((.process_after_send // "") != "") then .process=.process_after_send else . end
-    ' "$state" | save_state
+    if [ "$pane" = w1:p2 ]; then
+      jq --arg text "$text" '.candidate_pending=((.candidate_pending // "") + $text)' "$state" | save_state
+    else
+      jq --arg text "$text" '
+        .pending=((.pending // "") + $text)
+        | if .fail_after_send_once then .fail_after_send_once=false | .process_info_failures=1 else . end
+        | if ((.process_after_send // "") != "") then .process=.process_after_send else . end
+      ' "$state" | save_state
+    fi
     ;;
   "pane run")
+    pane=${3:-}
     text=${4:-}
     sleep "${FM_FAKE_HERDR_RUN_DELAY:-0}"
-    pending=$(jq -r '.pending // empty' "$state")
-    cwd=$(jq -r '.cwd' "$state")
-    new_cwd=$(cd "$cwd" && bash -c "$pending$text; pwd -P") || exit 1
-    jq --arg cwd "$new_cwd" '.cwd=$cwd | .pending=""' "$state" | save_state
+    if [ "$pane" = w1:p2 ]; then
+      if [ "$(jq -r '.candidate_takeover_before_run // false' "$state")" = true ]; then
+        jq '.candidate_process="live" | .candidate_registered=true' "$state" | save_state
+        exit 1
+      fi
+      [ "$(jq -r '.candidate_run_fail // false' "$state")" != true ] || exit 1
+      cwd=$(jq -r '.candidate_cwd' "$state")
+      (cd "$cwd" && bash -c "$text") || exit 1
+      jq '.candidate_pending="" | .candidate_process="live" | .candidate_registered=true' "$state" | save_state
+    else
+      pending=$(jq -r '.pending // empty' "$state")
+      cwd=$(jq -r '.cwd' "$state")
+      new_cwd=$(cd "$cwd" && bash -c "$pending$text; pwd -P") || exit 1
+      jq --arg cwd "$new_cwd" '.cwd=$cwd | .pending=""' "$state" | save_state
+    fi
     ;;
   "pane send-keys")
+    pane=${3:-}
     key=${4:-}
     if [ "$key" = ctrl+c ]; then
       sleep "${FM_FAKE_HERDR_CLEAR_DELAY:-0}"
-      jq '.pending=""' "$state" | save_state
-    elif [ "$key" = enter ]; then
-      pending=$(jq -r '.pending // empty' "$state")
-      cwd=$(jq -r '.cwd' "$state")
-      if [ -n "$pending" ]; then
-        new_cwd=$(cd "$cwd" && bash -c "$pending; pwd -P") || exit 1
-        jq --arg cwd "$new_cwd" '.cwd=$cwd | .pending=""' "$state" | save_state
+      if [ "$pane" = w1:p2 ]; then
+        jq '.candidate_pending=""' "$state" | save_state
+      else
+        jq '.pending=""' "$state" | save_state
       fi
+    elif [ "$key" = enter ]; then
+      if [ "$pane" = w1:p2 ]; then
+        jq '.candidate_pending=""' "$state" | save_state
+      else
+        pending=$(jq -r '.pending // empty' "$state")
+        cwd=$(jq -r '.cwd' "$state")
+        if [ -n "$pending" ]; then
+          new_cwd=$(cd "$cwd" && bash -c "$pending; pwd -P") || exit 1
+          jq --arg cwd "$new_cwd" '.cwd=$cwd | .pending=""' "$state" | save_state
+        fi
+      fi
+    fi
+    ;;
+  "tab create")
+    workspace=
+    cwd=
+    label=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --workspace) workspace=${2:-}; shift 2 ;;
+        --cwd) cwd=${2:-}; shift 2 ;;
+        --label) label=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    [ "$workspace" = w1 ] || exit 1
+    jq --arg cwd "$cwd" --arg label "$label" '
+      .candidate_exists=true
+      | .candidate_cwd=$cwd
+      | .candidate_label=$label
+      | .candidate_pending=""
+      | .candidate_process="shell"
+      | .candidate_registered=false
+    ' "$state" | save_state
+    jq -n --arg cwd "$cwd" --arg label "$label" '{id:"cli:tab:create",result:{type:"tab_created",tab:{tab_id:"w1:t2",workspace_id:"w1",label:$label},root_pane:{pane_id:"w1:p2",tab_id:"w1:t2",workspace_id:"w1",foreground_cwd:$cwd}}}'
+    ;;
+  "pane close")
+    pane=${3:-}
+    if [ "$pane" = w1:p2 ]; then
+      jq '.candidate_exists=false | .candidate_registered=false | .candidate_process="dead"' "$state" | save_state
     fi
     ;;
 esac
@@ -115,11 +190,11 @@ chmod +x "$TMP_ROOT/fakebin/herdr"
 cat > "$TMP_ROOT/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
-  "-axo pid=,ppid=") printf '41001 1\n' ;;
-  "-p 41001 -o stat=")
+  "-axo pid=,ppid=") printf '41001 1\n42001 1\n' ;;
+  "-p 41001 -o stat="|"-p 42001 -o stat=")
     if [ "$(jq -r '.frozen // false' "$FM_FAKE_HERDR_STATE")" = true ]; then printf 'T\n'; else printf 'S\n'; fi
     ;;
-  "-p 41001 -o comm=") printf 'bash\n' ;;
+  "-p 41001 -o comm="|"-p 42001 -o comm=") printf 'bash\n' ;;
   *) exit 1 ;;
 esac
 SH
@@ -134,7 +209,11 @@ case "${1:-} ${2:-}" in
     jq '.frozen=true | if (.take_over_on_stop // false) then .process="live" else . end' \
       "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
     ;;
-  "-CONT 41001")
+  "-STOP 42001")
+    jq '.frozen=true | if (.candidate_take_over_on_stop // false) then .candidate_process="live" | .candidate_registered=true else . end' \
+      "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
+    ;;
+  "-CONT 41001"|"-CONT 42001")
     jq '.frozen=false' "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
     ;;
   *) exit 1 ;;
@@ -145,7 +224,7 @@ chmod +x "$TMP_ROOT/fakebin/kill"
 cat > "$TMP_ROOT/fakebin/claude" <<'SH'
 #!/usr/bin/env bash
 if [ -n "${FM_FAKE_CLAUDE_ENV_LOG:-}" ]; then
-  printf 'GOTMPDIR=%s\n' "${GOTMPDIR:-}" > "$FM_FAKE_CLAUDE_ENV_LOG"
+  printf 'GOTMPDIR=%s\nTRACEPARENT=%s\n' "${GOTMPDIR:-}" "${TRACEPARENT:-}" > "$FM_FAKE_CLAUDE_ENV_LOG"
 fi
 exit 0
 SH
@@ -153,7 +232,7 @@ chmod +x "$TMP_ROOT/fakebin/claude"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -285,44 +364,146 @@ harness=claude
 kind=ship
 mode=no-mistakes
 yolo=off
+model=test-model
+effort=high
+traceparent=00-11111111111111111111111111111111-2222222222222222-01
 backend=herdr
 herdr_session=fmtest
 herdr_workspace_id=w1
 herdr_tab_id=w1:t1
 herdr_pane_id=w1:p1
 EOF
+cp "$DIRECT_HOME/state/direct.meta" "$DIRECT_HOME/state/direct.meta.original"
+reset_direct_meta() {
+  cp "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta"
+  rm -f "$DIRECT_HOME/state/direct.control-relaunch-candidate"
+}
+write_direct_candidate_record() {  # <phase>
+  cat > "$DIRECT_HOME/state/direct.control-relaunch-candidate" <<EOF
+v1
+task=direct
+phase=$1
+tx=prior
+session=fmtest
+workspace=w1
+old_tab=w1:t1
+old_pane=w1:p1
+candidate_tab=w1:t2
+candidate_pane=w1:p2
+worktree=$DIRECT_WT
+replacement_harness=claude
+replacement_model=test-model
+replacement_effort=high
+EOF
+}
+printf '%s\n' "$$" > "$DIRECT_HOME/state/.lock"
+printf '%s on\n' "$$" > "$DIRECT_HOME/state/.trace-context-effective"
 write_state "$DIRECT_WT" shell true
 jq --arg pending "touch '$DIRECT_MARKER'; " '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
   FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
   FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_FAKE_CLAUDE_ENV_LOG="$DIRECT_ENV_LOG" \
-  FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1) \
+  FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
   || fail "direct Herdr relaunch should prepare its endpoint before launch: $DIRECT_OUT"
 [ ! -e "$DIRECT_MARKER" ] || fail "direct Herdr relaunch executed buffered shell input before launch"
-[ "$(cat "$DIRECT_ENV_LOG" 2>/dev/null)" = "GOTMPDIR=/tmp/fm-direct/gotmp" ] \
-  || fail "direct Herdr relaunch did not deliver its environment with the atomic launch command"
+[ "$(cat "$DIRECT_ENV_LOG" 2>/dev/null)" = $'GOTMPDIR=/tmp/fm-direct/gotmp\nTRACEPARENT=00-11111111111111111111111111111111-2222222222222222-01' ] \
+  || fail "direct Herdr relaunch did not preserve its environment and trace carrier: $(cat "$DIRECT_ENV_LOG" 2>/dev/null)"
 case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "direct Herdr relaunch did not complete: $DIRECT_OUT" ;; esac
-pass "fm-spawn relaunch: direct Herdr entry prepares buffered shell input"
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "successful replacement did not publish the fresh pane binding"
+if ! grep -q '^model=test-model$' "$DIRECT_HOME/state/direct.meta" \
+   || ! grep -q '^effort=high$' "$DIRECT_HOME/state/direct.meta" \
+   || ! grep -q '^traceparent=00-11111111111111111111111111111111-2222222222222222-01$' "$DIRECT_HOME/state/direct.meta"; then
+  fail "successful replacement did not preserve its model, effort, and trace binding: $(cat "$DIRECT_HOME/state/direct.meta")"
+fi
+pass "fm-spawn relaunch: fresh endpoint becomes authoritative only after launch proof"
 
+reset_direct_meta
 write_state "$DIRECT_WT" shell true
-jq '.take_over_after_pane_get=6' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+jq '.candidate_take_over_after_pane_get=1' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
   fail "direct Herdr relaunch should refuse after foreground ownership changes: $DIRECT_OUT"
 fi
 run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
 [ "$run_count" -eq 0 ] || fail "owner-change refusal sent input after foreground ownership changed"
-case "$DIRECT_OUT" in *"shell owner changed before launch delivery"*) : ;; *) fail "owner-change refusal was not explicit: $DIRECT_OUT" ;; esac
-pass "fm-spawn relaunch: foreground-owner change before launch delivery fails closed"
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "pre-launch takeover changed the authoritative endpoint binding"
+case "$DIRECT_OUT" in *"acquired an agent before launch ownership was established"*) : ;; *) fail "owner-change refusal was not explicit: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: pre-launch takeover preserves the old binding"
 
+reset_direct_meta
+mkdir -p "$DIRECT_WT/.claude"
+printf '%s\n' prior-claude-wiring > "$DIRECT_WT/.claude/settings.local.json"
+printf '%s\n' prior-busy-gen > "$DIRECT_HOME/state/direct.busy-gen"
+printf '%s\n' 'v1 gen=prior-busy-gen seq=7 state=idle source=test event=prior ts=1' > "$DIRECT_HOME/state/direct.busy-state"
 write_state "$DIRECT_WT" shell true
-jq '.take_over_on_stop=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+jq '.candidate_run_fail=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "failed candidate launch should not report a successful relaunch: $DIRECT_OUT"
+fi
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "failed candidate launch changed the authoritative endpoint binding"
+[ "$(jq -r '.candidate_exists' "$STATE")" = false ] \
+  || fail "failed agent-free candidate launch was not rolled back"
+grep -q '^phase=rolled-back$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "failed candidate launch left no durable rollback evidence"
+[ "$(cat "$DIRECT_WT/.claude/settings.local.json")" = prior-claude-wiring ] \
+  || fail "failed candidate launch did not restore prior harness wiring"
+[ "$(cat "$DIRECT_HOME/state/direct.busy-gen")" = prior-busy-gen ] \
+  || fail "failed candidate launch did not restore the prior busy generation"
+grep -q 'gen=prior-busy-gen seq=7 state=idle' "$DIRECT_HOME/state/direct.busy-state" \
+  || fail "failed candidate launch did not restore prior busy state"
+pass "fm-spawn relaunch: failed candidate launch rolls back endpoint, binding, and supervision wiring"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+jq '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="shell" | .candidate_registered=true' \
+  --arg cwd "$DIRECT_WT" "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+write_direct_candidate_record created
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry should reconcile an exact stale registered candidate before relaunch: $DIRECT_OUT"
+close_line=$(grep -n $'\x1fpane\x1fclose\x1fw1:p2' "$LOG" | head -1 | cut -d: -f1)
+create_line=$(grep -n $'\x1ftab\x1fcreate\x1f' "$LOG" | head -1 | cut -d: -f1)
+[ -n "$close_line" ] && [ -n "$create_line" ] && [ "$close_line" -lt "$create_line" ] \
+  || fail "retry did not retire the stale exact candidate before creating its replacement: $(cat "$LOG")"
+pass "fm-spawn relaunch: retry idempotently reconciles a stale exact candidate"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+jq '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="live" | .candidate_registered=true' \
+  --arg cwd "$DIRECT_WT" "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+write_direct_candidate_record quarantined
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "retry should refuse a prior exact candidate with a real live agent: $DIRECT_OUT"
+fi
+! grep -Fq $'\x1ftab\x1fcreate\x1f' "$LOG" \
+  || fail "retry created a duplicate endpoint beside a live quarantined candidate"
+[ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
+  || fail "retry removed a real live quarantined candidate"
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "live-candidate refusal changed the authoritative old binding"
+case "$DIRECT_OUT" in *"prior Herdr replacement candidate cannot be proved safe"*) : ;; *) fail "live-candidate refusal was not explicit: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: retry refuses a real-live candidate without duplication or cleanup"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+jq '.candidate_take_over_on_stop=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
   fail "direct Herdr relaunch should refuse a takeover at the final delivery boundary: $DIRECT_OUT"
 fi
 run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
@@ -330,12 +511,13 @@ run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
 [ "$(jq -r '.frozen' "$STATE")" = false ] || fail "delivery-boundary refusal left the prepared shell stopped"
 pass "fm-spawn relaunch: frozen-shell boundary closes the final owner-check race"
 
+reset_direct_meta
 write_state "$DIRECT_WT" shell true
 DIRECT_CONCURRENT_OUT="$TMP_ROOT/direct-concurrent.out"
 PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
   FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
   FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_FAKE_HERDR_RUN_DELAY=0.5 FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude > "$DIRECT_CONCURRENT_OUT" 2>&1 &
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch > "$DIRECT_CONCURRENT_OUT" 2>&1 &
 direct_pid=$!
 direct_started=0
 for _ in {1..500}; do
@@ -366,8 +548,51 @@ wait "$direct_pid" || fail "the serialized direct relaunch failed: $(cat "$DIREC
 wait "$competitor_pid" || fail "the competing path preparation did not resume after launch submission"
 clear_count=$(grep -c $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG" || true)
 [ "$clear_count" -eq 2 ] || fail "the competing pane mutation did not run after relaunch submission"
-pass "fm-spawn relaunch: Herdr session mutation lock spans preparation through launch submission"
+pass "fm-spawn relaunch: Herdr session mutation lock spans candidate creation through binding publication"
 
+[ "$(jq -r '.unmanaged_fingerprint' "$STATE")" = unchanged ] \
+  || fail "replacement transaction mutated an unrelated unmanaged endpoint"
+! grep -Fq $'\x1fworkspace\x1flist\x1f' "$LOG" \
+  || fail "replacement transaction enumerated unrelated Herdr workspaces"
+! grep -Eq 'w9(:p9)?' "$LOG" \
+  || fail "replacement transaction addressed an unrelated unmanaged identity"
+pass "fm-spawn relaunch: replacement stays exact-record scoped and ignores unmanaged workspaces"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+jq '.take_over_after_pane_get=2' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "replacement creation should refuse when the old endpoint becomes live under its session lock: $DIRECT_OUT"
+fi
+! grep -Fq $'\x1ftab\x1fcreate\x1f' "$LOG" \
+  || fail "replacement creation proceeded after the old endpoint became live"
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "live-agent boundary refusal changed the authoritative endpoint binding"
+case "$DIRECT_OUT" in *"no longer proves agent-free under the session mutation lock"*) : ;; *) fail "live-agent boundary refusal was not explicit: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: a real-live old endpoint is rechecked under the mutation lock"
+
+reset_direct_meta
+awk '/^herdr_workspace_id=/{print "herdr_workspace_id=w9"; next} {print}' \
+  "$DIRECT_HOME/state/direct.meta" > "$DIRECT_HOME/state/direct.meta.tmp"
+mv "$DIRECT_HOME/state/direct.meta.tmp" "$DIRECT_HOME/state/direct.meta"
+write_state "$DIRECT_WT" shell true
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "replacement creation should refuse a contradictory recorded workspace relation: $DIRECT_OUT"
+fi
+! grep -Fq $'\x1ftab\x1fcreate\x1f' "$LOG" \
+  || fail "contradictory workspace metadata created a replacement endpoint"
+[ "$(jq -r '.unmanaged_fingerprint' "$STATE")" = unchanged ] \
+  || fail "contradictory workspace metadata mutated the unrelated workspace"
+case "$DIRECT_OUT" in *"does not match its exact workspace and tab"*) : ;; *) fail "contradictory workspace refusal was not explicit: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: contradictory endpoint relations refuse before workspace mutation"
+
+reset_direct_meta
 awk -v wt="$DIRECT_PROJECT" '/^worktree=/{print "worktree=" wt; next} {print}' \
   "$DIRECT_HOME/state/direct.meta" > "$DIRECT_HOME/state/direct.meta.tmp"
 mv "$DIRECT_HOME/state/direct.meta.tmp" "$DIRECT_HOME/state/direct.meta"
@@ -377,7 +602,7 @@ jq --arg pending "$INVALID_PENDING" '.pending=$pending' "$STATE" > "$STATE.tmp" 
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
   fail "direct Herdr relaunch should reject the primary checkout: $DIRECT_OUT"
 fi
 [ "$(jq -r '.pending' "$STATE")" = "$INVALID_PENDING" ] || fail "invalid-worktree relaunch sent input before refusing"

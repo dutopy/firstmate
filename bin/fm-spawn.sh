@@ -24,21 +24,23 @@
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
-#   --relaunch launches a replacement agent for an EXISTING task into that
-#   task's own recorded endpoint and worktree instead of creating either. It is
-#   the launch half of the control plane (bin/fm-control.sh relaunch), which
-#   owns the checkpoint, the progress note, stopping the previous agent, and the
-#   transaction; call fm-control rather than this flag directly unless you are
-#   deliberately re-launching an already-stopped task. Every identity axis -
-#   backend, kind, project or home, worktree, endpoint - comes from the task's
+#   --relaunch launches a replacement agent for an EXISTING task in its exact
+#   recorded worktree. Tmux reuses the recorded endpoint. Herdr allocates one
+#   fresh endpoint in the recorded endpoint's exact workspace, keeps it
+#   unpublished while launch is proved, then atomically advances the task
+#   binding; any prepublication failure leaves the old endpoint and record
+#   untouched and retires only a response-identified agent-free candidate. It
+#   is the launch half of the control plane (bin/fm-control.sh relaunch), which
+#   owns the checkpoint, progress note, old-agent stop, and transaction; call
+#   fm-control rather than this flag directly unless deliberately re-launching
+#   an already-stopped task. Every identity axis - backend, kind, project or
+#   home, worktree, and recorded endpoint scope - comes from the task's
 #   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
 #   positional, and batch pairs are all refused alongside it; only harness,
-#   model, and effort may change, which is what makes a harness switch one
-#   ordinary relaunch. It refuses unless the recorded endpoint is positively
-#   agent-free on a backend with a recovery-grade agent-state classifier (tmux
-#   or herdr), refuses unless the endpoint's shell is sitting in the recorded
-#   worktree, and clears the previous harness's per-task wiring before arming
-#   the new incarnation.
+#   model, and effort may change. It refuses unless the recorded endpoint is
+#   positively agent-free on a recovery-grade backend and the recorded local
+#   copy remains valid. Replacement wiring is snapshotted and restored on a
+#   failed Herdr launch.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
 #   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
@@ -413,10 +415,9 @@ case "$EFFORT" in
   *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
 esac
 
-# --relaunch reuses an existing task's endpoint, worktree, project, and kind,
-# so every axis this block resolves for a fresh spawn instead comes from that
-# task's own durable record below. Contradicting it on the command line is a
-# refusal rather than a silently-ignored flag.
+# --relaunch reuses an existing task's backend, worktree, project, and kind.
+# Herdr may transactionally replace the exact recorded endpoint inside its
+# recorded workspace, but no command-line axis can broaden that scope.
 if [ "$RELAUNCH" -eq 1 ]; then
   [ "$BACKEND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded backend; --backend cannot override it" >&2; exit 1; }
   [ "$KIND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded kind; --scout/--secondmate cannot override it" >&2; exit 1; }
@@ -743,6 +744,14 @@ HERDR_PROJECTION_ABORT_TASK_PANE=
 HERDR_PROJECTION_ABORT_SEEDED_PANE=
 HERDR_PRESENTATION_ORDER_LOCK=
 HERDR_PRESENTATION_ORDER_LOCK_HELD=0
+HERDR_RELAUNCH_CANDIDATE=0
+HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
+HERDR_RELAUNCH_CANDIDATE_RECORD=
+HERDR_RELAUNCH_CANDIDATE_TAB_ID=
+HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+HERDR_RELAUNCH_OLD_WORKSPACE_ID=
+HERDR_RELAUNCH_OLD_TAB_ID=
+HERDR_RELAUNCH_OLD_PANE_ID=
 RELAUNCH_HERDR_SHELL_PID=
 SPAWN_TASK_LOCK=
 SPAWN_TASK_LOCK_HELD=0
@@ -761,6 +770,9 @@ RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
 RELAUNCH_REPLACEMENT_STATE=
 RELAUNCH_REPLACEMENT_WT=
+RELAUNCH_WIRING_SNAPSHOT_DIR=
+RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
+RELAUNCH_PRIOR_AUTH_PATH=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
@@ -792,7 +804,7 @@ parse_orca_worktree_result() {
 }
 
 spawn_abort_cleanup() {
-  local status=$?
+  local status=$? candidate_state
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
      && [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] \
      && [ -n "$SPAWN_META_TMP" ] \
@@ -815,6 +827,25 @@ spawn_abort_cleanup() {
           --gen "$RELAUNCH_REPLACEMENT_BUSY_GEN"; then
         echo "warning: could not retire replacement busy generation after aborted relaunch of $ID" >&2
       fi
+    fi
+  fi
+  if [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" = 1 ]; then
+    if ! restore_relaunch_wiring_snapshot; then
+      echo "warning: could not restore the prior harness wiring after aborted relaunch of $ID" >&2
+      status=1
+    fi
+  fi
+  if [ "$HERDR_RELAUNCH_CANDIDATE_CLEANUP" = 1 ]; then
+    HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
+    if fm_backend_herdr_relaunch_candidate_cleanup \
+        "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
+        "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID"; then
+      herdr_relaunch_candidate_record_write rolled-back "candidate_state=dead" 2>/dev/null || true
+    else
+      candidate_state=$(fm_backend_herdr_pane_agent_state "$HERDR_SES" "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" 2>/dev/null || printf unknown)
+      herdr_relaunch_candidate_record_write quarantined "candidate_state=$candidate_state" 2>/dev/null || true
+      echo "warning: uncommitted Herdr replacement endpoint $HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID could not be safely retired (state=$candidate_state); its exact identity remains in $HERDR_RELAUNCH_CANDIDATE_RECORD" >&2
+      status=1
     fi
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
@@ -896,6 +927,10 @@ spawn_abort_cleanup() {
     fm_lock_release "$SPAWN_CONTROL_LOCK" || true
   fi
   [ -z "$SPAWN_META_TMP" ] || rm -f "$SPAWN_META_TMP" 2>/dev/null || true
+  if [ -n "$RELAUNCH_WIRING_SNAPSHOT_DIR" ] \
+     && [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" != 1 ]; then
+    rm -rf "$RELAUNCH_WIRING_SNAPSHOT_DIR" 2>/dev/null || true
+  fi
   if [ "$CONFIG_INHERIT_LOCK_HELD" = 1 ]; then
     CONFIG_INHERIT_LOCK_HELD=0
     fm_lock_release "$CONFIG_INHERIT_LOCK" || true
@@ -951,10 +986,193 @@ $(fm_control_harness_wiring_paths "$harness" "$wt" "$state" "$id")
 EOF
 }
 
+snapshot_relaunch_wiring() {  # <prior-harness> <new-harness> <worktree> <state> <id>
+  local prior=$1 replacement=$2 wt=$3 state=$4 id=$5 path token auth index=0 seen
+  local prior_family replacement_family
+  prior_family=$(fm_control_harness_family "$prior") || prior_family=
+  replacement_family=$(fm_control_harness_family "$replacement") || replacement_family=
+  RELAUNCH_WIRING_SNAPSHOT_DIR="$state/.$id.relaunch-wiring.${BASHPID:-$$}"
+  (umask 077; mkdir "$RELAUNCH_WIRING_SNAPSHOT_DIR") || return 1
+  : > "$RELAUNCH_WIRING_SNAPSHOT_DIR/manifest" || return 1
+  RELAUNCH_PRIOR_AUTH_PATH=
+  {
+    fm_control_harness_wiring_paths "$prior_family" "$wt" "$state" "$id" || return 1
+    fm_control_harness_wiring_paths "$replacement_family" "$wt" "$state" "$id" || return 1
+    printf '%s\n' "$(fm_busy_record_path "$state" "$id")" "$(fm_busy_gen_path "$state" "$id")"
+    token=$(fm_control_harness_turnend_token_path "$prior_family" "$state" "$id") || return 1
+    if [ -n "$token" ] && [ -f "$token" ] && [ ! -L "$token" ]; then
+      IFS= read -r token < "$token" || [ -n "$token" ] || return 1
+      auth=$(fm_control_harness_turnend_auth_path "$prior_family" "$token") || return 1
+      if [ -n "$auth" ]; then
+        RELAUNCH_PRIOR_AUTH_PATH=$auth
+        printf '%s\n' "$auth"
+      fi
+    fi
+  } > "$RELAUNCH_WIRING_SNAPSHOT_DIR/paths" || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    case "$path" in /*) ;; *) return 1 ;; esac
+    case "$path" in *$'\n'*|*$'\r'*|*$'\t'*) return 1 ;; esac
+    seen=0
+    while IFS=$'\t' read -r _ _ saved_path; do
+      [ "$saved_path" != "$path" ] || seen=1
+    done < "$RELAUNCH_WIRING_SNAPSHOT_DIR/manifest"
+    [ "$seen" = 0 ] || continue
+    index=$((index + 1))
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      [ -f "$path" ] && [ ! -L "$path" ] || return 1
+      cp -p "$path" "$RELAUNCH_WIRING_SNAPSHOT_DIR/$index" || return 1
+      printf 'present\t%s\t%s\n' "$index" "$path"
+    else
+      printf 'absent\t%s\t%s\n' "$index" "$path"
+    fi >> "$RELAUNCH_WIRING_SNAPSHOT_DIR/manifest" || return 1
+  done < "$RELAUNCH_WIRING_SNAPSHOT_DIR/paths" || return 1
+  rm -f "$RELAUNCH_WIRING_SNAPSHOT_DIR/paths" || return 1
+  RELAUNCH_WIRING_SNAPSHOT_ACTIVE=1
+}
+
+restore_relaunch_wiring_snapshot() {
+  local presence index path tmp status=0
+  [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" = 1 ] || return 0
+  while IFS=$'\t' read -r presence index path; do
+    [ -n "$path" ] || continue
+    case "$presence" in
+      present)
+        mkdir -p "$(dirname "$path")" || { status=1; continue; }
+        if [ -d "$path" ] && [ ! -L "$path" ]; then
+          status=1
+          continue
+        fi
+        tmp="$path.relaunch-restore.${BASHPID:-$$}"
+        if cp -p "$RELAUNCH_WIRING_SNAPSHOT_DIR/$index" "$tmp"; then
+          rm -f "$path" 2>/dev/null || { rm -f "$tmp" 2>/dev/null || true; status=1; continue; }
+          mv "$tmp" "$path" || { rm -f "$tmp" 2>/dev/null || true; status=1; }
+        else
+          status=1
+        fi
+        ;;
+      absent)
+        if [ -d "$path" ] && [ ! -L "$path" ]; then
+          status=1
+        else
+          rm -f "$path" || status=1
+        fi
+        ;;
+      *) status=1 ;;
+    esac
+  done < "$RELAUNCH_WIRING_SNAPSHOT_DIR/manifest"
+  rm -rf "$RELAUNCH_WIRING_SNAPSHOT_DIR" || status=1
+  RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
+  return "$status"
+}
+
+retire_prior_relaunch_wiring() {  # <prior-harness> <replacement-harness> <worktree> <state> <id>
+  local prior=$1 replacement=$2 wt=$3 state=$4 id=$5 prior_family replacement_family
+  local token_path token current_auth
+  prior_family=$(fm_control_harness_family "$prior") || prior_family=
+  replacement_family=$(fm_control_harness_family "$replacement") || replacement_family=
+  if [ "$prior_family" = "$replacement_family" ]; then
+    current_auth=
+    token_path=$(fm_control_harness_turnend_token_path "$replacement_family" "$state" "$id") || return 1
+    if [ -n "$token_path" ] && [ -f "$token_path" ] && [ ! -L "$token_path" ]; then
+      IFS= read -r token < "$token_path" || [ -n "$token" ] || return 1
+      current_auth=$(fm_control_harness_turnend_auth_path "$replacement_family" "$token") || return 1
+    fi
+    if [ -n "$RELAUNCH_PRIOR_AUTH_PATH" ] \
+       && [ "$RELAUNCH_PRIOR_AUTH_PATH" != "$current_auth" ]; then
+      rm -f -- "$RELAUNCH_PRIOR_AUTH_PATH" || return 1
+    fi
+    return 0
+  fi
+  case "$prior_family:$replacement_family" in pi:pi-signed|pi-signed:pi) return 0 ;; esac
+  clear_relaunch_harness_wiring "$prior_family" "$wt" "$state" "$id"
+}
+
 spawn_herdr_presentation_order_lock_release() {
   [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ] || return 0
   HERDR_PRESENTATION_ORDER_LOCK_HELD=0
   fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
+}
+
+herdr_relaunch_candidate_record_write() {  # <phase> [extra-line]...
+  local phase=$1 tmp line
+  shift
+  [ -n "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] || return 1
+  tmp="$HERDR_RELAUNCH_CANDIDATE_RECORD.tmp.${BASHPID:-$$}"
+  {
+    echo "v1"
+    echo "task=$ID"
+    echo "phase=$phase"
+    echo "tx=${FM_CONTROL_RELAUNCH_TX:-direct}"
+    echo "session=$HERDR_SES"
+    echo "workspace=$HERDR_WORKSPACE_ID"
+    echo "old_tab=$HERDR_RELAUNCH_OLD_TAB_ID"
+    echo "old_pane=$HERDR_RELAUNCH_OLD_PANE_ID"
+    echo "candidate_tab=$HERDR_RELAUNCH_CANDIDATE_TAB_ID"
+    echo "candidate_pane=$HERDR_RELAUNCH_CANDIDATE_PANE_ID"
+    echo "worktree=$WT"
+    echo "replacement_harness=$HARNESS"
+    echo "replacement_model=${MODEL:-default}"
+    echo "replacement_effort=${EFFORT:-default}"
+    for line in "$@"; do
+      echo "$line"
+    done
+  } > "$tmp" && mv -f "$tmp" "$HERDR_RELAUNCH_CANDIDATE_RECORD"
+}
+
+# Reconcile only a previously journaled exact candidate for this same task and
+# old binding. A live or ambiguous candidate refuses a duplicate launch; an
+# agent-free or already-gone candidate is idempotently retired before a fresh
+# transaction starts. No workspace or endpoint enumeration is permitted.
+herdr_relaunch_candidate_reconcile_prior() {
+  local phase task session workspace old_tab old_pane worktree candidate_tab candidate_pane
+  [ ! -e "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] \
+    && [ ! -L "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] && return 0
+  [ -f "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] \
+    && [ ! -L "$HERDR_RELAUNCH_CANDIDATE_RECORD" ] || return 1
+  phase=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" phase) || return 1
+  task=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" task) || return 1
+  session=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" session) || return 1
+  workspace=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" workspace) || return 1
+  old_tab=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" old_tab) || return 1
+  old_pane=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" old_pane) || return 1
+  worktree=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" worktree) || return 1
+  candidate_tab=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" candidate_tab) || candidate_tab=
+  candidate_pane=$(fm_backend_meta_exact_value "$HERDR_RELAUNCH_CANDIDATE_RECORD" candidate_pane) || candidate_pane=
+  [ "$task" = "$ID" ] && [ "$session" = "$HERDR_SES" ] \
+    && [ "$workspace" = "$HERDR_WORKSPACE_ID" ] && [ "$worktree" = "$WT" ] || return 1
+  case "$phase" in
+    rolled-back) return 0 ;;
+    published)
+      [ "$candidate_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
+        && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
+      return 0
+      ;;
+    creating|created|creation-failed|quarantined)
+      [ -n "$candidate_tab" ] && [ -n "$candidate_pane" ] \
+        && fm_backend_endpoint_atom_valid "${candidate_tab//:/_}" \
+        && fm_backend_endpoint_atom_valid "${candidate_pane//:/_}" || return 1
+      HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
+      HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
+      if [ "$candidate_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
+         && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ]; then
+        herdr_relaunch_candidate_record_write published \
+          "candidate_state=reconciled-from-authoritative-binding" || return 1
+        HERDR_RELAUNCH_CANDIDATE_TAB_ID=
+        HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+        return 0
+      fi
+      [ "$old_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
+        && [ "$old_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
+      fm_backend_herdr_relaunch_candidate_cleanup \
+        "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane" || return 1
+      herdr_relaunch_candidate_record_write rolled-back "candidate_state=dead" || return 1
+      HERDR_RELAUNCH_CANDIDATE_TAB_ID=
+      HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # Batch dispatch (see header): when the first positional is an `id=repo` pair, treat every
@@ -1165,6 +1383,16 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   }
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
+  if [ "$MODEL_SET" -eq 0 ] \
+     && { [ -z "$HARNESS_ARG" ] || [ "$HARNESS_ARG" = "$RELAUNCH_PRIOR_HARNESS" ]; }; then
+    MODEL=$(fm_meta_get "$RELAUNCH_META" model)
+    [ -n "$MODEL" ] || MODEL=default
+  fi
+  if [ "$EFFORT_SET" -eq 0 ] \
+     && { [ -z "$HARNESS_ARG" ] || [ "$HARNESS_ARG" = "$RELAUNCH_PRIOR_HARNESS" ]; }; then
+    EFFORT=$(fm_meta_get "$RELAUNCH_META" effort)
+    [ -n "$EFFORT" ] || EFFORT=default
+  fi
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
@@ -2182,17 +2410,69 @@ if [ -e "$STATE/$ID.backlog-close" ] || [ -L "$STATE/$ID.backlog-close" ]; then
 fi
 
 W="fm-$ID"
-if [ "$RELAUNCH" -eq 1 ]; then
-  # Adopt the recorded endpoint instead of creating one. This is what keeps a
-  # relaunch a REPLACEMENT rather than a second copy of the task: no new
-  # terminal, no second worktree, and every uncommitted change left exactly
-  # where the previous agent left it.
+if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" != herdr ]; then
+  # Backends with an owner-conditional launch path keep reusing the recorded
+  # endpoint. Herdr instead allocates an unpublished replacement below because
+  # its generic pane input API cannot bind a command to an expected shell.
   T=$RELAUNCH_TARGET
-  # A secondmate's home already resolved WT above through the same validation a
-  # fresh secondmate spawn uses; every other kind takes the recorded worktree.
   [ "$KIND" = secondmate ] || WT=$RELAUNCH_WT
   WT_TARGET=$T
   SES=${T%%:*}
+elif [ "$RELAUNCH" -eq 1 ]; then
+  [ "$KIND" = secondmate ] || WT=$RELAUNCH_WT
+  [ "$KIND" = secondmate ] || validate_spawn_worktree "herdr replacement endpoint" "$RELAUNCH_TARGET"
+  HERDR_RELAUNCH_OLD_WORKSPACE_ID=$HERDR_WORKSPACE_ID
+  HERDR_RELAUNCH_OLD_TAB_ID=$HERDR_TAB_ID
+  HERDR_RELAUNCH_OLD_PANE_ID=$HERDR_PANE_ID
+  SES=$HERDR_SES
+  spawn_herdr_presentation_order_lock_acquire "$SES" || {
+    echo "error: herdr relaunch could not acquire its session mutation lock; refusing replacement endpoint creation" >&2
+    exit 1
+  }
+  fm_backend_herdr_relaunch_candidate_matches \
+    "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$HERDR_TAB_ID" "$HERDR_PANE_ID" || {
+    echo "error: recorded Herdr endpoint does not match its exact workspace and tab; refusing replacement creation" >&2
+    exit 1
+  }
+  [ "$(fm_backend_herdr_recovery_agent_state "$RELAUNCH_TARGET")" = dead ] || {
+    echo "error: recorded Herdr endpoint no longer proves agent-free under the session mutation lock; refusing replacement creation" >&2
+    exit 1
+  }
+  HERDR_RELAUNCH_CANDIDATE_RECORD="$STATE/$ID.control-relaunch-candidate"
+  HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
+  herdr_relaunch_candidate_reconcile_prior || {
+    echo "error: a prior Herdr replacement candidate cannot be proved safe to retire or already published; refusing a duplicate launch" >&2
+    exit 1
+  }
+  HERDR_RELAUNCH_LABEL="fm-relaunch-${BASHPID:-$$}-${RANDOM}"
+  herdr_relaunch_candidate_record_write creating "candidate_label=$HERDR_RELAUNCH_LABEL" || {
+    echo "error: could not persist the Herdr replacement attempt before endpoint creation" >&2
+    exit 1
+  }
+  fm_backend_herdr_relaunch_candidate_create \
+    "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$HERDR_RELAUNCH_LABEL" "$WT" || {
+    HERDR_RELAUNCH_CANDIDATE_TAB_ID=${FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID:-}
+    HERDR_RELAUNCH_CANDIDATE_PANE_ID=${FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID:-}
+    if [ "${FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_CLEANUP_SAFE:-0}" = 1 ]; then
+      HERDR_RELAUNCH_CANDIDATE_CLEANUP=1
+    fi
+    herdr_relaunch_candidate_record_write creation-failed \
+      "candidate_label=$HERDR_RELAUNCH_LABEL" "candidate_state=unverified" 2>/dev/null || true
+    echo "error: could not establish an exact unpublished Herdr replacement endpoint" >&2
+    exit 1
+  }
+  HERDR_RELAUNCH_CANDIDATE_TAB_ID=$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_TAB_ID
+  HERDR_RELAUNCH_CANDIDATE_PANE_ID=$FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID
+  HERDR_TAB_ID=$HERDR_RELAUNCH_CANDIDATE_TAB_ID
+  HERDR_PANE_ID=$HERDR_RELAUNCH_CANDIDATE_PANE_ID
+  T="$HERDR_SES:$HERDR_PANE_ID"
+  WT_TARGET=$T
+  HERDR_RELAUNCH_CANDIDATE=1
+  HERDR_RELAUNCH_CANDIDATE_CLEANUP=1
+  herdr_relaunch_candidate_record_write created "candidate_label=$HERDR_RELAUNCH_LABEL" || {
+    echo "error: could not persist the unpublished Herdr replacement endpoint identity" >&2
+    exit 1
+  }
 else
 case "$BACKEND" in
   tmux)
@@ -2533,10 +2813,12 @@ kimi_spawn_fail() {  # <detail>
 if [ "$RELAUNCH" -eq 1 ]; then
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
   if [ "$BACKEND" = herdr ]; then
-    spawn_herdr_presentation_order_lock_acquire "$SES" || {
-      echo "error: herdr relaunch could not acquire its session mutation lock; refusing unlocked replacement delivery" >&2
-      exit 1
-    }
+    if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
+      spawn_herdr_presentation_order_lock_acquire "$SES" || {
+        echo "error: herdr relaunch could not acquire its session mutation lock; refusing unlocked replacement delivery" >&2
+        exit 1
+      }
+    fi
     fm_backend_herdr_prepare_relaunch_path_serialized "$WT_TARGET" "$WT" || {
       echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
       exit 1
@@ -2662,15 +2944,21 @@ exclude_path() {
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
 if [ "$RELAUNCH" -eq 1 ]; then
-  # Retire the previous incarnation's per-task harness wiring before arming the
-  # new one. Without this, a harness switch would leave the old adapter's hook
-  # files and turn-end token registry entries behind, and even a same-harness
-  # relaunch would orphan the retired busy generation's token
-  # (bin/fm-control-lib.sh owns where those artifacts live).
-  clear_relaunch_harness_wiring "$RELAUNCH_PRIOR_HARNESS" "$WT" "$STATE_REAL" "$ID" || {
-    echo "error: could not retire $RELAUNCH_PRIOR_HARNESS wiring for task $ID; refusing to arm the replacement" >&2
-    exit 1
-  }
+  if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
+    snapshot_relaunch_wiring \
+      "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$STATE_REAL" "$ID" || {
+      echo "error: could not snapshot $RELAUNCH_PRIOR_HARNESS wiring before the transactional Herdr replacement" >&2
+      exit 1
+    }
+  else
+    # Reused-endpoint backends retain the established behavior: retire the old
+    # wiring before arming the replacement. Herdr snapshots instead because its
+    # old binding remains authoritative until the candidate launch is proved.
+    clear_relaunch_harness_wiring "$RELAUNCH_PRIOR_HARNESS" "$WT" "$STATE_REAL" "$ID" || {
+      echo "error: could not retire $RELAUNCH_PRIOR_HARNESS wiring for task $ID; refusing to arm the replacement" >&2
+      exit 1
+    }
+  fi
   RELAUNCH_REPLACEMENT_PENDING=1
   RELAUNCH_REPLACEMENT_HARNESS=$HARNESS
   RELAUNCH_REPLACEMENT_STATE=$STATE_REAL
@@ -3133,14 +3421,21 @@ spawn_commit_backlog_transition() {
 }
 
 if [ "$RELAUNCH" -eq 1 ]; then
-  SPAWN_META_PUBLISH_STARTED=1
-  if ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
-    echo "error: replacement task record for $ID could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
-    exit 1
+  if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
+    # The old endpoint remains authoritative while the fresh Herdr endpoint is
+    # still provisional. Publication happens only after the replacement agent
+    # is positively alive in the exact response-derived candidate below.
+    :
+  else
+    SPAWN_META_PUBLISH_STARTED=1
+    if ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
+      echo "error: replacement task record for $ID could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+      exit 1
+    fi
+    RELAUNCH_REPLACEMENT_PENDING=0
+    SPAWN_META_PUBLISH_STARTED=0
+    SPAWN_META_TMP=
   fi
-  RELAUNCH_REPLACEMENT_PENDING=0
-  SPAWN_META_PUBLISH_STARTED=0
-  SPAWN_META_TMP=
 fi
 # A dispatch or relaunch keeps the per-task meta lock through launch delivery.
 # The backlog mutation is deliberately the final fallible commit below, so
@@ -3251,7 +3546,14 @@ spawn_record_traceparent() {
 if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
   LAUNCH="export GOTMPDIR=$(shell_quote "$TASK_TMP/gotmp"); $LAUNCH"
   if [ -n "$SPAWN_TRACEPARENT" ]; then
-    if spawn_record_traceparent; then
+    if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
+      if printf 'traceparent=%s\n' "$SPAWN_TRACEPARENT" >> "$SPAWN_META_TMP"; then
+        LAUNCH="export TRACEPARENT=$(shell_quote "$SPAWN_TRACEPARENT"); $LAUNCH"
+      else
+        SPAWN_TRACEPARENT=
+        LAUNCH="unset TRACEPARENT; $LAUNCH"
+      fi
+    elif spawn_record_traceparent; then
       LAUNCH="export TRACEPARENT=$(shell_quote "$SPAWN_TRACEPARENT"); $LAUNCH"
     else
       LAUNCH="unset TRACEPARENT; $LAUNCH"
@@ -3297,9 +3599,12 @@ else
   fi
   spawn_send_key "$T" Enter
 fi
-# A Herdr create or relaunch keeps the session mutation lock through command
-# submission, so no competing lifecycle input can redirect prepared input.
-spawn_herdr_presentation_order_lock_release
+# A fresh Herdr create keeps the session mutation lock through command
+# submission. A transactional Herdr relaunch keeps it longer, through positive
+# launch proof and binding publication below.
+if [ "$HERDR_RELAUNCH_CANDIDATE" != 1 ]; then
+  spawn_herdr_presentation_order_lock_release
+fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "kimi did not show a verified ready signal before brief delivery"
@@ -3323,6 +3628,65 @@ if [ "$HARNESS" = kimi ]; then
     kimi_spawn_fail "kimi brief pointer delivery was not confirmed"
     exit 1
   fi
+fi
+if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
+  HERDR_RELAUNCH_LAUNCH_STATE=
+  for _ in $(seq 1 "${FM_HERDR_RELAUNCH_LAUNCH_POLLS:-180}"); do
+    HERDR_RELAUNCH_LAUNCH_STATE=$(fm_backend_recovery_agent_state herdr "$T")
+    [ "$HERDR_RELAUNCH_LAUNCH_STATE" != alive ] || break
+    sleep 0.5
+  done
+  [ "$HERDR_RELAUNCH_LAUNCH_STATE" = alive ] || {
+    echo "error: unpublished Herdr replacement endpoint did not prove a live agent (state=${HERDR_RELAUNCH_LAUNCH_STATE:-unknown})" >&2
+    exit 1
+  }
+  fm_backend_herdr_relaunch_candidate_matches \
+    "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$HERDR_TAB_ID" "$HERDR_PANE_ID" || {
+    echo "error: unpublished Herdr replacement endpoint identity changed before publication" >&2
+    exit 1
+  }
+  HERDR_RELAUNCH_LIVE_PATH=$(spawn_current_path "$T" || true)
+  [ -n "$HERDR_RELAUNCH_LIVE_PATH" ] \
+    && [ "$(real_path_or_raw "$HERDR_RELAUNCH_LIVE_PATH")" = "$(real_path_or_raw "$WT")" ] || {
+      echo "error: unpublished Herdr replacement agent is not running in the recorded worktree" >&2
+      exit 1
+    }
+  SPAWN_META_PUBLISH_STARTED=1
+  if ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "error: proven Herdr replacement could not publish its task binding ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    exit 1
+  fi
+  RELAUNCH_REPLACEMENT_PENDING=0
+  SPAWN_META_PUBLISH_STARTED=0
+  SPAWN_META_TMP=
+  HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
+  if ! retire_prior_relaunch_wiring \
+      "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$STATE_REAL" "$ID"; then
+    echo "warning: published Herdr replacement retained stale $RELAUNCH_PRIOR_HARNESS wiring for later cleanup" >&2
+  fi
+  if [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" = 1 ]; then
+    rm -rf "$RELAUNCH_WIRING_SNAPSHOT_DIR" || true
+    RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
+  fi
+  herdr_relaunch_candidate_record_write published "candidate_state=alive" || true
+  if [ -n "${HERDR_PRESENTATION_JOURNAL:-}" ] \
+     && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
+    fm_backend_herdr_projection_journal_replace_endpoint \
+      "$HERDR_PRESENTATION_JOURNAL" "$ID" \
+      "$HERDR_RELAUNCH_OLD_TAB_ID" "$HERDR_RELAUNCH_OLD_PANE_ID" \
+      "$HERDR_TAB_ID" "$HERDR_PANE_ID" || {
+      echo "warning: published Herdr replacement could not advance its presentation binding; authoritative task metadata remains current" >&2
+    }
+  fi
+  HERDR_RELAUNCH_OLD_RETIREMENT=retained
+  if fm_backend_herdr_relaunch_candidate_cleanup \
+      "$HERDR_SES" "$HERDR_RELAUNCH_OLD_WORKSPACE_ID" \
+      "$HERDR_RELAUNCH_OLD_TAB_ID" "$HERDR_RELAUNCH_OLD_PANE_ID"; then
+    HERDR_RELAUNCH_OLD_RETIREMENT=retired
+  fi
+  herdr_relaunch_candidate_record_write published \
+    "candidate_state=alive" "old_endpoint=$HERDR_RELAUNCH_OLD_RETIREMENT" || true
+  spawn_herdr_presentation_order_lock_release
 fi
 if [ "$KIND" = secondmate ] && [ "${FM_SKIP_SECONDMATE_INHERIT:-0}" != 1 ]; then
   if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then

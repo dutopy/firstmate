@@ -32,7 +32,7 @@ A recorded `harness=` is not always an exact adapter name: a task launched from 
 | --- | --- | --- |
 | `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`. |
 | `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. |
-| `relaunch` | Replace the running agent with a new one in the same endpoint and worktree, on the exact recorded adapter or an explicitly chosen harness, model, and effort. | The new agent is alive on the recorded endpoint, and the durable record names the harness that is actually running. |
+| `relaunch` | Replace the running agent in the same worktree, on the exact recorded adapter or an explicitly chosen harness, model, and effort. Tmux reuses its endpoint; Herdr allocates a provisional endpoint in the exact recorded workspace. | The new agent is alive on the published endpoint, and the durable record names the endpoint and harness that are actually running. |
 
 An exit that delivers lifecycle input but cannot prove the agent stopped fails with `exit=unconfirmed`, reports the observed agent state and any interrupt cancellation claim, and never claims that nothing changed.
 Interrupt never rewrites busy state as proof of its own success.
@@ -71,18 +71,23 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
    Herdr lifecycle recovery corroborates a retained native registration against the exact foreground process, so a lone idle shell proves an exited agent while a non-shell process remains alive and an ambiguous process read refuses.
 5. **Prepare the endpoint where required.**
-   A Herdr pane can retain unsubmitted shell input or return to another directory after its agent exits, so the launch owner takes the named-session mutation lock, cancels pending input while the same proved agent-free shell owns the pane, and keeps that lock through replacement command submission.
-   Final delivery freezes that exact shell, verifies its stopped process still exclusively owns the pane and worktree, queues the environment and launch command atomically, and resumes it, closing the last uncoordinated owner-change gap.
-   If the path differs, it sends a literal quoted `cd`, rechecks the same shell before submission, clears its own buffered command on a pre-submission failure only while that shell still owns the pane, and verifies the resulting physical path.
-   Tmux needs no preparation and keeps its existing path check.
-6. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which independently validates a ship or scout's recorded isolated worktree, adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
+   Herdr's generic pane input cannot condition launch on an expected shell owner, so relaunch never injects into the old pane.
+   Under the named-session mutation lock, the launch owner revalidates the recorded pane's exact workspace and tab, creates one fresh unpublished tab in that workspace with its shell already rooted at the validated worktree, and addresses only response-derived candidate ids.
+   It never enumerates or adopts another workspace or endpoint.
+   Tmux keeps its existing recorded endpoint and path check.
+6. **Launch and publish the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`.
+   Herdr snapshots the prior harness wiring, launches in the provisional endpoint, proves a live agent at the exact candidate and worktree, then atomically publishes the new endpoint metadata and retires the old agent-free pane when that exact cleanup remains provable.
+   A prepublication failure restores prior wiring, leaves old metadata and endpoint untouched, and closes only a response-identified agent-free candidate; an ambiguous or live candidate is quarantined by exact id instead of being guessed safe to close.
+   A retry addresses only that journaled id: an agent-free or already-gone candidate is retired idempotently, while a live or unreadable candidate refuses a duplicate launch.
+   Tmux retains its existing reuse behavior.
 
 Switching harness is therefore one ordinary relaunch rather than a separate mechanism.
 
 ### Failure and rollback
 
 - A refusal **before** the agent is stopped leaves the durable record and the instructions byte-identical.
-- A launch failure **after** the agent is stopped restores the prior durable record, keeps the progress note so a later recovery still has it, marks the journal `failed:launching`, and reports plainly that no agent is running and where the work is preserved.
+- A Herdr launch failure **after** the old agent is stopped keeps the old durable binding and endpoint unchanged, restores prior harness wiring, keeps the progress note, and records whether the exact provisional endpoint was rolled back or quarantined.
+- A non-Herdr launch failure after the agent is stopped retains the existing prior-record rollback behavior.
 - If the launch owner already published the new record but no running agent can be confirmed, the new record is kept: the task is recorded on the new harness with no agent confirmed, which is exactly what recovery reconciles.
   Rewriting it back to the old harness would be a second, worse inaccuracy.
 
@@ -105,9 +110,10 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
   zellij, orca, and cmux are refused rather than reported as successful blind.
 - An ambiguous or unreadable endpoint state refuses.
   Only a positively classified state acts.
-- `fm-spawn --relaunch` independently refuses unless the recorded endpoint is positively agent-free and its shell can be prepared and verified in the recorded worktree, so a replacement can never join a live agent or start outside the copy holding the work.
-- Herdr endpoint preparation is reachable only after the recorded endpoint identity and stopped-agent proof pass, plus isolated-worktree-root and project-separation checks for a ship or scout; a direct `fm-spawn --relaunch` applies the same gates before sending any pane input.
-  A primary project checkout, live foreground process, ambiguous process read, or changed shell owner refuses before launch.
+- `fm-spawn --relaunch` independently refuses unless the recorded endpoint is positively agent-free and the recorded worktree is still valid.
+- Herdr replacement creation is reachable only after exact recorded session, workspace, tab, pane, stopped-agent, isolated-worktree-root, and project-separation checks.
+  It creates through the recorded workspace id without listing workspaces or tabs, and publication requires the response-derived candidate to host a live replacement in the recorded worktree.
+  A primary project checkout, live old agent, ambiguous process read, contradictory endpoint relation, candidate takeover, or failed launch leaves the old binding untouched.
 
 ## Capability matrix
 
