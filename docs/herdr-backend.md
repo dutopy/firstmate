@@ -272,7 +272,13 @@ The generic Herdr agent-liveness probe reuses the same classifier.
 A structurally gone pane becomes `missing`, a restored agent-less shell becomes `dead`, a registered agent becomes `alive`, and an unexpected read becomes `unreadable`.
 Unlike tmux process-name inspection, native registration can classify Pi without guessing from a generic interpreter name.
 
-The session-start sweep uses this probe.
+Lifecycle control adds one process-level reconciliation because Herdr can retain Pi's native registration after Pi exits.
+A registered pane becomes agent-free for exit or replacement only when `pane process-info` and the operating-system process table prove the exact pane contains one lone idle recognized shell.
+A distinct foreground process group remains alive, and any contradictory or unreadable process evidence refuses recovery.
+After that proof, relaunch may return the same shell to the physical recorded worktree by sending a quoted `cd` through literal input, rechecking the same shell before Enter, and verifying the exact resulting foreground path.
+This backend-owned repair is idempotent and never selects a path itself; the control plane supplies the worktree only after validating the task endpoint, worktree root, and separation from the primary project copy.
+
+The session-start sweep uses the ordinary probe.
 Mid-session secondmate agent-process liveness is not implemented because idle secondmates are deliberately exempt from stale-pane escalation and need a separate periodic identity signal.
 
 ## Push events and polling fallback
@@ -331,6 +337,8 @@ Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never 
 
 ```sh
 tests/fm-backend-herdr.test.sh
+tests/fm-herdr-relaunch-recovery.test.sh
+tests/fm-control-herdr-smoke.test.sh
 tests/fm-composer-lib.test.sh
 tests/fm-herdr-submit-confirm-live-e2e.test.sh
 tests/fm-backend-herdr-smoke.test.sh
