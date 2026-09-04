@@ -937,7 +937,7 @@ ok - real herdr: an agent process that does not stop fails closed instead of bei
 ```
 
 The smoke test registers a stale Pi lifecycle report over a real idle shell, drives a persistent path mismatch and restoration, then places a real non-shell process group in the pane to prove that the same registration remains live and refuses replacement.
-`tests/fm-herdr-relaunch-recovery.test.sh` supplies portable quoting, injection, idempotence, ambiguous-state, live-process, and non-Herdr regression coverage.
+`tests/fm-herdr-relaunch-recovery.test.sh` supplies portable quoting, injection, pending-input cancellation, pre-Enter retry cleanup, direct-launch validation, idempotence, ambiguous-state, live-process, and non-Herdr regression coverage.
 The smoke command is the guard that refreshes this record; run it after every Herdr upgrade rather than trusting the version above.
 
 ### Away-mode transport

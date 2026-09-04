@@ -62,7 +62,7 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    A recorded raw-command basename that differs from its resolved adapter cannot reproduce the command actually running, so relaunch refuses before the checkpoint unless the caller passes an explicit `--harness` to choose the replacement runtime deliberately.
    A harness change resets model and effort unless they are named too, because a model chosen for one adapter does not transfer to another.
 2. **Safe checkpoint.**
-   The recorded worktree must exist and be a worktree root; its head and dirty state are recorded.
+   The recorded worktree must exist and be a worktree root; for a ship or scout it must also differ physically from the recorded primary project checkout, and its head and dirty state are recorded.
    For a `kind=secondmate` task, the home's identity marker must match and its child records must be readable, so a relaunch can never strand child work behind an unreadable home.
    A secondmate's own crewmates run in their own endpoints and outlive its relaunch; the relaunched secondmate reconciles them from its home's durable records at startup.
 3. **Record the note.**
@@ -70,10 +70,11 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
    Herdr lifecycle recovery corroborates a retained native registration against the exact foreground process, so a lone idle shell proves an exited agent while a non-shell process remains alive and an ambiguous process read refuses.
-5. **Restore the endpoint path where required.**
-   A Herdr pane can return to another directory after its agent exits, so the backend moves only its proved agent-free shell to the physical recorded worktree with literal quoted input, rechecks the same shell before submission, and verifies the resulting path.
-   Tmux needs no restoration and keeps its existing path check.
-6. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
+5. **Prepare the endpoint where required.**
+   A Herdr pane can retain unsubmitted shell input or return to another directory after its agent exits, so the backend first cancels pending input while the same proved agent-free shell owns the pane, even when its path already matches.
+   If the path differs, it then sends a literal quoted `cd`, rechecks the same shell before submission, clears its own buffered command on a pre-submission failure only while that shell still owns the pane, and verifies the resulting physical path.
+   Tmux needs no preparation and keeps its existing path check.
+6. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which independently validates a ship or scout's recorded isolated worktree and repeats endpoint preparation before its first pane command, adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
 
 Switching harness is therefore one ordinary relaunch rather than a separate mechanism.
 
@@ -103,8 +104,9 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
   zellij, orca, and cmux are refused rather than reported as successful blind.
 - An ambiguous or unreadable endpoint state refuses.
   Only a positively classified state acts.
-- `fm-spawn --relaunch` independently refuses unless the recorded endpoint is positively agent-free and its shell is sitting in the recorded worktree, so a replacement can never join a live agent or start outside the copy holding the work.
-- Herdr path restoration is reachable only after the recorded endpoint identity, isolated worktree root, project separation, and stopped-agent proof all pass; another path, a primary project checkout, a live foreground process, or an ambiguous process read refuses before launch.
+- `fm-spawn --relaunch` independently refuses unless the recorded endpoint is positively agent-free and its shell can be prepared and verified in the recorded worktree, so a replacement can never join a live agent or start outside the copy holding the work.
+- Herdr endpoint preparation is reachable only after the recorded endpoint identity and stopped-agent proof pass, plus isolated-worktree-root and project-separation checks for a ship or scout; a direct `fm-spawn --relaunch` applies the same gates before sending any pane input.
+  A primary project checkout, live foreground process, ambiguous process read, or changed shell owner refuses before launch.
 
 ## Capability matrix
 
@@ -125,5 +127,5 @@ The empirical basis for each adapter's value is the `harness-adapters` skill's v
 
 - `tests/fm-control.test.sh` - the adapter contract for every verified harness, the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, and rollback after a failed launch.
-- `tests/fm-herdr-relaunch-recovery.test.sh` - portable stale-registration, process-state, exact-path, quoting, idempotence, and cross-backend coverage.
+- `tests/fm-herdr-relaunch-recovery.test.sh` - portable stale-registration, process-state, exact-path, input-clearing, retry-cleanup, direct-launch validation, quoting, idempotence, and cross-backend coverage.
 - `tests/fm-control-herdr-smoke.test.sh` - stale-registration reconciliation and persistent path restoration against the real Herdr binary, on an isolated throwaway lab session.
