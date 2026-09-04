@@ -116,12 +116,31 @@ cat > "$TMP_ROOT/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
   "-axo pid=,ppid=") printf '41001 1\n' ;;
-  "-p 41001 -o stat=") printf 'S\n' ;;
+  "-p 41001 -o stat=")
+    if [ "$(jq -r '.frozen // false' "$FM_FAKE_HERDR_STATE")" = true ]; then printf 'T\n'; else printf 'S\n'; fi
+    ;;
   "-p 41001 -o comm=") printf 'bash\n' ;;
   *) exit 1 ;;
 esac
 SH
 chmod +x "$TMP_ROOT/fakebin/ps"
+
+cat > "$TMP_ROOT/fakebin/kill" <<'SH'
+#!/usr/bin/env bash
+set -u
+state=${FM_FAKE_HERDR_STATE:?}
+case "${1:-} ${2:-}" in
+  "-STOP 41001")
+    jq '.frozen=true | if (.take_over_on_stop // false) then .process="live" else . end' \
+      "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
+    ;;
+  "-CONT 41001")
+    jq '.frozen=false' "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
+    ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$TMP_ROOT/fakebin/kill"
 
 cat > "$TMP_ROOT/fakebin/claude" <<'SH'
 #!/usr/bin/env bash
@@ -134,14 +153,14 @@ chmod +x "$TMP_ROOT/fakebin/claude"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false}' > "$STATE"
   : > "$LOG"
 }
 
 run_backend() {
   PATH="$TMP_ROOT/fakebin:$PATH" \
     FM_FAKE_HERDR_STATE="$STATE" FM_FAKE_HERDR_LOG="$LOG" FM_FAKE_HERDR_SOCKET="$TMP_ROOT/herdr.sock" \
-    FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" \
+    FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
     bash -c '. "$0/bin/fm-backend.sh"; "$@"' "$ROOT" "$@"
 }
@@ -205,7 +224,7 @@ write_state "$OLD" shell true
 FM_FAKE_HERDR_CLEAR_DELAY=0.2 run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" &
 first_pid=$!
 first_started=0
-for _ in {1..100}; do
+for _ in {1..500}; do
   if grep -q $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG"; then
     first_started=1
     break
@@ -275,8 +294,8 @@ EOF
 write_state "$DIRECT_WT" shell true
 jq --arg pending "touch '$DIRECT_MARKER'; " '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
-  FM_FAKE_CLAUDE_ENV_LOG="$DIRECT_ENV_LOG" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_FAKE_CLAUDE_ENV_LOG="$DIRECT_ENV_LOG" \
   FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1) \
   || fail "direct Herdr relaunch should prepare its endpoint before launch: $DIRECT_OUT"
 [ ! -e "$DIRECT_MARKER" ] || fail "direct Herdr relaunch executed buffered shell input before launch"
@@ -288,8 +307,9 @@ pass "fm-spawn relaunch: direct Herdr entry prepares buffered shell input"
 write_state "$DIRECT_WT" shell true
 jq '.take_over_after_pane_get=6' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
-    FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
   fail "direct Herdr relaunch should refuse after foreground ownership changes: $DIRECT_OUT"
 fi
 run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
@@ -298,14 +318,27 @@ case "$DIRECT_OUT" in *"shell owner changed before launch delivery"*) : ;; *) fa
 pass "fm-spawn relaunch: foreground-owner change before launch delivery fails closed"
 
 write_state "$DIRECT_WT" shell true
+jq '.take_over_on_stop=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+  fail "direct Herdr relaunch should refuse a takeover at the final delivery boundary: $DIRECT_OUT"
+fi
+run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
+[ "$run_count" -eq 0 ] || fail "delivery-boundary takeover received replacement input"
+[ "$(jq -r '.frozen' "$STATE")" = false ] || fail "delivery-boundary refusal left the prepared shell stopped"
+pass "fm-spawn relaunch: frozen-shell boundary closes the final owner-check race"
+
+write_state "$DIRECT_WT" shell true
 DIRECT_CONCURRENT_OUT="$TMP_ROOT/direct-concurrent.out"
 PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
-  FM_FAKE_HERDR_RUN_DELAY=0.5 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_FAKE_HERDR_RUN_DELAY=0.5 FM_SPAWN_NO_GUARD=1 \
   "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude > "$DIRECT_CONCURRENT_OUT" 2>&1 &
 direct_pid=$!
 direct_started=0
-for _ in {1..100}; do
+for _ in {1..500}; do
   if grep -q $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG"; then
     direct_started=1
     break
@@ -317,7 +350,7 @@ session_reads_before=$(grep -c $'\x1fsession\x1flist\x1f' "$LOG" || true)
 run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$DIRECT_WT" &
 competitor_pid=$!
 competitor_started=0
-for _ in {1..100}; do
+for _ in {1..500}; do
   session_reads=$(grep -c $'\x1fsession\x1flist\x1f' "$LOG" || true)
   if [ "$session_reads" -gt "$session_reads_before" ]; then
     competitor_started=1
@@ -342,8 +375,9 @@ INVALID_PENDING="touch '$TMP_ROOT/invalid-primary-marker'; "
 write_state "$DIRECT_PROJECT" shell true
 jq --arg pending "$INVALID_PENDING" '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
-    FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
   fail "direct Herdr relaunch should reject the primary checkout: $DIRECT_OUT"
 fi
 [ "$(jq -r '.pending' "$STATE")" = "$INVALID_PENDING" ] || fail "invalid-worktree relaunch sent input before refusing"

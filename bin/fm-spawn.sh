@@ -924,12 +924,6 @@ spawn_herdr_presentation_order_lock_acquire() {
   return 1
 }
 
-verify_herdr_relaunch_owner() {
-  [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ] || return 0
-  fm_backend_herdr_relaunch_shell_owned \
-    "$WT_TARGET" "$RELAUNCH_HERDR_SHELL_PID" "$WT"
-}
-
 clear_relaunch_harness_wiring() {
   local harness=$1 wt=$2 state=$3 id=$4 token_path token auth_path path
   # The wiring arms above match on harness PREFIXES, because a task launched
@@ -3286,15 +3280,13 @@ else
   fi
 fi
 sleep 0.3
-verify_herdr_relaunch_owner || {
-  echo "error: task $ID's Herdr shell owner changed before launch delivery; refusing replacement launch" >&2
-  exit 1
-}
 if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
-  # pane run submits one command atomically, so an owner change cannot strand
-  # replacement bytes between the literal write and a later Enter.
-  spawn_send_text_line "$T" "$LAUNCH" || {
-    echo "error: task $ID's replacement launch command could not be submitted" >&2
+  # Freeze and revalidate the prepared shell before atomically queueing the
+  # command and Enter. This closes the final foreground-owner race rather than
+  # relying on a sample immediately before pane input.
+  fm_backend_herdr_run_on_prepared_shell \
+    "$WT_TARGET" "$RELAUNCH_HERDR_SHELL_PID" "$WT" "$LAUNCH" || {
+    echo "error: task $ID's Herdr shell owner changed before launch delivery; refusing replacement launch" >&2
     exit 1
   }
 else
