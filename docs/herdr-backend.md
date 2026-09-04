@@ -274,7 +274,8 @@ Unlike tmux process-name inspection, native registration can classify Pi without
 
 Lifecycle control adds one process-level reconciliation because Herdr can retain Pi's native registration after Pi exits or lose registration while a foreground process remains.
 A pane becomes agent-free for exit or replacement only when `pane process-info` and the operating-system process table prove the exact pane contains one lone idle recognized shell.
-A distinct foreground process group remains alive regardless of registration, and any contradictory or unreadable process evidence refuses recovery.
+A distinct foreground process group is `alive` only when Herdr also reports a valid registration for that exact pane.
+Without that registration it is `unreadable`, and lifecycle control refuses along with any other contradictory or unreadable process evidence.
 Herdr 0.8.2 exposes no generic pane launch operation conditioned on an expected shell owner, so lifecycle recovery never injects a replacement command into the old pane.
 After the stopped-agent proof, the launch owner takes the named-session mutation lock and revalidates the recorded pane's exact workspace and tab relation.
 It creates one fresh tab directly in that recorded workspace with its shell rooted at the validated worktree and records a unique attempt label before creation.

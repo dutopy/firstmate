@@ -69,7 +69,7 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    A ship or scout relaunch requires `--note`, because the replacement inherits the local copy but none of the conversation; the note is appended to the instructions it reads.
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
-   Herdr lifecycle recovery corroborates native registration against the exact foreground process, so a lone idle shell proves an exited agent while a non-shell process remains alive even without registration and an ambiguous process read refuses.
+   Herdr lifecycle recovery corroborates native registration against the exact foreground process, so a lone idle shell proves an exited agent, only a corroborated registered agent is `alive`, and an unregistered non-shell process is `unreadable` and refuses lifecycle control.
 5. **Prepare the endpoint where required.**
    Herdr's generic pane input cannot condition launch on an expected shell owner, so relaunch never injects into the old pane.
    Under the named-session mutation lock, the launch owner revalidates the recorded pane's exact workspace and tab, records a unique attempt label, and creates one fresh unpublished tab in that workspace with its shell already rooted at the validated worktree.
