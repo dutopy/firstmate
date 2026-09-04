@@ -36,6 +36,10 @@ case "${1:-} ${2:-}" in
   "status --json")
     printf '{"client":{"version":"0.8.0","protocol":19},"server":{"running":true}}\n'
     ;;
+  "session list")
+    socket=${FM_FAKE_HERDR_SOCKET:-$(dirname "$state")/herdr.sock}
+    jq -n --arg socket "$socket" '{sessions:[{name:"fmtest",running:true,socket_path:$socket}]}'
+    ;;
   "pane get")
     pane=${3:-}
     jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,foreground_cwd:.cwd}}}' "$state"
@@ -88,6 +92,7 @@ case "${1:-} ${2:-}" in
   "pane send-keys")
     key=${4:-}
     if [ "$key" = ctrl+c ]; then
+      sleep "${FM_FAKE_HERDR_CLEAR_DELAY:-0}"
       jq '.pending=""' "$state" | save_state
     elif [ "$key" = enter ]; then
       pending=$(jq -r '.pending // empty' "$state")
@@ -127,7 +132,8 @@ write_state() {
 
 run_backend() {
   PATH="$TMP_ROOT/fakebin:$PATH" \
-    FM_FAKE_HERDR_STATE="$STATE" FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" \
+    FM_FAKE_HERDR_STATE="$STATE" FM_FAKE_HERDR_LOG="$LOG" FM_FAKE_HERDR_SOCKET="$TMP_ROOT/herdr.sock" \
+    FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
     bash -c '. "$0/bin/fm-backend.sh"; "$@"' "$ROOT" "$@"
 }
@@ -186,6 +192,28 @@ run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" \
 [ ! -e "$BUFFERED_MARKER" ] || fail "path restoration executed preexisting buffered shell input"
 [ "$(jq -r '.cwd' "$STATE")" = "$TARGET" ] || fail "path restoration lost the recorded path after clearing buffered input"
 pass "Herdr relaunch recovery: preexisting shell input is cancelled before path restoration"
+
+write_state "$OLD" shell true
+FM_FAKE_HERDR_CLEAR_DELAY=0.2 run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" &
+first_pid=$!
+first_started=0
+for _ in {1..100}; do
+  if grep -q $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG"; then
+    first_started=1
+    break
+  fi
+  sleep 0.01
+done
+[ "$first_started" -eq 1 ] || fail "the first concurrent path preparation did not reach its mutation boundary"
+FM_FAKE_HERDR_CLEAR_DELAY=0.2 run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" &
+second_pid=$!
+wait "$first_pid" || fail "the first concurrent path preparation failed"
+wait "$second_pid" || fail "the second concurrent path preparation failed"
+mutation_order=$(awk -F '\x1f' '$2 == "pane" && $3 == "send-text" {print "send-text"; next} $2 == "pane" && $3 == "send-keys" {print $3 ":" $5}' "$LOG")
+expected_order=$'send-keys:ctrl+c\nsend-text\nsend-keys:enter\nsend-keys:ctrl+c'
+[ "$mutation_order" = "$expected_order" ] \
+  || fail "concurrent path preparations interleaved their pane mutations: $mutation_order"
+pass "Herdr relaunch recovery: concurrent preparation is serialized at the pane mutation boundary"
 
 write_state "$OLD" shell true
 jq '.fail_after_send_once=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"

@@ -2600,9 +2600,10 @@ fm_backend_herdr_current_path() {  # <target>
     | jq -r '.result.pane.foreground_cwd // empty' 2>/dev/null
 }
 
-# fm_backend_herdr_prepare_relaunch_path: prepare an agent-free endpoint shell
-# for the exact recorded worktree already validated by the launch caller.
-# It first cancels any pending input while the same idle shell owns the pane,
+# fm_backend_herdr_prepare_relaunch_path: serialize shell preparation with every
+# other Firstmate mutation in the same Herdr session, then prepare an agent-free
+# endpoint shell for the exact recorded worktree already validated by the launch
+# caller. It first cancels any pending input while the same idle shell owns the pane,
 # including when the cwd already matches. Herdr's atomic `pane run` executes
 # `cd` non-persistently, so a mismatched cwd uses the interactive shell's
 # literal-input path and submits only after a second exact shell-owner check.
@@ -2621,7 +2622,7 @@ fm_backend_herdr_clear_idle_shell_input() {  # <target> <shell-pid>
   fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-keys "$FM_BACKEND_HERDR_PANE" ctrl+c >/dev/null 2>&1
 }
 
-fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>
+fm_backend_herdr_prepare_relaunch_path_serialized() {  # <target> <validated-worktree>
   local target=$1 expected=$2 expected_real current current_real shell_pid resampled command quoted
   local attempt=0 max_attempts=${FM_BACKEND_HERDR_RELAUNCH_PATH_POLLS:-20}
   case "$expected" in
@@ -2705,6 +2706,32 @@ fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>
   done
   echo "error: herdr endpoint did not converge to its exact recorded worktree '$expected_real'" >&2
   return 1
+}
+
+fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>
+  local target=$1 expected=$2 session lock_path attempt=0 result
+  fm_backend_herdr_parse_target "$target" || return 1
+  session=$FM_BACKEND_HERDR_SESSION
+  if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-wake-lib.sh
+    . "$FM_BACKEND_HERDR_ROOT/bin/fm-wake-lib.sh"
+  fi
+  lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session") || {
+    echo "error: herdr relaunch could not resolve its session mutation lock; refusing unlocked shell input" >&2
+    return 1
+  }
+  while ! fm_lock_try_acquire "$lock_path"; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 50 ] || {
+      echo "error: herdr relaunch could not acquire its session mutation lock; refusing unlocked shell input" >&2
+      return 1
+    }
+    sleep 0.1
+  done
+  fm_backend_herdr_prepare_relaunch_path_serialized "$target" "$expected"
+  result=$?
+  fm_lock_release "$lock_path" || true
+  return "$result"
 }
 
 # fm_backend_herdr_send_text_line: send one line of TEXT then submit,
