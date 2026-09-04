@@ -2609,6 +2609,15 @@ fm_backend_herdr_current_path() {  # <target>
 # to converge to the physical recorded path while the endpoint remains
 # positively agent-free and owned by the same shell pid. Repeated calls are a
 # verified no-op once the path already matches.
+fm_backend_herdr_clear_idle_shell_input() {  # <target> <shell-pid>
+  local target=$1 shell_pid=$2 resampled
+  [ "$(fm_backend_herdr_recovery_agent_state "$target")" = dead ] || return 1
+  fm_backend_herdr_parse_target "$target" || return 1
+  resampled=$(fm_backend_herdr_pane_idle_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
+  [ "$resampled" = "$shell_pid" ] || return 1
+  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-keys "$FM_BACKEND_HERDR_PANE" ctrl+c >/dev/null 2>&1
+}
+
 fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>
   local target=$1 expected=$2 expected_real current current_real shell_pid resampled command quoted
   local attempt=0 max_attempts=${FM_BACKEND_HERDR_RELAUNCH_PATH_POLLS:-20}
@@ -2635,21 +2644,49 @@ fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>
     return 0
   fi
 
-  quoted=${expected_real//\'/\'"\'"\'}
-  command="cd -- '$quoted'"
-  fm_backend_herdr_parse_target "$target" || return 1
-  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-text "$FM_BACKEND_HERDR_PANE" "$command" >/dev/null 2>&1 || return 1
+  fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" || {
+    echo "error: herdr endpoint changed before its shell input could be cleared" >&2
+    return 1
+  }
   [ "$(fm_backend_herdr_recovery_agent_state "$target")" = dead ] || {
-    echo "error: herdr endpoint agent state changed before relaunch path submission; refusing to submit" >&2
+    echo "error: herdr endpoint agent state changed after clearing shell input" >&2
     return 1
   }
   fm_backend_herdr_parse_target "$target" || return 1
   resampled=$(fm_backend_herdr_pane_idle_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
   [ "$resampled" = "$shell_pid" ] || {
-    echo "error: herdr endpoint shell identity changed before relaunch path submission; refusing to submit" >&2
+    echo "error: herdr endpoint shell identity changed after clearing shell input" >&2
     return 1
   }
-  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-keys "$FM_BACKEND_HERDR_PANE" enter >/dev/null 2>&1 || return 1
+
+  quoted=${expected_real//\'/\'"\'"\'}
+  command="cd -- '$quoted'"
+  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-text "$FM_BACKEND_HERDR_PANE" "$command" >/dev/null 2>&1 || {
+    fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" >/dev/null 2>&1 || true
+    return 1
+  }
+  [ "$(fm_backend_herdr_recovery_agent_state "$target")" = dead ] || {
+    echo "error: herdr endpoint agent state changed before relaunch path submission; refusing to submit" >&2
+    fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" >/dev/null 2>&1 || true
+    return 1
+  }
+  fm_backend_herdr_parse_target "$target" || {
+    fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" >/dev/null 2>&1 || true
+    return 1
+  }
+  resampled=$(fm_backend_herdr_pane_idle_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || {
+    fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" >/dev/null 2>&1 || true
+    return 1
+  }
+  [ "$resampled" = "$shell_pid" ] || {
+    echo "error: herdr endpoint shell identity changed before relaunch path submission; refusing to submit" >&2
+    fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" >/dev/null 2>&1 || true
+    return 1
+  }
+  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-keys "$FM_BACKEND_HERDR_PANE" enter >/dev/null 2>&1 || {
+    fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" >/dev/null 2>&1 || true
+    return 1
+  }
   while [ "$attempt" -lt "$max_attempts" ]; do
     current=$(fm_backend_herdr_current_path "$target" || true)
     current_real=

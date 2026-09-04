@@ -54,6 +54,11 @@ case "${1:-} ${2:-}" in
       if [ "$1" = --pane ]; then pane=${2:-}; break; fi
       shift
     done
+    if [ "$(jq -r '.process_info_failures // 0' "$state")" -gt 0 ]; then
+      jq '.process_info_failures -= 1' "$state" | save_state
+      printf '{"id":"cli:pane:process_info","result":{"type":"pane_process_info","process_info":{"pane_id":"wrong"}}}\n'
+      exit 0
+    fi
     mode=$(jq -r '.process' "$state")
     case "$mode" in
       shell)
@@ -67,11 +72,17 @@ case "${1:-} ${2:-}" in
     ;;
   "pane send-text")
     text=${4:-}
-    jq --arg text "$text" '.pending=$text' "$state" | save_state
+    jq --arg text "$text" '
+      .pending=((.pending // "") + $text)
+      | if .fail_after_send_once then .fail_after_send_once=false | .process_info_failures=1 else . end
+      | if ((.process_after_send // "") != "") then .process=.process_after_send else . end
+    ' "$state" | save_state
     ;;
   "pane send-keys")
     key=${4:-}
-    if [ "$key" = enter ]; then
+    if [ "$key" = ctrl+c ]; then
+      jq '.pending=""' "$state" | save_state
+    elif [ "$key" = enter ]; then
       pending=$(jq -r '.pending // empty' "$state")
       cwd=$(jq -r '.cwd' "$state")
       if [ -n "$pending" ]; then
@@ -97,7 +108,7 @@ chmod +x "$TMP_ROOT/fakebin/ps"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:""}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:""}' > "$STATE"
   : > "$LOG"
 }
 
@@ -144,6 +155,34 @@ run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" \
 count_after=$(grep -c $'\x1fpane\x1fsend-text\x1f' "$LOG" || true)
 [ "$count_after" -eq "$count_before" ] || fail "idempotent path preparation submitted a second cd command"
 pass "Herdr relaunch recovery: exact path restoration is persistent, quoted, and idempotent"
+
+BUFFERED_MARKER="$TMP_ROOT/buffered-marker"
+write_state "$OLD" shell true
+jq --arg pending "touch '$BUFFERED_MARKER'; " '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" \
+  || fail "path restoration should clear preexisting idle-shell input before submitting"
+[ ! -e "$BUFFERED_MARKER" ] || fail "path restoration executed preexisting buffered shell input"
+[ "$(jq -r '.cwd' "$STATE")" = "$TARGET" ] || fail "path restoration lost the recorded path after clearing buffered input"
+pass "Herdr relaunch recovery: preexisting shell input is cancelled before path restoration"
+
+write_state "$OLD" shell true
+jq '.fail_after_send_once=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" >/dev/null 2>&1; then
+  fail "a transient post-send process inspection failure should abort path restoration"
+fi
+[ -z "$(jq -r '.pending // empty' "$STATE")" ] || fail "failed path restoration left its command buffered for a retry"
+run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" \
+  || fail "path restoration should retry cleanly after post-send cleanup"
+[ "$(jq -r '.cwd' "$STATE")" = "$TARGET" ] || fail "the clean retry did not restore the recorded path"
+pass "Herdr relaunch recovery: pre-submit failures clean their buffered command for retry"
+
+write_state "$OLD" shell true
+jq '.process_after_send="live"' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" >/dev/null 2>&1; then
+  fail "path restoration should refuse when the shell owner changes after typing"
+fi
+[ -n "$(jq -r '.pending // empty' "$STATE")" ] || fail "cleanup sent input after the pane stopped belonging to the exact idle shell"
+pass "Herdr relaunch recovery: cleanup refuses a changed shell owner"
 
 write_state "$OLD" live true
 if run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" >/dev/null 2>&1; then
