@@ -84,6 +84,7 @@ case "${1:-} ${2:-}" in
     ;;
   "pane run")
     text=${4:-}
+    sleep "${FM_FAKE_HERDR_RUN_DELAY:-0}"
     pending=$(jq -r '.pending // empty' "$state")
     cwd=$(jq -r '.cwd' "$state")
     new_cwd=$(cd "$cwd" && bash -c "$pending$text; pwd -P") || exit 1
@@ -272,6 +273,44 @@ DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR
 [ ! -e "$DIRECT_MARKER" ] || fail "direct Herdr relaunch executed buffered shell input before launch"
 case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "direct Herdr relaunch did not complete: $DIRECT_OUT" ;; esac
 pass "fm-spawn relaunch: direct Herdr entry prepares buffered shell input"
+
+write_state "$DIRECT_WT" shell true
+DIRECT_CONCURRENT_OUT="$TMP_ROOT/direct-concurrent.out"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+  FM_FAKE_HERDR_RUN_DELAY=0.5 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude > "$DIRECT_CONCURRENT_OUT" 2>&1 &
+direct_pid=$!
+direct_started=0
+for _ in {1..100}; do
+  if grep -q $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG"; then
+    direct_started=1
+    break
+  fi
+  sleep 0.01
+done
+[ "$direct_started" -eq 1 ] || fail "the direct relaunch did not reach endpoint preparation"
+session_reads_before=$(grep -c $'\x1fsession\x1flist\x1f' "$LOG" || true)
+run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$DIRECT_WT" &
+competitor_pid=$!
+competitor_started=0
+for _ in {1..100}; do
+  session_reads=$(grep -c $'\x1fsession\x1flist\x1f' "$LOG" || true)
+  if [ "$session_reads" -gt "$session_reads_before" ]; then
+    competitor_started=1
+    break
+  fi
+  sleep 0.01
+done
+[ "$competitor_started" -eq 1 ] || fail "the competing pane mutation did not reach the session lock"
+sleep 0.05
+clear_count=$(grep -c $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG" || true)
+[ "$clear_count" -eq 1 ] || fail "a competing pane mutation entered between relaunch preparation and command submission"
+wait "$direct_pid" || fail "the serialized direct relaunch failed: $(cat "$DIRECT_CONCURRENT_OUT")"
+wait "$competitor_pid" || fail "the competing path preparation did not resume after launch submission"
+clear_count=$(grep -c $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG" || true)
+[ "$clear_count" -eq 2 ] || fail "the competing pane mutation did not run after relaunch submission"
+pass "fm-spawn relaunch: Herdr session mutation lock spans preparation through launch submission"
 
 awk -v wt="$DIRECT_PROJECT" '/^worktree=/{print "worktree=" wt; next} {print}' \
   "$DIRECT_HOME/state/direct.meta" > "$DIRECT_HOME/state/direct.meta.tmp"

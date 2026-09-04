@@ -834,11 +834,11 @@ do_relaunch() {
   exit_result=$(do_exit)
   journal_write exited "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
 
-  fm_backend_prepare_relaunch_path "$BACKEND" "$T" "$WT" \
-    || die "task $ID's agent stopped, but its endpoint could not be restored to the exact recorded worktree; refusing replacement launch"
-
-  # The launch owner (fm-spawn --relaunch) clears the previous incarnation's
-  # per-task harness wiring before arming the new one, so nothing to do here.
+  # The launch owner holds Herdr's session mutation lock continuously from
+  # endpoint preparation through replacement command submission. Preparing here
+  # would create an unlocked gap before that transaction begins.
+  # It also clears the previous incarnation's per-task harness wiring before
+  # arming the new one, so nothing to do here.
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
