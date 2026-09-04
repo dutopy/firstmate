@@ -1209,6 +1209,52 @@ herdr_relaunch_candidate_is_authoritative() {
     && [ "$(fm_backend_meta_exact_value "$meta" herdr_pane_id 2>/dev/null)" = "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ]
 }
 
+herdr_relaunch_candidate_record_rephase() {  # <phase> [extra-line]...
+  local phase=$1 tmp line
+  shift
+  tmp="$HERDR_RELAUNCH_CANDIDATE_RECORD.tmp.${BASHPID:-$$}"
+  awk -F= '$1 != "phase" && $1 != "candidate_state" && $1 != "old_endpoint" && $1 != "wiring_state"' \
+    "$HERDR_RELAUNCH_CANDIDATE_RECORD" > "$tmp" || { rm -f "$tmp"; return 1; }
+  printf 'phase=%s\n' "$phase" >> "$tmp" || { rm -f "$tmp"; return 1; }
+  for line in "$@"; do
+    printf '%s\n' "$line" >> "$tmp" || { rm -f "$tmp"; return 1; }
+  done
+  mv -f "$tmp" "$HERDR_RELAUNCH_CANDIDATE_RECORD"
+}
+
+herdr_relaunch_published_reconcile() {  # <old-tab> <old-pane> <candidate-tab> <candidate-pane>
+  local old_tab=$1 old_pane=$2 candidate_tab=$3 candidate_pane=$4
+  fm_backend_endpoint_atom_valid "${old_tab//:/_}" \
+    && fm_backend_endpoint_atom_valid "${old_pane//:/_}" \
+    && fm_backend_endpoint_atom_valid "${candidate_tab//:/_}" \
+    && fm_backend_endpoint_atom_valid "${candidate_pane//:/_}" || return 1
+  if [ -n "${HERDR_PRESENTATION_JOURNAL:-}" ] \
+     && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
+    fm_backend_herdr_projection_journal_snapshot \
+      "$HERDR_PRESENTATION_JOURNAL" "$ID" || return 1
+    if [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$candidate_tab" ] \
+       || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$candidate_pane" ]; then
+      [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$old_tab" ] \
+        && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$old_pane" ] || return 1
+      fm_backend_herdr_projection_journal_replace_endpoint \
+        "$HERDR_PRESENTATION_JOURNAL" "$ID" \
+        "$old_tab" "$old_pane" "$candidate_tab" "$candidate_pane" || return 1
+    fi
+  fi
+  if [ "$old_tab" != "$candidate_tab" ] || [ "$old_pane" != "$candidate_pane" ]; then
+    fm_backend_herdr_relaunch_candidate_cleanup \
+      "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$old_tab" "$old_pane" || {
+      echo "error: retained original Herdr endpoint could not be safely retired" >&2
+      return 1
+    }
+  fi
+  herdr_relaunch_candidate_record_rephase published \
+    "candidate_state=reconciled" "old_endpoint=retired" || {
+    echo "error: reconciled Herdr publication state could not be persisted" >&2
+    return 1
+  }
+}
+
 herdr_relaunch_launch_receipt_valid() {
   local receipt="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/launch-receipt"
   [ -f "$receipt" ] && [ ! -L "$receipt" ]
@@ -1390,7 +1436,6 @@ herdr_relaunch_candidate_adopt_live() {
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_workspace_id)" = "$HERDR_WORKSPACE_ID" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_tab_id)" = "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_pane_id)" = "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] || return 1
-  herdr_relaunch_authoritative_wiring_finalize || return 1
   tmp="$STATE/.$ID.meta.relaunch-adopt.${BASHPID:-$$}"
   awk -F= '$1 != "control_relaunch_tx"' "$provenance_meta" > "$tmp" \
     || { rm -f "$tmp"; return 1; }
@@ -1401,6 +1446,9 @@ herdr_relaunch_candidate_adopt_live() {
     rm -f "$tmp"
     return 1
   }
+  herdr_relaunch_candidate_record_write binding-published \
+    "candidate_state=adopted-alive" "wiring_state=pending" || return 1
+  herdr_relaunch_authoritative_wiring_finalize || return 1
   herdr_relaunch_candidate_record_write published "candidate_state=adopted-alive" || true
   if [ -n "${HERDR_PRESENTATION_JOURNAL:-}" ] \
      && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
@@ -1448,6 +1496,8 @@ herdr_relaunch_candidate_reconcile_prior() {
     published)
       [ "$candidate_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
         && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
+      herdr_relaunch_published_reconcile \
+        "$old_tab" "$old_pane" "$candidate_tab" "$candidate_pane" || return 1
       return 0
       ;;
     creating|created|creation-failed|quarantined|wiring-snapshotted|wiring-restored|launch-attempt|binding-published)
@@ -1461,22 +1511,16 @@ herdr_relaunch_candidate_reconcile_prior() {
            && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ]; then
           HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
           HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
-          if [ -n "${HERDR_PRESENTATION_JOURNAL:-}" ] \
-             && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
-            fm_backend_herdr_projection_journal_snapshot \
-              "$HERDR_PRESENTATION_JOURNAL" "$ID" || return 1
-            if [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$candidate_tab" ] \
-               || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$candidate_pane" ]; then
-              fm_backend_herdr_projection_journal_replace_endpoint \
-                "$HERDR_PRESENTATION_JOURNAL" "$ID" \
-                "$old_tab" "$old_pane" "$candidate_tab" "$candidate_pane" || return 1
-            fi
-          fi
           herdr_relaunch_authoritative_wiring_finalize || return 1
-          herdr_relaunch_candidate_record_write published \
-            "candidate_state=reconciled-from-authoritative-binding" || return 1
-          HERDR_RELAUNCH_CANDIDATE_TAB_ID=
-          HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+          herdr_relaunch_published_reconcile \
+            "$old_tab" "$old_pane" "$candidate_tab" "$candidate_pane" || return 1
+          if fm_backend_herdr_relaunch_candidate_live \
+              "$HERDR_SES" "$candidate_pane"; then
+            HERDR_RELAUNCH_RECOVERED_STATE=authoritative-alive
+          else
+            HERDR_RELAUNCH_CANDIDATE_TAB_ID=
+            HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+          fi
           return 0
         fi
       fi
@@ -1750,10 +1794,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   }
   RELAUNCH_STATE=$(fm_backend_recovery_agent_state "$BACKEND" "$RELAUNCH_TARGET")
-  [ "$RELAUNCH_STATE" = dead ] || {
+  if [ "$BACKEND" != herdr ] && [ "$RELAUNCH_STATE" != dead ]; then
     echo "error: task $ID's endpoint reads '$RELAUNCH_STATE'; a relaunch requires a positively agent-free endpoint (stop the agent first with bin/fm-control.sh $ID exit)" >&2
     exit 1
-  }
+  fi
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   if [ "$MODEL_SET" -eq 0 ] \
      && { [ -z "$HARNESS_ARG" ] || [ "$HARNESS_ARG" = "$RELAUNCH_PRIOR_HARNESS" ]; }; then
@@ -2806,10 +2850,6 @@ elif [ "$RELAUNCH" -eq 1 ]; then
     echo "error: recorded Herdr endpoint does not match its exact workspace and tab; refusing replacement creation" >&2
     exit 1
   }
-  [ "$(fm_backend_herdr_recovery_agent_state "$RELAUNCH_TARGET")" = dead ] || {
-    echo "error: recorded Herdr endpoint no longer proves agent-free under the session mutation lock; refusing replacement creation" >&2
-    exit 1
-  }
   HERDR_RELAUNCH_CANDIDATE_RECORD="$STATE/$ID.control-relaunch-candidate"
   HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR="$STATE/$ID.control-relaunch-candidate.launch"
   HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
@@ -2822,7 +2862,17 @@ elif [ "$RELAUNCH" -eq 1 ]; then
       echo "error: the discovered Herdr replacement no longer proves its launch provenance, wiring, exact live identity, and recorded worktree; refusing adoption" >&2
       exit 1
     }
+  elif [ "$HERDR_RELAUNCH_RECOVERED_STATE" = authoritative-alive ]; then
+    rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR" || exit 1
+    spawn_herdr_presentation_order_lock_release
+    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+    echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID worktree=$WT"
+    exit 0
   fi
+  [ "$(fm_backend_herdr_recovery_agent_state "$RELAUNCH_TARGET")" = dead ] || {
+    echo "error: recorded Herdr endpoint no longer proves agent-free under the session mutation lock; refusing replacement creation" >&2
+    exit 1
+  }
   rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR" || {
     echo "error: could not clear retired Herdr replacement launch provenance" >&2
     exit 1

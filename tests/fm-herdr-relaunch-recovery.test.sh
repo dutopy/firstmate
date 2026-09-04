@@ -62,11 +62,15 @@ case "${1:-} ${2:-}" in
         ' "$state" | save_state
       fi
     else
-      jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,tab_id:"w1:t1",workspace_id:"w1",foreground_cwd:.cwd}}}' "$state"
-      jq '
-        .pane_gets=((.pane_gets // 0) + 1)
-        | if .pane_gets == (.take_over_after_pane_get // -1) then .process="live" else . end
-      ' "$state" | save_state
+      if [ "$(jq -r 'if .recorded_exists == null then true else .recorded_exists end' "$state")" != true ]; then
+        printf '{"id":"cli:pane:get","error":{"code":"pane_not_found"}}\n'
+      else
+        jq --arg pane "$pane" '{id:"cli:pane:get",result:{type:"pane_info",pane:{pane_id:$pane,tab_id:"w1:t1",workspace_id:"w1",foreground_cwd:.cwd}}}' "$state"
+        jq '
+          .pane_gets=((.pane_gets // 0) + 1)
+          | if .pane_gets == (.take_over_after_pane_get // -1) then .process="live" else . end
+        ' "$state" | save_state
+      fi
     fi
     ;;
   "agent get")
@@ -230,6 +234,8 @@ case "${1:-} ${2:-}" in
     pane=${3:-}
     if [ "$pane" = w1:p2 ]; then
       jq '.candidate_exists=false | .candidate_registered=false | .candidate_process="dead" | .frozen=false' "$state" | save_state
+    else
+      jq '.recorded_exists=false | .registered=false | .process="dead" | .frozen=false' "$state" | save_state
     fi
     ;;
 esac
@@ -333,7 +339,7 @@ chmod +x "$TMP_ROOT/fakebin/git"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_delay:0,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,recorded_exists:true,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_delay:0,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -362,8 +368,8 @@ pass "Herdr relaunch recovery: a real foreground agent remains alive and cannot 
 
 write_state "$OLD" live false
 recovery=$(run_backend fm_backend_recovery_agent_state herdr fmtest:w1:p1)
-[ "$recovery" = alive ] || fail "an unregistered pane with a distinct foreground process group must remain alive, got '$recovery'"
-pass "Herdr relaunch recovery: an unregistered live process cannot be replaced"
+[ "$recovery" = unreadable ] || fail "an unregistered non-shell process must remain ambiguous, got '$recovery'"
+pass "Herdr relaunch recovery: an unregistered foreground process cannot receive lifecycle input"
 
 write_state "$OLD" ambiguous true
 recovery=$(run_backend fm_backend_recovery_agent_state herdr fmtest:w1:p1)
@@ -656,8 +662,10 @@ if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HE
     "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness pi 2>&1); then
   fail "crash adoption reported success while prior wiring could not be retired: $DIRECT_OUT"
 fi
-cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
-  || fail "failed prior-wiring retirement published the replacement binding"
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "failed prior-wiring retirement did not preserve the published replacement binding"
+[ "$(awk -F= '$1 == "harness" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = pi ] \
+  || fail "failed prior-wiring retirement did not preserve the published replacement harness"
 [ -f "$DIRECT_HOME/state/direct.pi-ext.ts" ] \
   || fail "failed prior-wiring retirement removed replacement wiring"
 rmdir "$DIRECT_WT/.claude/settings.local.json"
@@ -673,7 +681,9 @@ DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR
   || fail "crash adoption removed replacement Pi wiring"
 [ "$(awk -F= '$1 == "harness" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = pi ] \
   || fail "crash adoption did not publish the replacement harness"
-pass "fm-spawn relaunch: crash adoption retires only prior harness wiring"
+[ "$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)" -eq 1 ] \
+  || fail "wiring reconciliation created a duplicate replacement endpoint"
+pass "fm-spawn relaunch: crash adoption publishes before retryable wiring retirement"
 rm -f "$DIRECT_HOME/state/direct.pi-ext.ts"
 
 reset_direct_meta
@@ -917,10 +927,12 @@ sleep 0.05
 clear_count=$(grep -c $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG" || true)
 [ "$clear_count" -eq 1 ] || fail "a competing pane mutation entered between relaunch preparation and command submission"
 wait "$direct_pid" || fail "the serialized direct relaunch failed: $(cat "$DIRECT_CONCURRENT_OUT")"
-wait "$competitor_pid" || fail "the competing path preparation did not resume after launch submission"
+if wait "$competitor_pid"; then
+  fail "the competing path preparation mutated the original endpoint after publication"
+fi
 clear_count=$(grep -c $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG" || true)
-[ "$clear_count" -eq 2 ] || fail "the competing pane mutation did not run after relaunch submission"
-pass "fm-spawn relaunch: Herdr session mutation lock spans candidate creation through binding publication"
+[ "$clear_count" -eq 1 ] || fail "the competing pane mutation reached the retired original endpoint"
+pass "fm-spawn relaunch: session locking prevents mutation of the retired original endpoint"
 
 [ "$(jq -r '.unmanaged_fingerprint' "$STATE")" = unchanged ] \
   || fail "replacement transaction mutated an unrelated unmanaged endpoint"
@@ -978,7 +990,9 @@ case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "post-publication recove
   || fail "post-publication recovery lost the original prior harness identity"
 grep -q '^pane_id=w1:p2$' "$DIRECT_HOME/state/direct.herdr-presentation" \
   || fail "post-publication recovery left the presentation binding stale"
-pass "fm-spawn relaunch: post-publication abort preserves and reconciles candidate binding"
+[ "$(jq -r '.recorded_exists' "$STATE")" = false ] \
+  || fail "post-publication recovery abandoned the retained original endpoint"
+pass "fm-spawn relaunch: post-publication retry reconciles presentation and retained endpoint"
 rm -f "$DIRECT_HOME/state/direct.pi-ext.ts" "$DIRECT_HOME/state/direct.herdr-presentation"
 
 reset_direct_meta

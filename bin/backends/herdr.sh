@@ -2008,7 +2008,14 @@ fm_backend_herdr_recovery_agent_state() {  # <target>
   pane_state=$(fm_backend_herdr_pane_agent_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
   case "$pane_state" in
     dead) printf 'missing' ;;
-    no-agent|live)
+    no-agent)
+      process_state=$(fm_backend_herdr_registered_process_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
+      case "$process_state" in
+        shell) printf 'dead' ;;
+        *) printf 'unreadable' ;;
+      esac
+      ;;
+    live)
       process_state=$(fm_backend_herdr_registered_process_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
       case "$process_state" in
         live) printf 'alive' ;;
