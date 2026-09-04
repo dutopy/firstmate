@@ -155,7 +155,7 @@ pass "real herdr: an agent-free pane shell returns persistently to the exact rec
 # A different foreground process group makes the same registration live again.
 # This is the structural refusal that prevents a genuine agent process from
 # being mistaken for the shell-only stale-registration case.
-lab pane send-text "$PANE_ID" 'sleep 30' >/dev/null 2>&1 \
+lab pane send-text "$PANE_ID" "sh -c 'trap \"\" INT; while :; do sleep 1; done'" >/dev/null 2>&1 \
   || fail "could not type the foreground-process fixture"
 lab pane send-keys "$PANE_ID" enter >/dev/null 2>&1 \
   || fail "could not start the foreground-process fixture"

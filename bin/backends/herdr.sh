@@ -2637,13 +2637,6 @@ fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>
     echo "error: herdr endpoint does not hold one provably idle shell; refusing to restore its relaunch path" >&2
     return 1
   }
-  current=$(fm_backend_herdr_current_path "$target" || true)
-  current_real=
-  [ -z "$current" ] || current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || current_real=
-  if [ "$current_real" = "$expected_real" ]; then
-    return 0
-  fi
-
   fm_backend_herdr_clear_idle_shell_input "$target" "$shell_pid" || {
     echo "error: herdr endpoint changed before its shell input could be cleared" >&2
     return 1
@@ -2658,6 +2651,12 @@ fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>
     echo "error: herdr endpoint shell identity changed after clearing shell input" >&2
     return 1
   }
+  current=$(fm_backend_herdr_current_path "$target" || true)
+  current_real=
+  [ -z "$current" ] || current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || current_real=
+  if [ "$current_real" = "$expected_real" ]; then
+    return 0
+  fi
 
   quoted=${expected_real//\'/\'"\'"\'}
   command="cd -- '$quoted'"
