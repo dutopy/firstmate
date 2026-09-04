@@ -306,6 +306,12 @@ source_match=0
 for arg in "$@"; do
   case "$arg" in *.meta.relaunch.*) source_match=1 ;; esac
 done
+if [ -n "${FM_FAKE_MV_PROVENANCE_BLOCK_RECEIPT_TARGET:-}" ] \
+   && [ "$target" = "$FM_FAKE_MV_PROVENANCE_BLOCK_RECEIPT_TARGET" ]; then
+  "$real_mv" "$@" || exit 1
+  mkdir "$target/launch-receipt" || exit 1
+  exit 0
+fi
 if [ -n "${FM_FAKE_MV_PROVENANCE_MARKER:-}" ] \
    && [ "$target" = "${FM_FAKE_MV_PROVENANCE_TARGET:-}" ]; then
   "$real_mv" "$@" || exit 1
@@ -796,6 +802,24 @@ grep -q '^phase=rolled-back$' "$DIRECT_HOME/state/direct.control-relaunch-candid
 grep -q 'gen=prior-busy-gen seq=7 state=idle' "$DIRECT_HOME/state/direct.busy-state" \
   || fail "failed candidate launch did not restore prior busy state"
 pass "fm-spawn relaunch: failed candidate launch rolls back endpoint, binding, and supervision wiring"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+RECEIPT_TARGET="$DIRECT_HOME/state/direct.control-relaunch-candidate.launch/launch"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    FM_FAKE_MV_PROVENANCE_BLOCK_RECEIPT_TARGET="$RECEIPT_TARGET" \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "replacement launch succeeded without writing its adoption receipt: $DIRECT_OUT"
+fi
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "receipt-write failure changed the authoritative endpoint binding"
+[ "$(jq -r '.candidate_registered' "$STATE")" = false ] \
+  || fail "receipt-write failure still started a registered replacement agent"
+[ "$(jq -r '.candidate_process' "$STATE")" != live ] \
+  || fail "receipt-write failure still started the replacement process"
+pass "fm-spawn relaunch: receipt failure prevents an unadoptable agent launch"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true

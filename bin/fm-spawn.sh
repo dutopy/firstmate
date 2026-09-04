@@ -4047,7 +4047,7 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
       echo "error: could not persist Herdr replacement launch provenance before command submission" >&2
       exit 1
     }
-    LAUNCH="umask 077; : > $(shell_quote "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/launch/launch-receipt"); $LAUNCH"
+    LAUNCH="umask 077; : > $(shell_quote "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/launch/launch-receipt") && { $LAUNCH; }"
   fi
   # Freeze and revalidate the prepared shell before atomically queueing the
   # command and Enter. This closes the final foreground-owner race rather than
