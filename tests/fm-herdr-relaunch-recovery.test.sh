@@ -265,6 +265,27 @@ exit 0
 SH
 chmod +x "$TMP_ROOT/fakebin/pi"
 
+cat > "$TMP_ROOT/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+set -u
+real_mv=${FM_FAKE_REAL_MV:-$(PATH=/usr/bin:/bin command -v mv)}
+target=${!#}
+source_match=0
+for arg in "$@"; do
+  case "$arg" in *.meta.relaunch.*) source_match=1 ;; esac
+done
+if [ -n "${FM_FAKE_MV_PUBLISH_MARKER:-}" ] \
+   && [ "$target" = "${FM_FAKE_MV_PUBLISH_TARGET:-}" ] \
+   && [ "$source_match" = 1 ]; then
+  "$real_mv" "$@" || exit 1
+  : > "$FM_FAKE_MV_PUBLISH_MARKER"
+  while [ ! -e "${FM_FAKE_MV_PUBLISH_RELEASE:?}" ]; do sleep 0.01; done
+  exit 0
+fi
+exec "$real_mv" "$@"
+SH
+chmod +x "$TMP_ROOT/fakebin/mv"
+
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
     '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
@@ -536,6 +557,20 @@ wait "$switch_pid" 2>/dev/null || true
   || fail "crash simulation unexpectedly retired prior Claude wiring"
 [ -f "$DIRECT_HOME/state/direct.pi-ext.ts" ] \
   || fail "crash simulation did not leave replacement Pi wiring"
+rm -f "$DIRECT_WT/.claude/settings.local.json"
+mkdir "$DIRECT_WT/.claude/settings.local.json"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness pi 2>&1); then
+  fail "crash adoption reported success while prior wiring could not be retired: $DIRECT_OUT"
+fi
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "failed prior-wiring retirement published the replacement binding"
+[ -f "$DIRECT_HOME/state/direct.pi-ext.ts" ] \
+  || fail "failed prior-wiring retirement removed replacement wiring"
+rmdir "$DIRECT_WT/.claude/settings.local.json"
+printf '%s\n' prior-claude-wiring > "$DIRECT_WT/.claude/settings.local.json"
 DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
   FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
   FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
@@ -746,6 +781,36 @@ pass "fm-spawn relaunch: Herdr session mutation lock spans candidate creation th
 ! grep -Eq 'w9(:p9)?' "$LOG" \
   || fail "replacement transaction addressed an unrelated unmanaged identity"
 pass "fm-spawn relaunch: replacement stays exact-record scoped and ignores unmanaged workspaces"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
+PUBLISH_MARKER="$TMP_ROOT/publish-window.marker"
+PUBLISH_RELEASE="$TMP_ROOT/publish-window.release"
+PUBLISH_OUT="$TMP_ROOT/publish-window.out"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_MV_PUBLISH_MARKER="$PUBLISH_MARKER" FM_FAKE_MV_PUBLISH_RELEASE="$PUBLISH_RELEASE" \
+  FM_FAKE_MV_PUBLISH_TARGET="$DIRECT_HOME/state/direct.meta" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch > "$PUBLISH_OUT" 2>&1 &
+publish_pid=$!
+for _ in {1..500}; do [ ! -e "$PUBLISH_MARKER" ] || break; sleep 0.01; done
+[ -e "$PUBLISH_MARKER" ] || fail "publication crash simulation never committed candidate metadata"
+jq '.candidate_process="shell" | .candidate_registered=false' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+kill -TERM "$publish_pid" 2>/dev/null || fail "could not interrupt relaunch after metadata publication"
+touch "$PUBLISH_RELEASE"
+wait "$publish_pid" 2>/dev/null || true
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "post-publication interruption rolled back authoritative metadata"
+[ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
+  || fail "post-publication interruption closed the authoritative candidate"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not finish the interrupted binding commit: $DIRECT_OUT"
+case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "post-publication recovery did not permit the next relaunch: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: post-publication abort preserves and reconciles candidate binding"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true

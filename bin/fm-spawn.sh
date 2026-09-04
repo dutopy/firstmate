@@ -807,6 +807,12 @@ parse_orca_worktree_result() {
 
 spawn_abort_cleanup() {
   local status=$? candidate_state
+  if [ -n "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
+     && herdr_relaunch_candidate_is_authoritative; then
+    HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
+    RELAUNCH_REPLACEMENT_PENDING=0
+    RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
+  fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
      && [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] \
      && [ -n "$SPAWN_META_TMP" ] \
@@ -1122,6 +1128,17 @@ herdr_relaunch_candidate_record_write() {  # <phase> [extra-line]...
   } > "$tmp" && mv -f "$tmp" "$HERDR_RELAUNCH_CANDIDATE_RECORD"
 }
 
+herdr_relaunch_candidate_is_authoritative() {
+  local meta="$STATE/$ID.meta"
+  [ -n "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" ] \
+    && [ -n "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$meta" backend 2>/dev/null)" = herdr ] \
+    && [ "$(fm_backend_meta_exact_value "$meta" herdr_session 2>/dev/null)" = "$HERDR_SES" ] \
+    && [ "$(fm_backend_meta_exact_value "$meta" herdr_workspace_id 2>/dev/null)" = "$HERDR_WORKSPACE_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$meta" herdr_tab_id 2>/dev/null)" = "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$meta" herdr_pane_id 2>/dev/null)" = "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ]
+}
+
 herdr_relaunch_launch_provenance_persist() {
   local dir tmp family path token_path token auth index=0 seen
   dir=$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR
@@ -1129,6 +1146,10 @@ herdr_relaunch_launch_provenance_persist() {
   rm -rf "$tmp" || return 1
   (umask 077; mkdir "$tmp") || return 1
   cp -p "$SPAWN_META_TMP" "$tmp/meta" || { rm -rf "$tmp"; return 1; }
+  if [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" = 1 ]; then
+    cp -Rp "$RELAUNCH_WIRING_SNAPSHOT_DIR" "$tmp/prior-snapshot" \
+      || { rm -rf "$tmp"; return 1; }
+  fi
   printf 'prior_auth_path=%s\n' "${RELAUNCH_PRIOR_AUTH_PATH:-none}" > "$tmp/prior-auth" \
     || { rm -rf "$tmp"; return 1; }
   : > "$tmp/manifest" || { rm -rf "$tmp"; return 1; }
@@ -1196,8 +1217,25 @@ herdr_relaunch_launch_provenance_restore() {
   return "$status"
 }
 
+herdr_relaunch_authoritative_wiring_finalize() {
+  local provenance_meta staged_busy busy_gen state_real
+  provenance_meta="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/meta"
+  RELAUNCH_PRIOR_AUTH_PATH=$(fm_backend_meta_exact_value \
+    "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-auth" prior_auth_path) || return 1
+  [ "$RELAUNCH_PRIOR_AUTH_PATH" != none ] || RELAUNCH_PRIOR_AUTH_PATH=
+  case "$RELAUNCH_PRIOR_AUTH_PATH" in ''|/*) ;; *) return 1 ;; esac
+  case "$RELAUNCH_PRIOR_AUTH_PATH" in *$'\n'*|*$'\r'*|*$'\t'*) return 1 ;; esac
+  herdr_relaunch_launch_provenance_restore || return 1
+  staged_busy=$(fm_backend_meta_exact_value "$provenance_meta" busy_gen) || staged_busy=
+  busy_gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
+  [ "$busy_gen" = "$staged_busy" ] || return 1
+  state_real=$(CDPATH='' cd -- "$STATE" 2>/dev/null && pwd -P) || return 1
+  retire_prior_relaunch_wiring \
+    "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$state_real" "$ID"
+}
+
 herdr_relaunch_candidate_adopt_live() {
-  local current current_real expected_real busy_gen staged_busy state_real tmp old_retirement=retained provenance_meta
+  local current current_real expected_real tmp old_retirement=retained provenance_meta
   [ "$HERDR_RELAUNCH_RECOVERED_STATE" = alive ] || return 1
   fm_backend_herdr_relaunch_candidate_matches \
     "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
@@ -1209,11 +1247,6 @@ herdr_relaunch_candidate_adopt_live() {
   expected_real=$(CDPATH='' cd -- "$WT" 2>/dev/null && pwd -P) || return 1
   [ "$current_real" = "$expected_real" ] || return 1
   provenance_meta="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/meta"
-  RELAUNCH_PRIOR_AUTH_PATH=$(fm_backend_meta_exact_value \
-    "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-auth" prior_auth_path) || return 1
-  [ "$RELAUNCH_PRIOR_AUTH_PATH" != none ] || RELAUNCH_PRIOR_AUTH_PATH=
-  case "$RELAUNCH_PRIOR_AUTH_PATH" in ''|/*) ;; *) return 1 ;; esac
-  case "$RELAUNCH_PRIOR_AUTH_PATH" in *$'\n'*|*$'\r'*|*$'\t'*) return 1 ;; esac
   [ "$(fm_backend_meta_exact_value "$provenance_meta" window)" = "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" worktree)" = "$WT" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" harness)" = "$HARNESS" ] \
@@ -1224,13 +1257,7 @@ herdr_relaunch_candidate_adopt_live() {
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_workspace_id)" = "$HERDR_WORKSPACE_ID" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_tab_id)" = "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" ] \
     && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_pane_id)" = "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] || return 1
-  herdr_relaunch_launch_provenance_restore || return 1
-  staged_busy=$(fm_backend_meta_exact_value "$provenance_meta" busy_gen) || staged_busy=
-  busy_gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
-  [ "$busy_gen" = "$staged_busy" ] || return 1
-  state_real=$(CDPATH='' cd -- "$STATE" 2>/dev/null && pwd -P) || return 1
-  retire_prior_relaunch_wiring \
-    "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$state_real" "$ID" || return 1
+  herdr_relaunch_authoritative_wiring_finalize || return 1
   tmp="$STATE/.$ID.meta.relaunch-adopt.${BASHPID:-$$}"
   awk -F= '$1 != "control_relaunch_tx"' "$provenance_meta" > "$tmp" \
     || { rm -f "$tmp"; return 1; }
@@ -1289,7 +1316,7 @@ herdr_relaunch_candidate_reconcile_prior() {
         && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
       return 0
       ;;
-    creating|created|creation-failed|quarantined|launch-attempt)
+    creating|created|creation-failed|quarantined|launch-attempt|binding-published)
       [ "$replacement_harness" = "$HARNESS" ] \
         && [ "$replacement_model" = "${MODEL:-default}" ] \
         && [ "$replacement_effort" = "${EFFORT:-default}" ] || return 1
@@ -1300,6 +1327,7 @@ herdr_relaunch_candidate_reconcile_prior() {
            && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ]; then
           HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
           HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
+          herdr_relaunch_authoritative_wiring_finalize || return 1
           herdr_relaunch_candidate_record_write published \
             "candidate_state=reconciled-from-authoritative-binding" || return 1
           HERDR_RELAUNCH_CANDIDATE_TAB_ID=
@@ -3856,14 +3884,19 @@ if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
     echo "error: proven Herdr replacement could not publish its task binding ($FM_BACKLOG_TRANSITION_ERROR)" >&2
     exit 1
   fi
+  HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=
-  HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
-  if ! retire_prior_relaunch_wiring \
-      "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$STATE_REAL" "$ID"; then
-    echo "warning: published Herdr replacement retained stale $RELAUNCH_PRIOR_HARNESS wiring for later cleanup" >&2
-  fi
+  herdr_relaunch_candidate_record_write binding-published \
+    "candidate_state=alive" "wiring_state=pending" || {
+    echo "error: published Herdr replacement could not persist its pending wiring commit" >&2
+    exit 1
+  }
+  herdr_relaunch_authoritative_wiring_finalize || {
+    echo "error: published Herdr replacement could not retire prior harness wiring; retry the relaunch to finish its binding commit" >&2
+    exit 1
+  }
   if [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" = 1 ]; then
     rm -rf "$RELAUNCH_WIRING_SNAPSHOT_DIR" || true
     RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0

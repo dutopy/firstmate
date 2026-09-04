@@ -281,7 +281,8 @@ It creates one fresh tab directly in that recorded workspace with its shell root
 Recovery may list only that recorded workspace to resolve exactly one tab carrying the recorded label, and it leaves every unrelated workspace or endpoint untouched.
 The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, and the staged metadata plus harness wiring are persisted immediately before the environment and launch command are queued.
 Publication and crash adoption both require an exact live Herdr agent registration plus corroborating live foreground-process state at that endpoint.
-Only then does metadata advance atomically to the candidate.
+Only then does metadata advance atomically to the candidate, immediately relinquishing provisional cleanup authority.
+Prior-harness wiring retirement remains a required, journaled part of that binding commit, and an interruption or cleanup failure must be reconciled before another relaunch can proceed.
 A prepublication failure leaves the old endpoint and metadata unchanged, restores prior harness wiring, and closes only a response-identified candidate that is still provably agent-free.
 An ambiguous failed candidate remains quarantined under its exact recorded identity instead of granting cleanup authority.
 A later retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
