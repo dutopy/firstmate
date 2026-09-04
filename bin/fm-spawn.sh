@@ -1578,16 +1578,24 @@ herdr_relaunch_candidate_reconcile_prior() {
       fi
       case "$state" in dead|missing) ;; *) return 1 ;; esac
       case "$phase" in
-        wiring-snapshotted|launch-attempt)
+        wiring-snapshotted)
           restore_persisted_relaunch_wiring_snapshot || return 1
           herdr_relaunch_candidate_record_write wiring-restored "candidate_state=dead" || return 1
           phase=wiring-restored
-          rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-snapshot" || return 1
+          ;;
+        launch-attempt)
+          restore_persisted_relaunch_wiring_snapshot || return 1
           ;;
       esac
-      fm_backend_herdr_relaunch_candidate_cleanup \
-        "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane" || return 1
-      rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-snapshot" || return 1
+      if ! fm_backend_herdr_relaunch_candidate_cleanup \
+          "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane"; then
+        if [ "$phase" = launch-attempt ]; then
+          herdr_relaunch_launch_provenance_restore || return 1
+          herdr_relaunch_candidate_record_write launch-attempt \
+            "candidate_state=settlement-raced" || return 1
+        fi
+        return 1
+      fi
       herdr_relaunch_candidate_record_write rolled-back "candidate_state=dead" || return 1
       HERDR_RELAUNCH_CANDIDATE_TAB_ID=
       HERDR_RELAUNCH_CANDIDATE_PANE_ID=

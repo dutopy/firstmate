@@ -889,6 +889,33 @@ cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta
   || fail "unregistered adoption changed the authoritative binding"
 pass "fm-spawn relaunch: adoption requires registration and live process proof"
 
+jq '.candidate_process="shell" | .candidate_registered=false | .candidate_take_over_on_stop=true' \
+  "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "retry reported success after a submitted launch took over during cleanup: $DIRECT_OUT"
+fi
+grep -q '^phase=launch-attempt$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "cleanup-race recovery discarded launch-attempt provenance"
+[ -d "$DIRECT_HOME/state/direct.control-relaunch-candidate.launch/prior-snapshot" ] \
+  || fail "cleanup-race recovery deleted the prior wiring snapshot"
+staged_busy=$(awk -F= '$1 == "busy_gen" { print $2 }' \
+  "$DIRECT_HOME/state/direct.control-relaunch-candidate.launch/launch/meta")
+[ "$(cat "$DIRECT_HOME/state/direct.busy-gen")" = "$staged_busy" ] \
+  || fail "cleanup-race recovery did not restore staged replacement supervision wiring"
+[ "$(jq -r '.candidate_exists and .candidate_registered and (.candidate_process == "live")' "$STATE")" = true ] \
+  || fail "cleanup-race recovery did not preserve the taken-over live candidate"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not adopt the candidate preserved after cleanup raced its launch: $DIRECT_OUT"
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "cleanup-race adoption did not publish the preserved candidate"
+pass "fm-spawn relaunch: cleanup races preserve launch provenance for adoption"
+
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
 write_direct_candidate_record created
