@@ -279,11 +279,12 @@ Herdr 0.8.2 exposes no generic pane launch operation conditioned on an expected 
 After the stopped-agent proof, the launch owner takes the named-session mutation lock and revalidates the recorded pane's exact workspace and tab relation.
 It creates one fresh tab directly in that recorded workspace with its shell rooted at the validated worktree and records a unique attempt label before creation.
 Recovery may list only that recorded workspace to resolve exactly one tab carrying the recorded label, and it leaves every unrelated workspace or endpoint untouched.
-The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, and the staged metadata plus harness wiring are persisted immediately before the environment and launch command are queued.
+The candidate stays unpublished while its pending input is cleared and its exact shell and worktree are revalidated.
+The rollback wiring snapshot becomes deterministic before the first replacement-wiring mutation, and staged metadata plus replacement wiring are persisted immediately before the environment and launch command are queued.
 Publication and crash adoption both require an exact live Herdr agent registration plus corroborating live foreground-process state at that endpoint.
 Only then does metadata advance atomically to the candidate, immediately relinquishing provisional cleanup authority.
 The original prior harness remains in launch provenance until its wiring retirement commits, and an interruption or cleanup failure must reconcile that identity plus any presentation binding before another relaunch can proceed.
-A prepublication failure leaves the old endpoint and metadata unchanged, restores prior harness wiring, and closes only a response-identified candidate that is still provably agent-free.
+A prepublication failure or hard-crash recovery leaves the old metadata authoritative, restores the exact persisted prior wiring snapshot, and closes only an exactly identified candidate that is still provably agent-free.
 An ambiguous failed candidate remains quarantined under its exact recorded identity instead of granting cleanup authority.
 A later retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
 It refuses every live pre-launch or quarantined candidate and every unreadable, mismatched, or multiply matched candidate.

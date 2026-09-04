@@ -1039,9 +1039,10 @@ snapshot_relaunch_wiring() {  # <prior-harness> <new-harness> <worktree> <state>
   RELAUNCH_WIRING_SNAPSHOT_ACTIVE=1
 }
 
-restore_relaunch_wiring_snapshot() {
-  local presence index path tmp status=0
-  [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" = 1 ] || return 0
+restore_relaunch_wiring_snapshot_dir() {
+  local snapshot_dir=$1 presence index path tmp status=0
+  [ -d "$snapshot_dir" ] && [ ! -L "$snapshot_dir" ] \
+    && [ -f "$snapshot_dir/manifest" ] && [ ! -L "$snapshot_dir/manifest" ] || return 1
   while IFS=$'\t' read -r presence index path; do
     [ -n "$path" ] || continue
     case "$presence" in
@@ -1052,7 +1053,8 @@ restore_relaunch_wiring_snapshot() {
           continue
         fi
         tmp="$path.relaunch-restore.${BASHPID:-$$}"
-        if cp -p "$RELAUNCH_WIRING_SNAPSHOT_DIR/$index" "$tmp"; then
+        if [ -f "$snapshot_dir/$index" ] && [ ! -L "$snapshot_dir/$index" ] \
+           && cp -p "$snapshot_dir/$index" "$tmp"; then
           rm -f "$path" 2>/dev/null || { rm -f "$tmp" 2>/dev/null || true; status=1; continue; }
           mv "$tmp" "$path" || { rm -f "$tmp" 2>/dev/null || true; status=1; }
         else
@@ -1068,10 +1070,33 @@ restore_relaunch_wiring_snapshot() {
         ;;
       *) status=1 ;;
     esac
-  done < "$RELAUNCH_WIRING_SNAPSHOT_DIR/manifest"
+  done < "$snapshot_dir/manifest"
+  return "$status"
+}
+
+restore_relaunch_wiring_snapshot() {
+  local status=0
+  [ "$RELAUNCH_WIRING_SNAPSHOT_ACTIVE" = 1 ] || return 0
+  restore_relaunch_wiring_snapshot_dir "$RELAUNCH_WIRING_SNAPSHOT_DIR" || status=1
   rm -rf "$RELAUNCH_WIRING_SNAPSHOT_DIR" || status=1
   RELAUNCH_WIRING_SNAPSHOT_ACTIVE=0
   return "$status"
+}
+
+persist_relaunch_wiring_snapshot() {
+  local target="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-snapshot" tmp
+  tmp="$target.tmp.${BASHPID:-$$}"
+  rm -rf "$tmp" || return 1
+  mkdir -p "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR" || return 1
+  cp -Rp "$RELAUNCH_WIRING_SNAPSHOT_DIR" "$tmp" || { rm -rf "$tmp"; return 1; }
+  rm -rf "$target" || { rm -rf "$tmp"; return 1; }
+  mv "$tmp" "$target"
+}
+
+restore_persisted_relaunch_wiring_snapshot() {
+  local snapshot="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/prior-snapshot"
+  restore_relaunch_wiring_snapshot_dir "$snapshot" || return 1
+  rm -rf "$snapshot"
 }
 
 retire_prior_relaunch_wiring() {  # <prior-harness> <replacement-harness> <worktree> <state> <id>
@@ -1327,7 +1352,7 @@ herdr_relaunch_candidate_reconcile_prior() {
         && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
       return 0
       ;;
-    creating|created|creation-failed|quarantined|launch-attempt|binding-published)
+    creating|created|creation-failed|quarantined|wiring-snapshotted|launch-attempt|binding-published)
       [ "$replacement_harness" = "$HARNESS" ] \
         && [ "$replacement_model" = "${MODEL:-default}" ] \
         && [ "$replacement_effort" = "${EFFORT:-default}" ] || return 1
@@ -1395,6 +1420,11 @@ herdr_relaunch_candidate_reconcile_prior() {
       case "$state" in dead|missing) ;; *) return 1 ;; esac
       fm_backend_herdr_relaunch_candidate_cleanup \
         "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane" || return 1
+      case "$phase" in
+        wiring-snapshotted|launch-attempt)
+          restore_persisted_relaunch_wiring_snapshot || return 1
+          ;;
+      esac
       herdr_relaunch_candidate_record_write rolled-back "candidate_state=dead" || return 1
       HERDR_RELAUNCH_CANDIDATE_TAB_ID=
       HERDR_RELAUNCH_CANDIDATE_PANE_ID=
@@ -3186,8 +3216,11 @@ exclude_path() {
 if [ "$RELAUNCH" -eq 1 ]; then
   if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
     snapshot_relaunch_wiring \
-      "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$STATE_REAL" "$ID" || {
-      echo "error: could not snapshot $RELAUNCH_PRIOR_HARNESS wiring before the transactional Herdr replacement" >&2
+      "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$STATE_REAL" "$ID" \
+      && persist_relaunch_wiring_snapshot \
+      && herdr_relaunch_candidate_record_write wiring-snapshotted \
+        "candidate_label=$HERDR_RELAUNCH_LABEL" "candidate_state=agent-free" || {
+      echo "error: could not persist $RELAUNCH_PRIOR_HARNESS wiring before the transactional Herdr replacement" >&2
       exit 1
     }
   else

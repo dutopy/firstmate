@@ -192,6 +192,11 @@ case "${1:-} ${2:-}" in
       esac
     done
     [ "$workspace" = w1 ] || exit 1
+    if [ -n "${FM_FAKE_EXPECT_WIRING_PATH:-}" ] \
+       && [ "$(cat "$FM_FAKE_EXPECT_WIRING_PATH" 2>/dev/null)" != "${FM_FAKE_EXPECT_WIRING_VALUE:-}" ]; then
+      : > "${FM_FAKE_EXPECT_WIRING_FAILURE:?}"
+      exit 1
+    fi
     jq --arg cwd "$cwd" --arg label "$label" '
       .candidate_exists=true
       | .candidate_cwd=$cwd
@@ -285,6 +290,31 @@ fi
 exec "$real_mv" "$@"
 SH
 chmod +x "$TMP_ROOT/fakebin/mv"
+
+cat > "$TMP_ROOT/fakebin/date" <<'SH'
+#!/usr/bin/env bash
+set -u
+real_date=${FM_FAKE_REAL_DATE:-$(PATH=/usr/bin:/bin command -v date)}
+if [ "${1:-}" = +%s ] && [ -n "${FM_FAKE_DATE_MARKER:-}" ]; then
+  : > "$FM_FAKE_DATE_MARKER"
+  while [ ! -e "${FM_FAKE_DATE_RELEASE:?}" ]; do sleep 0.01; done
+fi
+exec "$real_date" "$@"
+SH
+chmod +x "$TMP_ROOT/fakebin/date"
+
+cat > "$TMP_ROOT/fakebin/git" <<'SH'
+#!/usr/bin/env bash
+set -u
+real_git=${FM_FAKE_REAL_GIT:-$(PATH=/usr/bin:/bin command -v git)}
+if [ "$*" = "-C ${FM_FAKE_GIT_WORKTREE:-none} rev-parse --git-path info/exclude" ] \
+   && [ -n "${FM_FAKE_GIT_MARKER:-}" ]; then
+  : > "$FM_FAKE_GIT_MARKER"
+  while [ ! -e "${FM_FAKE_GIT_RELEASE:?}" ]; do sleep 0.01; done
+fi
+exec "$real_git" "$@"
+SH
+chmod +x "$TMP_ROOT/fakebin/git"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
@@ -657,6 +687,44 @@ grep -q '^phase=rolled-back$' "$DIRECT_HOME/state/direct.control-relaunch-candid
 grep -q 'gen=prior-busy-gen seq=7 state=idle' "$DIRECT_HOME/state/direct.busy-state" \
   || fail "failed candidate launch did not restore prior busy state"
 pass "fm-spawn relaunch: failed candidate launch rolls back endpoint, binding, and supervision wiring"
+
+reset_direct_meta
+mkdir -p "$DIRECT_WT/.claude"
+printf '%s\n' prior-hard-crash-wiring > "$DIRECT_WT/.claude/settings.local.json"
+printf '%s\n' prior-hard-crash-gen > "$DIRECT_HOME/state/direct.busy-gen"
+printf '%s\n' 'v1 gen=prior-hard-crash-gen seq=4 state=idle source=test event=prior ts=1' > "$DIRECT_HOME/state/direct.busy-state"
+write_state "$DIRECT_WT" shell true
+WIRING_MARKER="$TMP_ROOT/wiring-window.marker"
+WIRING_RELEASE="$TMP_ROOT/wiring-window.release"
+WIRING_OUT="$TMP_ROOT/wiring-window.out"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_GIT_WORKTREE="$DIRECT_WT" FM_FAKE_GIT_MARKER="$WIRING_MARKER" FM_FAKE_GIT_RELEASE="$WIRING_RELEASE" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch > "$WIRING_OUT" 2>&1 &
+wiring_pid=$!
+for _ in {1..500}; do [ ! -e "$WIRING_MARKER" ] || break; sleep 0.01; done
+[ -e "$WIRING_MARKER" ] || fail "wiring crash simulation never reached the first replacement mutation"
+kill -KILL "$wiring_pid" 2>/dev/null || fail "could not stop relaunch after replacement wiring mutation"
+touch "$WIRING_RELEASE"
+wait "$wiring_pid" 2>/dev/null || true
+[ "$(cat "$DIRECT_WT/.claude/settings.local.json")" != prior-hard-crash-wiring ] \
+  || fail "wiring crash simulation did not mutate replacement wiring"
+WIRING_FAILURE="$TMP_ROOT/wiring-restore.failure"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_EXPECT_WIRING_PATH="$DIRECT_WT/.claude/settings.local.json" \
+  FM_FAKE_EXPECT_WIRING_VALUE=prior-hard-crash-wiring FM_FAKE_EXPECT_WIRING_FAILURE="$WIRING_FAILURE" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not proceed after hard-crash rollback: $DIRECT_OUT"
+[ ! -e "$WIRING_FAILURE" ] \
+  || fail "retry created a replacement before restoring prior harness wiring"
+[ "$(cat "$DIRECT_WT/.claude/settings.local.json")" != prior-hard-crash-wiring ] \
+  || fail "successful retry did not install its own replacement wiring"
+grep -q '^phase=published$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "hard-crash rollback did not complete before retry publication"
+pass "fm-spawn relaunch: hard-crash rollback restores deterministic prior wiring"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
