@@ -245,6 +245,22 @@ DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR
 case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "direct Herdr relaunch did not complete: $DIRECT_OUT" ;; esac
 pass "fm-spawn relaunch: direct Herdr entry prepares buffered shell input"
 
+awk -v wt="$DIRECT_PROJECT" '/^worktree=/{print "worktree=" wt; next} {print}' \
+  "$DIRECT_HOME/state/direct.meta" > "$DIRECT_HOME/state/direct.meta.tmp"
+mv "$DIRECT_HOME/state/direct.meta.tmp" "$DIRECT_HOME/state/direct.meta"
+INVALID_PENDING="touch '$TMP_ROOT/invalid-primary-marker'; "
+write_state "$DIRECT_PROJECT" shell true
+jq --arg pending "$INVALID_PENDING" '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1); then
+  fail "direct Herdr relaunch should reject the primary checkout: $DIRECT_OUT"
+fi
+[ "$(jq -r '.pending' "$STATE")" = "$INVALID_PENDING" ] || fail "invalid-worktree relaunch sent input before refusing"
+! awk -F '\x1f' '$2 == "pane" && ($3 == "send-text" || $3 == "send-keys" || $3 == "run") {found=1} END {exit !found}' "$LOG" \
+  || fail "invalid-worktree relaunch issued a pane input command"
+pass "fm-spawn relaunch: invalid recorded worktrees refuse before pane input"
+
 write_state "$OLD" live true
 if run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" >/dev/null 2>&1; then
   fail "path restoration must refuse while a real foreground agent remains"

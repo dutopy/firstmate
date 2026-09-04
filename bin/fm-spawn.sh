@@ -2479,6 +2479,7 @@ kimi_spawn_fail() {  # <detail>
 }
 
 if [ "$RELAUNCH" -eq 1 ]; then
+  [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
   fm_backend_prepare_relaunch_path "$BACKEND" "$WT_TARGET" "$WT" || {
     echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
     exit 1
