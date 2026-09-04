@@ -135,6 +135,7 @@ case "${1:-} ${2:-}" in
         | .candidate_process="live"
         | .candidate_registered=((.candidate_run_unregistered // false) | not)
       ' "$state" | save_state
+      [ "$(jq -r '.candidate_run_ambiguous // false' "$state")" != true ] || exit 1
     else
       pending=$(jq -r '.pending // empty' "$state")
       cwd=$(jq -r '.cwd' "$state")
@@ -318,7 +319,7 @@ chmod +x "$TMP_ROOT/fakebin/git"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -521,6 +522,9 @@ DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR
 case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "direct Herdr relaunch did not complete: $DIRECT_OUT" ;; esac
 [ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
   || fail "successful replacement did not publish the fresh pane binding"
+jq -e '.endpoints[] | select(.id == "direct") | .endpoint.target == "fmtest:w1:p2"' \
+  "$DIRECT_HOME/state/home-summary.json" >/dev/null \
+  || fail "successful replacement did not refresh its published home-summary endpoint"
 if ! grep -q '^model=test-model$' "$DIRECT_HOME/state/direct.meta" \
    || ! grep -q '^effort=high$' "$DIRECT_HOME/state/direct.meta" \
    || ! grep -q '^traceparent=00-11111111111111111111111111111111-2222222222222222-01$' "$DIRECT_HOME/state/direct.meta"; then
@@ -689,6 +693,31 @@ grep -q 'gen=prior-busy-gen seq=7 state=idle' "$DIRECT_HOME/state/direct.busy-st
 pass "fm-spawn relaunch: failed candidate launch rolls back endpoint, binding, and supervision wiring"
 
 reset_direct_meta
+write_state "$DIRECT_WT" shell true
+jq '.candidate_run_ambiguous=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "ambiguous candidate submission should require retry adoption: $DIRECT_OUT"
+fi
+grep -q '^phase=launch-attempt$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "ambiguous live submission lost its launch-attempt provenance"
+[ "$(jq -r '.candidate_exists and .candidate_registered and (.candidate_process == "live")' "$STATE")" = true ] \
+  || fail "ambiguous live submission did not preserve its exact replacement candidate"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry could not adopt an ambiguously submitted live candidate: $DIRECT_OUT"
+[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
+  || fail "ambiguous live candidate adoption did not publish its endpoint"
+jq -e '.endpoints[] | select(.id == "direct") | .endpoint.target == "fmtest:w1:p2"' \
+  "$DIRECT_HOME/state/home-summary.json" >/dev/null \
+  || fail "crash adoption did not refresh its published home-summary endpoint"
+pass "fm-spawn relaunch: ambiguous live submission remains adoptable"
+
+reset_direct_meta
 mkdir -p "$DIRECT_WT/.claude"
 printf '%s\n' prior-hard-crash-wiring > "$DIRECT_WT/.claude/settings.local.json"
 printf '%s\n' prior-hard-crash-gen > "$DIRECT_HOME/state/direct.busy-gen"
@@ -710,6 +739,19 @@ touch "$WIRING_RELEASE"
 wait "$wiring_pid" 2>/dev/null || true
 [ "$(cat "$DIRECT_WT/.claude/settings.local.json")" != prior-hard-crash-wiring ] \
   || fail "wiring crash simulation did not mutate replacement wiring"
+rm -f "$DIRECT_WT/.claude/settings.local.json"
+mkdir "$DIRECT_WT/.claude/settings.local.json"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "retry should refuse when persisted prior wiring cannot be restored: $DIRECT_OUT"
+fi
+[ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
+  || fail "failed wiring restoration retired the only candidate recovery evidence"
+! grep -q '^phase=rolled-back$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
+  || fail "failed wiring restoration marked candidate rollback complete"
+rmdir "$DIRECT_WT/.claude/settings.local.json"
 WIRING_FAILURE="$TMP_ROOT/wiring-restore.failure"
 DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
   FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
