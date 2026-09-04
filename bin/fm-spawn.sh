@@ -3460,6 +3460,13 @@ if [ "$KIND" != secondmate ]; then
       fi
       ;;
   esac
+  if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ] && [ -z "$BUSY_GEN" ]; then
+    "$FM_ROOT/bin/fm-busy-event.sh" retire \
+      "$STATE_REAL" "$ID" --current-gen || {
+      echo "error: failed to retire prior busy-state wiring for unarmed Herdr replacement $ID" >&2
+      exit 1
+    }
+  fi
   case "$HARNESS" in
     claude*)
       # Semantic busy-state hooks (bin/fm-busy-lib.sh): UserPromptSubmit opens

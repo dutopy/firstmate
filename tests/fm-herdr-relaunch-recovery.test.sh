@@ -291,6 +291,12 @@ exit 0
 SH
 chmod +x "$TMP_ROOT/fakebin/pi"
 
+cat > "$TMP_ROOT/fakebin/codex" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$TMP_ROOT/fakebin/codex"
+
 cat > "$TMP_ROOT/fakebin/mv" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -692,6 +698,50 @@ DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR
   || fail "wiring reconciliation created a duplicate replacement endpoint"
 pass "fm-spawn relaunch: crash adoption publishes before retryable wiring retirement"
 rm -f "$DIRECT_HOME/state/direct.pi-ext.ts"
+
+reset_direct_meta
+mkdir -p "$DIRECT_WT/.claude"
+printf '%s\n' prior-codex-switch-wiring > "$DIRECT_WT/.claude/settings.local.json"
+printf '%s\n' prior-codex-switch-gen > "$DIRECT_HOME/state/direct.busy-gen"
+printf '%s\n' 'v1 gen=prior-codex-switch-gen seq=3 state=idle source=test event=prior ts=1' \
+  > "$DIRECT_HOME/state/direct.busy-state"
+write_state "$DIRECT_WT" shell true
+CODEX_PUBLISH_MARKER="$TMP_ROOT/codex-publish.marker"
+CODEX_PUBLISH_RELEASE="$TMP_ROOT/codex-publish.release"
+CODEX_PUBLISH_OUT="$TMP_ROOT/codex-publish.out"
+PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  FM_FAKE_MV_PUBLISH_MARKER="$CODEX_PUBLISH_MARKER" FM_FAKE_MV_PUBLISH_RELEASE="$CODEX_PUBLISH_RELEASE" \
+  FM_FAKE_MV_PUBLISH_TARGET="$DIRECT_HOME/state/direct.meta" \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness codex > "$CODEX_PUBLISH_OUT" 2>&1 &
+codex_publish_pid=$!
+for _ in {1..500}; do [ ! -e "$CODEX_PUBLISH_MARKER" ] || break; sleep 0.01; done
+[ -e "$CODEX_PUBLISH_MARKER" ] || fail "unarmed-harness switch never reached metadata publication"
+[ ! -e "$DIRECT_HOME/state/direct.busy-gen" ] && [ ! -e "$DIRECT_HOME/state/direct.busy-state" ] \
+  || fail "unarmed-harness replacement retained the prior busy generation before publication"
+rm -f "$DIRECT_WT/.claude/settings.local.json"
+mkdir "$DIRECT_WT/.claude/settings.local.json"
+touch "$CODEX_PUBLISH_RELEASE"
+if wait "$codex_publish_pid"; then
+  fail "unarmed-harness switch succeeded while prior harness wiring retirement was blocked"
+fi
+[ "$(awk -F= '$1 == "harness" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = codex ] \
+  || fail "failed wiring retirement did not preserve the published unarmed harness"
+[ ! -e "$DIRECT_HOME/state/direct.busy-gen" ] && [ ! -e "$DIRECT_HOME/state/direct.busy-state" ] \
+  || fail "failed wiring retirement resurrected the retired busy generation"
+rmdir "$DIRECT_WT/.claude/settings.local.json"
+printf '%s\n' prior-codex-switch-wiring > "$DIRECT_WT/.claude/settings.local.json"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness codex 2>&1) \
+  || fail "binding recovery could not finish the unarmed-harness switch: $DIRECT_OUT"
+[ ! -e "$DIRECT_HOME/state/direct.busy-gen" ] && [ ! -e "$DIRECT_HOME/state/direct.busy-state" ] \
+  || fail "unarmed-harness binding recovery restored a prior busy generation"
+[ "$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)" -eq 1 ] \
+  || fail "unarmed-harness binding recovery created a duplicate endpoint"
+pass "fm-spawn relaunch: unarmed harness switches retire stale busy generations"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
