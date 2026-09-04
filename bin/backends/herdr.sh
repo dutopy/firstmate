@@ -2625,6 +2625,7 @@ fm_backend_herdr_clear_idle_shell_input() {  # <target> <shell-pid>
 fm_backend_herdr_prepare_relaunch_path_serialized() {  # <target> <validated-worktree>
   local target=$1 expected=$2 expected_real current current_real shell_pid resampled command quoted
   local attempt=0 max_attempts=${FM_BACKEND_HERDR_RELAUNCH_PATH_POLLS:-20}
+  FM_BACKEND_HERDR_RELAUNCH_SHELL_PID=
   case "$expected" in
     /*) ;;
     *) echo "error: herdr relaunch path must be an absolute recorded worktree" >&2; return 1 ;;
@@ -2659,6 +2660,7 @@ fm_backend_herdr_prepare_relaunch_path_serialized() {  # <target> <validated-wor
   current_real=
   [ -z "$current" ] || current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || current_real=
   if [ "$current_real" = "$expected_real" ]; then
+    FM_BACKEND_HERDR_RELAUNCH_SHELL_PID=$shell_pid
     return 0
   fi
 
@@ -2699,6 +2701,7 @@ fm_backend_herdr_prepare_relaunch_path_serialized() {  # <target> <validated-wor
       fm_backend_herdr_parse_target "$target" || return 1
       resampled=$(fm_backend_herdr_pane_idle_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
       [ "$resampled" = "$shell_pid" ] || return 1
+      FM_BACKEND_HERDR_RELAUNCH_SHELL_PID=$shell_pid
       return 0
     fi
     attempt=$((attempt + 1))
@@ -2706,6 +2709,28 @@ fm_backend_herdr_prepare_relaunch_path_serialized() {  # <target> <validated-wor
   done
   echo "error: herdr endpoint did not converge to its exact recorded worktree '$expected_real'" >&2
   return 1
+}
+
+fm_backend_herdr_relaunch_prepared_shell_pid() {
+  printf '%s' "${FM_BACKEND_HERDR_RELAUNCH_SHELL_PID:-}"
+}
+
+# Revalidate the exact shell and cwd established by preparation immediately
+# before each subsequent relaunch input boundary. The session mutation lock
+# excludes other Firstmate operations, while this check also catches an
+# uncoordinated foreground-owner change before input is sent.
+fm_backend_herdr_relaunch_shell_owned() {  # <target> <shell-pid> <validated-worktree>
+  local target=$1 expected_pid=$2 expected=$3 expected_real current current_real resampled
+  [ -n "$expected_pid" ] || return 1
+  expected_real=$(CDPATH='' cd -- "$expected" 2>/dev/null && pwd -P) || return 1
+  [ "$(fm_backend_herdr_recovery_agent_state "$target")" = dead ] || return 1
+  fm_backend_herdr_parse_target "$target" || return 1
+  resampled=$(fm_backend_herdr_pane_idle_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
+  [ "$resampled" = "$expected_pid" ] || return 1
+  current=$(fm_backend_herdr_current_path "$target" || true)
+  [ -n "$current" ] || return 1
+  current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || return 1
+  [ "$current_real" = "$expected_real" ]
 }
 
 fm_backend_herdr_prepare_relaunch_path() {  # <target> <validated-worktree>

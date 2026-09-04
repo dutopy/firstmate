@@ -743,6 +743,7 @@ HERDR_PROJECTION_ABORT_TASK_PANE=
 HERDR_PROJECTION_ABORT_SEEDED_PANE=
 HERDR_PRESENTATION_ORDER_LOCK=
 HERDR_PRESENTATION_ORDER_LOCK_HELD=0
+RELAUNCH_HERDR_SHELL_PID=
 SPAWN_TASK_LOCK=
 SPAWN_TASK_LOCK_HELD=0
 SPAWN_CONTROL_LOCK=
@@ -921,6 +922,12 @@ spawn_herdr_presentation_order_lock_acquire() {
     attempt=$((attempt + 1))
   done
   return 1
+}
+
+verify_herdr_relaunch_owner() {
+  [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ] || return 0
+  fm_backend_herdr_relaunch_shell_owned \
+    "$WT_TARGET" "$RELAUNCH_HERDR_SHELL_PID" "$WT"
 }
 
 clear_relaunch_harness_wiring() {
@@ -2540,6 +2547,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
       echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
       exit 1
     }
+    RELAUNCH_HERDR_SHELL_PID=$(fm_backend_herdr_relaunch_prepared_shell_pid)
   else
     fm_backend_prepare_relaunch_path "$BACKEND" "$WT_TARGET" "$WT" || {
       echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
@@ -3243,37 +3251,62 @@ spawn_record_traceparent() {
   return "$status"
 }
 
-# Export GOTMPDIR into the crewmate's pane shell so the agent and every child
-# process (go build, go test, ...) inherit it. Sent before the launch command so
-# the env is set when the agent starts; the brief sleep lets the export land.
-spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
-# Send through the exact channel that already ships GOTMPDIR, so every backend
-# and harness - ship, scout, and secondmate - gets it before launch. Skipped
-# entirely when trace context is off.
-if [ -n "$SPAWN_TRACEPARENT" ]; then
-  if spawn_send_text_line "$T" "export TRACEPARENT=$SPAWN_TRACEPARENT"; then
-    if ! spawn_record_traceparent; then
+# A reused Herdr shell gets its environment on the replacement command itself.
+# This leaves one owner-checked, atomic input operation after path preparation
+# instead of exposing separate export and launch boundaries to foreground drift.
+if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
+  LAUNCH="export GOTMPDIR=$(shell_quote "$TASK_TMP/gotmp"); $LAUNCH"
+  if [ -n "$SPAWN_TRACEPARENT" ]; then
+    if spawn_record_traceparent; then
+      LAUNCH="export TRACEPARENT=$(shell_quote "$SPAWN_TRACEPARENT"); $LAUNCH"
+    else
       LAUNCH="unset TRACEPARENT; $LAUNCH"
     fi
-  else
-    TRACE_SEND_STATUS=$?
-    if [ "$TRACE_SEND_STATUS" -eq 2 ]; then
-      echo "error: trace-context input could not be cleared for $W; refusing to append the launch command" >&2
-      exit 1
+  fi
+else
+  # Export GOTMPDIR into the crewmate's pane shell so the agent and every child
+  # process (go build, go test, ...) inherit it. Sent before the launch command
+  # so the env is set when the agent starts.
+  spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
+  # Send through the exact channel that already ships GOTMPDIR, so every backend
+  # and harness gets trace context before launch when it is enabled.
+  if [ -n "$SPAWN_TRACEPARENT" ]; then
+    if spawn_send_text_line "$T" "export TRACEPARENT=$SPAWN_TRACEPARENT"; then
+      if ! spawn_record_traceparent; then
+        LAUNCH="unset TRACEPARENT; $LAUNCH"
+      fi
+    else
+      TRACE_SEND_STATUS=$?
+      if [ "$TRACE_SEND_STATUS" -eq 2 ]; then
+        echo "error: trace-context input could not be cleared for $W; refusing to append the launch command" >&2
+        exit 1
+      fi
+      LAUNCH="unset TRACEPARENT; $LAUNCH"
     fi
-    LAUNCH="unset TRACEPARENT; $LAUNCH"
   fi
 fi
 sleep 0.3
-spawn_send_literal "$T" "$LAUNCH"
-sleep 0.3
-if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
-  HERDR_PROJECTION_ABORT_CLEANUP=0
+verify_herdr_relaunch_owner || {
+  echo "error: task $ID's Herdr shell owner changed before launch delivery; refusing replacement launch" >&2
+  exit 1
+}
+if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
+  # pane run submits one command atomically, so an owner change cannot strand
+  # replacement bytes between the literal write and a later Enter.
+  spawn_send_text_line "$T" "$LAUNCH" || {
+    echo "error: task $ID's replacement launch command could not be submitted" >&2
+    exit 1
+  }
+else
+  spawn_send_literal "$T" "$LAUNCH"
+  sleep 0.3
+  if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
+    HERDR_PROJECTION_ABORT_CLEANUP=0
+  fi
+  spawn_send_key "$T" Enter
 fi
-spawn_send_key "$T" Enter
 # A Herdr create or relaunch keeps the session mutation lock through command
-# submission, so no competing lifecycle input can separate launch bytes from
-# their Enter or redirect them after endpoint preparation.
+# submission, so no competing lifecycle input can redirect prepared input.
 spawn_herdr_presentation_order_lock_release
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
