@@ -2530,6 +2530,10 @@ kimi_spawn_fail() {  # <detail>
 }
 
 if [ "$RELAUNCH" -eq 1 ]; then
+  fm_backend_prepare_relaunch_path "$BACKEND" "$WT_TARGET" "$WT" || {
+    echo "error: task $ID's endpoint could not be prepared safely in its recorded worktree '$WT'" >&2
+    exit 1
+  }
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
   # that worktree, so the replacement agent starts where the work is rather

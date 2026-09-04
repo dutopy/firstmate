@@ -78,6 +78,13 @@ case "${1:-} ${2:-}" in
       | if ((.process_after_send // "") != "") then .process=.process_after_send else . end
     ' "$state" | save_state
     ;;
+  "pane run")
+    text=${4:-}
+    pending=$(jq -r '.pending // empty' "$state")
+    cwd=$(jq -r '.cwd' "$state")
+    new_cwd=$(cd "$cwd" && bash -c "$pending$text; pwd -P") || exit 1
+    jq --arg cwd "$new_cwd" '.cwd=$cwd | .pending=""' "$state" | save_state
+    ;;
   "pane send-keys")
     key=${4:-}
     if [ "$key" = ctrl+c ]; then
@@ -105,6 +112,12 @@ case "$*" in
 esac
 SH
 chmod +x "$TMP_ROOT/fakebin/ps"
+
+cat > "$TMP_ROOT/fakebin/claude" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$TMP_ROOT/fakebin/claude"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
@@ -156,6 +169,15 @@ count_after=$(grep -c $'\x1fpane\x1fsend-text\x1f' "$LOG" || true)
 [ "$count_after" -eq "$count_before" ] || fail "idempotent path preparation submitted a second cd command"
 pass "Herdr relaunch recovery: exact path restoration is persistent, quoted, and idempotent"
 
+EXACT_MARKER="$TMP_ROOT/exact-cwd-marker"
+write_state "$TARGET" shell true
+jq --arg pending "touch '$EXACT_MARKER'; " '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" \
+  || fail "exact-cwd preparation should still clear pending shell input"
+[ ! -e "$EXACT_MARKER" ] || fail "exact-cwd preparation executed preexisting buffered shell input"
+[ -z "$(jq -r '.pending // empty' "$STATE")" ] || fail "exact-cwd preparation left shell input buffered"
+pass "Herdr relaunch recovery: exact-cwd preparation still clears shell input"
+
 BUFFERED_MARKER="$TMP_ROOT/buffered-marker"
 write_state "$OLD" shell true
 jq --arg pending "touch '$BUFFERED_MARKER'; " '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
@@ -183,6 +205,45 @@ if run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" >/d
 fi
 [ -n "$(jq -r '.pending // empty' "$STATE")" ] || fail "cleanup sent input after the pane stopped belonging to the exact idle shell"
 pass "Herdr relaunch recovery: cleanup refuses a changed shell owner"
+
+DIRECT_HOME="$TMP_ROOT/direct-home"
+DIRECT_PROJECT="$TMP_ROOT/direct-project"
+DIRECT_WT="$TMP_ROOT/direct-worktree"
+DIRECT_MARKER="$TMP_ROOT/direct-marker"
+fm_git_worktree "$DIRECT_PROJECT" "$DIRECT_WT" direct-relaunch
+mkdir -p "$DIRECT_HOME/state" "$DIRECT_HOME/data/direct"
+cat > "$DIRECT_HOME/data/direct/brief.md" <<'EOF'
+# Task
+## Captain's intent
+Resume the existing worker safely.
+
+## Firstmate spec
+Relaunch in the recorded worktree.
+EOF
+cat > "$DIRECT_HOME/state/direct.meta" <<EOF
+window=fmtest:w1:p1
+endpoint_task_id=direct
+worktree=$DIRECT_WT
+project=$DIRECT_PROJECT
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=w1
+herdr_tab_id=w1:t1
+herdr_pane_id=w1:p1
+EOF
+write_state "$DIRECT_WT" shell true
+jq --arg pending "touch '$DIRECT_MARKER'; " '.pending=$pending' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+  FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" direct --relaunch --harness claude 2>&1) \
+  || fail "direct Herdr relaunch should prepare its endpoint before launch: $DIRECT_OUT"
+[ ! -e "$DIRECT_MARKER" ] || fail "direct Herdr relaunch executed buffered shell input before launch"
+case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "direct Herdr relaunch did not complete: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: direct Herdr entry prepares buffered shell input"
 
 write_state "$OLD" live true
 if run_backend fm_backend_prepare_relaunch_path herdr fmtest:w1:p1 "$TARGET" >/dev/null 2>&1; then
