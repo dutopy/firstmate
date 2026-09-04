@@ -316,7 +316,7 @@ fm_backend_validate "$BACKEND" || exit 1
 # --- shared helpers ---------------------------------------------------------
 
 agent_state() {
-  fm_backend_agent_state "$BACKEND" "$T"
+  fm_backend_recovery_agent_state "$BACKEND" "$T"
 }
 
 busy_verdict() {
@@ -690,7 +690,7 @@ resolve_relaunch_profile() {
 # refuses outright when any of it cannot be established.
 CHECKPOINT_LINES=()
 safe_checkpoint() {
-  local wt_real wt_top wt_top_real head head_ref head_ref_status status_output dirty children marker child_meta
+  local wt_real wt_top wt_top_real project project_real head head_ref head_ref_status status_output dirty children marker child_meta
   CHECKPOINT_LINES=()
   [ -n "$WT" ] || die "task $ID has no recorded worktree; refusing to relaunch without a recorded local copy to preserve"
   [ -d "$WT" ] || die "task $ID's recorded worktree $WT is missing; refusing to relaunch and lose track of its work"
@@ -700,6 +700,15 @@ safe_checkpoint() {
   wt_top_real=$(cd "$wt_top" 2>/dev/null && pwd -P) || wt_top_real=$wt_top
   [ "$wt_real" = "$wt_top_real" ] \
     || die "task $ID's recorded worktree $WT is not a worktree root (root is $wt_top); refusing to relaunch against an ambiguous checkout"
+  if [ "$KIND" != secondmate ]; then
+    project=$(fm_meta_get "$META" project)
+    [ -n "$project" ] && [ -d "$project" ] \
+      || die "task $ID's recorded project '${project:-none}' is unavailable; refusing to relaunch without proving its isolated worktree"
+    project_real=$(CDPATH='' cd -- "$project" 2>/dev/null && pwd -P) \
+      || die "task $ID's recorded project $project cannot be resolved"
+    [ "$wt_real" != "$project_real" ] \
+      || die "task $ID's recorded worktree is the primary project checkout; refusing to relaunch an agent there"
+  fi
   if head=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null); then
     :
   elif head_ref=$(git -C "$WT" symbolic-ref -q HEAD 2>/dev/null); then
@@ -824,6 +833,9 @@ do_relaunch() {
   journal_write stopping "${CHECKPOINT_LINES[@]}" "$note_line"
   exit_result=$(do_exit)
   journal_write exited "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
+
+  fm_backend_prepare_relaunch_path "$BACKEND" "$T" "$WT" \
+    || die "task $ID's agent stopped, but its endpoint could not be restored to the exact recorded worktree; refusing replacement launch"
 
   # The launch owner (fm-spawn --relaunch) clears the previous incarnation's
   # per-task harness wiring before arming the new one, so nothing to do here.

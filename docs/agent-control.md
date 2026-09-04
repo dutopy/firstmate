@@ -69,7 +69,11 @@ It is not deterministic across the verified adapters: codex and grok resume only
    A ship or scout relaunch requires `--note`, because the replacement inherits the local copy but none of the conversation; the note is appended to the instructions it reads.
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
-5. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
+   Herdr lifecycle recovery corroborates a retained native registration against the exact foreground process, so a lone idle shell proves an exited agent while a non-shell process remains alive and an ambiguous process read refuses.
+5. **Restore the endpoint path where required.**
+   A Herdr pane can return to another directory after its agent exits, so the backend moves only its proved agent-free shell to the physical recorded worktree with literal quoted input, rechecks the same shell before submission, and verifies the resulting path.
+   Tmux needs no restoration and keeps its existing path check.
+6. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
 
 Switching harness is therefore one ordinary relaunch rather than a separate mechanism.
 
@@ -100,6 +104,7 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
 - An ambiguous or unreadable endpoint state refuses.
   Only a positively classified state acts.
 - `fm-spawn --relaunch` independently refuses unless the recorded endpoint is positively agent-free and its shell is sitting in the recorded worktree, so a replacement can never join a live agent or start outside the copy holding the work.
+- Herdr path restoration is reachable only after the recorded endpoint identity, isolated worktree root, project separation, and stopped-agent proof all pass; another path, a primary project checkout, a live foreground process, or an ambiguous process read refuses before launch.
 
 ## Capability matrix
 
@@ -120,4 +125,5 @@ The empirical basis for each adapter's value is the `harness-adapters` skill's v
 
 - `tests/fm-control.test.sh` - the adapter contract for every verified harness, the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, and rollback after a failed launch.
-- `tests/fm-control-herdr-smoke.test.sh` - the second state-verified backend against the real herdr binary, on an isolated throwaway lab session.
+- `tests/fm-herdr-relaunch-recovery.test.sh` - portable stale-registration, process-state, exact-path, quoting, idempotence, and cross-backend coverage.
+- `tests/fm-control-herdr-smoke.test.sh` - stale-registration reconciliation and persistent path restoration against the real Herdr binary, on an isolated throwaway lab session.
