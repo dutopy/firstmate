@@ -277,6 +277,7 @@ A registered pane becomes agent-free for exit or replacement only when `pane pro
 A distinct foreground process group remains alive, and any contradictory or unreadable process evidence refuses recovery.
 After that proof, the launch owner takes the named-session mutation lock and cancels any pending input while that same idle shell owns the pane, including when its path already matches the recorded worktree.
 For a mismatched path it then sends a quoted `cd` through literal input, rechecks the same shell before Enter, clears its own buffered command after a pre-Enter failure only if that shell still owns the pane, verifies the exact resulting foreground path, and keeps the lock until the replacement launch command is submitted.
+At final delivery it stops the exact prepared shell, verifies that the stopped process still exclusively owns the pane and worktree, atomically queues the environment plus launch command and Enter, and resumes the shell; a bounded watchdog resumes it if the launch process dies mid-boundary.
 This backend-owned preparation is idempotent and never selects a path itself; both the control transaction and the shared launch owner validate the task endpoint, plus a ship or scout's worktree root and separation from the primary project copy, before any pane input.
 
 The session-start sweep uses the ordinary probe.

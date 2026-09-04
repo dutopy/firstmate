@@ -72,6 +72,7 @@ It is not deterministic across the verified adapters: codex and grok resume only
    Herdr lifecycle recovery corroborates a retained native registration against the exact foreground process, so a lone idle shell proves an exited agent while a non-shell process remains alive and an ambiguous process read refuses.
 5. **Prepare the endpoint where required.**
    A Herdr pane can retain unsubmitted shell input or return to another directory after its agent exits, so the launch owner takes the named-session mutation lock, cancels pending input while the same proved agent-free shell owns the pane, and keeps that lock through replacement command submission.
+   Final delivery freezes that exact shell, verifies its stopped process still exclusively owns the pane and worktree, queues the environment and launch command atomically, and resumes it, closing the last uncoordinated owner-change gap.
    If the path differs, it sends a literal quoted `cd`, rechecks the same shell before submission, clears its own buffered command on a pre-submission failure only while that shell still owns the pane, and verifies the resulting physical path.
    Tmux needs no preparation and keeps its existing path check.
 6. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which independently validates a ship or scout's recorded isolated worktree, adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
