@@ -279,11 +279,13 @@ Herdr 0.8.2 exposes no generic pane launch operation conditioned on an expected 
 After the stopped-agent proof, the launch owner takes the named-session mutation lock and revalidates the recorded pane's exact workspace and tab relation.
 It creates one fresh tab directly in that recorded workspace with its shell rooted at the validated worktree and records a unique attempt label before creation.
 Recovery may list only that recorded workspace to resolve exactly one tab carrying the recorded label, and it leaves every unrelated workspace or endpoint untouched.
-The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, the environment plus launch command are queued, and a live replacement agent is proved at that exact endpoint.
+The candidate stays unpublished while its pending input is cleared, its exact shell and worktree are revalidated, and the staged metadata plus harness wiring are persisted immediately before the environment and launch command are queued.
+A live replacement agent must then be proved at that exact endpoint.
 Only then does metadata advance atomically to the candidate.
 A prepublication failure leaves the old endpoint and metadata unchanged, restores prior harness wiring, and closes only a response-identified candidate that is still provably agent-free.
 An ambiguous failed candidate remains quarantined under its exact recorded identity instead of granting cleanup authority.
-A later retry retires an exact agent-free candidate idempotently, adopts an exact live candidate only after unchanged identity and physical recorded-worktree proof, and refuses every unreadable, mismatched, or multiply matched candidate.
+A later retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
+It refuses every live pre-launch or quarantined candidate and every unreadable, mismatched, or multiply matched candidate.
 After publication, the old pane is retired only when its exact identity and agent-free state remain provable.
 
 The session-start sweep uses the ordinary probe.

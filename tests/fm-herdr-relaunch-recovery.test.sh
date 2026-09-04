@@ -504,6 +504,26 @@ grep -q '^candidate_state=adopted-alive$' "$DIRECT_HOME/state/direct.control-rel
 pass "fm-spawn relaunch: retry adopts the exact post-live candidate"
 
 reset_direct_meta
+awk '
+  /^window=/{print "window=fmtest:w1:p2"; next}
+  /^herdr_tab_id=/{print "herdr_tab_id=w1:t2"; next}
+  /^herdr_pane_id=/{print "herdr_pane_id=w1:p2"; next}
+  {print}
+' "$DIRECT_HOME/state/direct.meta" > "$DIRECT_HOME/state/direct.meta.tmp"
+mv "$DIRECT_HOME/state/direct.meta.tmp" "$DIRECT_HOME/state/direct.meta"
+write_state "$DIRECT_WT" shell true
+jq --arg cwd "$DIRECT_WT" '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="shell" | .candidate_registered=false' \
+  "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+write_direct_candidate_record launch-attempt
+DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
+  || fail "retry stranded a candidate already named by authoritative metadata: $DIRECT_OUT"
+case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "authoritative candidate reconciliation did not permit the next relaunch: $DIRECT_OUT" ;; esac
+pass "fm-spawn relaunch: authoritative candidate reconciles before prior-old comparison"
+
+reset_direct_meta
 write_state "$DIRECT_WT" shell true
 jq '.candidate_take_over_after_pane_get=1' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
@@ -517,6 +537,17 @@ run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
 cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
   || fail "pre-launch takeover changed the authoritative endpoint binding"
 case "$DIRECT_OUT" in *"acquired an agent before launch ownership was established"*) : ;; *) fail "owner-change refusal was not explicit: $DIRECT_OUT" ;; esac
+create_count=$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "retry adopted the pre-launch takeover: $DIRECT_OUT"
+fi
+[ "$(grep -c $'\x1ftab\x1fcreate\x1f' "$LOG" || true)" -eq "$create_count" ] \
+  || fail "retry created a duplicate beside the pre-launch takeover"
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "retry published the pre-launch takeover"
 pass "fm-spawn relaunch: pre-launch takeover preserves the old binding"
 
 reset_direct_meta
@@ -567,18 +598,19 @@ write_state "$DIRECT_WT" shell true
 jq '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="live" | .candidate_registered=true' \
   --arg cwd "$DIRECT_WT" "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 write_direct_candidate_record quarantined
-DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
-  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
-  || fail "retry should adopt a proven exact live candidate: $DIRECT_OUT"
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "retry adopted a quarantined live candidate without launch provenance: $DIRECT_OUT"
+fi
 ! grep -Fq $'\x1ftab\x1fcreate\x1f' "$LOG" \
-  || fail "retry created a duplicate endpoint beside an adoptable live candidate"
+  || fail "retry created a duplicate endpoint beside a quarantined live candidate"
 [ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
-  || fail "retry removed the live candidate it adopted"
-[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
-  || fail "live-candidate adoption did not advance the authoritative binding"
-pass "fm-spawn relaunch: retry adopts a proven live candidate without duplication"
+  || fail "retry removed a quarantined live candidate"
+cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta" \
+  || fail "quarantined live-candidate refusal changed the authoritative binding"
+pass "fm-spawn relaunch: retry refuses live candidates without launch provenance"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true

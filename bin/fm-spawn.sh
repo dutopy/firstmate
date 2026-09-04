@@ -747,6 +747,7 @@ HERDR_PRESENTATION_ORDER_LOCK_HELD=0
 HERDR_RELAUNCH_CANDIDATE=0
 HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
 HERDR_RELAUNCH_CANDIDATE_RECORD=
+HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR=
 HERDR_RELAUNCH_CANDIDATE_TAB_ID=
 HERDR_RELAUNCH_CANDIDATE_PANE_ID=
 HERDR_RELAUNCH_RECOVERED_STATE=
@@ -1121,8 +1122,80 @@ herdr_relaunch_candidate_record_write() {  # <phase> [extra-line]...
   } > "$tmp" && mv -f "$tmp" "$HERDR_RELAUNCH_CANDIDATE_RECORD"
 }
 
+herdr_relaunch_launch_provenance_persist() {
+  local dir tmp family path token_path token auth index=0 seen
+  dir=$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR
+  tmp="$dir.tmp.${BASHPID:-$$}"
+  rm -rf "$tmp" || return 1
+  (umask 077; mkdir "$tmp") || return 1
+  cp -p "$SPAWN_META_TMP" "$tmp/meta" || { rm -rf "$tmp"; return 1; }
+  : > "$tmp/manifest" || { rm -rf "$tmp"; return 1; }
+  family=$(fm_control_harness_family "$HARNESS") || family=
+  {
+    fm_control_harness_wiring_paths "$family" "$WT" "$STATE_REAL" "$ID" || return 1
+    printf '%s\n' "$(fm_busy_gen_path "$STATE_REAL" "$ID")"
+    token_path=$(fm_control_harness_turnend_token_path "$family" "$STATE_REAL" "$ID") || return 1
+    if [ -n "$token_path" ] && [ -f "$token_path" ] && [ ! -L "$token_path" ]; then
+      IFS= read -r token < "$token_path" || [ -n "$token" ] || return 1
+      auth=$(fm_control_harness_turnend_auth_path "$family" "$token") || return 1
+      [ -z "$auth" ] || printf '%s\n' "$auth"
+    fi
+  } > "$tmp/paths" || { rm -rf "$tmp"; return 1; }
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    case "$path" in /*) ;; *) rm -rf "$tmp"; return 1 ;; esac
+    case "$path" in *$'\n'*|*$'\r'*|*$'\t'*) rm -rf "$tmp"; return 1 ;; esac
+    seen=0
+    while IFS=$'\t' read -r _ _ saved_path; do
+      [ "$saved_path" != "$path" ] || seen=1
+    done < "$tmp/manifest"
+    [ "$seen" = 0 ] || continue
+    index=$((index + 1))
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      [ -f "$path" ] && [ ! -L "$path" ] || { rm -rf "$tmp"; return 1; }
+      cp -p "$path" "$tmp/$index" || { rm -rf "$tmp"; return 1; }
+      printf 'present\t%s\t%s\n' "$index" "$path" >> "$tmp/manifest" || { rm -rf "$tmp"; return 1; }
+    else
+      printf 'absent\t%s\t%s\n' "$index" "$path" >> "$tmp/manifest" || { rm -rf "$tmp"; return 1; }
+    fi
+  done < "$tmp/paths"
+  rm -f "$tmp/paths" || { rm -rf "$tmp"; return 1; }
+  rm -rf "$dir" || { rm -rf "$tmp"; return 1; }
+  mv "$tmp" "$dir"
+}
+
+herdr_relaunch_launch_provenance_restore() {
+  local dir presence index path tmp status=0
+  dir=$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR
+  [ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/meta" ] && [ ! -L "$dir/meta" ] \
+    && [ -f "$dir/manifest" ] && [ ! -L "$dir/manifest" ] || return 1
+  while IFS=$'\t' read -r presence index path; do
+    [ -n "$path" ] || continue
+    case "$path" in /*) ;; *) return 1 ;; esac
+    case "$path" in *$'\n'*|*$'\r'*|*$'\t'*) return 1 ;; esac
+    case "$presence" in
+      present)
+        [ -f "$dir/$index" ] && [ ! -L "$dir/$index" ] || return 1
+        mkdir -p "$(dirname "$path")" || return 1
+        [ ! -d "$path" ] || return 1
+        tmp="$path.relaunch-adopt.${BASHPID:-$$}"
+        cp -p "$dir/$index" "$tmp" && rm -f "$path" && mv "$tmp" "$path" \
+          || { rm -f "$tmp"; return 1; }
+        cmp -s "$dir/$index" "$path" || status=1
+        ;;
+      absent)
+        [ ! -d "$path" ] || return 1
+        rm -f "$path" || return 1
+        [ ! -e "$path" ] && [ ! -L "$path" ] || status=1
+        ;;
+      *) return 1 ;;
+    esac
+  done < "$dir/manifest"
+  return "$status"
+}
+
 herdr_relaunch_candidate_adopt_live() {
-  local current current_real expected_real busy_gen spawn_gen tmp old_retirement=retained
+  local current current_real expected_real busy_gen staged_busy tmp old_retirement=retained provenance_meta
   [ "$HERDR_RELAUNCH_RECOVERED_STATE" = alive ] || return 1
   fm_backend_herdr_relaunch_candidate_matches \
     "$HERDR_SES" "$HERDR_WORKSPACE_ID" \
@@ -1132,37 +1205,27 @@ herdr_relaunch_candidate_adopt_live() {
   current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || return 1
   expected_real=$(CDPATH='' cd -- "$WT" 2>/dev/null && pwd -P) || return 1
   [ "$current_real" = "$expected_real" ] || return 1
+  provenance_meta="$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/meta"
+  [ "$(fm_backend_meta_exact_value "$provenance_meta" window)" = "$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" worktree)" = "$WT" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" harness)" = "$HARNESS" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" model)" = "${MODEL:-default}" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" effort)" = "${EFFORT:-default}" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" backend)" = herdr ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_session)" = "$HERDR_SES" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_workspace_id)" = "$HERDR_WORKSPACE_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_tab_id)" = "$HERDR_RELAUNCH_CANDIDATE_TAB_ID" ] \
+    && [ "$(fm_backend_meta_exact_value "$provenance_meta" herdr_pane_id)" = "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] || return 1
+  herdr_relaunch_launch_provenance_restore || return 1
+  staged_busy=$(fm_backend_meta_exact_value "$provenance_meta" busy_gen) || staged_busy=
   busy_gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
-  spawn_gen="s$(date +%s).${BASHPID:-$$}.$RANDOM"
+  [ "$busy_gen" = "$staged_busy" ] || return 1
   tmp="$STATE/.$ID.meta.relaunch-adopt.${BASHPID:-$$}"
-  {
-    echo "window=$HERDR_SES:$HERDR_RELAUNCH_CANDIDATE_PANE_ID"
-    echo "endpoint_task_id=$ID"
-    echo "worktree=$WT"
-    echo "project=$PROJ_ABS"
-    echo "harness=$HARNESS"
-    echo "kind=$KIND"
-    [ -z "$MODE" ] || echo "mode=$MODE"
-    [ -z "$YOLO" ] || echo "yolo=$YOLO"
-    echo "tasktmp=/tmp/fm-$ID"
-    echo "model=${MODEL:-default}"
-    echo "effort=${EFFORT:-default}"
-    [ -z "$busy_gen" ] || echo "busy_gen=$busy_gen"
-    echo "spawn_gen=$spawn_gen"
-    echo "backend=herdr"
-    echo "herdr_session=$HERDR_SES"
-    echo "herdr_workspace_id=$HERDR_WORKSPACE_ID"
-    echo "herdr_tab_id=$HERDR_RELAUNCH_CANDIDATE_TAB_ID"
-    echo "herdr_pane_id=$HERDR_RELAUNCH_CANDIDATE_PANE_ID"
-    awk -F= '
-      BEGIN {
-        split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id control_relaunch_tx", keys, " ")
-        for (i in keys) owned[keys[i]] = 1
-      }
-      !($1 in owned)
-    ' "$RELAUNCH_META"
-    [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] || echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
-  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  awk -F= '$1 != "control_relaunch_tx"' "$provenance_meta" > "$tmp" \
+    || { rm -f "$tmp"; return 1; }
+  [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+    || printf 'control_relaunch_tx=%s\n' "$FM_CONTROL_RELAUNCH_TX" >> "$tmp" \
+    || { rm -f "$tmp"; return 1; }
   fm_backlog_atomic_transition publish "$tmp" "$STATE/$ID.meta" "task record" "$STATE" || {
     rm -f "$tmp"
     return 1
@@ -1215,10 +1278,24 @@ herdr_relaunch_candidate_reconcile_prior() {
         && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
       return 0
       ;;
-    creating|created|creation-failed|quarantined)
+    creating|created|creation-failed|quarantined|launch-attempt)
       [ "$replacement_harness" = "$HARNESS" ] \
         && [ "$replacement_model" = "${MODEL:-default}" ] \
         && [ "$replacement_effort" = "${EFFORT:-default}" ] || return 1
+      if [ -n "$candidate_tab" ] && [ -n "$candidate_pane" ]; then
+        fm_backend_endpoint_atom_valid "${candidate_tab//:/_}" \
+          && fm_backend_endpoint_atom_valid "${candidate_pane//:/_}" || return 1
+        if [ "$candidate_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
+           && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ]; then
+          HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
+          HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
+          herdr_relaunch_candidate_record_write published \
+            "candidate_state=reconciled-from-authoritative-binding" || return 1
+          HERDR_RELAUNCH_CANDIDATE_TAB_ID=
+          HERDR_RELAUNCH_CANDIDATE_PANE_ID=
+          return 0
+        fi
+      fi
       [ "$old_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
         && [ "$old_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ] || return 1
       if [ -z "$candidate_tab" ] || [ -z "$candidate_pane" ]; then
@@ -1242,14 +1319,6 @@ herdr_relaunch_candidate_reconcile_prior() {
         && fm_backend_endpoint_atom_valid "${candidate_pane//:/_}" || return 1
       HERDR_RELAUNCH_CANDIDATE_TAB_ID=$candidate_tab
       HERDR_RELAUNCH_CANDIDATE_PANE_ID=$candidate_pane
-      if [ "$candidate_tab" = "$HERDR_RELAUNCH_OLD_TAB_ID" ] \
-         && [ "$candidate_pane" = "$HERDR_RELAUNCH_OLD_PANE_ID" ]; then
-        herdr_relaunch_candidate_record_write published \
-          "candidate_state=reconciled-from-authoritative-binding" || return 1
-        HERDR_RELAUNCH_CANDIDATE_TAB_ID=
-        HERDR_RELAUNCH_CANDIDATE_PANE_ID=
-        return 0
-      fi
       fm_backend_herdr_relaunch_candidate_matches \
         "$HERDR_SES" "$HERDR_WORKSPACE_ID" "$candidate_tab" "$candidate_pane" || return 1
       current=$(fm_backend_herdr_current_path "$HERDR_SES:$candidate_pane" || true)
@@ -1258,6 +1327,7 @@ herdr_relaunch_candidate_reconcile_prior() {
       [ "$current_real" = "$expected_real" ] || return 1
       state=$(fm_backend_herdr_recovery_agent_state "$HERDR_SES:$candidate_pane")
       if [ "$state" = alive ]; then
+        [ "$phase" = launch-attempt ] || return 1
         HERDR_RELAUNCH_RECOVERED_STATE=alive
         return 0
       fi
@@ -2537,6 +2607,7 @@ elif [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   }
   HERDR_RELAUNCH_CANDIDATE_RECORD="$STATE/$ID.control-relaunch-candidate"
+  HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR="$STATE/$ID.control-relaunch-candidate.launch"
   HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
   herdr_relaunch_candidate_reconcile_prior || {
     echo "error: a prior Herdr replacement candidate cannot be proved safe to retire or already published; refusing a duplicate launch" >&2
@@ -2544,10 +2615,14 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   }
   if [ "$HERDR_RELAUNCH_RECOVERED_STATE" = alive ]; then
     herdr_relaunch_candidate_adopt_live || {
-      echo "error: the discovered Herdr replacement no longer proves its exact live identity and recorded worktree; refusing adoption" >&2
+      echo "error: the discovered Herdr replacement no longer proves its launch provenance, wiring, exact live identity, and recorded worktree; refusing adoption" >&2
       exit 1
     }
   fi
+  rm -rf "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR" || {
+    echo "error: could not clear retired Herdr replacement launch provenance" >&2
+    exit 1
+  }
   HERDR_RELAUNCH_LABEL="fm-relaunch-${BASHPID:-$$}-${RANDOM}"
   herdr_relaunch_candidate_record_write creating "candidate_label=$HERDR_RELAUNCH_LABEL" || {
     echo "error: could not persist the Herdr replacement attempt before endpoint creation" >&2
@@ -3687,6 +3762,14 @@ else
 fi
 sleep 0.3
 if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
+  if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
+    herdr_relaunch_launch_provenance_persist \
+      && herdr_relaunch_candidate_record_write launch-attempt \
+        "candidate_label=$HERDR_RELAUNCH_LABEL" "candidate_state=launch-submitting" || {
+      echo "error: could not persist Herdr replacement launch provenance before command submission" >&2
+      exit 1
+    }
+  fi
   # Freeze and revalidate the prepared shell before atomically queueing the
   # command and Enter. This closes the final foreground-owner race rather than
   # relying on a sample immediately before pane input.
