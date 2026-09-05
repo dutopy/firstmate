@@ -30,13 +30,12 @@ PENDING_SCHEMA = "fm-discord-workspace-pending-followup.v1"
 ARTIFACT_SCHEMA = "fm-discord-workspace-artifact.v1"
 ARTIFACT_INDEX_SCHEMA = "fm-discord-workspace-artifact-source-index.v1"
 
-ACTIVE_PROFILE_KEYS = ["proapplis", "folium", "arfal"]
+ACTIVE_PROFILE_KEYS = ["firstmate", "proapplis", "folium"]
 ACTIVE_PROFILE_LABELS = {
+    "firstmate": "System / Firstmate",
     "proapplis": "ProApplis",
     "folium": "Folium",
-    "arfal": "ARFAL",
 }
-DISABLED_PROFILE_KEYS = ["lbdb", "maratone-labs"]
 DEFAULT_EXCHANGE_TAGS = ["request", "decision", "work", "status", "blocked", "done"]
 DEFAULT_ARTIFACT_TAGS = ["report", "board", "document", "image", "audio", "draft", "final", "expired"]
 DEFAULT_CDN_HOSTS = ["cdn.discordapp.com", "media.discordapp.net", "media.discordapp.com"]
@@ -227,9 +226,9 @@ def validate_tags(raw: Any, default: List[str], field: str) -> List[str]:
 def normalize_profile_key(key: str) -> str:
     lowered = key.strip().lower().replace("_", "-").replace(" ", "-")
     aliases = {
+        "system-firstmate": "firstmate",
+        "system-/-firstmate": "firstmate",
         "pro-applis": "proapplis",
-        "maratone": "maratone-labs",
-        "maratone-labs": "maratone-labs",
     }
     return aliases.get(lowered, lowered)
 
@@ -325,11 +324,8 @@ class WorkspaceConfig:
             self.captain_user_ids.append(sid)
         if not self.captain_user_ids:
             raise FMError("captain_user_ids must contain at least one captain Discord user id")
-        disabled = raw.get("disabled_profiles", DISABLED_PROFILE_KEYS)
-        self.disabled_profiles = [normalize_profile_key(str(x)) for x in as_list(disabled, "disabled_profiles")]
-        missing_disabled = [p for p in DISABLED_PROFILE_KEYS if p not in self.disabled_profiles]
-        if missing_disabled:
-            raise FMError(f"disabled_profiles must include dormant profile(s): {', '.join(missing_disabled)}")
+        if "disabled_profiles" in raw:
+            raise FMError("disabled_profiles is unsupported; configure only the three active profiles")
         tags_obj = raw.get("tags") if isinstance(raw.get("tags"), dict) else {}
         self.exchange_tags = validate_tags(tags_obj.get("exchange"), DEFAULT_EXCHANGE_TAGS, "tags.exchange")
         self.artifact_tags = validate_tags(tags_obj.get("artifacts", tags_obj.get("artifact")), DEFAULT_ARTIFACT_TAGS, "tags.artifacts")
@@ -337,6 +333,12 @@ class WorkspaceConfig:
         raw_profiles = raw.get("profiles")
         if not isinstance(raw_profiles, dict):
             raise FMError("profiles must be an object")
+        normalized_profile_keys = [normalize_profile_key(str(key)) for key in raw_profiles]
+        if len(normalized_profile_keys) != len(set(normalized_profile_keys)):
+            raise FMError("profiles contains duplicate normalized profile keys")
+        unsupported_profiles = sorted(set(normalized_profile_keys) - set(ACTIVE_PROFILE_KEYS))
+        if unsupported_profiles:
+            raise FMError(f"profiles contains unsupported profile(s): {', '.join(unsupported_profiles)}")
         seen_ids: Dict[str, str] = {}
         for key in ACTIVE_PROFILE_KEYS:
             p = extract_profile(raw_profiles, key)
@@ -388,14 +390,6 @@ class WorkspaceConfig:
                 "exchange_forum_name": p.get("exchange_forum_name") or f"{key}-exchanges",
                 "artifact_forum_name": p.get("artifact_forum_name") or f"{key}-artifacts",
             }
-        for disabled_key in DISABLED_PROFILE_KEYS:
-            p = extract_profile(raw_profiles, disabled_key)
-            if not p:
-                continue
-            enabled = validate_bool(p.get("enabled", False), f"profiles.{disabled_key}.enabled", default=False)
-            channelish = [name for name in ("category_id", "exchange_forum_id", "artifact_forum_id", "artifacts_forum_id") if p.get(name)]
-            if enabled or channelish:
-                raise FMError(f"disabled profile {disabled_key} must not be enabled or carry channel ids")
         approvals = raw.get("approvals") if isinstance(raw.get("approvals"), dict) else {}
         live = raw.get("live") if isinstance(raw.get("live"), dict) else {}
         self.message_content_enabled = bool_from_path(raw, ["message_content", "message_content_intent", "approvals.message_content", "live.message_content"], False)
@@ -482,8 +476,15 @@ def sample_config() -> Dict[str, Any]:
         "guild": {"id": "111111111111111111"},
         "bot": {"application_id": "222222222222222222", "user_id": "333333333333333333"},
         "captain_user_ids": ["444444444444444444"],
-        "disabled_profiles": DISABLED_PROFILE_KEYS,
         "profiles": {
+            "firstmate": {
+                "enabled": True,
+                "label": "System / Firstmate",
+                "category_id": "777777777777777771",
+                "exchange_forum_id": "777777777777777772",
+                "artifact_forum_id": "777777777777777773",
+                "thread_ids": {"exchange": [], "artifacts": []},
+            },
             "proapplis": {
                 "enabled": True,
                 "label": "ProApplis",
@@ -500,16 +501,6 @@ def sample_config() -> Dict[str, Any]:
                 "artifact_forum_id": "666666666666666663",
                 "thread_ids": {"exchange": [], "artifacts": []},
             },
-            "arfal": {
-                "enabled": True,
-                "label": "ARFAL",
-                "category_id": "777777777777777771",
-                "exchange_forum_id": "777777777777777772",
-                "artifact_forum_id": "777777777777777773",
-                "thread_ids": {"exchange": [], "artifacts": []},
-            },
-            "lbdb": {"enabled": False},
-            "maratone-labs": {"enabled": False},
         },
         "tags": {"exchange": DEFAULT_EXCHANGE_TAGS, "artifacts": DEFAULT_ARTIFACT_TAGS},
         "outbound": {"final_replies_required": True, "live_posting": False},
@@ -550,7 +541,6 @@ def print_config_ok(cfg: WorkspaceConfig) -> None:
     print(f"config ok: {cfg.path}")
     print(f"guild: {cfg.guild_id}")
     print("active profiles: " + ", ".join(ACTIVE_PROFILE_KEYS))
-    print("disabled profiles: " + ", ".join(DISABLED_PROFILE_KEYS))
     print("exchange forum tags: " + ", ".join(cfg.exchange_tags))
     print("artifact forum tags: " + ", ".join(cfg.artifact_tags))
     for row in cfg.thread_summary():

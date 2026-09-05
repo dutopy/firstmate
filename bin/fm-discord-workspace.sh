@@ -24,7 +24,7 @@
 #
 # The config file is local and non-secret: config/discord-workspace.json by
 # default, or --config. It names exactly one operations guild, one Firstmate
-# operations bot identity, captain Discord user ids, ProApplis/Folium/ARFAL
+# operations bot identity, captain Discord user ids, System / Firstmate, ProApplis, and Folium
 # categories, exchanges and artifacts forum ids, thread allowlists, forum tag
 # vocabularies, and dry-run-only policy choices. The script never reads .env,
 # never decrypts secret values, never contacts Discord or Groq in this phase,

@@ -664,8 +664,8 @@ It is separate from Relay, Hermes, and any client or audience Discord bot.
 The repository-supported phase is offline only: it validates config, renders setup and health dry-runs, plans replies and artifacts, links requests to tasks, preserves pending final replies, and exercises intake through fixtures.
 `bin/fm-discord-workspace.sh` owns the exact schema, fields, state files, receipt formats, artifact checks, final-reply guard, and command mechanics.
 `docs/discord-workspace.md` is the operator guide for the presentation contract, security boundary, dry-run setup, artifact policy, audio policy, and rollback.
-The supported presentation is one private operations guild with ProApplis, Folium, and ARFAL categories, each with exchanges and artifacts forum channels.
-LBDB and Maratone Labs stay configured only as disabled inventory entries until a later captain approval activates them.
+The supported presentation is one private operations guild with System / Firstmate, ProApplis, and Folium categories, each with exchanges and artifacts forum channels.
+Only those three active profiles belong in this phase's configuration.
 The config carries non-secret ids, profile metadata, allowlists, forum tag vocabularies, and disabled live choices only.
 Secret values never belong in this file, argv, logs, process-event records, receipts, artifact records, or inbox metadata.
 Secret references may name `config/discord-workspace.secrets.sops.yaml` and key names for a later sops+age live task, but this phase never decrypts or reads that file.
