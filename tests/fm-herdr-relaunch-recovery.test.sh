@@ -134,6 +134,10 @@ case "${1:-} ${2:-}" in
         jq '.candidate_process="live" | .candidate_registered=true' "$state" | save_state
         exit 1
       fi
+      if [ "$text" = 'kill -KILL "$$"' ]; then
+        jq '.candidate_exists=false | .candidate_registered=false | .candidate_process="dead"' "$state" | save_state
+        exit 0
+      fi
       [ "$(jq -r '.candidate_run_fail // false' "$state")" != true ] || exit 1
       cwd=$(jq -r '.candidate_cwd' "$state")
       if [ "$(jq -r '.candidate_run_ambiguous_after_pane_get // false' "$state")" = true ]; then
@@ -152,6 +156,10 @@ case "${1:-} ${2:-}" in
       ' "$state" | save_state
       [ "$(jq -r '.candidate_run_ambiguous // false' "$state")" != true ] || exit 1
     else
+      if [ "$text" = 'kill -KILL "$$"' ]; then
+        jq '.recorded_exists=false | .registered=false | .process="dead"' "$state" | save_state
+        exit 0
+      fi
       pending=$(jq -r '.pending // empty' "$state")
       cwd=$(jq -r '.cwd' "$state")
       new_cwd=$(cd "$cwd" && bash -c "$pending$text; pwd -P") || exit 1
@@ -977,6 +985,23 @@ pass "fm-spawn relaunch: a missing pre-wiring candidate rolls back cleanly"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
+jq '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="shell" | .candidate_registered=true | .candidate_takeover_before_run=true' \
+  --arg cwd "$DIRECT_WT" "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+write_direct_candidate_record created
+if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
+    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
+  fail "retry reported success after another client won the candidate close boundary: $DIRECT_OUT"
+fi
+[ "$(jq -r '.candidate_exists and .candidate_registered and (.candidate_process == "live")' "$STATE")" = true ] \
+  || fail "candidate cleanup removed the new foreground owner"
+! grep -Fq $'\x1fpane\x1fclose\x1fw1:p2' "$LOG" \
+  || fail "candidate cleanup used an unconditional pane close after sampling the idle shell"
+pass "fm-spawn relaunch: shell-aware cleanup preserves a close-boundary takeover"
+
+reset_direct_meta
+write_state "$DIRECT_WT" shell true
 jq '.candidate_exists=true | .candidate_cwd=$cwd | .candidate_process="shell" | .candidate_registered=true' \
   --arg cwd "$DIRECT_WT" "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 write_direct_candidate_record created
@@ -985,9 +1010,9 @@ DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR
   FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
   "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
   || fail "retry should reconcile an exact stale registered candidate before relaunch: $DIRECT_OUT"
-close_line=$(grep -n $'\x1fpane\x1fclose\x1fw1:p2' "$LOG" | head -1 | cut -d: -f1)
+retire_line=$(grep -n $'\x1fpane\x1frun\x1fw1:p2\x1fkill -KILL "$$"' "$LOG" | head -1 | cut -d: -f1)
 create_line=$(grep -n $'\x1ftab\x1fcreate\x1f' "$LOG" | head -1 | cut -d: -f1)
-[ -n "$close_line" ] && [ -n "$create_line" ] && [ "$close_line" -lt "$create_line" ] \
+[ -n "$retire_line" ] && [ -n "$create_line" ] && [ "$retire_line" -lt "$create_line" ] \
   || fail "retry did not retire the stale exact candidate before creating its replacement: $(cat "$LOG")"
 pass "fm-spawn relaunch: retry idempotently reconciles a stale exact candidate"
 
@@ -1063,7 +1088,7 @@ if wait "$competitor_pid"; then
   fail "the competing path preparation mutated the original endpoint after publication"
 fi
 clear_count=$(grep -c $'\x1fpane\x1fsend-keys\x1f.*\x1fctrl+c' "$LOG" || true)
-[ "$clear_count" -eq 1 ] || fail "the competing pane mutation reached the retired original endpoint"
+[ "$clear_count" -eq 2 ] || fail "the competing pane mutation reached the retired original endpoint"
 pass "fm-spawn relaunch: session locking prevents mutation of the retired original endpoint"
 
 [ "$(jq -r '.unmanaged_fingerprint' "$STATE")" = unchanged ] \

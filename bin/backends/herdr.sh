@@ -2165,14 +2165,31 @@ fm_backend_herdr_relaunch_candidate_discover() {  # <session> <workspace-id> <la
   FM_BACKEND_HERDR_RELAUNCH_CANDIDATE_PANE_ID=$pane_id
 }
 
-# Revalidate through Herdr and close by exact pane identity; never signal the
-# sampled numeric shell PID, which may belong to a reused process by then.
+# Revalidate through Herdr, then submit shell self-retirement through the
+# pane's shell-aware command path. Unlike an unconditional pane close, `pane
+# run` refuses if a new foreground owner wins after the sample, so cleanup
+# cannot retire that owner. The command resolves the executing shell's identity
+# at execution time instead of signaling the previously sampled shell PID.
+# Never signal the sampled numeric shell PID, which may belong to a reused
+# process by then.
 fm_backend_herdr_relaunch_candidate_close_on_shell() {  # <session> <workspace-id> <tab-id> <pane-id> <shell-pid>
-  local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 expected_pid=$5 resampled_pid
+  local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 expected_pid=$5 resampled_pid presence
+  local attempt=0 max_attempts=${FM_BACKEND_HERDR_RELAUNCH_CLOSE_POLLS:-20}
   fm_backend_herdr_relaunch_candidate_matches "$session" "$workspace_id" "$tab_id" "$pane_id" || return 1
   resampled_pid=$(fm_backend_herdr_pane_idle_shell_sample "$session" "$pane_id") || return 1
   [ "$resampled_pid" = "$expected_pid" ] || return 1
-  fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane_id"
+  fm_backend_herdr_clear_idle_shell_input "$session:$pane_id" "$expected_pid" || return 1
+  resampled_pid=$(fm_backend_herdr_pane_idle_shell_pid "$session" "$pane_id") || return 1
+  [ "$resampled_pid" = "$expected_pid" ] || return 1
+  fm_backend_herdr_cli "$session" pane run "$pane_id" 'kill -KILL "$$"' >/dev/null 2>&1 || true
+  while [ "$attempt" -lt "$max_attempts" ]; do
+    presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane_id")
+    [ "$presence" = dead ] && return 0
+    [ "$presence" = present ] || return 1
+    attempt=$((attempt + 1))
+    [ "$attempt" -ge "$max_attempts" ] || sleep 0.1
+  done
+  return 1
 }
 
 fm_backend_herdr_relaunch_candidate_cleanup() {  # <session> <workspace-id> <tab-id> <pane-id>
