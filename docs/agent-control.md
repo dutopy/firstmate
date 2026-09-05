@@ -76,8 +76,10 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    Crash recovery may list only the recorded workspace to resolve exactly one tab carrying that attempt label; it never searches or adopts another workspace.
    Tmux keeps its existing recorded endpoint and path check.
 6. **Launch and publish the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`.
-   Herdr snapshots the prior harness wiring, persists the staged replacement metadata and wiring immediately before launch submission, proves both an exact live Herdr registration and corroborating live foreground process at the candidate and worktree, then atomically publishes the new endpoint metadata and retires the old agent-free pane when that exact cleanup remains provable.
-   A prepublication failure restores prior wiring, leaves old metadata and endpoint untouched, and closes only an exact agent-free candidate; an ambiguous candidate is quarantined instead of being guessed safe to close.
+   Herdr snapshots the prior harness wiring, persists the staged replacement metadata and wiring immediately before launch submission, and makes a durable launch receipt a prerequisite of starting the agent command.
+   It proves both an exact live Herdr registration and corroborating live foreground process at the candidate and worktree, then atomically publishes the new endpoint metadata and retires the old agent-free pane when that exact cleanup remains provable.
+   An agent-free prepublication failure leaves old metadata and endpoint untouched, restores the persisted prior-wiring snapshot when replacement wiring was mutated, and closes only the exact candidate.
+   An exact live or unsettled submitted launch retains its launch-attempt provenance for strict retry or adoption, while ambiguous cleanup without admissible launch provenance is recorded as quarantined instead of being guessed safe.
    A retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
    It refuses live pre-launch or quarantined candidates and unreadable or mismatched candidates.
    Tmux retains its existing reuse behavior.
@@ -87,7 +89,8 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
 ### Failure and rollback
 
 - A refusal **before** the agent is stopped leaves the durable record and the instructions byte-identical.
-- A Herdr launch failure **after** the old agent is stopped keeps the old durable binding and endpoint unchanged, restores prior harness wiring, keeps the progress note, and records whether the exact provisional endpoint was rolled back or quarantined.
+- A Herdr launch failure **after** the old agent is stopped keeps the old durable binding, endpoint, and progress note unchanged.
+  An agent-free candidate restores any mutated prior wiring and rolls back; an exact live or unsettled submitted launch remains recoverable for retry, and ambiguous cleanup without admissible launch provenance remains recorded for strict reconciliation.
 - A non-Herdr launch failure after the agent is stopped retains the existing prior-record rollback behavior.
 - If the launch owner already published the new record but no running agent can be confirmed, the new record is kept: the task is recorded on the new harness with no agent confirmed, which is exactly what recovery reconciles.
   Rewriting it back to the old harness would be a second, worse inaccuracy.

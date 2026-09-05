@@ -282,11 +282,12 @@ It creates one fresh tab directly in that recorded workspace with its shell root
 Recovery may list only that recorded workspace to resolve exactly one tab carrying the recorded label, and it leaves every unrelated workspace or endpoint untouched.
 The candidate stays unpublished while its pending input is cleared and its exact shell and worktree are revalidated.
 The rollback wiring snapshot becomes deterministic before the first replacement-wiring mutation, and staged metadata plus replacement wiring are persisted immediately before the environment and launch command are queued.
+The queued command writes a durable launch receipt before starting the agent, so an unreceipted replacement cannot become an adoption candidate.
 Publication and crash adoption both require an exact live Herdr agent registration plus corroborating live foreground-process state at that endpoint.
 Only then does metadata advance atomically to the candidate, immediately relinquishing provisional cleanup authority.
 The original prior harness remains in launch provenance until its wiring retirement commits, and an interruption or cleanup failure must reconcile that identity plus any presentation binding before another relaunch can proceed.
-A prepublication failure or hard-crash recovery leaves the old metadata authoritative, restores the exact persisted prior wiring snapshot, and closes only an exactly identified candidate that is still provably agent-free.
-An ambiguous failed candidate remains quarantined under its exact recorded identity instead of granting cleanup authority.
+An agent-free prepublication failure or hard-crash recovery leaves the old metadata authoritative, restores the exact persisted prior-wiring snapshot when replacement wiring was mutated, and closes only the exactly identified candidate.
+An exact live or unsettled submitted launch retains its launch-attempt provenance for strict retry or adoption, while ambiguous cleanup without admissible launch provenance is recorded as quarantined under its exact identity instead of granting cleanup authority.
 A later retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
 It refuses every live pre-launch or quarantined candidate and every unreadable, mismatched, or multiply matched candidate.
 Before any candidate or old pane is retired, its exact idle shell is frozen and revalidated for identity, ownership, and child absence immediately at the close boundary; refusal always resumes it.
