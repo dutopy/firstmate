@@ -128,7 +128,7 @@ assert_contains "$out" "register command" "arm dry-run prints the registration c
 arm_status=0
 arm_out=$(ped "$HOME1" arm --config "$CFG1" 2>&1) || arm_status=$?
 [ "$arm_status" -ne 0 ] || fail "non-dry-run arm was accepted"
-assert_contains "$arm_out" "offline phase" "non-dry-run arm refuses while inactive"
+assert_contains "$arm_out" "live polling is disabled" "non-dry-run arm refuses while live polling is disabled"
 pass "process-event arming remains offline unless a later live task activates it"
 
 pe "$HOME1" register discord-workspace discord-workspace -- \

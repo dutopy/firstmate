@@ -12,6 +12,7 @@ from contextlib import contextmanager
 import datetime as _dt
 import fcntl
 import hashlib
+import importlib
 import json
 import math
 import mimetypes
@@ -1976,18 +1977,37 @@ def fixture_messages(cfg: WorkspaceConfig) -> List[Dict[str, Any]]:
 def procevent_cmd_arm(args: argparse.Namespace, env: Env) -> int:
     cfg = load_config(env, args.config)
     command = [str(env.script_dir / "fm-procevent-discord-workspace.sh"), "source", "--config", str(cfg.path)]
+    register_cmd = [str(env.script_dir / "fm-procevent.sh"), "register", "discord-workspace", DISCORD_SOURCE_ID, "--"] + command
     if args.dry_run:
         print("Discord workspace process-event arm dry-run (no network).")
         print(f"source id: {DISCORD_SOURCE_ID}")
         print("register command:")
-        print(" ".join([str(env.script_dir / "fm-procevent.sh"), "register", "discord-workspace", DISCORD_SOURCE_ID, "--"] + command))
-        print("live polling remains disabled until an activation task approves it.")
+        print(" ".join(register_cmd))
+        print("live polling remains disabled until the workspace config enables it.")
         return 0
-    raise FMError("process-event arm refused in this offline phase; no live source was registered")
+    if not cfg.live_polling_enabled:
+        raise FMError("process-event arm refused while live polling is disabled in the workspace config")
+    proc = subprocess.run(register_cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if proc.returncode != 0:
+        if proc.stdout:
+            print(proc.stdout, end="")
+        if proc.stderr:
+            print(proc.stderr, end="", file=sys.stderr)
+        raise FMError("process-event registration failed")
+    if proc.stdout:
+        print(proc.stdout, end="")
+    print("Discord workspace live source registered; repeat and retire through fm-procevent.sh")
+    return 0
 
 
 def procevent_cmd_source(args: argparse.Namespace, env: Env) -> int:
     cfg = load_config(env, args.config)
+    if cfg.live_polling_enabled:
+        spec = importlib.util.spec_from_file_location("fm_discord_live", env.script_dir / "fm_discord_live.py")
+        live = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(live)
+        client = live.DiscordClient(live.decrypt_token(env, cfg))
+        return live.live_source_pass(env, cfg, client)
     messages = fixture_messages(cfg)
     for message in messages:
         event = message_to_event(cfg, message)
