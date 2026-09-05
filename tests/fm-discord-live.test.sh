@@ -1,0 +1,415 @@
+#!/usr/bin/env bash
+# Tests for the bounded live Discord activation layer, driven entirely by a
+# fake local HTTP server: no real token is read and no network call leaves
+# loopback. Covers health, community preflight, idempotent setup apply with
+# partial recovery, live reply receipt idempotency and retries, the live
+# inbound source with durable monotonic cursors, and token redaction.
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+TMP_ROOT=$(fm_test_tmproot fm-discord-live-tests)
+GUILD=111111111111111111
+BOT=333333333333333333
+CAPTAIN=444444444444444444
+FORUM_F=777777777777777772
+FAKE_TOKEN=faketoken-abc123
+THREAD=888888888888888881
+
+dl() { FM_HOME="$H" "$ROOT/bin/fm-discord-live.sh" "$@"; }
+
+start_server() { # start_server <world-file> <port-file> <guild-id>
+  python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "$TMP_ROOT/fake-server.log" 2>&1 <<'PY' &
+import json, sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
+
+WORLD, PORT_FILE, TOKEN, GUILD = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+BOT = "333333333333333333"
+
+def load():
+    with open(WORLD, encoding="utf-8") as f:
+        return json.load(f)
+
+def save(world):
+    with open(WORLD, "w", encoding="utf-8") as f:
+        json.dump(world, f)
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _send(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _authorized(self, world):
+        return self.headers.get("Authorization") == f"Bot {world.get('token') or TOKEN}"
+
+    def _injected(self, path, method):
+        world = load()
+        inject = world.get("inject") or {}
+        if inject and inject.get("remaining", 0) > 0 and inject.get("path") in path and inject.get("method", method) == method:
+            inject["remaining"] -= 1
+            world["inject"] = inject
+            save(world)
+            return inject.get("status", 500), inject.get("body", {"message": "injected"})
+        return None
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        parts = [p for p in url.path.split("/") if p]
+        query = parse_qs(url.query)
+        world = load()
+        if not self._authorized(world):
+            self._send(401, {"message": "Unauthorized", "note": "leak-attempt " + TOKEN})
+            return
+        hit = self._injected(url.path, "GET")
+        if hit:
+            self._send(hit[0], hit[1])
+            return
+        if parts[:2] == ["guilds", GUILD] and len(parts) == 2:
+            self._send(200, {"id": GUILD, "name": "Fake Guild", "features": world.get("features", [])})
+        elif parts[:2] == ["guilds", GUILD] and parts[2] == "channels":
+            self._send(200, world.get("channels", []))
+        elif parts == ["users", "@me"]:
+            self._send(200, {"id": world.get("bot_id", BOT), "username": "fake-bot"})
+        elif len(parts) == 4 and parts[2] == "threads" and parts[3] == "active":
+            self._send(200, {"threads": world.get("threads", {}).get(parts[1], [])})
+        elif len(parts) == 3 and parts[2] == "messages":
+            after = int(query.get("after", ["0"])[0])
+            limit = int(query.get("limit", ["100"])[0])
+            msgs = [m for m in world.get("messages", {}).get(parts[1], []) if int(m["id"]) > after]
+            msgs.sort(key=lambda m: int(m["id"]), reverse=True)
+            self._send(200, msgs[:limit])
+        elif len(parts) == 4 and parts[2] == "messages":
+            for m in world.get("messages", {}).get(parts[1], []):
+                if m["id"] == parts[3]:
+                    self._send(200, m)
+                    return
+            self._send(404, {"message": "Unknown Message"})
+        else:
+            self._send(404, {"message": "not found"})
+
+    def do_POST(self):
+        url = urlparse(self.path)
+        parts = [p for p in url.path.split("/") if p]
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {}
+        world = load()
+        if not self._authorized(world):
+            self._send(401, {"message": "Unauthorized"})
+            return
+        hit = self._injected(url.path, "POST")
+        if hit:
+            self._send(hit[0], hit[1])
+            return
+        if len(parts) == 3 and parts[2] == "channels":
+            for c in world.get("channels", []):
+                if c.get("name") == body.get("name"):
+                    self._send(500, {"code": 50035, "message": "name already exists"})
+                    return
+            world["counter"] = int(world.get("counter", 900000000000000000)) + 1
+            channel = {"id": str(world["counter"]), "name": body.get("name"), "type": body.get("type"),
+                       "parent_id": body.get("parent_id"), "available_tags": body.get("available_tags", [])}
+            world.setdefault("channels", []).append(channel)
+            world["creates"] = int(world.get("creates", 0)) + 1
+            save(world)
+            self._send(201, channel)
+        elif len(parts) == 3 and parts[2] == "messages":
+            if body.get("allowed_mentions") != {"parse": []}:
+                self._send(400, {"message": "allowed_mentions must be empty parse"})
+                return
+            world["counter"] = int(world.get("counter", 900000000000000000)) + 1
+            message = {"id": str(world["counter"]), "content": body.get("content"),
+                       "author": {"id": BOT, "bot": True}, "channel_id": parts[1]}
+            world.setdefault("messages", {}).setdefault(parts[1], []).append(message)
+            world["posts"] = int(world.get("posts", 0)) + 1
+            save(world)
+            self._send(200, message)
+        else:
+            self._send(404, {"message": "not found"})
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+with open(PORT_FILE, "w", encoding="utf-8") as f:
+    f.write(str(server.server_port))
+server.serve_forever()
+PY
+  for _ in $(seq 1 50); do
+    [ -s "$2" ] && break
+    sleep 0.1
+  done
+  [ -s "$2" ] || fail "fake Discord server did not start"
+}
+
+world_set() { python3 - "$WORLD" "$1" <<'PY'
+import json, sys
+world, update = json.load(open(sys.argv[1])), json.loads(sys.argv[2])
+world.update(update)
+json.dump(world, open(sys.argv[1], "w"))
+PY
+}
+
+new_home() {
+  H="$TMP_ROOT/$1"
+  mkdir -p "$H/state" "$H/data" "$H/config"
+  FM_HOME="$H" "$ROOT/bin/fm-discord-workspace.sh" sample-config > "$H/config/discord-workspace.json"
+  python3 - "$H/config/discord-workspace.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["live"]["posting"] = True
+data["live"]["polling"] = True
+data["outbound"]["live_posting"] = True
+data["profiles"]["proapplis"]["thread_ids"]["exchange"] = ["888888888888888881"]
+json.dump(data, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
+  printf 'FIRSTMATE_DISCORD_BOT_TOKEN: %s\n' "$FAKE_TOKEN" > "$H/config/discord-workspace.secrets.sops.yaml"
+}
+
+# --- fake sops + fake server -------------------------------------------------
+cat > "$TMP_ROOT/fake-sops" <<FAKE
+#!/usr/bin/env bash
+[ "\$1" = "-d" ] || exit 64
+printf 'FIRSTMATE_DISCORD_BOT_TOKEN: $FAKE_TOKEN\n'
+FAKE
+chmod +x "$TMP_ROOT/fake-sops"
+
+WORLD="$TMP_ROOT/world.json"
+PORT_FILE="$TMP_ROOT/port"
+printf '{"features":["COMMUNITY"],"channels":[],"threads":{},"messages":{},"creates":0,"posts":0,"counter":900000000000000000}\n' > "$WORLD"
+start_server "$WORLD" "$PORT_FILE" "$GUILD"
+PORT=$(cat "$PORT_FILE")
+export FM_DISCORD_LIVE_API_BASE="http://127.0.0.1:$PORT"
+export FM_DISCORD_LIVE_SOPS="$TMP_ROOT/fake-sops"
+export FM_DISCORD_LIVE_RETRY_SLEEP=0
+
+# --- 1. live health verifies exact guild and bot identity --------------------
+new_home h1
+out=$(dl health --config "$H/config/discord-workspace.json" 2>&1) \
+  || fail "health failed against the fake server: $out"
+assert_contains "$out" "bot identity ok: fake-bot" "health verifies the configured bot identity"
+assert_contains "$out" "operations guild ok: Fake Guild" "health verifies the configured operations guild"
+assert_not_contains "$out" "community" "health does not inspect or report Community mode"
+pass "live health verifies exact guild and bot identity"
+
+# --- 2. health refuses a bot identity mismatch -------------------------------
+new_home h2
+world_set '{"bot_id":"999999999999999999"}'
+out=$(dl health --config "$H/config/discord-workspace.json" 2>&1) && fail "health accepted a foreign bot identity" || true
+assert_contains "$out" "does not match the configured bot user id" "health refuses a bot identity mismatch"
+world_set '{"bot_id":"'"$BOT"'"}'
+pass "live health refuses a bot identity mismatch"
+
+# --- 3. the token is redacted from every failure path ------------------------
+new_home h3
+# A sops stub that emits a token the server rejects.
+world_set '{"token":"wrong"}'
+cat > "$TMP_ROOT/fake-sops-wrong" <<FAKE
+#!/usr/bin/env bash
+[ "\$1" = "-d" ] || exit 64
+printf 'FIRSTMATE_DISCORD_BOT_TOKEN: leakedtoken-xyz\n'
+FAKE
+out=$(dl health --config "$H/config/discord-workspace.json" 2>&1) && fail "health accepted a wrong token" || true
+assert_contains "$out" "401" "a rejected token surfaces the HTTP failure"
+printf '%s' "$out" | grep -q "leakedtoken-xyz" && fail "the token leaked into failure output: $out"
+pass "the bot token is redacted from failure output"
+world_set '{"token":null}'
+
+# --- 4. setup apply creates forums directly without any COMMUNITY dependency -
+new_home h4
+world_set '{"features":[]}'
+out=$(dl setup-apply --config "$H/config/discord-workspace.json" 2>&1) \
+  || fail "setup apply failed on a guild without COMMUNITY: $out"
+CREATES=$(python3 -c "import json;print(json.load(open('$WORLD'))['creates'])")
+[ "$CREATES" = 9 ] || fail "setup apply created $CREATES channels instead of 9"
+FORUMS=$(python3 -c "import json;print(sum(1 for c in json.load(open('$WORLD'))['channels'] if c['type']==15))")
+[ "$FORUMS" = 6 ] || fail "setup apply created $FORUMS forums instead of 6"
+pass "setup apply creates forum channels directly without any COMMUNITY prerequisite"
+
+# --- 5. setup apply is idempotent and tags forums ----------------------------
+new_home h5
+out=$(dl setup-apply --config "$H/config/discord-workspace.json" 2>&1) \
+  || fail "setup apply failed: $out"
+CREATES=$(python3 -c "import json;print(json.load(open('$WORLD'))['creates'])")
+CFG_IDS=$(python3 - "$H/config/discord-workspace.json" <<'CFGIDS'
+import json, sys
+data = json.load(open(sys.argv[1]))
+p = data["profiles"]["firstmate"]
+print(all(str(p[k]).isdigit() for k in ("category_id", "exchange_forum_id", "artifact_forum_id")))
+CFGIDS
+)
+[ "$CFG_IDS" = "True" ] || fail "setup apply did not write non-secret ids into the config"
+TAGS_OK=$(python3 - "$WORLD" <<'TAGSOK'
+import json, sys
+world = json.load(open(sys.argv[1]))
+forums = [c for c in world["channels"] if c["type"] == 15]
+print(bool(forums) and all(c["available_tags"] for c in forums))
+TAGSOK
+)
+[ "$TAGS_OK" = "True" ] || fail "created forums lack the configured tag vocabulary"
+pass "setup apply creates the three categories with exchanges and artifacts forums plus tags"
+
+# --- 6. setup apply rerun reuses everything ---------------------------------
+out=$(dl setup-apply --config "$H/config/discord-workspace.json" 2>&1) \
+  || fail "second setup apply failed: $out"
+CREATES2=$(python3 -c "import json;print(json.load(open('$WORLD'))['creates'])")
+[ "$CREATES2" = "$CREATES" ] || fail "second setup apply created $((CREATES2 - CREATES)) duplicate channels"
+pass "setup apply reuses exact existing categories and forums on rerun"
+
+# --- 7. setup apply recovers from a partial run ------------------------------
+new_home h7
+python3 - "$WORLD" <<'RESETW'
+import json, sys
+world = json.load(open(sys.argv[1]))
+world["counter"] = int(world["counter"]) + 1
+world["channels"] = [{"id": str(world["counter"]), "name": "System / Firstmate", "type": 4, "parent_id": "", "available_tags": []}]
+world["creates"] = 1
+json.dump(world, open(sys.argv[1], "w"))
+RESETW
+out=$(dl setup-apply --config "$H/config/discord-workspace.json" 2>&1) \
+  || fail "setup apply failed on a partially provisioned guild: $out"
+REUSED=$(python3 - "$H/config/discord-workspace.json" "$WORLD" <<'REUSEOK'
+import json, sys
+data = json.load(open(sys.argv[1]))
+world = json.load(open(sys.argv[2]))
+pre = [c for c in world["channels"] if c["name"] == "System / Firstmate" and c["type"] == 4]
+print(len(pre) == 1 and data["profiles"]["firstmate"]["category_id"] == pre[0]["id"])
+REUSEOK
+)
+[ "$REUSED" = "True" ] || fail "setup apply did not reuse the pre-created category"
+CHANNELS7=$(python3 -c "import json;print(len(json.load(open('$WORLD'))['channels']))")
+[ "$CHANNELS7" = 9 ] || fail "partial recovery produced $CHANNELS7 channels instead of 9"
+pass "setup apply reuses exact existing channels and recovers from partial runs"
+
+# --- 8. setup apply refuses a wrong-shape name collision ---------------------
+new_home h8
+python3 - "$WORLD" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+world["counter"] = int(world["counter"]) + 1
+# A text channel squatting on a planned forum name must stop the apply.
+world["channels"] = [{"id": str(world["counter"]), "name": "firstmate-exchanges", "type": 0, "parent_id": "", "available_tags": []}]
+world["creates"] = 0
+json.dump(world, open(sys.argv[1], "w"))
+PY
+out=$(dl setup-apply --config "$H/config/discord-workspace.json" 2>&1) && fail "setup apply accepted a wrong-shape collision" || true
+assert_contains "$out" "mismatched shape" "a wrong-shape collision is named as such"
+assert_not_contains "$out" "text channel substitute" "no silent substitution is claimed"
+pass "setup apply refuses name collisions with a different channel type or parent"
+
+# --- 9. live reply posts once, records a receipt, and replays idempotently ---
+new_home h9
+printf 'Round-trip reply body.\n' > "$TMP_ROOT/reply.txt"
+REQUEST_ID="discord:$GUILD:$THREAD:777777777777777701"
+out=$(dl live-reply --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" 2>&1) \
+  || fail "live reply failed: $out"
+POSTS=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
+[ "$POSTS" = 1 ] || fail "live reply posted $POSTS times"
+assert_grep "receipt recorded" <(printf '%s\n' "$out") || true
+out2=$(dl live-reply --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" 2>&1) \
+  || fail "live reply replay failed: $out2"
+assert_contains "$out2" "no second delivery" "replay reports no second delivery"
+POSTS2=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
+[ "$POSTS2" = 1 ] || fail "replay posted again ($POSTS2 posts)"
+pass "live reply posts once with empty allowed_mentions and replays through the receipt"
+
+# --- 10. live reply retries transient server errors then records once --------
+new_home h10
+world_set '{"inject":{"path":"/messages","method":"POST","remaining":2,"status":500}}'
+out=$(dl live-reply --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" --nonce retry-nonce 2>&1) \
+  || fail "live reply did not survive two transient 500s: $out"
+POSTS3=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
+[ "$POSTS3" = 2 ] || fail "retried reply produced $POSTS3 posts instead of 1 new post"
+assert_contains "$out" "receipt recorded" "the retried reply records its receipt"
+pass "live reply retries transient 5xx responses and records the receipt once"
+
+# --- 11. live reply fails without a receipt after sustained errors -----------
+new_home h11
+world_set '{"inject":{"path":"/messages","method":"POST","remaining":9,"status":500,"body":{"message":"injected faketoken-abc123"}}}'
+out=$(dl live-reply --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" --nonce fail-nonce 2>&1) \
+  && fail "live reply accepted sustained server errors" || true
+printf '%s' "$out" | grep -q "faketoken-abc123" && fail "the token leaked through an injected error body: $out"
+RECEIPTS=$(find "$H/state/discord-workspace/receipts" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+[ "$RECEIPTS" = 0 ] || fail "a failed reply left a durable receipt"
+world_set '{"inject":null}'
+pass "sustained API failures record no receipt and never leak the token"
+
+# --- 12. live source ingests only captain messages and advances cursors ------
+new_home h12
+CFG12="$H/config/discord-workspace.json"
+python3 - "$WORLD" <<PY
+import json
+world = json.load(open("$WORLD"))
+world["counter"] = int(world["counter"]) + 1
+forum = str(world["counter"])
+world["counter"] += 1
+thread = str(world["counter"])
+world["counter"] += 1
+stale = str(world["counter"])
+world["threads"] = {"$FORUM_F": [{"id": thread, "parent_id": "$FORUM_F", "name": "tab"}]}
+world["messages"] = {thread: [
+    {"id": stale, "guild_id": "$GUILD", "channel_id": thread, "author": {"id": "$CAPTAIN"}, "content": "older captain message"},
+    {"id": str(int(stale) + 1), "guild_id": "$GUILD", "channel_id": thread, "author": {"id": "333333333333333333", "bot": True}, "content": "bot message"},
+    {"id": str(int(stale) + 2), "guild_id": "$GUILD", "channel_id": thread, "author": {"id": "121212121212121212"}, "content": "unknown author"},
+    {"id": str(int(stale) + 3), "guild_id": "$GUILD", "channel_id": thread, "author": {"id": "$CAPTAIN"}, "content": "newest captain request"},
+]}
+world["threads"]["$FORUM_F"] = world["threads"]["$FORUM_F"] + [{"id": "888888888888888999", "parent_id": "wrong-parent", "name": "foreign"}]
+json.dump(world, open("$WORLD", "w"))
+PY
+out=$(dl live-source --config "$CFG12" 2>&1) || fail "live source failed: $out"
+NOTES=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES" = 2 ] || fail "live source created $NOTES notes instead of 2 (captain messages only)"
+grep -rl "newest captain request" "$H/state/inbox" >/dev/null 2>&1 || fail "the newest captain message was not ingested"
+grep -rl "older captain message" "$H/state/inbox" >/dev/null 2>&1 || fail "the older captain message was not ingested"
+if grep -rl "bot message" "$H/state/inbox"/*.note >/dev/null 2>&1; then fail "a bot message was ingested"; fi
+CURSOR=$(find "$H/state/discord-workspace/cursors" -name '*.cursor' -exec cat {} + | sort -n | tail -1)
+EXPECTED=$(python3 -c "import json;w=json.load(open('$WORLD'));print(max(int(m['id']) for ms in w['messages'].values() for m in ms))")
+[ "$CURSOR" = "$EXPECTED" ] || fail "the cursor is $CURSOR instead of the newest id $EXPECTED"
+# Replay is a no-op: same messages, monotonic cursor, no duplicate notes.
+BEFORE_NOTES=$NOTES
+out=$(dl live-source --config "$CFG12" 2>&1) || fail "second live source pass failed: $out"
+AFTER_NOTES=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$AFTER_NOTES" = "$BEFORE_NOTES" ] || fail "a second source pass duplicated notes"
+# A late lower-id message must not move the cursor backwards or re-ingest.
+python3 - "$WORLD" <<PY
+import json
+world = json.load(open("$WORLD"))
+thread = next(iter(world["messages"]))
+world["messages"][thread].insert(0, {"id": "1", "guild_id": "$GUILD", "channel_id": thread, "author": {"id": "$CAPTAIN"}, "content": "late stale message"})
+json.dump(world, open("$WORLD", "w"))
+PY
+dl live-source --config "$CFG12" >/dev/null 2>&1 || true
+CURSOR2=$(find "$H/state/discord-workspace/cursors" -name '*.cursor' -exec cat {} + | sort -n | tail -1)
+[ "$CURSOR2" = "$EXPECTED" ] || fail "a stale lower-id message moved the cursor backwards to $CURSOR2"
+FINAL_NOTES=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$FINAL_NOTES" = "$BEFORE_NOTES" ] || fail "the stale message was ingested after the cursor advanced"
+pass "live source ingests only captain messages after durable monotonic cursors"
+
+# --- 13. live roundtrip posts and verifies against Discord ------------------
+new_home h13
+out=$(dl live-roundtrip --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" --nonce rt-nonce 2>&1) \
+  || fail "live roundtrip failed: $out"
+assert_contains "$out" "round-trip verified" "the roundtrip verifies the posted message"
+out2=$(dl live-roundtrip --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" --nonce rt-nonce 2>&1) \
+  || fail "roundtrip replay failed: $out2"
+assert_contains "$out2" "round-trip verified against the recorded message id" "roundtrip replay verifies from the receipt"
+pass "live roundtrip posts once and verifies in both fresh and replay paths"
+
+# --- cleanup -----------------------------------------------------------------
+kill %1 2>/dev/null || true
