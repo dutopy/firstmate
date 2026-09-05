@@ -86,8 +86,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, world.get("channels", []))
         elif parts == ["users", "@me"]:
             self._send(200, {"id": world.get("bot_id", BOT), "username": "fake-bot"})
+        elif len(parts) == 4 and parts[0] == "guilds" and parts[2] == "threads" and parts[3] == "active":
+            all_threads = [t for ts in world.get("threads", {}).values() for t in ts]
+            self._send(200, {"threads": all_threads})
         elif len(parts) == 4 and parts[2] == "threads" and parts[3] == "active":
-            self._send(200, {"threads": world.get("threads", {}).get(parts[1], [])})
+            self._send(404, {"code": 0, "message": "channel-scoped active-thread listing is unsupported"})
         elif len(parts) == 3 and parts[2] == "messages":
             after = int(query.get("after", ["0"])[0])
             limit = int(query.get("limit", ["100"])[0])
@@ -370,6 +373,10 @@ world["messages"] = {thread: [
     {"id": str(int(stale) + 3), "guild_id": "$GUILD", "channel_id": thread, "author": {"id": "$CAPTAIN"}, "content": "newest captain request"},
 ]}
 world["threads"]["$FORUM_F"] = world["threads"]["$FORUM_F"] + [{"id": "888888888888888999", "parent_id": "wrong-parent", "name": "foreign"}]
+world["threads"]["555555555555555553"] = [{"id": "888888888888888998", "parent_id": "555555555555555553", "name": "artifacts tab"}]
+world["messages"]["888888888888888998"] = [
+    {"id": "888888888888888997", "guild_id": "$GUILD", "channel_id": "888888888888888998", "author": {"id": "$CAPTAIN"}, "content": "artifacts forum child must not ingest"},
+]
 json.dump(world, open("$WORLD", "w"))
 PY
 out=$(dl live-source --config "$CFG12" 2>&1) || fail "live source failed: $out"
@@ -410,6 +417,42 @@ out2=$(dl live-roundtrip --config "$H/config/discord-workspace.json" --request-i
   || fail "roundtrip replay failed: $out2"
 assert_contains "$out2" "round-trip verified against the recorded message id" "roundtrip replay verifies from the receipt"
 pass "live roundtrip posts once and verifies in both fresh and replay paths"
+
+
+# --- 14. process-event arm gates on the live polling flag --------------------
+pe() { FM_HOME="$1" "$ROOT/bin/fm-procevent.sh" "${@:2}"; }
+ped() { FM_HOME="$1" "$ROOT/bin/fm-procevent-discord-workspace.sh" "${@:2}"; }
+new_home h14
+CFG14="$H/config/discord-workspace.json"
+python3 - "$CFG14" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["live"]["polling"] = False
+json.dump(data, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
+arm_status=0
+arm_out=$(ped "$H" arm --config "$CFG14" 2>&1) || arm_status=$?
+[ "$arm_status" -ne 0 ] || fail "arm registered while live polling was disabled"
+assert_contains "$arm_out" "live polling is disabled" "arm refusal names the disabled flag"
+out=$(ped "$H" arm --dry-run --config "$CFG14")
+assert_contains "$out" "register command:" "arm dry-run prints the registration command"
+pass "process-event arm refuses while live polling is disabled and prints the registration command"
+
+# --- 15. arm registers, start repeats through the inbox seam, retire clears --
+new_home h15
+CFG15="$H/config/discord-workspace.json"
+out=$(ped "$H" arm --config "$CFG15" 2>&1) || fail "arm failed with live polling enabled: $out"
+assert_contains "$out" "live source registered" "arm registers the live source"
+assert_grep "discord-workspace" <(pe "$H" list) || fail "the registered source is missing from the list"
+out=$(pe "$H" start discord-workspace 2>&1) || fail "first procevent start failed: $out"
+NOTES15=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES15" -ge 1 ] || fail "the registered live source ingested nothing on start: start output: $out; claims: $(ls "$H/state/procevent-inbox" 2>/dev/null); result: $(cat "$H/state/procevent-inbox"/*.result 2>/dev/null | head -5)"
+out=$(pe "$H" start discord-workspace 2>&1) || fail "second procevent start failed: $out"
+NOTES15B=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES15B" = "$NOTES15" ] || fail "a repeated start duplicated notes ($NOTES15 -> $NOTES15B)"
+pe "$H" retire discord-workspace >/dev/null 2>&1 || fail "retire failed"
+if pe "$H" list | grep -q discord-workspace; then fail "retire left the registration in place"; fi
+pass "process-event arm registers, repeated starts stay idempotent, and retire clears the source"
 
 # --- cleanup -----------------------------------------------------------------
 kill %1 2>/dev/null || true

@@ -117,3 +117,15 @@ It preserves `state/discord-workspace/` so receipts, request links, artifact rec
 If a live process-event source is activated later, retire that source through `bin/fm-procevent.sh retire discord-workspace` or a stricter owner-matching command printed by the activation task.
 Do not delete live Discord channels, categories, posts, bot permissions, or secrets without a separate explicit captain-approved live operation.
 Rotate the Discord bot token or dedicated transcription key if compromise is suspected.
+
+## Bounded live activation layer
+
+`bin/fm-discord-live.sh` is the only live surface, and only while the workspace config enables the matching live approval flag.
+`health` verifies the exact configured operations guild and bot identity.
+`setup-apply` reuses an existing category or forum only when its name, type, and parent match exactly, creates the three profile categories with their exchanges and artifacts forums plus configured tags, writes only non-secret IDs back to the config atomically, and never enables or inspects Community mode: forum channels are created and reused directly.
+`live-reply` posts with empty `allowed_mentions` and reuses the outbound receipt so a replay never posts twice.
+`live-source` lists a guild's active threads once per pass, filters strictly by the configured exchange forum parents, reads only captain-authored non-bot messages after durable monotonic cursors, and feeds the existing external-id inbox seam.
+`live-roundtrip` posts one reply and reads it back to verify delivery.
+The bot token is decrypted from the sops secret file into process memory only and is redacted from every failure path.
+Deletion or retirement of live resources, voice capture, hosted transcription, webhooks, and non-configured guilds stay out of scope.
+For continuous inbound listening, arm the built-in process-event source with `bin/fm-procevent-discord-workspace.sh arm --config <json>` once live polling is enabled; it registers `bin/fm-procevent.sh register discord-workspace discord-workspace -- bin/fm-procevent-discord-workspace.sh source --config <json>`, and retirement stays `bin/fm-procevent.sh retire discord-workspace`.

@@ -361,57 +361,59 @@ def handoff_event(env: "fwl.Env", event: Dict[str, Any]) -> int:
     return 0
 
 
+def live_source_pass(env: "fwl.Env", cfg: "fwl.WorkspaceConfig", client: "DiscordClient") -> int:
+    """One inbound pass: guild-scoped active threads, cursor-filtered handoff."""
+    forum_ids = {p["exchange_forum_id"] for p in cfg.profiles.values() if p["exchange_forum_id"]}
+    profile_by_forum = {p["exchange_forum_id"]: key for key, p in cfg.profiles.items() if p["exchange_forum_id"]}
+    listing = client.request("GET", f"/guilds/{cfg.guild_id}/threads/active")
+    threads = listing.get("threads") if isinstance(listing.get("threads"), list) else []
+    ingested = 0
+    for thread in threads:
+        if not isinstance(thread, dict):
+            continue
+        thread_id = str(thread.get("id") or "")
+        parent_id = str(thread.get("parent_id") or "")
+        if not thread_id.isdigit() or parent_id not in forum_ids:
+            continue
+        key = profile_by_forum[parent_id]
+        last = fwl.read_cursor(env, key, thread_id)
+        params = {"limit": "100"}
+        if last:
+            params["after"] = str(last)
+        messages = client.request("GET", f"/channels/{thread_id}/messages", params=params)
+        if not isinstance(messages, list):
+            raise FMError(f"message listing for thread {thread_id} was malformed")
+        for message in reversed(messages):
+            if not isinstance(message, dict):
+                continue
+            normalized = {
+                "id": message.get("id"),
+                "guild_id": cfg.guild_id,
+                "channel_id": thread_id,
+                "parent_id": parent_id,
+                "author": message.get("author"),
+                "author_id": message.get("author_id"),
+                "content": message.get("content"),
+                "timestamp": message.get("timestamp"),
+                "flags": message.get("flags"),
+                "attachments": message.get("attachments"),
+            }
+            event = fwl.message_to_event(cfg, normalized)
+            status = handoff_event(env, event)
+            if status != 0:
+                return status
+            if str(message.get("id") or "").isdigit():
+                fwl.write_cursor(env, key, thread_id, str(message["id"]))
+                ingested += 1
+    print(f"live source pass complete; {ingested} messages scanned")
+    return 0
+
+
 def cmd_live_source(args: Any, env: "fwl.Env") -> int:
     cfg = fwl.load_config(env, args.config)
     require_live_flag(cfg, cfg.live_polling_enabled, "live inbound source")
     client = DiscordClient(decrypt_token(env, cfg))
-    ingested = 0
-    for key in fwl.ACTIVE_PROFILE_KEYS:
-        p = cfg.profiles[key]
-        forum_id = p["exchange_forum_id"]
-        if not forum_id:
-            continue
-        listing = client.request("GET", f"/channels/{forum_id}/threads/active")
-        threads = listing.get("threads") if isinstance(listing.get("threads"), list) else []
-        for thread in threads:
-            if not isinstance(thread, dict):
-                continue
-            thread_id = str(thread.get("id") or "")
-            if not thread_id.isdigit() or thread_id == forum_id:
-                continue
-            if str(thread.get("parent_id") or "") != forum_id:
-                continue
-            last = fwl.read_cursor(env, key, thread_id)
-            params = {"limit": "100"}
-            if last:
-                params["after"] = str(last)
-            messages = client.request("GET", f"/channels/{thread_id}/messages", params=params)
-            if not isinstance(messages, list):
-                raise FMError(f"message listing for thread {thread_id} was malformed")
-            for message in reversed(messages):
-                if not isinstance(message, dict):
-                    continue
-                normalized = {
-                    "id": message.get("id"),
-                    "guild_id": cfg.guild_id,
-                    "channel_id": thread_id,
-                    "parent_id": forum_id,
-                    "author": message.get("author"),
-                    "author_id": message.get("author_id"),
-                    "content": message.get("content"),
-                    "timestamp": message.get("timestamp"),
-                    "flags": message.get("flags"),
-                    "attachments": message.get("attachments"),
-                }
-                event = fwl.message_to_event(cfg, normalized)
-                status = handoff_event(env, event)
-                if status != 0:
-                    return status
-                if str(message.get("id") or "").isdigit():
-                    fwl.write_cursor(env, key, thread_id, str(message["id"]))
-                    ingested += 1
-    print(f"live source pass complete; {ingested} messages scanned")
-    return 0
+    return live_source_pass(env, cfg, client)
 
 
 def main(argv: List[str]) -> int:
