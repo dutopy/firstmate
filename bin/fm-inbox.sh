@@ -216,6 +216,17 @@ external_map_path() {  # <source> <external-id>
   printf '%s/external/%s.map\n' "$INBOX" "$digest"
 }
 
+rewrite_external_map_announced() {  # <map-path> <0|1>
+  local map=$1 announced=$2 tmp
+  tmp=$(mktemp "${map%/*}/.map-XXXXXX") || return 1
+  {
+    sed -n '/^announced=/!p' "$map"
+    printf 'announced=%s\n' "$announced"
+  } > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  chmod 600 "$tmp" || { rm -f -- "$tmp"; return 1; }
+  mv "$tmp" "$map"
+}
+
 queue_note_file() {  # <source> <body> <extra>
   local source=$1 body=$2 extra=${3:-} tmp id staging_name
   tmp=$(mktemp "$INBOX/.staging-XXXXXX")
@@ -259,8 +270,26 @@ queue_note() {
     if [ -f "$map" ] && [ ! -L "$map" ]; then
       existing=$(sed -n 's/^note_id=//p' "$map" | head -1)
       [ -n "$existing" ] || die_locked "external inbox map is malformed: $map"
-      printf 'queued %s\n' "$existing"
-      printf '  duplicate external id; no new wake was appended.\n'
+      if [ "$(sed -n 's/^announced=//p' "$map" | head -1)" = "0" ]; then
+        # The original note exists but its announcement failed earlier.
+        # Retry announcing that same note; never create a duplicate.
+        existing_summary=$(sed -n 's/^summary=//p' "$map" | head -1)
+        if wake_for "$existing" "$existing_summary"; then
+          rewrite_external_map_announced "$map" 1 || die_locked "cannot update external inbox map: $map"
+          printf 'queued %s\n' "$existing"
+          printf '  announcement retried and delivered; no new note was created.\n'
+        else
+          printf 'queued %s\n' "$existing"
+          printf '  announcement retry FAILED; the original note stays saved at %s/%s.note.\n' "$INBOX" "$existing" >&2
+          fm_lock_release "$lock"
+          lock_held=0
+          trap - RETURN
+          return 1
+        fi
+      else
+        printf 'queued %s\n' "$existing"
+        printf '  duplicate external id; no new wake was appended.\n'
+      fi
       fm_lock_release "$lock"
       lock_held=0
       trap - RETURN
@@ -278,23 +307,28 @@ queue_note() {
 external_id=$external_id"
     id=$(queue_note_file "$source" "$body" "$extra")
     tmp_map=$(mktemp "$INBOX/external/.map-XXXXXX")
+    summary=$(printf '%s' "$body" | tr '\n\t' '  ' | cut -c1-100)
     {
-      printf 'schema=fm-inbox-external-map.v1\n'
+      printf 'schema=fm-inbox-external-map.v2\n'
       printf 'source=%s\n' "$source"
       printf 'external_id=%s\n' "$external_id"
       printf 'note_id=%s\n' "$id"
+      printf 'announced=0\n'
+      printf 'summary=%s\n' "$summary"
       [ -z "$metadata_dst" ] || printf 'metadata=%s\n' "$metadata_dst"
     } > "$tmp_map"
     chmod 600 "$tmp_map" || die_locked "cannot protect external inbox map"
     mv "$tmp_map" "$map" || die_locked "cannot publish external inbox map"
-    summary=$(printf '%s' "$body" | tr '\n\t' '  ' | cut -c1-100)
     printf 'queued %s\n' "$id"
     printf '  %s\n' "$summary"
     if wake_for "$id" "$summary"; then
+      rewrite_external_map_announced "$map" 1 || die_locked "cannot update external inbox map: $map"
       printf '  firstmate will pick this up at its next check.\n'
     else
-      rm -f -- "$map" 2>/dev/null || true
-      [ -z "$metadata_dst" ] || rm -f -- "$metadata_dst" 2>/dev/null || true
+      # Keep the note and its external mapping (announced=0) so a replay of
+      # the same source/external-id re-announces the original note instead of
+      # creating a duplicate.
+      printf '  announcement FAILED; replay the same source/external-id to retry. Note stays at %s/%s.note.\n' "$INBOX" "$id" >&2
       fm_lock_release "$lock"
       lock_held=0
       trap - RETURN

@@ -12,6 +12,7 @@ HOME1="$TMP_ROOT/home1"
 HOME2="$TMP_ROOT/home2"
 HOME3="$TMP_ROOT/home3"
 HOME4="$TMP_ROOT/home4"
+HOME5="$TMP_ROOT/home5"
 
 pe() { FM_HOME="$1" "$ROOT/bin/fm-procevent.sh" "${@:2}"; }
 ped() { FM_HOME="$1" "$ROOT/bin/fm-procevent-discord-workspace.sh" "${@:2}"; }
@@ -21,6 +22,7 @@ cleanup_procevent_discord() {
   pe "$HOME2" sweep-home >/dev/null 2>&1 || true
   pe "$HOME3" sweep-home >/dev/null 2>&1 || true
   pe "$HOME4" sweep-home >/dev/null 2>&1 || true
+  pe "$HOME5" sweep-home >/dev/null 2>&1 || true
   fm_test_cleanup
 }
 trap cleanup_procevent_discord EXIT
@@ -482,3 +484,35 @@ assert_grep "Discord CDN allowlist" "$NOTE3" "bad audio refusal names the failed
 assert_grep "caption: Keep this rejected audio caption." "$NOTE3" "rejected audio note preserves its text caption"
 assert_not_contains "$(cat "$NOTE3")" "do-not-print" "bad audio note does not leak secret material"
 pass "audio intake rejects non-Discord CDN URLs with a durable non-secret note"
+
+# --- forum child threads route through their verified configured parent ----
+CFG5="$HOME5/config/discord-workspace.json"
+make_config "$HOME5" "$CFG5"
+python3 - "$CFG5" <<'PY'
+import json, sys
+p = sys.argv[1]
+data = json.load(open(p))
+# Empty thread allowlists: forum posts must still enter via their parent forum.
+data["profiles"]["proapplis"]["thread_ids"]["exchange"] = []
+data["profiles"]["proapplis"]["thread_ids"]["artifacts"] = []
+json.dump(data, open(p, "w"), indent=2, sort_keys=True)
+PY
+
+FIXTURE5="$TMP_ROOT/forum-childs.json"
+cat > "$FIXTURE5" <<'JSON'
+{
+  "messages": [
+    {"id":"888888888888888771","guild_id":"111111111111111111","channel_id":"777777777777777771","parent_id":"777777777777777772","author":{"id":"444444444444444444"},"content":"Forum child exchange request."},
+    {"id":"888888888888888772","guild_id":"111111111111111111","channel_id":"777777777777777772","author":{"id":"444444444444444444"},"content":"forum root input"},
+    {"id":"888888888888888773","guild_id":"111111111111111111","channel_id":"777777777777777775","parent_id":"777777777777777772","author":{"id":"444444444444444444"},"content":"wrong-forum parent"},
+    {"id":"888888888888888774","guild_id":"111111111111111111","channel_id":"777777777777777776","parent_id":"777777777777777773","author":{"id":"444444444444444444"},"content":"artifact forum child"}
+  ]
+}
+JSON
+out=$(FM_DISCORD_WORKSPACE_FIXTURE="$FIXTURE5" ped "$HOME5" source --config "$CFG5")
+assert_contains "$out" "Forum child exchange request." \
+  "a verified forum child thread enters its exchange lane without a pre-allowlisted id"
+assert_not_contains "$out" "forum root input" "the forum channel itself is not accepted as a lane"
+assert_not_contains "$out" "wrong-forum parent" "a child of another profile's forum stays out"
+assert_not_contains "$out" "artifact forum child" "artifact forum children stay out of exchange intake"
+pass "forum child threads route by their verified configured parent forum"

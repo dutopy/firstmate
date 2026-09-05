@@ -613,6 +613,20 @@ class WorkspaceConfig:
                 if parent_id and parent_id != p["artifact_forum_id"]:
                     return None
                 return key, "artifact", p["artifact_forum_id"]
+        # A Discord forum post arrives as a newly created child thread whose
+        # parent is the configured forum, so a verified parent link admits the
+        # thread under the same guild/profile/forum allowlists even when its
+        # id is not pre-allowlisted. Explicit allowlist entries above always
+        # win, and the thread must be a plain snowflake distinct from the
+        # forum itself.
+        if parent_id and ID_RE.fullmatch(channel_id):
+            for key, p in self.profiles.items():
+                if channel_id in (p["exchange_forum_id"], p["artifact_forum_id"]):
+                    return None
+                if parent_id == p["exchange_forum_id"]:
+                    return key, "exchange", p["exchange_forum_id"]
+                if parent_id == p["artifact_forum_id"]:
+                    return key, "artifact", p["artifact_forum_id"]
         return None
 
     def profile_for_request_id(self, request_id: str) -> Tuple[str, str, str, str, str]:
