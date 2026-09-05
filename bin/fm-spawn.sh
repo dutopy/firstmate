@@ -806,7 +806,7 @@ parse_orca_worktree_result() {
 }
 
 spawn_abort_cleanup() {
-  local status=$? candidate_state candidate_phase= rollback_ready=1 rollback_launch_attempt=0
+  local status=$? candidate_state candidate_phase='' rollback_ready=1 rollback_launch_attempt=0
   if [ -n "$HERDR_RELAUNCH_CANDIDATE_PANE_ID" ] \
      && herdr_relaunch_candidate_is_authoritative; then
     HERDR_RELAUNCH_CANDIDATE_CLEANUP=0
@@ -1371,8 +1371,12 @@ herdr_relaunch_launch_provenance_restore() {
         mkdir -p "$(dirname "$path")" || return 1
         [ ! -d "$path" ] || return 1
         tmp="$path.relaunch-adopt.${BASHPID:-$$}"
-        cp -p "$dir/$index" "$tmp" && rm -f "$path" && mv "$tmp" "$path" \
-          || { rm -f "$tmp"; return 1; }
+        if ! cp -p "$dir/$index" "$tmp" \
+          || ! rm -f "$path" \
+          || ! mv "$tmp" "$path"; then
+          rm -f "$tmp"
+          return 1
+        fi
         cmp -s "$dir/$index" "$path" || status=1
         ;;
       absent)
@@ -3392,14 +3396,14 @@ exclude_path() {
 }
 if [ "$RELAUNCH" -eq 1 ]; then
   if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
-    snapshot_relaunch_wiring \
-      "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$STATE_REAL" "$ID" \
-      && persist_relaunch_wiring_snapshot \
-      && herdr_relaunch_candidate_record_write wiring-snapshotted \
-        "candidate_label=$HERDR_RELAUNCH_LABEL" "candidate_state=agent-free" || {
+    if ! snapshot_relaunch_wiring \
+        "$RELAUNCH_PRIOR_HARNESS" "$HARNESS" "$WT" "$STATE_REAL" "$ID" \
+      || ! persist_relaunch_wiring_snapshot \
+      || ! herdr_relaunch_candidate_record_write wiring-snapshotted \
+        "candidate_label=$HERDR_RELAUNCH_LABEL" "candidate_state=agent-free"; then
       echo "error: could not persist $RELAUNCH_PRIOR_HARNESS wiring before the transactional Herdr replacement" >&2
       exit 1
-    }
+    fi
   else
     # Reused-endpoint backends retain the established behavior: retire the old
     # wiring before arming the replacement. Herdr snapshots instead because its
@@ -4041,12 +4045,12 @@ fi
 sleep 0.3
 if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
   if [ "$HERDR_RELAUNCH_CANDIDATE" = 1 ]; then
-    herdr_relaunch_launch_provenance_persist \
-      && herdr_relaunch_candidate_record_write launch-attempt \
-        "candidate_label=$HERDR_RELAUNCH_LABEL" "candidate_state=launch-submitting" || {
+    if ! herdr_relaunch_launch_provenance_persist \
+      || ! herdr_relaunch_candidate_record_write launch-attempt \
+        "candidate_label=$HERDR_RELAUNCH_LABEL" "candidate_state=launch-submitting"; then
       echo "error: could not persist Herdr replacement launch provenance before command submission" >&2
       exit 1
-    }
+    fi
     LAUNCH="umask 077; : > $(shell_quote "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/launch/launch-receipt") && { $LAUNCH; }"
   fi
   # Freeze and revalidate the prepared shell before atomically queueing the
