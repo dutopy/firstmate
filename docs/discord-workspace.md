@@ -91,9 +91,10 @@ The default direct attachment cap is 8 MiB and cannot exceed Discord's documente
 Allowed direct types are UTF-8 Markdown or text, PNG, JPEG, GIF, WebP, and generated PDF files.
 The artifact helper blocks secret-looking names, archives, databases, dumps, raw logs, credential files, unknown MIME types, MIME mismatches, files under `projects/`, directories, symlinks, and files outside configured allowed roots.
 Client-confidential artifacts are blocked unless config opts in and the command carries explicit captain approval for that file.
-The canonical artifact plan posts the binary or private URL only in the artifacts forum.
+The `artifact` command accepts only direct attachments and posts the binary only in the artifacts forum.
 The exchange plan receives only a summary card and link.
-For larger or interactive artifacts, use `publish-artifact` with a private HTTPS URL, an access mode, and an expiry.
+For larger artifacts or validated HTML boards, use the single protected `publish-artifact` path with a private HTTPS URL, an access mode, and an expiry.
+HTML is never accepted as a direct Discord attachment.
 The helper records source digest, policy, destination, and revocation metadata but does not operate the private publication host in this phase.
 
 ## Audio and transcription

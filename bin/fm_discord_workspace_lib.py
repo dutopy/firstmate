@@ -7,14 +7,19 @@ This module contains the shared parsing and planning logic so the outbound owner
 from __future__ import annotations
 
 import argparse
+import codecs
+from contextlib import contextmanager
 import datetime as _dt
+import fcntl
 import hashlib
 import json
+import math
 import mimetypes
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -40,10 +45,10 @@ DEFAULT_EXCHANGE_TAGS = ["request", "decision", "work", "status", "blocked", "do
 DEFAULT_ARTIFACT_TAGS = ["report", "board", "document", "image", "audio", "draft", "final", "expired"]
 DEFAULT_CDN_HOSTS = ["cdn.discordapp.com", "media.discordapp.net", "media.discordapp.com"]
 VOICE_MESSAGE_FLAG = 1 << 13
-STEADY_PERMISSION = 101376
-STEADY_THREADS_PERMISSION = 274878008320
-SETUP_PERMISSION = 268536848
-SETUP_THREADS_PERMISSION = 275146443792
+STEADY_PERMISSION = 117760
+STEADY_THREADS_PERMISSION = 274878024704
+SETUP_PERMISSION = 268553232
+SETUP_THREADS_PERMISSION = 275146460176
 DIRECT_ATTACHMENT_MAX = 8 * 1024 * 1024
 AUDIO_MAX_BYTES = 25 * 1024 * 1024
 AUDIO_MAX_DURATION_SECS = 600
@@ -65,6 +70,7 @@ BLOCKED_EXTENSIONS = {
     ".p12", ".pfx", ".key", ".crt", ".cer",
 }
 ALLOWED_TEXT_EXTENSIONS = {".md", ".markdown", ".txt"}
+PROTECTED_TEXT_EXTENSIONS = {".html", ".htm"}
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 ALLOWED_DOCUMENT_EXTENSIONS = {".pdf"}
 ALLOWED_DIRECT_EXTENSIONS = ALLOWED_TEXT_EXTENSIONS | ALLOWED_IMAGE_EXTENSIONS | ALLOWED_DOCUMENT_EXTENSIONS
@@ -92,11 +98,40 @@ class Env:
 
     @property
     def discord_state(self) -> Path:
-        return self.state / "discord-workspace"
+        path = self.state / "discord-workspace"
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
+            raise FMError(f"Discord state root is unsafe: {path}")
+        try:
+            path.resolve().relative_to(self.state)
+        except ValueError as exc:
+            raise FMError(f"Discord state root is outside the configured state directory: {path}") from exc
+        return path
 
     @property
     def inbox(self) -> Path:
         return self.state / "inbox"
+
+
+def discord_state_path(env: Env, *parts: str) -> Path:
+    root = env.discord_state
+    for part in parts:
+        if any(component in (".", "..") for component in str(part).split(os.sep)):
+            raise FMError("Discord state path contains a dot component")
+    path = root.joinpath(*parts)
+    try:
+        relative_parts = path.relative_to(root).parts
+    except ValueError as exc:
+        raise FMError(f"Discord state path is outside the state root: {path}") from exc
+    current = root
+    for part in relative_parts:
+        current /= part
+        if current.is_symlink():
+            raise FMError(f"Discord state path has a symlink component: {current}")
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise FMError(f"Discord state path resolves outside the state root: {path}") from exc
+    return path
 
 
 def die(message: str, code: int = 1) -> None:
@@ -245,6 +280,8 @@ def extract_profile(raw_profiles: Dict[str, Any], key: str) -> Dict[str, Any]:
 def thread_ids_for(profile: Dict[str, Any], kind: str, field_prefix: str) -> List[str]:
     raw = None
     threads = profile.get("thread_ids")
+    if "thread_ids" in profile and not isinstance(threads, dict):
+        raise FMError(f"{field_prefix}.thread_ids must be a JSON object")
     if isinstance(threads, dict) and kind in threads:
         raw = threads[kind]
     if raw is None:
@@ -261,6 +298,14 @@ def thread_ids_for(profile: Dict[str, Any], kind: str, field_prefix: str) -> Lis
     return out
 
 
+def validate_positive_json_integer(value: Any, path: str, maximum: Optional[int] = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise FMError(f"{path} must be a positive JSON integer")
+    if maximum is not None and value > maximum:
+        raise FMError(f"{path} must be no more than {maximum}")
+    return value
+
+
 def maybe_id(profile: Dict[str, Any], *names: str) -> Any:
     for name in names:
         if name in profile:
@@ -268,20 +313,87 @@ def maybe_id(profile: Dict[str, Any], *names: str) -> Any:
     return None
 
 
-INLINE_SECRET_KEYS = {"token", "bot_token", "discord_bot_token", "groq_api_key", "api_key_value", "secret", "password", "client_secret"}
+SECRET_VALUE_KEY_RE = re.compile(
+    r"(?:^|_)(?:token|tokens|password|passwords|credential|credentials|secret|secrets|client_secret|api_key)(?:$|_)"
+)
+SECRET_REFERENCE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+SECRET_REFERENCE_PATHS = {
+    "config.discord_bot_token_key",
+    "config.transcription.discord_bot_token_key",
+    "config.transcription.api_key",
+    "config.transcription.api_key_name",
+    "config.secret_file",
+    "config.secrets_file",
+    "config.transcription.secret_file",
+    "config.transcription.secrets_file",
+}
 
 
 def reject_inline_secret_values(value: Any, path: str = "config") -> None:
     if isinstance(value, dict):
         for key, child in value.items():
             key_text = str(key)
-            lowered = key_text.lower().replace("-", "_")
-            if lowered in INLINE_SECRET_KEYS:
-                raise FMError(f"{path}.{key_text} appears to contain an inline secret; store only secret file paths and key names")
-            reject_inline_secret_values(child, f"{path}.{key_text}")
+            child_path = f"{path}.{key_text}"
+            normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key_text).lower().replace("-", "_")
+            if child_path not in SECRET_REFERENCE_PATHS and SECRET_VALUE_KEY_RE.search(normalized):
+                raise FMError(f"{child_path} appears to contain an inline secret; store only secret file paths and key names")
+            reject_inline_secret_values(child, child_path)
     elif isinstance(value, list):
         for index, child in enumerate(value):
             reject_inline_secret_values(child, f"{path}[{index}]")
+
+
+def validate_secret_file_reference(value: Any, path: str, home: Path) -> None:
+    if not isinstance(value, str):
+        raise FMError(f"{path} must be a normalized secret file reference under config/")
+    parts = value.split("/")
+    if (
+        Path(value).is_absolute()
+        or len(parts) < 2
+        or parts[0] != "config"
+        or any(part in ("", ".", "..") for part in parts)
+        or not value.endswith(".sops.yaml")
+    ):
+        raise FMError(f"{path} must be a normalized .sops.yaml secret file reference under config/")
+    home_root = home.resolve()
+    config_root = (home / "config").resolve()
+    candidate = (home / value).resolve()
+    try:
+        config_root.relative_to(home_root)
+        candidate.relative_to(config_root)
+    except ValueError as exc:
+        raise FMError(f"{path} secret file reference must not escape the config directory through symlinks") from exc
+
+
+def validate_secret_reference_fields(cfg: Dict[str, Any], home: Path) -> None:
+    tx = cfg.get("transcription") if isinstance(cfg.get("transcription"), dict) else {}
+    name_fields = [
+        (cfg, "discord_bot_token_key", "discord_bot_token_key"),
+        (tx, "discord_bot_token_key", "transcription.discord_bot_token_key"),
+        (tx, "api_key", "transcription.api_key"),
+        (tx, "api_key_name", "transcription.api_key_name"),
+    ]
+    for owner, key, path in name_fields:
+        if key in owner and (not isinstance(owner[key], str) or not SECRET_REFERENCE_RE.fullmatch(owner[key])):
+            raise FMError(f"{path} must be an uppercase secret reference name")
+    file_fields = [
+        (cfg, "secret_file", "secret_file"),
+        (cfg, "secrets_file", "secrets_file"),
+        (tx, "secret_file", "transcription.secret_file"),
+        (tx, "secrets_file", "transcription.secrets_file"),
+    ]
+    for owner, key, path in file_fields:
+        if key in owner:
+            validate_secret_file_reference(owner[key], path, home)
+
+
+def config_object_section(cfg: Dict[str, Any], name: str) -> Dict[str, Any]:
+    value = cfg.get(name)
+    if value is None and name not in cfg:
+        return {}
+    if not isinstance(value, dict):
+        raise FMError(f"{name} must be a JSON object")
+    return value
 
 
 def config_secret_references(cfg: Dict[str, Any]) -> List[str]:
@@ -289,26 +401,31 @@ def config_secret_references(cfg: Dict[str, Any]) -> List[str]:
     tx = cfg.get("transcription") if isinstance(cfg.get("transcription"), dict) else {}
     secret_file = cfg.get("secret_file") or cfg.get("secrets_file") or tx.get("secret_file") or tx.get("secrets_file")
     if isinstance(secret_file, str) and secret_file:
-        refs.append(f"secret file: {secret_file}")
+        refs.append("secret file reference: configured")
     token_key = cfg.get("discord_bot_token_key") or tx.get("discord_bot_token_key")
     if isinstance(token_key, str) and token_key:
-        refs.append(f"Discord bot token key: {token_key}")
+        refs.append("Discord bot token reference: configured")
     api_key = tx.get("api_key") or tx.get("api_key_name")
     if isinstance(api_key, str) and api_key:
-        refs.append(f"transcription key name: {api_key}")
+        refs.append("transcription key reference: configured")
     return refs
 
 
 class WorkspaceConfig:
-    def __init__(self, path: Path, raw: Dict[str, Any]):
+    def __init__(self, path: Path, raw: Dict[str, Any], home: Path):
         self.path = path
         self.raw = raw
         reject_inline_secret_values(raw)
+        sections = {
+            name: config_object_section(raw, name)
+            for name in ("guild", "bot", "tags", "approvals", "live", "outbound", "artifacts", "audio", "transcription", "poll")
+        }
+        validate_secret_reference_fields(raw, home)
         schema = raw.get("schema", SCHEMA)
         if schema != SCHEMA:
             raise FMError(f"unsupported config schema: {schema}")
-        guild_obj = raw.get("guild") if isinstance(raw.get("guild"), dict) else {}
-        bot_obj = raw.get("bot") if isinstance(raw.get("bot"), dict) else {}
+        guild_obj = sections["guild"]
+        bot_obj = sections["bot"]
         self.guild_id = validate_snowflake(raw.get("guild_id") or guild_obj.get("id"), "guild.id") or ""
         self.bot_application_id = validate_snowflake(
             raw.get("bot_application_id") or bot_obj.get("application_id"),
@@ -326,7 +443,7 @@ class WorkspaceConfig:
             raise FMError("captain_user_ids must contain at least one captain Discord user id")
         if "disabled_profiles" in raw:
             raise FMError("disabled_profiles is unsupported; configure only the three active profiles")
-        tags_obj = raw.get("tags") if isinstance(raw.get("tags"), dict) else {}
+        tags_obj = sections["tags"]
         self.exchange_tags = validate_tags(tags_obj.get("exchange"), DEFAULT_EXCHANGE_TAGS, "tags.exchange")
         self.artifact_tags = validate_tags(tags_obj.get("artifacts", tags_obj.get("artifact")), DEFAULT_ARTIFACT_TAGS, "tags.artifacts")
         self.profiles: Dict[str, Dict[str, Any]] = {}
@@ -390,40 +507,89 @@ class WorkspaceConfig:
                 "exchange_forum_name": p.get("exchange_forum_name") or f"{key}-exchanges",
                 "artifact_forum_name": p.get("artifact_forum_name") or f"{key}-artifacts",
             }
-        approvals = raw.get("approvals") if isinstance(raw.get("approvals"), dict) else {}
-        live = raw.get("live") if isinstance(raw.get("live"), dict) else {}
+        approvals = sections["approvals"]
+        live = sections["live"]
         self.message_content_enabled = bool_from_path(raw, ["message_content", "message_content_intent", "approvals.message_content", "live.message_content"], False)
         self.live_posting_enabled = bool_from_path(raw, ["live_posting", "approvals.live_posting", "outbound.live_posting", "live.posting"], False)
         self.live_polling_enabled = bool_from_path(raw, ["live_polling", "approvals.live_polling", "live.polling"], False)
         self.temporary_setup_permissions = bool_from_path(raw, ["temporary_setup_permissions", "approvals.temporary_setup_permissions", "live.temporary_setup_permissions"], False)
         self.community_mode_required = bool_from_path(raw, ["community_mode_required", "approvals.community_mode_required", "live.community_mode_required"], False)
-        self.host_choice = str(raw.get("host") or live.get("host") or approvals.get("host") or "disabled")
-        outbound = raw.get("outbound") if isinstance(raw.get("outbound"), dict) else {}
+        host_values = []
+        for label, container in (("host", raw), ("live.host", live), ("approvals.host", approvals)):
+            if label.rsplit(".", 1)[-1] in container:
+                value = container[label.rsplit(".", 1)[-1]]
+                if not isinstance(value, str) or value not in ("disabled", "none", "dry-run", "omarchy", "vps"):
+                    raise FMError(f"{label} must be disabled, none, dry-run, omarchy, or vps")
+                host_values.append(value)
+        self.host_choice = host_values[0] if host_values else "disabled"
+        outbound = sections["outbound"]
         self.final_replies_required = validate_bool(outbound.get("final_replies_required", True), "outbound.final_replies_required", default=True)
-        artifacts = raw.get("artifacts") if isinstance(raw.get("artifacts"), dict) else {}
-        self.artifact_access = str(artifacts.get("access") or artifacts.get("access_mode") or "disabled")
-        self.artifact_default_expiry = str(artifacts.get("default_expiry") or "7d")
+        artifacts = sections["artifacts"]
+        artifact_access_values = []
+        for key in ("access", "access_mode"):
+            if key in artifacts:
+                value = artifacts[key]
+                if not isinstance(value, str) or value not in ("disabled", "tailnet", "cloudflare-access", "local"):
+                    raise FMError(f"artifacts.{key} must be disabled, tailnet, cloudflare-access, or local")
+                artifact_access_values.append(value)
+        self.artifact_access = artifact_access_values[0] if artifact_access_values else "disabled"
+        self.artifact_default_expiry = str(artifacts.get("default_expiry", "7d"))
+        if not re.fullmatch(r"[1-9][0-9]*[dh]", self.artifact_default_expiry):
+            raise FMError("artifacts.default_expiry must be a positive duration like 7d or 24h")
         self.client_confidential_allowed = validate_bool(artifacts.get("client_confidential_allowed", False), "artifacts.client_confidential_allowed", default=False)
-        self.direct_attachment_max_bytes = int(artifacts.get("direct_attachment_max_bytes", DIRECT_ATTACHMENT_MAX))
-        if self.direct_attachment_max_bytes <= 0 or self.direct_attachment_max_bytes > 10 * 1024 * 1024:
-            raise FMError("artifacts.direct_attachment_max_bytes must be positive and no more than 10 MiB in this phase")
+        self.direct_attachment_max_bytes = validate_positive_json_integer(
+            artifacts.get("direct_attachment_max_bytes", DIRECT_ATTACHMENT_MAX),
+            "artifacts.direct_attachment_max_bytes",
+            10 * 1024 * 1024,
+        )
         allowed_roots_raw = artifacts.get("allowed_roots", ["data"])
-        self.allowed_roots = [str(x) for x in as_list(allowed_roots_raw, "artifacts.allowed_roots")]
-        audio = raw.get("audio") if isinstance(raw.get("audio"), dict) else {}
-        self.audio_max_bytes = int(audio.get("max_bytes", AUDIO_MAX_BYTES))
-        self.audio_max_duration_secs = float(audio.get("max_duration_secs", AUDIO_MAX_DURATION_SECS))
+        self.allowed_roots = []
+        for index, value in enumerate(as_list(allowed_roots_raw, "artifacts.allowed_roots")):
+            label = f"artifacts.allowed_roots[{index}]"
+            if not isinstance(value, str) or not value.strip():
+                raise FMError(f"{label} must be a non-empty JSON string")
+            if any(ord(character) < 32 for character in value):
+                raise FMError(f"{label} has an unsupported root form")
+            try:
+                root_path = Path(value).expanduser()
+            except (RuntimeError, ValueError) as exc:
+                raise FMError(f"{label} has an unsupported root form") from exc
+            if not root_path.parts or any(part in (".", "..") for part in root_path.parts):
+                raise FMError(f"{label} has an unsupported root form")
+            self.allowed_roots.append(value)
+        audio = sections["audio"]
+        self.audio_max_bytes = validate_positive_json_integer(
+            audio.get("max_bytes", AUDIO_MAX_BYTES), "audio.max_bytes"
+        )
+        max_duration = audio.get("max_duration_secs", AUDIO_MAX_DURATION_SECS)
+        if isinstance(max_duration, bool) or not isinstance(max_duration, (int, float)):
+            raise FMError("audio.max_duration_secs must be a positive finite number encoded as a JSON number")
+        self.audio_max_duration_secs = float(max_duration)
+        if not math.isfinite(self.audio_max_duration_secs) or self.audio_max_duration_secs <= 0:
+            raise FMError("audio.max_duration_secs must be a positive finite number encoded as a JSON number")
         self.audio_delete_raw = validate_bool(audio.get("delete_temporary_raw", audio.get("delete_raw", True)), "audio.delete_temporary_raw", default=True)
-        self.cdn_hosts = [str(x).lower() for x in as_list(audio.get("allowed_cdn_hosts", DEFAULT_CDN_HOSTS), "audio.allowed_cdn_hosts")]
+        self.cdn_hosts = []
+        seen_cdn_hosts = set()
+        for index, value in enumerate(as_list(audio.get("allowed_cdn_hosts", DEFAULT_CDN_HOSTS), "audio.allowed_cdn_hosts")):
+            label = f"audio.allowed_cdn_hosts[{index}]"
+            if not isinstance(value, str) or not value or value != value.lower() or len(value) > 253:
+                raise FMError(f"{label} must be a normalized lowercase hostname")
+            hostname_labels = value.split(".")
+            if any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", part) for part in hostname_labels):
+                raise FMError(f"{label} must be a normalized lowercase hostname")
+            if value in seen_cdn_hosts:
+                raise FMError(f"{label} duplicates an earlier hostname")
+            seen_cdn_hosts.add(value)
+            self.cdn_hosts.append(value)
         if not self.cdn_hosts:
             raise FMError("audio.allowed_cdn_hosts must not be empty")
-        transcription = raw.get("transcription") if isinstance(raw.get("transcription"), dict) else {}
+        transcription = sections["transcription"]
         self.transcription = transcription
-        self.transcription_provider = str(transcription.get("provider") or "disabled")
+        provider = transcription.get("provider", "disabled")
+        if not isinstance(provider, str) or provider not in ("disabled", "fake", "groq"):
+            raise FMError("transcription.provider must be disabled, fake, or groq")
+        self.transcription_provider = provider
         self.hosted_groq_enabled = self.transcription_provider == "groq" or bool_from_path(raw, ["hosted_groq", "approvals.hosted_groq", "transcription.hosted_groq"], False)
-        if self.host_choice not in ("disabled", "none", "dry-run", "omarchy", "vps"):
-            raise FMError("host must be disabled, omarchy, or vps")
-        if self.artifact_access not in ("disabled", "tailnet", "cloudflare-access", "local"):
-            raise FMError("artifacts.access must be disabled, tailnet, cloudflare-access, or local")
 
     @classmethod
     def load(cls, env: Env, path_text: Optional[str]) -> "WorkspaceConfig":
@@ -431,7 +597,7 @@ class WorkspaceConfig:
         if not path.is_absolute():
             path = (Path.cwd() / path).resolve()
         raw = read_json(path)
-        return cls(path.resolve(), raw)
+        return cls(path.resolve(), raw, env.home)
 
     def profile_for_channel(self, channel_id: str, parent_id: Optional[str] = None, *, allow_forums: bool = False) -> Optional[Tuple[str, str, str]]:
         for key, p in self.profiles.items():
@@ -630,15 +796,81 @@ def cmd_health(args: argparse.Namespace, env: Env) -> int:
     return 0
 
 
+@contextmanager
+def open_regular_readonly(path: Path, label: str) -> Iterable[Tuple[int, os.stat_result]]:
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise FMError(f"refusing unsafe {label}: {path}") from exc
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise FMError(f"refusing unsafe {label}: {path}")
+        yield fd, before
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def open_regular_under_root(root: Path, relative: Path, label: str) -> Iterable[Tuple[int, os.stat_result]]:
+    parts = relative.parts
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        raise FMError(f"refusing unsafe {label}: {root / relative}")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptors = []
+    try:
+        current = os.open(root, directory_flags)
+        descriptors.append(current)
+        for part in parts[:-1]:
+            current = os.open(part, directory_flags, dir_fd=current)
+            descriptors.append(current)
+        fd = os.open(parts[-1], os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=current)
+        descriptors.append(fd)
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise FMError(f"refusing unsafe {label}: {root / relative}")
+        yield fd, before
+    except OSError as exc:
+        raise FMError(f"refusing unsafe {label}: {root / relative}") from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def descriptor_unchanged(before: os.stat_result, after: os.stat_result, bytes_read: int) -> bool:
+    return (
+        before.st_dev == after.st_dev
+        and before.st_ino == after.st_ino
+        and before.st_size == after.st_size == bytes_read
+        and before.st_mtime_ns == after.st_mtime_ns
+        and before.st_ctime_ns == after.st_ctime_ns
+    )
+
+
 def read_text_file(path_text: str, max_bytes: int = 4000) -> str:
-    path = Path(path_text).expanduser()
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-    if path.is_symlink() or not path.is_file():
-        raise FMError(f"refusing unsafe text file: {path}")
-    data = path.read_bytes()
+    supplied = Path(path_text).expanduser()
+    path = supplied if supplied.is_absolute() else Path.cwd() / supplied
+    for component in (path, *path.parents):
+        if component.is_symlink():
+            raise FMError(f"refusing unsafe text file: {path}")
+    with open_regular_readonly(path, "text file") as (fd, before):
+        if before.st_size > max_bytes:
+            raise FMError(f"text file is too large for a Discord phase-1 message: {path}")
+        chunks = []
+        remaining = max_bytes + 1
+        while remaining:
+            chunk = os.read(fd, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        after = os.fstat(fd)
     if len(data) > max_bytes:
         raise FMError(f"text file is too large for a Discord phase-1 message: {path}")
+    if not descriptor_unchanged(before, after, len(data)):
+        raise FMError(f"text file changed while being read: {path}")
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -653,7 +885,7 @@ def read_text_file(path_text: str, max_bytes: int = 4000) -> str:
 
 
 def receipt_path(env: Env, nonce: str) -> Path:
-    return safe_digest_path(env.discord_state / "receipts", nonce)
+    return discord_state_path(env, "receipts", f"{sha256_text(nonce)}.json")
 
 
 def load_existing_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -661,28 +893,65 @@ def load_existing_json(path: Path) -> Optional[Dict[str, Any]]:
         return None
     if path.is_symlink() or not path.is_file():
         raise FMError(f"refusing unsafe state path: {path}")
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise FMError(f"state file is malformed: {path}") from exc
     if not isinstance(data, dict):
         raise FMError(f"state file is malformed: {path}")
     return data
 
 
-def record_receipt(env: Env, nonce: str, payload: Dict[str, Any], discord_message_id: str) -> str:
-    path = receipt_path(env, nonce)
-    existing = load_existing_json(path)
-    payload = dict(payload)
-    payload.update({"schema": RECEIPT_SCHEMA, "nonce": nonce, "discord_message_id": discord_message_id})
-    if existing:
-        comparable = dict(existing)
-        comparable.pop("recorded_at", None)
-        candidate = dict(payload)
-        if comparable == candidate:
-            return "receipt exists"
+@contextmanager
+def state_transaction(env: Env) -> Iterable[None]:
+    env.discord_state.mkdir(parents=True, exist_ok=True)
+    path = env.discord_state / ".state.lock"
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise FMError(f"cannot lock Discord workspace state: {path}") from exc
+    try:
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def receipt_record(nonce: str, payload: Dict[str, Any], discord_message_id: str) -> Dict[str, Any]:
+    record = dict(payload)
+    record.update({"schema": RECEIPT_SCHEMA, "nonce": nonce, "discord_message_id": discord_message_id})
+    return record
+
+
+def preflight_receipt(env: Env, nonce: str, payload: Dict[str, Any], discord_message_id: str) -> bool:
+    existing = load_existing_json(receipt_path(env, nonce))
+    if existing is None:
+        return False
+    comparable = dict(existing)
+    comparable.pop("recorded_at", None)
+    if comparable != receipt_record(nonce, payload, discord_message_id):
         raise FMError("refusing to overwrite a different Discord outbound receipt for the same nonce")
-    payload["recorded_at"] = utc_now()
-    atomic_json(path, payload)
+    return True
+
+
+def record_receipt_unlocked(env: Env, nonce: str, payload: Dict[str, Any], discord_message_id: str) -> str:
+    if preflight_receipt(env, nonce, payload, discord_message_id):
+        return "receipt exists"
+    stored = receipt_record(nonce, payload, discord_message_id)
+    stored["recorded_at"] = utc_now()
+    atomic_json(receipt_path(env, nonce), stored)
     return "receipt recorded"
+
+
+def record_receipt(env: Env, nonce: str, payload: Dict[str, Any], discord_message_id: str) -> str:
+    with state_transaction(env):
+        return record_receipt_unlocked(env, nonce, payload, discord_message_id)
 
 
 def base_receipt(kind: str, profile: str, target: Dict[str, Any], text_digest: str) -> Dict[str, Any]:
@@ -764,48 +1033,92 @@ def path_under(child: Path, parent: Path) -> bool:
         return False
 
 
-def sniff_mime(path: Path) -> str:
+def inspect_artifact(fd: int, before: os.stat_result, path: Path, *, allow_protected_html: bool, direct_limit: Optional[int]) -> Tuple[int, str, str]:
     ext = path.suffix.lower()
-    head = path.read_bytes()[:32]
-    if ext in ALLOWED_TEXT_EXTENSIONS:
-        data = path.read_bytes()
-        if b"\x00" in data:
-            raise FMError("text artifact contains a NUL byte")
-        try:
-            data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise FMError("text artifact must be UTF-8") from exc
-        return "text/markdown" if ext in {".md", ".markdown"} else "text/plain"
-    if ext == ".png":
+    if not (ext in ALLOWED_DIRECT_EXTENSIONS or (allow_protected_html and ext in PROTECTED_TEXT_EXTENSIONS)):
+        guessed, _ = mimetypes.guess_type(str(path))
+        raise FMError(f"unsupported artifact type: {guessed or ext or 'unknown'}")
+    if direct_limit is not None and before.st_size > direct_limit:
+        raise FMError("artifact exceeds the direct attachment cap")
+    decoder = None
+    text_label = ""
+    if allow_protected_html and ext in PROTECTED_TEXT_EXTENSIONS:
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        text_label = "HTML"
+    elif ext in ALLOWED_TEXT_EXTENSIONS:
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        text_label = "text"
+    digest = hashlib.sha256()
+    head = b""
+    leading = ""
+    started = False
+    total = 0
+    remaining = before.st_size + 1
+    try:
+        while remaining:
+            chunk = os.read(fd, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            total += len(chunk)
+            remaining -= len(chunk)
+            if direct_limit is not None and total > direct_limit:
+                raise FMError("artifact exceeds the direct attachment cap")
+            digest.update(chunk)
+            if len(head) < 32:
+                head += chunk[:32 - len(head)]
+            if decoder is not None:
+                if b"\x00" in chunk:
+                    raise FMError(f"{text_label} artifact contains a NUL byte")
+                text = decoder.decode(chunk)
+                if text_label == "HTML" and len(leading) < 15:
+                    if not started:
+                        text = text.lstrip()
+                        started = bool(text)
+                    if started:
+                        leading += text[:15 - len(leading)]
+        if decoder is not None:
+            decoder.decode(b"", final=True)
+    except UnicodeDecodeError as exc:
+        raise FMError(f"{text_label} artifact must be UTF-8") from exc
+    after = os.fstat(fd)
+    if not descriptor_unchanged(before, after, total):
+        raise FMError("artifact changed while being read")
+    if text_label == "HTML":
+        leading = leading.lower()
+        if not (leading.startswith("<!doctype html") or leading.startswith("<html")):
+            raise FMError("HTML extension does not match file bytes")
+        mime = "text/html"
+    elif text_label:
+        mime = "text/markdown" if ext in {".md", ".markdown"} else "text/plain"
+    elif ext == ".png":
         if not head.startswith(b"\x89PNG\r\n\x1a\n"):
             raise FMError("PNG extension does not match file bytes")
-        return "image/png"
-    if ext in {".jpg", ".jpeg"}:
+        mime = "image/png"
+    elif ext in {".jpg", ".jpeg"}:
         if not head.startswith(b"\xff\xd8"):
             raise FMError("JPEG extension does not match file bytes")
-        return "image/jpeg"
-    if ext == ".gif":
+        mime = "image/jpeg"
+    elif ext == ".gif":
         if not (head.startswith(b"GIF87a") or head.startswith(b"GIF89a")):
             raise FMError("GIF extension does not match file bytes")
-        return "image/gif"
-    if ext == ".webp":
+        mime = "image/gif"
+    elif ext == ".webp":
         if len(head) < 12 or head[:4] != b"RIFF" or head[8:12] != b"WEBP":
             raise FMError("WebP extension does not match file bytes")
-        return "image/webp"
-    if ext == ".pdf":
+        mime = "image/webp"
+    else:
         if not head.startswith(b"%PDF-"):
             raise FMError("PDF extension does not match file bytes")
-        return "application/pdf"
-    guessed, _ = mimetypes.guess_type(str(path))
-    raise FMError(f"unsupported artifact type: {guessed or ext or 'unknown'}")
+        mime = "application/pdf"
+    return total, mime, digest.hexdigest()
 
 
-def validate_artifact_file(env: Env, cfg: WorkspaceConfig, file_text: str, *, client_confidential: bool, approved_client_confidential: bool, require_direct: bool = False) -> Dict[str, Any]:
-    path = Path(file_text).expanduser()
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-    if path.is_symlink() or not path.is_file():
-        raise FMError(f"refusing unsafe artifact path: {path}")
+def validate_artifact_file(env: Env, cfg: WorkspaceConfig, file_text: str, *, client_confidential: bool, approved_client_confidential: bool, require_direct: bool = False, allow_protected_html: bool = False) -> Dict[str, Any]:
+    supplied = Path(file_text).expanduser()
+    path = supplied if supplied.is_absolute() else Path.cwd() / supplied
+    for component in (path, *path.parents):
+        if component.is_symlink():
+            raise FMError(f"refusing unsafe artifact path: {supplied}")
     resolved = path.resolve()
     if path_under(resolved, env.home / "projects"):
         raise FMError("artifact source under projects/ is blocked by default")
@@ -814,17 +1127,20 @@ def validate_artifact_file(env: Env, cfg: WorkspaceConfig, file_text: str, *, cl
     if SECRETISH_RE.search(name) or ext in BLOCKED_EXTENSIONS:
         raise FMError("artifact filename or extension is blocked by the default safety policy")
     roots = [root_for_name(env, item) for item in cfg.allowed_roots]
-    if not any(path_under(resolved, root) for root in roots):
+    allowed_root = next((root for root in roots if path_under(resolved, root)), None)
+    if allowed_root is None:
         raise FMError("artifact source is outside the configured allowed roots")
     if client_confidential and not (cfg.client_confidential_allowed and approved_client_confidential):
         raise FMError("client-confidential artifacts are blocked without explicit captain approval and config opt-in")
-    size = resolved.stat().st_size
-    mime = sniff_mime(resolved)
-    if ext not in ALLOWED_DIRECT_EXTENSIONS:
-        raise FMError("artifact extension is not allowed for phase-1 direct sharing")
-    if require_direct and size > cfg.direct_attachment_max_bytes:
-        raise FMError("artifact exceeds the direct attachment cap")
-    digest = sha256_file(resolved)
+    relative = resolved.relative_to(allowed_root)
+    with open_regular_under_root(allowed_root, relative, "artifact path") as (fd, before):
+        size, mime, digest = inspect_artifact(
+            fd,
+            before,
+            resolved,
+            allow_protected_html=allow_protected_html,
+            direct_limit=cfg.direct_attachment_max_bytes if require_direct else None,
+        )
     return {
         "path": str(resolved),
         "name": name,
@@ -843,7 +1159,7 @@ def artifact_id_for(info: Dict[str, Any], profile: str, purpose: str) -> str:
 def artifact_source_index_path(env: Env, source_sha256: str) -> Path:
     if not re.fullmatch(r"[0-9a-f]{64}", source_sha256):
         raise FMError("artifact source digest is invalid")
-    return env.discord_state / "artifact-source-index" / f"{source_sha256}.json"
+    return discord_state_path(env, "artifact-source-index", f"{source_sha256}.json")
 
 
 def write_artifact_source_index(env: Env, source_sha256: str, artifact_id: str, record: Dict[str, Any]) -> bool:
@@ -867,28 +1183,39 @@ def write_artifact_source_index(env: Env, source_sha256: str, artifact_id: str, 
     return True
 
 
-def write_artifact_record(env: Env, artifact_id: str, record: Dict[str, Any]) -> str:
-    path = env.discord_state / "artifacts" / f"{artifact_id}.json"
-    source = record.get("source") if isinstance(record.get("source"), dict) else {}
-    source_sha256 = str(source.get("sha256") or "")
+def preflight_artifact_record(env: Env, artifact_id: str, record: Dict[str, Any]) -> bool:
+    path = discord_state_path(env, "artifacts", f"{artifact_id}.json")
     existing = load_existing_json(path)
-    if existing:
+    if existing is not None:
         comparable = dict(existing)
         comparable.pop("recorded_at", None)
-        candidate = dict(record)
-        if comparable == candidate:
-            if source_sha256:
-                write_artifact_source_index(env, source_sha256, artifact_id, record)
-            return "artifact record exists"
-        raise FMError("refusing to overwrite a different artifact record")
+        if comparable != record:
+            raise FMError("refusing to overwrite a different artifact record")
+    source = record.get("source") if isinstance(record.get("source"), dict) else {}
+    source_sha256 = str(source.get("sha256") or "")
+    if source_sha256:
+        index = load_existing_json(artifact_source_index_path(env, source_sha256))
+        if index is not None and str(index.get("artifact_id") or "") != artifact_id:
+            raise FMError(f"artifact source already has a canonical artifact record: {index.get('artifact_id') or ''}")
+    return existing is not None
+
+
+def write_artifact_record_unlocked(env: Env, artifact_id: str, record: Dict[str, Any]) -> str:
+    exists = preflight_artifact_record(env, artifact_id, record)
+    source = record.get("source") if isinstance(record.get("source"), dict) else {}
+    source_sha256 = str(source.get("sha256") or "")
+    if exists:
+        if source_sha256:
+            write_artifact_source_index(env, source_sha256, artifact_id, record)
+        return "artifact record exists"
     created_index = False
     index_path = artifact_source_index_path(env, source_sha256) if source_sha256 else None
     if source_sha256:
         created_index = write_artifact_source_index(env, source_sha256, artifact_id, record)
-    record = dict(record)
-    record["recorded_at"] = utc_now()
+    stored = dict(record)
+    stored["recorded_at"] = utc_now()
     try:
-        atomic_json(path, record)
+        atomic_json(discord_state_path(env, "artifacts", f"{artifact_id}.json"), stored)
     except Exception:
         if created_index and index_path is not None:
             try:
@@ -897,6 +1224,11 @@ def write_artifact_record(env: Env, artifact_id: str, record: Dict[str, Any]) ->
                 pass
         raise
     return "artifact record written"
+
+
+def write_artifact_record(env: Env, artifact_id: str, record: Dict[str, Any]) -> str:
+    with state_transaction(env):
+        return write_artifact_record_unlocked(env, artifact_id, record)
 
 
 def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
@@ -911,7 +1243,7 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
         args.file,
         client_confidential=args.client_confidential,
         approved_client_confidential=args.captain_approved_client_confidential,
-        require_direct=not bool(args.private_url),
+        require_direct=True,
     )
     profile = cfg.profiles[args.profile]
     if args.request_id:
@@ -923,10 +1255,6 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
         guild_id = cfg.guild_id
         exchange_channel_id = profile["exchange_forum_id"]
     artifact_id = artifact_id_for(info, args.profile, args.purpose)
-    if args.private_url:
-        args.private_url = validate_private_url(args.private_url)
-    if not info["direct_attachment"] and not args.private_url:
-        raise FMError("artifact exceeds the direct cap; use publish-artifact with a private expiring URL")
     target = {
         "guild_id": guild_id,
         "artifact_forum_id": profile["artifact_forum_id"],
@@ -941,7 +1269,6 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
         "purpose": args.purpose,
         "source": info,
         "target": target,
-        "private_url": args.private_url,
         "canonical_location": "artifacts-forum-post",
         "exchange_behavior": "summary-card-and-link-only",
         "duplicate_binary_in_exchange": False,
@@ -951,20 +1278,22 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
     print(f"canonical post forum: {profile['artifact_forum_id']}")
     print(f"canonical post tag: {args.purpose}")
     print(f"source file: {info['name']} {info['mime']} {info['size']} bytes sha256:{info['sha256']}")
-    if info["direct_attachment"]:
-        print("artifact transfer: direct attachment in the artifacts forum only")
-    else:
-        print("artifact transfer: private expiring link in the artifacts forum only")
+    print("artifact transfer: direct attachment in the artifacts forum only")
     print(f"exchange summary destination: {exchange_channel_id}")
     print("exchange summary includes a card and link only; it will not duplicate the binary.")
     print(f"allowed_mentions: {json.dumps({'parse': []}, sort_keys=True)}")
     print(f"nonce: {nonce}")
     if args.record_discord_message_id:
         msg_id = validate_snowflake(args.record_discord_message_id, "--record-discord-message-id") or ""
-        print(write_artifact_record(env, artifact_id, record))
         receipt = base_receipt("artifact", args.profile, target, info["sha256"])
         receipt["artifact_id"] = artifact_id
-        print(record_receipt(env, nonce, receipt, msg_id))
+        with state_transaction(env):
+            preflight_artifact_record(env, artifact_id, record)
+            preflight_receipt(env, nonce, receipt, msg_id)
+            artifact_result = write_artifact_record_unlocked(env, artifact_id, record)
+            receipt_result = record_receipt_unlocked(env, nonce, receipt, msg_id)
+        print(artifact_result)
+        print(receipt_result)
     else:
         print("dry-run only; no artifact record or Discord receipt was written.")
     return 0
@@ -987,7 +1316,8 @@ def cmd_publish_artifact(args: argparse.Namespace, env: Env) -> int:
         raise FMError("publish-artifact purpose must be in the configured artifact tag vocabulary")
     if args.access not in ("tailnet", "cloudflare-access", "local"):
         raise FMError("publish-artifact access must be tailnet, cloudflare-access, or local")
-    if not re.fullmatch(r"[1-9][0-9]*[dh]", args.expires):
+    expires = args.expires or cfg.artifact_default_expiry
+    if not re.fullmatch(r"[1-9][0-9]*[dh]", expires):
         raise FMError("publish-artifact --expires must be a duration like 7d or 24h")
     url = validate_private_url(args.url)
     info = validate_artifact_file(
@@ -997,6 +1327,7 @@ def cmd_publish_artifact(args: argparse.Namespace, env: Env) -> int:
         client_confidential=args.client_confidential,
         approved_client_confidential=args.captain_approved_client_confidential,
         require_direct=False,
+        allow_protected_html=True,
     )
     artifact_id = artifact_id_for(info, args.profile, args.purpose)
     record = {
@@ -1005,13 +1336,13 @@ def cmd_publish_artifact(args: argparse.Namespace, env: Env) -> int:
         "profile": args.profile,
         "purpose": args.purpose,
         "source": info,
-        "publication": {"url": url, "access": args.access, "expires": args.expires},
+        "publication": {"url": url, "access": args.access, "expires": expires},
         "canonical_location": "private-expiring-link",
     }
     print("Private artifact link plan (no network).")
     print(f"artifact id: {artifact_id}")
     print(f"access: {args.access}")
-    print(f"expires: {args.expires}")
+    print(f"expires: {expires}")
     print(f"url: {url}")
     print("revocation must be handled by the selected private publication host.")
     if args.record:
@@ -1022,30 +1353,48 @@ def cmd_publish_artifact(args: argparse.Namespace, env: Env) -> int:
 
 
 def request_record_path(env: Env, request_id: str) -> Path:
-    return safe_digest_path(env.discord_state / "requests", request_id)
+    return discord_state_path(env, "requests", f"{sha256_text(request_id)}.json")
 
 
 def task_link_path(env: Env, task_id: str) -> Path:
-    return env.discord_state / "task-links" / f"{task_id}.json"
+    return discord_state_path(env, "task-links", f"{task_id}.json")
 
 
 def pending_followup_path(env: Env, task_id: str) -> Path:
-    return env.discord_state / "pending-followups" / f"{task_id}.json"
+    return discord_state_path(env, "pending-followups", f"{task_id}.json")
+
+
+def preflight_same_or_absent(path: Path, data: Dict[str, Any], label: str) -> bool:
+    existing = load_existing_json(path)
+    if existing is None:
+        return False
+    comparable = dict(existing)
+    comparable.pop("recorded_at", None)
+    if comparable != data:
+        raise FMError(f"refusing to overwrite a different {label}")
+    return True
 
 
 def write_same_or_refuse(path: Path, data: Dict[str, Any], label: str) -> str:
-    existing = load_existing_json(path)
-    if existing:
-        comparable = dict(existing)
-        comparable.pop("recorded_at", None)
-        candidate = dict(data)
-        if comparable == candidate:
-            return f"{label} exists"
-        raise FMError(f"refusing to overwrite a different {label}")
-    data = dict(data)
-    data["recorded_at"] = utc_now()
-    atomic_json(path, data)
+    if preflight_same_or_absent(path, data, label):
+        return f"{label} exists"
+    stored = dict(data)
+    stored["recorded_at"] = utc_now()
+    atomic_json(path, stored)
     return f"{label} written"
+
+
+def canonical_request_record(request_id: str, guild_id: str, channel_id: str, message_id: str, profile: str) -> Dict[str, Any]:
+    return {
+        "schema": REQUEST_SCHEMA,
+        "request_id": request_id,
+        "guild_id": guild_id,
+        "channel_id": channel_id,
+        "message_id": message_id,
+        "profile": profile,
+        "origin": "discord-workspace",
+        "jump_url": discord_jump_url(guild_id, channel_id, message_id),
+    }
 
 
 def cmd_link_task(args: argparse.Namespace, env: Env) -> int:
@@ -1055,15 +1404,7 @@ def cmd_link_task(args: argparse.Namespace, env: Env) -> int:
     guild_id, channel_id, message_id, profile_key, forum_kind = cfg.profile_for_request_id(args.request_id)
     if forum_kind != "exchange":
         raise FMError("task links must originate from an exchange thread")
-    request = {
-        "schema": REQUEST_SCHEMA,
-        "request_id": args.request_id,
-        "guild_id": guild_id,
-        "channel_id": channel_id,
-        "message_id": message_id,
-        "profile": profile_key,
-        "origin": "discord-workspace",
-    }
+    request = canonical_request_record(args.request_id, guild_id, channel_id, message_id, profile_key)
     link = {
         "schema": TASK_LINK_SCHEMA,
         "task_id": args.task_id,
@@ -1071,20 +1412,82 @@ def cmd_link_task(args: argparse.Namespace, env: Env) -> int:
         "profile": profile_key,
         "final_followup_required": cfg.final_replies_required,
     }
-    print(write_same_or_refuse(request_record_path(env, args.request_id), request, "request record"))
-    print(write_same_or_refuse(task_link_path(env, args.task_id), link, "task link"))
-    if cfg.final_replies_required:
-        pending = {
-            "schema": PENDING_SCHEMA,
-            "task_id": args.task_id,
-            "request_id": args.request_id,
-            "profile": profile_key,
-            "status": "pending",
-        }
-        print(write_same_or_refuse(pending_followup_path(env, args.task_id), pending, "pending final follow-up"))
-    else:
-        print("final follow-up is not required by config")
+    pending = {
+        "schema": PENDING_SCHEMA,
+        "task_id": args.task_id,
+        "request_id": args.request_id,
+        "profile": profile_key,
+        "status": "pending",
+    }
+    request_path = request_record_path(env, args.request_id)
+    link_path = task_link_path(env, args.task_id)
+    pending_path = pending_followup_path(env, args.task_id)
+    with state_transaction(env):
+        preflight_same_or_absent(request_path, request, "request record")
+        preflight_same_or_absent(link_path, link, "task link")
+        delivered = False
+        if cfg.final_replies_required:
+            existing_pending = load_existing_json(pending_path)
+            if existing_pending is not None:
+                delivered = validate_followup_record(
+                    env, pending_path, existing_pending, args.task_id, args.request_id, profile_key
+                ) == "delivered"
+            if not delivered:
+                preflight_same_or_absent(pending_path, pending, "pending final follow-up")
+        request_result = write_same_or_refuse(request_path, request, "request record")
+        if cfg.final_replies_required and not delivered:
+            pending_result = write_same_or_refuse(pending_path, pending, "pending final follow-up")
+        elif delivered:
+            pending_result = "pending final follow-up already delivered"
+        else:
+            pending_result = "final follow-up is not required by config"
+        link_result = write_same_or_refuse(link_path, link, "task link")
+    print(request_result)
+    print(link_result)
+    print(pending_result)
     return 0
+
+
+def validate_followup_record(env: Env, path: Path, data: Dict[str, Any], task_id: str, request_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+    if data.get("schema") != PENDING_SCHEMA or data.get("task_id") != task_id:
+        raise FMError(f"pending final follow-up record is malformed or names the wrong task: {path}")
+    if request_id is not None and data.get("request_id") != request_id:
+        raise FMError(f"pending final follow-up record names the wrong request: {path}")
+    if profile is not None and data.get("profile") != profile:
+        raise FMError(f"pending final follow-up record names the wrong profile: {path}")
+    status = data.get("status")
+    if status == "pending":
+        return status
+    if status != "delivered":
+        raise FMError(f"pending final follow-up record has an unknown status: {path}")
+    nonce = data.get("receipt_nonce")
+    message_id = data.get("discord_message_id")
+    if not isinstance(nonce, str) or not nonce or not isinstance(message_id, str) or not ID_RE.fullmatch(message_id):
+        raise FMError(f"delivered final follow-up record has invalid evidence: {path}")
+    receipt = load_existing_json(receipt_path(env, nonce))
+    if not receipt or any((
+        receipt.get("schema") != RECEIPT_SCHEMA,
+        receipt.get("nonce") != nonce,
+        receipt.get("discord_message_id") != message_id,
+        receipt.get("task_id") != task_id,
+        receipt.get("kind") != "final-followup",
+    )):
+        raise FMError(f"delivered final follow-up record has invalid evidence: {path}")
+    return status
+
+
+def validate_task_link(path: Path, data: Dict[str, Any], task_id: str) -> Tuple[str, str]:
+    if data.get("schema") != TASK_LINK_SCHEMA or data.get("task_id") != task_id:
+        raise FMError(f"Discord workspace task link is malformed or names the wrong task: {path}")
+    request_id = data.get("request_id")
+    profile = data.get("profile")
+    if not isinstance(request_id, str) or not REQUEST_RE.fullmatch(request_id):
+        raise FMError(f"Discord workspace task link names an invalid request: {path}")
+    if not isinstance(profile, str) or profile not in ACTIVE_PROFILE_KEYS:
+        raise FMError(f"Discord workspace task link names an invalid profile: {path}")
+    if not isinstance(data.get("final_followup_required"), bool):
+        raise FMError(f"Discord workspace task link has invalid final follow-up policy: {path}")
+    return request_id, profile
 
 
 def cmd_followup(args: argparse.Namespace, env: Env) -> int:
@@ -1092,13 +1495,16 @@ def cmd_followup(args: argparse.Namespace, env: Env) -> int:
     if not TASK_ID_RE.fullmatch(args.task_id):
         raise FMError("task id must be path-safe")
     text = read_text_file(args.text_file)
-    link = load_existing_json(task_link_path(env, args.task_id))
-    if not link:
+    link_path = task_link_path(env, args.task_id)
+    link = load_existing_json(link_path)
+    if link is None:
         raise FMError("task has no Discord workspace request link")
-    request_id = str(link["request_id"])
+    request_id, linked_profile = validate_task_link(link_path, link, args.task_id)
     guild_id, channel_id, message_id, profile_key, forum_kind = cfg.profile_for_request_id(request_id)
     if forum_kind != "exchange":
         raise FMError("follow-up request no longer resolves to an exchange thread")
+    if linked_profile != profile_key:
+        raise FMError("Discord workspace task link profile no longer matches the resolved request")
     text_digest = sha256_text(text)
     kind = "final-followup" if args.final else "followup"
     nonce = args.nonce or f"{kind}:{args.task_id}:{request_id}:{text_digest}"
@@ -1111,38 +1517,54 @@ def cmd_followup(args: argparse.Namespace, env: Env) -> int:
     print(f"destination thread/channel: {channel_id}")
     print(f"allowed_mentions: {json.dumps({'parse': []}, sort_keys=True)}")
     print(f"nonce: {nonce}")
+    pending = None
+    pending_path = pending_followup_path(env, args.task_id)
     if args.final:
-        pending_path = pending_followup_path(env, args.task_id)
-        pending = load_existing_json(pending_path)
-        if not pending:
-            pending = {
-                "schema": PENDING_SCHEMA,
-                "task_id": args.task_id,
-                "request_id": request_id,
-                "profile": profile_key,
-                "status": "pending",
-            }
-            write_same_or_refuse(pending_path, pending, "pending final follow-up")
-        if pending.get("status") == "delivered":
-            print("final follow-up already delivered")
-        else:
-            print("pending final follow-up: present")
+        with state_transaction(env):
+            pending = load_existing_json(pending_path)
+            if not pending:
+                pending = {
+                    "schema": PENDING_SCHEMA,
+                    "task_id": args.task_id,
+                    "request_id": request_id,
+                    "profile": profile_key,
+                    "status": "pending",
+                }
+                write_same_or_refuse(pending_path, pending, "pending final follow-up")
+        status = validate_followup_record(env, pending_path, pending, args.task_id, request_id, profile_key)
+        print("final follow-up already delivered" if status == "delivered" else "pending final follow-up: present")
     if args.record_discord_message_id:
         msg_id = validate_snowflake(args.record_discord_message_id, "--record-discord-message-id") or ""
-        print(record_receipt(env, nonce, receipt, msg_id))
         if args.final:
-            delivered = {
-                "schema": PENDING_SCHEMA,
-                "task_id": args.task_id,
-                "request_id": request_id,
-                "profile": profile_key,
-                "status": "delivered",
-                "receipt_nonce": nonce,
-                "discord_message_id": msg_id,
-            }
-            atomic_json(pending_followup_path(env, args.task_id), delivered)
-            print("pending final follow-up delivered")
-    elif args.final and pending.get("status") == "delivered":
+            with state_transaction(env):
+                current = load_existing_json(pending_path)
+                if not current:
+                    raise FMError("pending final follow-up record disappeared")
+                current_status = validate_followup_record(env, pending_path, current, args.task_id, request_id, profile_key)
+                if current_status == "delivered":
+                    if current.get("receipt_nonce") != nonce or current.get("discord_message_id") != msg_id:
+                        raise FMError("refusing to record a second final follow-up after delivery")
+                    receipt_result = record_receipt_unlocked(env, nonce, receipt, msg_id)
+                else:
+                    receipt_result = record_receipt_unlocked(env, nonce, receipt, msg_id)
+                    delivered = {
+                        "schema": PENDING_SCHEMA,
+                        "task_id": args.task_id,
+                        "request_id": request_id,
+                        "profile": profile_key,
+                        "status": "delivered",
+                        "receipt_nonce": nonce,
+                        "discord_message_id": msg_id,
+                    }
+                    atomic_json(pending_path, delivered)
+            print(receipt_result)
+            if current_status == "delivered":
+                print("pending final follow-up already delivered")
+            else:
+                print("pending final follow-up delivered")
+        else:
+            print(record_receipt(env, nonce, receipt, msg_id))
+    elif args.final and status == "delivered":
         print("dry-run only; final follow-up was already delivered.")
     else:
         print("dry-run only; pending final follow-up remains unresolved.")
@@ -1150,13 +1572,16 @@ def cmd_followup(args: argparse.Namespace, env: Env) -> int:
 
 
 def iter_pending_followups(env: Env) -> Iterable[Tuple[Path, Dict[str, Any]]]:
-    root = env.discord_state / "pending-followups"
+    root = discord_state_path(env, "pending-followups")
     if not root.exists():
         return []
     out: List[Tuple[Path, Dict[str, Any]]] = []
     for path in sorted(root.glob("*.json")):
         data = load_existing_json(path)
-        if data and data.get("status") == "pending":
+        task_id = path.stem
+        if not data:
+            raise FMError(f"pending final follow-up record is malformed: {path}")
+        if validate_followup_record(env, path, data, task_id) != "delivered":
             out.append((path, data))
     return out
 
@@ -1167,14 +1592,19 @@ def cmd_guard_work(args: argparse.Namespace, env: Env) -> int:
     path = pending_followup_path(env, args.task_id)
     if not path.exists() and not path.is_symlink():
         return 0
-    data = load_existing_json(path)
-    if not data:
-        return 0
-    if data.get("status") == "pending":
-        print(f"task {args.task_id} still owes a Discord workspace final reply for {data.get('request_id')}")
-        print(f"Deliver it with bin/fm-discord-workspace.sh followup {args.task_id} --final --text-file <file> after live posting is approved, or explicitly abandon the pending record after discard approval.")
+    try:
+        data = load_existing_json(path)
+        if not data:
+            raise FMError(f"pending final follow-up record is malformed: {path}")
+        status = validate_followup_record(env, path, data, args.task_id)
+    except FMError as exc:
+        print(f"task {args.task_id} has unsafe Discord workspace follow-up state: {exc}")
         return 1
-    return 0
+    if status == "delivered":
+        return 0
+    print(f"task {args.task_id} still owes a Discord workspace final reply for {data.get('request_id')}")
+    print(f"Deliver it with bin/fm-discord-workspace.sh followup {args.task_id} --final --text-file <file> after live posting is approved, or explicitly abandon the pending record after discard approval.")
+    return 1
 
 
 def cmd_retire(args: argparse.Namespace, env: Env) -> int:
@@ -1197,9 +1627,19 @@ def cmd_retire(args: argparse.Namespace, env: Env) -> int:
 # ------------------------ process-event adapter ----------------------------
 
 def parse_message_author(message: Dict[str, Any]) -> Tuple[str, bool]:
-    author = message.get("author") if isinstance(message.get("author"), dict) else {}
+    author_value = message.get("author")
+    if "author" in message and not isinstance(author_value, dict):
+        raise FMError("message author metadata must be a JSON object")
+    author = author_value if isinstance(author_value, dict) else {}
     author_id = str(author.get("id") or message.get("author_id") or "")
-    bot = bool(author.get("bot") or message.get("author_is_bot") or False)
+    if "bot" in author:
+        bot = author["bot"]
+    elif "author_is_bot" in message:
+        bot = message["author_is_bot"]
+    else:
+        bot = False
+    if not isinstance(bot, bool):
+        raise FMError("author bot metadata must be a JSON boolean")
     return author_id, bot
 
 
@@ -1231,10 +1671,10 @@ def attachment_content_type(attachment: Dict[str, Any]) -> str:
 
 
 def attachment_size(attachment: Dict[str, Any]) -> int:
-    try:
-        return int(attachment.get("size"))
-    except (TypeError, ValueError):
-        raise FMError("attachment size is missing or invalid")
+    value = attachment.get("size")
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise FMError("attachment size must be a positive JSON integer")
+    return value
 
 
 def attachment_duration(attachment: Dict[str, Any], message: Dict[str, Any]) -> float:
@@ -1243,16 +1683,23 @@ def attachment_duration(attachment: Dict[str, Any], message: Dict[str, Any]) -> 
         value = attachment.get("durationSecs")
     if value is None:
         value = message.get("duration_secs")
-    try:
-        duration = float(value)
-    except (TypeError, ValueError):
-        raise FMError("audio duration is missing or invalid")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise FMError("audio duration must be a positive finite number encoded as a JSON number")
+    duration = float(value)
+    if not math.isfinite(duration) or duration <= 0:
+        raise FMError("audio duration must be a positive finite number encoded as a JSON number")
     return duration
 
 
-def validate_audio_attachment(cfg: WorkspaceConfig, message: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+def message_flags(message: Dict[str, Any]) -> int:
+    value = message.get("flags", 0)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise FMError("message flags must be a non-negative JSON integer")
+    return value
+
+
+def validate_audio_attachment(cfg: WorkspaceConfig, message: Dict[str, Any], flags: int) -> Tuple[Dict[str, Any], str]:
     attachments = as_list(message.get("attachments"), "message.attachments")
-    flags = int(message.get("flags") or 0)
     voice = bool(flags & VOICE_MESSAGE_FLAG)
     audio_candidates = []
     for attachment in attachments:
@@ -1277,7 +1724,7 @@ def validate_audio_attachment(cfg: WorkspaceConfig, message: Dict[str, Any]) -> 
     if size <= 0 or size > cfg.audio_max_bytes:
         raise FMError("audio attachment exceeds the configured size limit")
     duration = attachment_duration(attachment, message)
-    if duration <= 0 or duration > cfg.audio_max_duration_secs:
+    if duration > cfg.audio_max_duration_secs:
         raise FMError("audio attachment exceeds the configured duration limit")
     url = validate_discord_cdn_url(str(attachment.get("url") or ""), cfg)
     host = urlparse(url).hostname or ""
@@ -1322,28 +1769,10 @@ def message_to_event(cfg: WorkspaceConfig, message: Dict[str, Any]) -> Dict[str,
     if profile is None:
         return ignored_event("unknown-channel-or-thread", guild_id, channel_id, message_id)
     profile_key, forum_kind, forum_id = profile
-    author_id, author_is_bot = parse_message_author(message)
-    if author_is_bot or author_id == cfg.bot_user_id:
-        return ignored_event("bot-author", guild_id, channel_id, message_id, profile_key, forum_kind)
-    if author_id not in cfg.captain_user_ids:
-        return ignored_event("unknown-author", guild_id, channel_id, message_id, profile_key, forum_kind)
-    content = str(message.get("content") or "").strip()
-    attachments = as_list(message.get("attachments"), "message.attachments")
-    has_audio = False
-    try:
-        flags = int(message.get("flags") or 0)
-    except (TypeError, ValueError):
-        flags = 0
-    if flags & VOICE_MESSAGE_FLAG:
-        has_audio = True
-    else:
-        for attachment in attachments:
-            if isinstance(attachment, dict):
-                ctype = attachment_content_type(attachment)
-                ext = Path(str(attachment.get("filename") or "")).suffix.lower()
-                if ctype.startswith(ALLOWED_AUDIO_MIME_PREFIXES) or ext in ALLOWED_AUDIO_EXTENSIONS:
-                    has_audio = True
-                    break
+    author = message.get("author") if isinstance(message.get("author"), dict) else {}
+    author_id = str(author.get("id") or message.get("author_id") or "")
+    content_value = message.get("content", "")
+    content = content_value.strip() if isinstance(content_value, str) else ""
     base = {
         "schema": EVENT_SCHEMA,
         "source": DISCORD_SOURCE_ID,
@@ -1358,17 +1787,56 @@ def message_to_event(cfg: WorkspaceConfig, message: Dict[str, Any]) -> Dict[str,
         "jump_url": discord_jump_url(guild_id, channel_id, message_id),
         "timestamp": str(message.get("timestamp") or ""),
     }
+    if author_id == cfg.bot_user_id:
+        return ignored_event("bot-author", guild_id, channel_id, message_id, profile_key, forum_kind)
+    if author_id not in cfg.captain_user_ids:
+        return ignored_event("unknown-author", guild_id, channel_id, message_id, profile_key, forum_kind)
+    try:
+        _author_id, author_is_bot = parse_message_author(message)
+    except FMError as exc:
+        item = dict(base)
+        item.update({"kind": "message-rejected", "content": content, "reason": str(exc), "attachments": []})
+        return item
+    if author_is_bot:
+        return ignored_event("bot-author", guild_id, channel_id, message_id, profile_key, forum_kind)
+    if "content" in message and not isinstance(content_value, str):
+        item = dict(base)
+        item.update({"kind": "message-rejected", "content": content, "reason": "message content must be a JSON string", "attachments": []})
+        return item
+    try:
+        attachments = as_list(message.get("attachments"), "message.attachments")
+        if any(not isinstance(attachment, dict) for attachment in attachments):
+            raise FMError("message attachments must contain only JSON objects")
+    except FMError as exc:
+        item = dict(base)
+        item.update({"kind": "message-rejected", "content": content, "reason": str(exc), "attachments": []})
+        return item
     if forum_kind != "exchange":
         item = dict(base)
         item.update({"kind": "ignored", "reason": "artifact-thread-input-disabled"})
         return item
+    try:
+        flags = message_flags(message)
+    except FMError as exc:
+        item = dict(base)
+        item.update({"kind": "message-rejected", "content": content, "reason": str(exc), "attachments": safe_attachment_metadata(attachments)})
+        return item
+    has_audio = bool(flags & VOICE_MESSAGE_FLAG)
+    if not has_audio:
+        for attachment in attachments:
+            if isinstance(attachment, dict):
+                ctype = attachment_content_type(attachment)
+                ext = Path(str(attachment.get("filename") or "")).suffix.lower()
+                if ctype.startswith(ALLOWED_AUDIO_MIME_PREFIXES) or ext in ALLOWED_AUDIO_EXTENSIONS:
+                    has_audio = True
+                    break
     if has_audio:
         try:
-            audio, audio_kind = validate_audio_attachment(cfg, message)
+            audio, audio_kind = validate_audio_attachment(cfg, message, flags)
             transcript = fake_transcript_for(cfg, message, audio)
         except FMError as exc:
             item = dict(base)
-            item.update({"kind": "audio-rejected", "reason": str(exc), "attachments": safe_attachment_metadata(attachments)})
+            item.update({"kind": "audio-rejected", "content": content, "reason": str(exc), "attachments": safe_attachment_metadata(attachments)})
             return item
         item = dict(base)
         item.update({
@@ -1429,7 +1897,7 @@ def ignored_event(reason: str, guild_id: str, channel_id: str, message_id: str, 
 
 
 def cursor_path(env: Env, profile: str, channel_id: str) -> Path:
-    return env.discord_state / "cursors" / profile / f"{channel_id}.cursor"
+    return discord_state_path(env, "cursors", profile, f"{channel_id}.cursor")
 
 
 def read_cursor(env: Env, profile: str, channel_id: str) -> int:
@@ -1449,20 +1917,24 @@ def read_cursor(env: Env, profile: str, channel_id: str) -> int:
 def write_cursor(env: Env, profile: str, channel_id: str, message_id: str) -> None:
     if not message_id.isdigit():
         return
-    path = cursor_path(env, profile, channel_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".cursor.", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(message_id + "\n")
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    except Exception:
+    candidate = int(message_id)
+    with state_transaction(env):
+        if candidate <= read_cursor(env, profile, channel_id):
+            return
+        path = cursor_path(env, profile, channel_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".cursor.", dir=str(path.parent))
         try:
-            os.unlink(tmp)
-        except FileNotFoundError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(message_id + "\n")
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+            raise
 
 
 def fixture_messages(cfg: WorkspaceConfig) -> List[Dict[str, Any]]:
@@ -1539,8 +2011,8 @@ def event_class(event: Dict[str, Any]) -> str:
     kind = str(event.get("kind") or "")
     if kind in ("text", "voice-transcript", "audio-transcript"):
         return "message"
-    if kind == "audio-rejected":
-        return "audio-rejected"
+    if kind in ("audio-rejected", "message-rejected"):
+        return kind
     if kind == "ignored":
         return "ignored"
     return "malformed"
@@ -1601,6 +2073,8 @@ def note_body_for_event(event: Dict[str, Any]) -> str:
         lines.append("transcription: fake fixture, no secret")
         if event.get("jump_url"):
             lines.append(f"link: {event.get('jump_url')}")
+        if event.get("content"):
+            lines.append(f"caption: {event.get('content')}")
         lines.append("")
         lines.append(str(event.get("transcript") or ""))
     elif kind == "audio-rejected":
@@ -1608,22 +2082,30 @@ def note_body_for_event(event: Dict[str, Any]) -> str:
         lines.append(f"request: {event.get('external_id')}")
         lines.append(f"from: {event.get('author_id')}")
         lines.append(f"reason: {event.get('reason')}")
+        if event.get("content"):
+            lines.append(f"caption: {event.get('content')}")
+    elif kind == "message-rejected":
+        lines.append(header + "message rejected")
+        lines.append(f"request: {event.get('external_id')}")
+        lines.append(f"from: {event.get('author_id')}")
+        lines.append(f"reason: invalid message metadata: {event.get('reason')}")
+        if event.get("jump_url"):
+            lines.append(f"link: {event.get('jump_url')}")
+        if event.get("content"):
+            lines.append(f"context: {event.get('content')}")
     else:
         raise FMError("event is not inbox-addressable")
     return "\n".join(lines).rstrip() + "\n"
 
 
 def request_record_from_event(event: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "schema": REQUEST_SCHEMA,
-        "request_id": event.get("external_id"),
-        "guild_id": event.get("guild_id"),
-        "channel_id": event.get("channel_id"),
-        "message_id": event.get("message_id"),
-        "profile": event.get("profile"),
-        "origin": "discord-workspace",
-        "jump_url": event.get("jump_url"),
-    }
+    return canonical_request_record(
+        str(event.get("external_id")),
+        str(event.get("guild_id")),
+        str(event.get("channel_id")),
+        str(event.get("message_id")),
+        str(event.get("profile")),
+    )
 
 
 def procevent_mark_handled(env: Env, source_id: str, sequence: str) -> None:
@@ -1647,8 +2129,12 @@ def procevent_cmd_autohandle(args: argparse.Namespace, env: Env) -> int:
         procevent_mark_handled(env, source_id, sequence)
         print("handled ignored Discord workspace event")
         return 0
+    if cls == "message":
+        request = request_record_from_event(event)
+        with state_transaction(env):
+            write_same_or_refuse(request_record_path(env, str(event.get("external_id"))), request, "request record")
     body = note_body_for_event(event)
-    metadata_dir = env.discord_state / "metadata-staging"
+    metadata_dir = discord_state_path(env, "metadata-staging")
     metadata_dir.mkdir(parents=True, exist_ok=True)
     fd, meta_tmp = tempfile.mkstemp(prefix=".metadata.", suffix=".json", dir=str(metadata_dir))
     try:
@@ -1679,9 +2165,6 @@ def procevent_cmd_autohandle(args: argparse.Namespace, env: Env) -> int:
             os.unlink(meta_tmp)
         except FileNotFoundError:
             pass
-    if cls == "message":
-        request = request_record_from_event(event)
-        write_same_or_refuse(request_record_path(env, str(event.get("external_id"))), request, "request record")
     if event.get("profile") and event.get("channel_id") and event.get("message_id"):
         write_cursor(env, str(event["profile"]), str(event["channel_id"]), str(event["message_id"]))
     procevent_mark_handled(env, source_id, sequence)
@@ -1740,7 +2223,6 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p.add_argument("--file", required=True)
     p.add_argument("--purpose", required=True)
     p.add_argument("--request-id")
-    p.add_argument("--private-url")
     p.add_argument("--client-confidential", action="store_true")
     p.add_argument("--captain-approved-client-confidential", action="store_true")
     p.add_argument("--nonce")
@@ -1753,7 +2235,7 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p.add_argument("--purpose", required=True)
     p.add_argument("--url", required=True)
     p.add_argument("--access", required=True)
-    p.add_argument("--expires", default="7d")
+    p.add_argument("--expires")
     p.add_argument("--client-confidential", action="store_true")
     p.add_argument("--captain-approved-client-confidential", action="store_true")
     p.add_argument("--record", action="store_true")
