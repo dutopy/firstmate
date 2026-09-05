@@ -133,14 +133,12 @@ case "${1:-} ${2:-}" in
       fi
       [ "$(jq -r '.candidate_run_fail // false' "$state")" != true ] || exit 1
       cwd=$(jq -r '.candidate_cwd' "$state")
-      delay=$(jq -r '.candidate_run_ambiguous_delay // 0' "$state")
-      if [ "$delay" != 0 ]; then
-        (
-          sleep "$delay"
-          (cd "$cwd" && bash -c "$text") || exit 1
-          jq '.candidate_pending="" | .candidate_process="live" | .candidate_registered=true' \
-            "$state" > "$state.delayed.$$" && mv "$state.delayed.$$" "$state"
-        ) >/dev/null 2>&1 &
+      if [ "$(jq -r '.candidate_run_ambiguous_after_pane_get // false' "$state")" = true ]; then
+        (cd "$cwd" && bash -c "$text") || exit 1
+        jq '
+          .candidate_pending=""
+          | .candidate_take_over_after_pane_get=((.candidate_pane_gets // 0) + 2)
+        ' "$state" | save_state
         exit 1
       fi
       (cd "$cwd" && bash -c "$text") || exit 1
@@ -358,7 +356,7 @@ chmod +x "$TMP_ROOT/fakebin/git"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,recorded_exists:true,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_delay:0,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,recorded_exists:true,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_after_pane_get:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -823,7 +821,7 @@ pass "fm-spawn relaunch: receipt failure prevents an unadoptable agent launch"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
-jq '.candidate_run_ambiguous_delay=0.2' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+jq '.candidate_run_ambiguous_after_pane_get=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_HERDR_RELAUNCH_ABORT_POLLS=10 \
