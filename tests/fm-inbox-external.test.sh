@@ -61,3 +61,45 @@ bad_out=$(FM_HOME="$HOME1" "$ROOT/bin/fm-inbox.sh" note \
 [ "$bad_status" -ne 0 ] || fail "invalid external id was accepted"
 assert_contains "$bad_out" "external id" "invalid external id refusal names the problem"
 pass "external source ids are validated before queuing"
+
+note_count_for() {
+  find "$1/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' '
+}
+HOME2="$TMP_ROOT/home2"
+mkdir -p "$HOME2/state" "$HOME2/data"
+EXT_ID2=discord:111111111111111111:222222222222222222:888888888888888777
+mkdir "$HOME2/state/.wake-queue.seq"
+fail_status=0
+fail_out=$(FM_HOME="$HOME2" "$ROOT/bin/fm-inbox.sh" note \
+  --source discord-workspace \
+  --external-id "$EXT_ID2" - 2>&1 <<'WAKENOTE'
+Note whose announcement will fail.
+WAKENOTE
+) || fail_status=$?
+[ "$fail_status" -ne 0 ] || fail "announcement failure did not report failure"
+[ "$(note_count_for "$HOME2")" = 1 ] || fail "failed announcement lost or duplicated the note"
+fail_id=$(printf '%s\n' "$fail_out" | awk '/^queued / { print $2; exit }')
+[ -n "$fail_id" ] || fail "could not parse the note id from the failed announcement"
+map_file=$(python3 - "$HOME2" "$EXT_ID2" <<'PY2'
+import hashlib, sys
+home, ext = sys.argv[1], sys.argv[2]
+digest = hashlib.sha256(f"discord-workspace:{ext}".encode()).hexdigest()
+print(f"{home}/state/inbox/external/{digest}.map")
+PY2
+)
+assert_present "$map_file" "failed announcement keeps its external map"
+assert_grep "announced=0" "$map_file" "failed announcement records announced=0 in the map"
+assert_grep "note_id=$fail_id" "$map_file" "failed announcement map keeps the original note id"
+rmdir "$HOME2/state/.wake-queue.seq"
+replay_out=$(FM_HOME="$HOME2" "$ROOT/bin/fm-inbox.sh" note \
+  --source discord-workspace \
+  --external-id "$EXT_ID2" - <<'WAKENOTE'
+Replay body that must only re-announce.
+WAKENOTE
+)
+assert_contains "$replay_out" "queued $fail_id" "replay after failed announcement returns the original note id"
+assert_contains "$replay_out" "announcement retried and delivered" "replay re-announces the original note"
+[ "$(note_count_for "$HOME2")" = 1 ] || fail "replay after failed announcement created a duplicate note"
+[ "$(awk 'END { print NR + 0 }' "$HOME2/state/.wake-queue" 2>/dev/null)" = 1 ] || fail "replay produced the wrong wake count"
+assert_grep "announced=1" "$map_file" "delivered retry marks the map announced=1"
+pass "replay after a failed announcement re-announces the original note instead of duplicating"

@@ -57,7 +57,7 @@ Its canonical source id is `discord-workspace`.
 A non-dry-run arm refuses in this phase even when config contains a future live-polling choice.
 The source command reads only offline fixtures named by `FM_DISCORD_WORKSPACE_FIXTURE` or by `poll.fixture_file` in config.
 Without a fixture it refuses before any network call.
-The adapter accepts only messages from the configured operations guild, configured exchange forum posts or allowlisted exchange threads, configured captain user ids, and non-bot authors.
+The adapter accepts only messages from the configured operations guild, configured exchange forum posts (a newly created child thread of a configured exchange forum, verified by its parent id) or allowlisted exchange threads, configured captain user ids, and non-bot authors.
 It ignores DMs, bots, unknown guilds, unknown channels, unknown authors, artifact-forum input, and invalid message ids.
 Accepted text, voice transcript, audio transcript, and audio rejection events are passed to `bin/fm-inbox.sh note` with `--source discord-workspace` and a validated `--external-id`.
 The existing captain inbox remains the durable authority and wake owner.
