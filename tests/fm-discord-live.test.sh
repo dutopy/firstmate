@@ -453,6 +453,85 @@ NOTES15B=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l 
 pe "$H" retire discord-workspace >/dev/null 2>&1 || fail "retire failed"
 if pe "$H" list | grep -q discord-workspace; then fail "retire left the registration in place"; fi
 pass "process-event arm registers, repeated starts stay idempotent, and retire clears the source"
+# --- 16. registered source: empty scans are silent no-results ----------------
+new_home h16
+CFG16="$H/config/discord-workspace.json"
+python3 - "$WORLD" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+world["threads"] = {}
+world["messages"] = {}
+json.dump(world, open(sys.argv[1], "w"))
+PY
+ped() { FM_HOME="$1" "$ROOT/bin/fm-procevent-discord-workspace.sh" "${@:2}"; }
+ped "$H" arm --config "$CFG16" >/dev/null || fail "arm failed for the empty-scan case"
+out=$(pe "$H" start discord-workspace 2>&1) || fail "empty-scan start failed: $out"
+assert_contains "$out" "no-result" "an empty scan records no-result: files: $(find "$H/state/procevent-inbox" -type f 2>/dev/null | head -2 | xargs -r head -c 500)"
+CAPTURES=$(find "$H/state/procevent-inbox" -type f 2>/dev/null | wc -l | tr -d ' ')
+[ "$CAPTURES" = 0 ] || fail "an empty scan captured $CAPTURES result files: $(head -c 400 "$H/state/procevent-inbox"/* 2>/dev/null)"
+out=$(pe "$H" start discord-workspace 2>&1) || fail "repeated empty scan failed: $out"
+CAPTURES=$(find "$H/state/procevent-inbox" -type f 2>/dev/null | wc -l | tr -d ' ')
+[ "$CAPTURES" = 0 ] || fail "repeated empty scans captured results"
+pass "registered source: repeated empty scans create zero unhandled captures"
+
+# --- 17. one captain message makes exactly one note; a repeat makes none -----
+python3 - "$WORLD" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+world["counter"] = int(world["counter"]) + 1
+thread = str(world["counter"])
+world["threads"] = {"777777777777777772": [{"id": thread, "parent_id": "777777777777777772", "name": "control"}]}
+world["messages"] = {thread: [
+    {"id": str(world["counter"] + 1), "guild_id": "111111111111111111", "channel_id": thread,
+     "author": {"id": "444444444444444444"}, "content": "one real captain message"},
+]}
+json.dump(world, open(sys.argv[1], "w"))
+PY
+out=$(pe "$H" start discord-workspace 2>&1) || fail "captain-message start failed: $out"
+NOTES=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES" = 1 ] || fail "one captain message produced $NOTES notes instead of 1"
+out=$(pe "$H" start discord-workspace 2>&1) || fail "repeat after captain message failed: $out"
+NOTES2=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES2" = 1 ] || fail "a repeat produced $((NOTES2 - NOTES)) extra notes"
+pass "one captain message makes exactly one inbox note and a repeat makes none"
+
+# --- 18. a genuine failure is captured as bounded redacted evidence ----------
+world_set '{"inject":{"path":"/threads/active","method":"GET","remaining":9,"status":500,"body":{"message":"threads listing down faketoken-abc123"}}}'
+BEFORE_NOTES=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+BEFORE_CURSORS=$(find "$H/state/discord-workspace/cursors" -type f 2>/dev/null | wc -l | tr -d ' ')
+out=$(pe "$H" start discord-workspace 2>&1) || fail "failing start crashed the runner: $out"
+assert_contains "$out" "captured" "a genuine failure is captured as a result"
+grep -rl "discord live source failed" "$H/state/procevent-inbox" >/dev/null 2>&1 \
+  || fail "the captured result lacks actionable failure evidence"
+grep -rl "faketoken-abc123" "$H/state/procevent-inbox" >/dev/null 2>&1 && fail "a captured result leaked the token"
+NOTES3=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES3" = "$BEFORE_NOTES" ] || fail "a failed pass changed durable notes"
+CURSORS=$(find "$H/state/discord-workspace/cursors" -type f 2>/dev/null | wc -l | tr -d ' ')
+[ "$CURSORS" = "$BEFORE_CURSORS" ] || fail "a failed pass advanced cursors ($BEFORE_CURSORS -> $CURSORS)"
+world_set '{"inject":null}'
+pass "genuine failures stay visible, redacted, and retryable without advancing cursors"
+
+# --- 19. deployment shape: installed main runner without the task adapter ----
+new_home h19
+MAINBIN="$TMP_ROOT/mainbin"
+mkdir -p "$MAINBIN"
+for f in fm-procevent.sh fm-pr-lib.sh fm-wake-lib.sh fm-procevent-lib.sh fm-classify-lib.sh fm-timeout-lib.sh fm-lock-lib.sh fm-harness.sh; do
+  cp "$ROOT/bin/$f" "$MAINBIN/$f"
+done
+# The emulated installed runner runs from MAINBIN while FM_ROOT points at
+# the checkout whose bin owns the Discord adapter - the real deployment shape.
+pe19() { FM_HOME="$1" FM_ROOT_OVERRIDE="$ROOT" "$MAINBIN/fm-procevent.sh" "${@:2}"; }
+pe19 "$H" register discord-workspace discord-workspace -- \
+  "$ROOT/bin/fm-procevent-discord-workspace.sh" source --config "$H/config/discord-workspace.json" >/dev/null \
+  || fail "registration through the emulated installed runner failed"
+out=$(pe19 "$H" start discord-workspace 2>&1) || fail "installed-runner start failed: $out"
+NOTES19=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES19" = 1 ] || fail "installed-runner start produced $NOTES19 notes instead of 1"
+out=$(pe19 "$H" start discord-workspace 2>&1) || fail "installed-runner repeat failed: $out"
+NOTES19B=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
+[ "$NOTES19B" = 1 ] || fail "installed-runner repeat duplicated notes"
+pe19 "$H" retire discord-workspace >/dev/null 2>&1 || fail "installed-runner retire failed"
+pass "registered argv to the task copy works under a main runner from a different code root"
 
 # --- cleanup -----------------------------------------------------------------
 kill %1 2>/dev/null || true

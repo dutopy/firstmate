@@ -362,7 +362,12 @@ def handoff_event(env: "fwl.Env", event: Dict[str, Any]) -> int:
 
 
 def live_source_pass(env: "fwl.Env", cfg: "fwl.WorkspaceConfig", client: "DiscordClient") -> int:
-    """One inbound pass: guild-scoped active threads, cursor-filtered handoff."""
+    """One inbound pass: guild-scoped active threads, cursor-filtered handoff.
+
+    Returns the number of messages scanned. Raises FMError on failure; failed
+    messages never advance their cursors because each cursor is written only
+    after its message's handoff succeeded.
+    """
     forum_ids = {p["exchange_forum_id"] for p in cfg.profiles.values() if p["exchange_forum_id"]}
     profile_by_forum = {p["exchange_forum_id"]: key for key, p in cfg.profiles.items() if p["exchange_forum_id"]}
     listing = client.request("GET", f"/guilds/{cfg.guild_id}/threads/active")
@@ -405,15 +410,34 @@ def live_source_pass(env: "fwl.Env", cfg: "fwl.WorkspaceConfig", client: "Discor
             if str(message.get("id") or "").isdigit():
                 fwl.write_cursor(env, key, thread_id, str(message["id"]))
                 ingested += 1
-    print(f"live source pass complete; {ingested} messages scanned")
-    return 0
+    return ingested
 
 
 def cmd_live_source(args: Any, env: "fwl.Env") -> int:
+    """Human-facing one-shot pass; progress goes to stdout."""
     cfg = fwl.load_config(env, args.config)
     require_live_flag(cfg, cfg.live_polling_enabled, "live inbound source")
     client = DiscordClient(decrypt_token(env, cfg))
-    return live_source_pass(env, cfg, client)
+    scanned = live_source_pass(env, cfg, client)
+    print(f"live source pass complete; {scanned} messages scanned")
+    return 0
+
+
+def registered_source_pass(env: "fwl.Env", cfg: "fwl.WorkspaceConfig", client: "DiscordClient") -> int:
+    """Wire contract for the registered process-event source.
+
+    A successful scan is silent and exits nonzero with empty stdout so the
+    runner records no-result and keeps the source armed; durable effects
+    already went through fm-inbox. A genuine failure prints one bounded
+    redacted actionable line (captured as a result) and exits nonzero so the
+    failed pass stays visible and retryable without advancing cursors.
+    """
+    try:
+        live_source_pass(env, cfg, client)
+    except FMError as exc:
+        print(redact(f"discord live source failed: {exc}", client.token))
+        return 1
+    return fwl.EXIT_NO_RESULT
 
 
 def main(argv: List[str]) -> int:
