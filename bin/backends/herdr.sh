@@ -1175,6 +1175,16 @@ fm_backend_herdr_pid_is_bare_shell() {  # <ps-bin> <pid>
   return 1
 }
 
+# Use the shared process-instance identity so a shell PID cannot be confused
+# with a later process that reused the same numeric PID.
+fm_backend_herdr_pid_identity() {  # <pid>
+  if ! declare -F fm_pid_identity >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-wake-lib.sh
+    . "$FM_BACKEND_HERDR_ROOT/bin/fm-wake-lib.sh"
+  fi
+  fm_pid_identity "$1"
+}
+
 # fm_backend_herdr_pane_idle_shell_pid: print the shell pid of <pane-id> only
 # when the exact pane provably holds one lone idle recognized shell: pane
 # process-info agrees on the pane id, the shell pid is both the foreground
@@ -2168,6 +2178,7 @@ fm_backend_herdr_relaunch_candidate_discover() {  # <session> <workspace-id> <la
 fm_backend_herdr_relaunch_candidate_close_on_shell() {  # <session> <workspace-id> <tab-id> <pane-id> <shell-pid>
   local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 expected_pid=$5
   local info shell_pid foreground_pgid count process_pid rows stat ps_bin kill_bin watchdog result=1
+  local initial_identity current_identity resampled_pid
   ps_bin=${FM_HERDR_PS_BIN:-ps}
   kill_bin=${FM_HERDR_KILL_BIN:-kill}
   command -v "$ps_bin" >/dev/null 2>&1 || return 1
@@ -2191,6 +2202,12 @@ fm_backend_herdr_relaunch_candidate_close_on_shell() {  # <session> <workspace-i
   stat=$("$ps_bin" -p "$expected_pid" -o stat= 2>/dev/null | tr -d '[:space:]') || return 1
   case "$stat" in ''|T*) return 1 ;; esac
   fm_backend_herdr_pid_is_bare_shell "$ps_bin" "$expected_pid" || return 1
+  initial_identity=$(fm_backend_herdr_pid_identity "$expected_pid") || return 1
+  fm_backend_herdr_relaunch_candidate_matches "$session" "$workspace_id" "$tab_id" "$pane_id" || return 1
+  resampled_pid=$(fm_backend_herdr_pane_idle_shell_sample "$session" "$pane_id") || return 1
+  [ "$resampled_pid" = "$expected_pid" ] || return 1
+  current_identity=$(fm_backend_herdr_pid_identity "$expected_pid") || return 1
+  [ "$current_identity" = "$initial_identity" ] || return 1
   "$kill_bin" -STOP "$expected_pid" 2>/dev/null || return 1
   (
     sleep "${FM_BACKEND_HERDR_RELAUNCH_CONT_WATCHDOG_SECS:-5}"
@@ -2960,6 +2977,7 @@ fm_backend_herdr_run_on_prepared_shell() {  # <target> <shell-pid> <validated-wo
   local target=$1 expected_pid=$2 expected=$3 command_text=$4
   local expected_real current current_real info shell_pid foreground_pgid count process_pid
   local rows stat ps_bin kill_bin watchdog result=1
+  local initial_identity current_identity resampled_pid
   [ -n "$expected_pid" ] || return 1
   expected_real=$(CDPATH='' cd -- "$expected" 2>/dev/null && pwd -P) || return 1
   fm_backend_herdr_parse_target "$target" || return 1
@@ -2989,6 +3007,16 @@ fm_backend_herdr_run_on_prepared_shell() {  # <target> <shell-pid> <validated-wo
   current_real=
   [ -z "$current" ] || current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || current_real=
   [ "$current_real" = "$expected_real" ] || return 1
+  initial_identity=$(fm_backend_herdr_pid_identity "$expected_pid") || return 1
+  resampled_pid=$(fm_backend_herdr_pane_idle_shell_sample \
+    "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
+  [ "$resampled_pid" = "$expected_pid" ] || return 1
+  current=$(fm_backend_herdr_current_path "$target" || true)
+  current_real=
+  [ -z "$current" ] || current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || current_real=
+  [ "$current_real" = "$expected_real" ] || return 1
+  current_identity=$(fm_backend_herdr_pid_identity "$expected_pid") || return 1
+  [ "$current_identity" = "$initial_identity" ] || return 1
   "$kill_bin" -STOP "$expected_pid" 2>/dev/null || return 1
   (
     sleep "${FM_BACKEND_HERDR_RELAUNCH_CONT_WATCHDOG_SECS:-5}"

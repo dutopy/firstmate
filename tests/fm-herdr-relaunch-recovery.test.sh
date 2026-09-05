@@ -245,12 +245,27 @@ chmod +x "$TMP_ROOT/fakebin/herdr"
 
 cat > "$TMP_ROOT/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
+state=${FM_FAKE_HERDR_STATE:?}
 case "$*" in
   "-axo pid=,ppid=") printf '41001 1\n42001 1\n' ;;
   "-p 41001 -o stat="|"-p 42001 -o stat=")
-    if [ "$(jq -r '.frozen // false' "$FM_FAKE_HERDR_STATE")" = true ]; then printf 'T\n'; else printf 'S\n'; fi
+    if [ "$(jq -r '.frozen // false' "$state")" = true ]; then printf 'T\n'; else printf 'S\n'; fi
     ;;
   "-p 41001 -o comm="|"-p 42001 -o comm=") printf 'bash\n' ;;
+  "-p 41001 -o lstart= -o command=")
+    printf 'Mon Jan  1 00:00:00 2024 /bin/bash\n'
+    jq '
+      .identity_reads=((.identity_reads // 0) + 1)
+      | if .replace_after_identity then .process="replacement-shell" else . end
+    ' "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
+    ;;
+  "-p 42001 -o lstart= -o command=")
+    printf 'Mon Jan  1 00:00:00 2024 /bin/bash\n'
+    jq '
+      .identity_reads=((.identity_reads // 0) + 1)
+      | if .candidate_replace_after_identity then .candidate_process="replacement-shell" else . end
+    ' "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
+    ;;
   *) exit 1 ;;
 esac
 SH
@@ -359,7 +374,7 @@ chmod +x "$TMP_ROOT/fakebin/git"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,recorded_exists:true,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,stop_calls:0,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_after_pane_get:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,recorded_exists:true,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,stop_calls:0,identity_reads:0,replace_after_identity:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_replace_after_identity:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_after_pane_get:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -491,28 +506,30 @@ fi
   || fail "candidate cleanup refusal left the shell stopped"
 pass "Herdr relaunch recovery: candidate cleanup freezes and revalidates its shell"
 
-write_state "$TARGET" replacement-shell false
+write_state "$TARGET" shell false
+jq '.replace_after_identity=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if run_backend fm_backend_herdr_run_on_prepared_shell \
     fmtest:w1:p1 41001 "$TARGET" true >/dev/null 2>&1; then
-  fail "prepared-shell submission accepted a PID no longer owned by the pane shell"
+  fail "prepared-shell submission accepted a PID replaced after its final process check"
 fi
 [ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
-  || fail "prepared-shell submission signaled a stale shell PID before validating pane ownership"
+  || fail "prepared-shell submission signaled a stale shell PID before resampling pane ownership"
 
 jq --arg cwd "$TARGET" '
   .candidate_exists=true
   | .candidate_cwd=$cwd
   | .candidate_label="stale-cleanup-candidate"
-  | .candidate_process="replacement-shell"
+  | .candidate_process="shell"
   | .candidate_registered=false
+  | .candidate_replace_after_identity=true
 ' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if run_backend fm_backend_herdr_relaunch_candidate_close_on_shell \
     fmtest w1 w1:t2 w1:p2 42001 >/dev/null 2>&1; then
-  fail "candidate cleanup accepted a PID no longer owned by the candidate shell"
+  fail "candidate cleanup accepted a PID replaced after its final process check"
 fi
 [ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
-  || fail "candidate cleanup signaled a stale shell PID before validating pane ownership"
-pass "Herdr relaunch recovery: stale shell PIDs are rejected before signaling"
+  || fail "candidate cleanup signaled a stale shell PID before resampling pane ownership"
+pass "Herdr relaunch recovery: pane ownership is resampled before stale shell PIDs are signaled"
 
 DIRECT_HOME="$TMP_ROOT/direct-home"
 DIRECT_PROJECT="$TMP_ROOT/direct-project"
