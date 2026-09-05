@@ -4053,9 +4053,8 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = herdr ]; then
     fi
     LAUNCH="umask 077; : > $(shell_quote "$HERDR_RELAUNCH_LAUNCH_PROVENANCE_DIR/launch/launch-receipt") && { $LAUNCH; }"
   fi
-  # Freeze and revalidate the prepared shell before atomically queueing the
-  # command and Enter. This closes the final foreground-owner race rather than
-  # relying on a sample immediately before pane input.
+  # Revalidate the prepared shell before Herdr atomically queues the command and
+  # Enter against the exact pane. Never signal a sampled numeric shell PID.
   fm_backend_herdr_run_on_prepared_shell \
     "$WT_TARGET" "$RELAUNCH_HERDR_SHELL_PID" "$WT" "$LAUNCH" || {
     echo "error: task $ID's Herdr shell owner changed before launch delivery; refusing replacement launch" >&2

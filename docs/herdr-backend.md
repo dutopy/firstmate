@@ -290,7 +290,7 @@ An agent-free prepublication failure or hard-crash recovery leaves the old metad
 An exact live or unsettled submitted launch retains its launch-attempt provenance for strict retry or adoption, while ambiguous cleanup without admissible launch provenance is recorded as quarantined under its exact identity instead of granting cleanup authority.
 A later retry retires an exact agent-free candidate idempotently and adopts an exact live candidate only from the launch-attempt phase after restoring and verifying its staged wiring, unchanged identity, and physical recorded worktree.
 It refuses every live pre-launch or quarantined candidate and every unreadable, mismatched, or multiply matched candidate.
-Before any candidate or old pane is retired, its exact idle shell is frozen and revalidated for identity, ownership, and child absence immediately at the close boundary; refusal always resumes it.
+Before any candidate or old pane is retired, its exact idle shell and pane ownership are revalidated immediately at the close boundary, and retirement uses only Herdr's exact-pane operation rather than signaling a sampled OS PID.
 
 The session-start sweep uses the ordinary probe.
 Mid-session secondmate agent-process liveness is not implemented because idle secondmates are deliberately exempt from stale-pane escalation and need a separate periodic identity signal.

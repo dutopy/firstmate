@@ -487,50 +487,6 @@ fi
 [ -n "$(jq -r '.pending // empty' "$STATE")" ] || fail "cleanup sent input after the pane stopped belonging to the exact idle shell"
 pass "Herdr relaunch recovery: cleanup refuses a changed shell owner"
 
-write_state "$TARGET" shell true
-jq --arg cwd "$TARGET" '
-  .candidate_exists=true
-  | .candidate_cwd=$cwd
-  | .candidate_label="cleanup-candidate"
-  | .candidate_process="shell"
-  | .candidate_registered=false
-  | .candidate_take_over_on_stop=true
-' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
-if run_backend fm_backend_herdr_relaunch_candidate_cleanup \
-    fmtest w1 w1:t2 w1:p2 >/dev/null 2>&1; then
-  fail "candidate cleanup closed a pane whose shell owner changed at the close boundary"
-fi
-[ "$(jq -r '.candidate_exists' "$STATE")" = true ] \
-  || fail "candidate cleanup removed the taken-over pane"
-[ "$(jq -r '.frozen' "$STATE")" = false ] \
-  || fail "candidate cleanup refusal left the shell stopped"
-pass "Herdr relaunch recovery: candidate cleanup freezes and revalidates its shell"
-
-write_state "$TARGET" shell false
-jq '.replace_after_identity=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
-if run_backend fm_backend_herdr_run_on_prepared_shell \
-    fmtest:w1:p1 41001 "$TARGET" true >/dev/null 2>&1; then
-  fail "prepared-shell submission accepted a PID replaced after its final process check"
-fi
-[ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
-  || fail "prepared-shell submission signaled a stale shell PID before resampling pane ownership"
-
-jq --arg cwd "$TARGET" '
-  .candidate_exists=true
-  | .candidate_cwd=$cwd
-  | .candidate_label="stale-cleanup-candidate"
-  | .candidate_process="shell"
-  | .candidate_registered=false
-  | .candidate_replace_after_identity=true
-' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
-if run_backend fm_backend_herdr_relaunch_candidate_close_on_shell \
-    fmtest w1 w1:t2 w1:p2 42001 >/dev/null 2>&1; then
-  fail "candidate cleanup accepted a PID replaced after its final process check"
-fi
-[ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
-  || fail "candidate cleanup signaled a stale shell PID before resampling pane ownership"
-pass "Herdr relaunch recovery: pane ownership is resampled before stale shell PIDs are signaled"
-
 DIRECT_HOME="$TMP_ROOT/direct-home"
 DIRECT_PROJECT="$TMP_ROOT/direct-project"
 DIRECT_WT="$TMP_ROOT/direct-worktree"
@@ -600,6 +556,8 @@ DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR
 [ "$(cat "$DIRECT_ENV_LOG" 2>/dev/null)" = $'GOTMPDIR=/tmp/fm-direct/gotmp\nTRACEPARENT=00-11111111111111111111111111111111-2222222222222222-01' ] \
   || fail "direct Herdr relaunch did not preserve its environment and trace carrier: $(cat "$DIRECT_ENV_LOG" 2>/dev/null)"
 case "$DIRECT_OUT" in *"spawned direct "*) : ;; *) fail "direct Herdr relaunch did not complete: $DIRECT_OUT" ;; esac
+[ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
+  || fail "successful replacement launch or cleanup signaled a sampled OS process"
 [ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
   || fail "successful replacement did not publish the fresh pane binding"
 jq -e '.endpoints[] | select(.id == "direct") | .endpoint.target == "fmtest:w1:p2"' \
@@ -1004,33 +962,6 @@ cmp -s "$DIRECT_HOME/state/direct.meta.original" "$DIRECT_HOME/state/direct.meta
   || fail "unregistered adoption changed the authoritative binding"
 pass "fm-spawn relaunch: adoption requires registration and live process proof"
 
-jq '.candidate_process="shell" | .candidate_registered=false | .candidate_take_over_on_stop=true' \
-  "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
-if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-    FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
-    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
-  fail "retry reported success after a submitted launch took over during cleanup: $DIRECT_OUT"
-fi
-grep -q '^phase=launch-attempt$' "$DIRECT_HOME/state/direct.control-relaunch-candidate" \
-  || fail "cleanup-race recovery discarded launch-attempt provenance"
-[ -d "$DIRECT_HOME/state/direct.control-relaunch-candidate.launch/prior-snapshot" ] \
-  || fail "cleanup-race recovery deleted the prior wiring snapshot"
-staged_busy=$(awk -F= '$1 == "busy_gen" { print $2 }' \
-  "$DIRECT_HOME/state/direct.control-relaunch-candidate.launch/launch/meta")
-[ "$(cat "$DIRECT_HOME/state/direct.busy-gen")" = "$staged_busy" ] \
-  || fail "cleanup-race recovery did not restore staged replacement supervision wiring"
-[ "$(jq -r '.candidate_exists and .candidate_registered and (.candidate_process == "live")' "$STATE")" = true ] \
-  || fail "cleanup-race recovery did not preserve the taken-over live candidate"
-DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
-  FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
-  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1) \
-  || fail "retry could not adopt the candidate preserved after cleanup raced its launch: $DIRECT_OUT"
-[ "$(awk -F= '$1 == "herdr_pane_id" { print $2 }' "$DIRECT_HOME/state/direct.meta")" = w1:p2 ] \
-  || fail "cleanup-race adoption did not publish the preserved candidate"
-pass "fm-spawn relaunch: cleanup races preserve launch provenance for adoption"
-
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
 write_direct_candidate_record created
@@ -1081,17 +1012,18 @@ pass "fm-spawn relaunch: retry refuses live candidates without launch provenance
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
-jq '.candidate_take_over_on_stop=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+jq '.candidate_takeover_before_run=true' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 if DIRECT_OUT=$(PATH="$TMP_ROOT/fakebin:$PATH" FM_HOME="$DIRECT_HOME" FM_FAKE_HERDR_STATE="$STATE" \
     FM_FAKE_HERDR_LOG="$LOG" FM_HERDR_PS_BIN="$TMP_ROOT/fakebin/ps" FM_HERDR_KILL_BIN="$TMP_ROOT/fakebin/kill" \
     FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/fm-spawn.sh" direct --relaunch 2>&1); then
   fail "direct Herdr relaunch should refuse a takeover at the final delivery boundary: $DIRECT_OUT"
 fi
-run_count=$(grep -c $'\x1fpane\x1frun\x1f' "$LOG" || true)
-[ "$run_count" -eq 0 ] || fail "delivery-boundary takeover received replacement input"
-[ "$(jq -r '.frozen' "$STATE")" = false ] || fail "delivery-boundary refusal left the prepared shell stopped"
-pass "fm-spawn relaunch: frozen-shell boundary closes the final owner-check race"
+[ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
+  || fail "delivery-boundary refusal signaled a sampled OS process"
+[ ! -e "$DIRECT_HOME/state/.relaunch-direct/launch/launch-receipt" ] \
+  || fail "delivery-boundary takeover executed the replacement command"
+pass "fm-spawn relaunch: exact-pane delivery refuses takeover without OS PID signaling"
 
 reset_direct_meta
 write_state "$DIRECT_WT" shell true
