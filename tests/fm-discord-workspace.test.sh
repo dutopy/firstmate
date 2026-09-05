@@ -949,8 +949,8 @@ mkdir -p "$HOME2/state/discord-workspace" "$HOME2/data" "$HOME2/config"
 cp "$CFG" "$HOME2/config/discord-workspace.json"
 printf 'blocks task-link directory creation\n' > "$HOME2/state/discord-workspace/task-links"
 link_failure_status=0
-link_failure_out=$(FM_HOME="$HOME2" "$ROOT/bin/fm-discord-workspace.sh" link-task guarded-partial \
-  --config "$HOME2/config/discord-workspace.json" --request-id "$request_id" 2>&1) || link_failure_status=$?
+FM_HOME="$HOME2" "$ROOT/bin/fm-discord-workspace.sh" link-task guarded-partial \
+  --config "$HOME2/config/discord-workspace.json" --request-id "$request_id" >/dev/null 2>&1 || link_failure_status=$?
 [ "$link_failure_status" -ne 0 ] || fail "task-link publication failure unexpectedly succeeded"
 assert_present "$HOME2/state/discord-workspace/pending-followups/guarded-partial.json" "task-link failure preserves its pending-final guard"
 partial_guard_status=0
