@@ -2172,6 +2172,25 @@ fm_backend_herdr_relaunch_candidate_close_on_shell() {  # <session> <workspace-i
   kill_bin=${FM_HERDR_KILL_BIN:-kill}
   command -v "$ps_bin" >/dev/null 2>&1 || return 1
   command -v "$kill_bin" >/dev/null 2>&1 || return 1
+  fm_backend_herdr_relaunch_candidate_matches "$session" "$workspace_id" "$tab_id" "$pane_id" || return 1
+  info=$(fm_backend_herdr_cli "$session" pane process-info --pane "$pane_id" 2>/dev/null) || return 1
+  printf '%s' "$info" | jq -e --arg pane "$pane_id" --argjson pid "$expected_pid" '
+    .result.type == "pane_process_info"
+    and .result.process_info.pane_id == $pane
+    and .result.process_info.shell_pid == $pid
+    and .result.process_info.foreground_process_group_id == $pid
+    and (.result.process_info.foreground_processes | length) == 1
+    and .result.process_info.foreground_processes[0].pid == $pid
+  ' >/dev/null 2>&1 || return 1
+  rows=$("$ps_bin" -axo pid=,ppid= 2>/dev/null) || return 1
+  printf '%s\n' "$rows" | awk -v shell="$expected_pid" '
+    $1 == shell { found++ }
+    $2 == shell { child++ }
+    END { exit(found == 1 && child == 0 ? 0 : 1) }
+  ' || return 1
+  stat=$("$ps_bin" -p "$expected_pid" -o stat= 2>/dev/null | tr -d '[:space:]') || return 1
+  case "$stat" in ''|T*) return 1 ;; esac
+  fm_backend_herdr_pid_is_bare_shell "$ps_bin" "$expected_pid" || return 1
   "$kill_bin" -STOP "$expected_pid" 2>/dev/null || return 1
   (
     sleep "${FM_BACKEND_HERDR_RELAUNCH_CONT_WATCHDOG_SECS:-5}"
@@ -2948,6 +2967,28 @@ fm_backend_herdr_run_on_prepared_shell() {  # <target> <shell-pid> <validated-wo
   kill_bin=${FM_HERDR_KILL_BIN:-kill}
   command -v "$ps_bin" >/dev/null 2>&1 || return 1
   command -v "$kill_bin" >/dev/null 2>&1 || return 1
+  info=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane process-info --pane "$FM_BACKEND_HERDR_PANE" 2>/dev/null) || return 1
+  printf '%s' "$info" | jq -e --arg pane "$FM_BACKEND_HERDR_PANE" --argjson pid "$expected_pid" '
+    .result.type == "pane_process_info"
+    and .result.process_info.pane_id == $pane
+    and .result.process_info.shell_pid == $pid
+    and .result.process_info.foreground_process_group_id == $pid
+    and (.result.process_info.foreground_processes | length) == 1
+    and .result.process_info.foreground_processes[0].pid == $pid
+  ' >/dev/null 2>&1 || return 1
+  rows=$("$ps_bin" -axo pid=,ppid= 2>/dev/null) || return 1
+  printf '%s\n' "$rows" | awk -v shell="$expected_pid" '
+    $1 == shell { found++ }
+    $2 == shell { child++ }
+    END { exit(found == 1 && child == 0 ? 0 : 1) }
+  ' || return 1
+  stat=$("$ps_bin" -p "$expected_pid" -o stat= 2>/dev/null | tr -d '[:space:]') || return 1
+  case "$stat" in ''|T*) return 1 ;; esac
+  fm_backend_herdr_pid_is_bare_shell "$ps_bin" "$expected_pid" || return 1
+  current=$(fm_backend_herdr_current_path "$target" || true)
+  current_real=
+  [ -z "$current" ] || current_real=$(CDPATH='' cd -- "$current" 2>/dev/null && pwd -P) || current_real=
+  [ "$current_real" = "$expected_real" ] || return 1
   "$kill_bin" -STOP "$expected_pid" 2>/dev/null || return 1
   (
     sleep "${FM_BACKEND_HERDR_RELAUNCH_CONT_WATCHDOG_SECS:-5}"

@@ -106,6 +106,9 @@ case "${1:-} ${2:-}" in
       live)
         jq -n --arg pane "$pane" --argjson shell "$shell_pid" --argjson live "$live_pid" '{id:"cli:pane:process_info",result:{type:"pane_process_info",process_info:{pane_id:$pane,shell_pid:$shell,foreground_process_group_id:$live,foreground_processes:[{pid:$live,name:"pi",argv:["/opt/pi/bin/pi"]}]}}}'
         ;;
+      replacement-shell)
+        jq -n --arg pane "$pane" '{id:"cli:pane:process_info",result:{type:"pane_process_info",process_info:{pane_id:$pane,shell_pid:43001,foreground_process_group_id:43001,foreground_processes:[{pid:43001,name:"bash",argv:["/bin/bash"]}]}}}'
+        ;;
       *) printf '{"id":"cli:pane:process_info","result":{"type":"pane_process_info","process_info":{"pane_id":"wrong"}}}\n' ;;
     esac
     ;;
@@ -259,11 +262,11 @@ set -u
 state=${FM_FAKE_HERDR_STATE:?}
 case "${1:-} ${2:-}" in
   "-STOP 41001")
-    jq '.frozen=true | if (.take_over_on_stop // false) then .process="live" else . end' \
+    jq '.stop_calls=((.stop_calls // 0) + 1) | .frozen=true | if (.take_over_on_stop // false) then .process="live" else . end' \
       "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
     ;;
   "-STOP 42001")
-    jq '.frozen=true | if (.candidate_take_over_on_stop // false) then .candidate_process="live" | .candidate_registered=true else . end' \
+    jq '.stop_calls=((.stop_calls // 0) + 1) | .frozen=true | if (.candidate_take_over_on_stop // false) then .candidate_process="live" | .candidate_registered=true else . end' \
       "$state" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
     ;;
   "-CONT 41001"|"-CONT 42001")
@@ -356,7 +359,7 @@ chmod +x "$TMP_ROOT/fakebin/git"
 
 write_state() {
   jq -n --arg cwd "$1" --arg process "$2" --argjson registered "$3" \
-    '{cwd:$cwd,process:$process,registered:$registered,recorded_exists:true,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_after_pane_get:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
+    '{cwd:$cwd,process:$process,registered:$registered,recorded_exists:true,pending:"",fail_after_send_once:false,process_info_failures:0,process_after_send:"",pane_gets:0,take_over_after_pane_get:-1,frozen:false,stop_calls:0,take_over_on_stop:false,candidate_exists:false,candidate_cwd:"",candidate_pending:"",candidate_process:"shell",candidate_registered:false,candidate_take_over_on_stop:false,candidate_takeover_before_run:false,candidate_create_ambiguous_once:false,candidate_run_fail:false,candidate_run_ambiguous:false,candidate_run_ambiguous_after_pane_get:false,candidate_run_unregistered:false,candidate_pane_gets:0,candidate_take_over_after_pane_get:-1,unmanaged_workspace:"w9",unmanaged_pane:"w9:p9",unmanaged_fingerprint:"unchanged"}' > "$STATE"
   : > "$LOG"
 }
 
@@ -487,6 +490,29 @@ fi
 [ "$(jq -r '.frozen' "$STATE")" = false ] \
   || fail "candidate cleanup refusal left the shell stopped"
 pass "Herdr relaunch recovery: candidate cleanup freezes and revalidates its shell"
+
+write_state "$TARGET" replacement-shell false
+if run_backend fm_backend_herdr_run_on_prepared_shell \
+    fmtest:w1:p1 41001 "$TARGET" true >/dev/null 2>&1; then
+  fail "prepared-shell submission accepted a PID no longer owned by the pane shell"
+fi
+[ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
+  || fail "prepared-shell submission signaled a stale shell PID before validating pane ownership"
+
+jq --arg cwd "$TARGET" '
+  .candidate_exists=true
+  | .candidate_cwd=$cwd
+  | .candidate_label="stale-cleanup-candidate"
+  | .candidate_process="replacement-shell"
+  | .candidate_registered=false
+' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if run_backend fm_backend_herdr_relaunch_candidate_close_on_shell \
+    fmtest w1 w1:t2 w1:p2 42001 >/dev/null 2>&1; then
+  fail "candidate cleanup accepted a PID no longer owned by the candidate shell"
+fi
+[ "$(jq -r '.stop_calls' "$STATE")" -eq 0 ] \
+  || fail "candidate cleanup signaled a stale shell PID before validating pane ownership"
+pass "Herdr relaunch recovery: stale shell PIDs are rejected before signaling"
 
 DIRECT_HOME="$TMP_ROOT/direct-home"
 DIRECT_PROJECT="$TMP_ROOT/direct-project"
