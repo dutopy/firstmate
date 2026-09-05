@@ -2007,7 +2007,7 @@ def procevent_cmd_source(args: argparse.Namespace, env: Env) -> int:
         live = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(live)
         client = live.DiscordClient(live.decrypt_token(env, cfg))
-        return live.live_source_pass(env, cfg, client)
+        return live.registered_source_pass(env, cfg, client)
     messages = fixture_messages(cfg)
     for message in messages:
         event = message_to_event(cfg, message)
