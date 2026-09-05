@@ -45,19 +45,19 @@ dup_out=$(fw config-check --config "$DUP" 2>&1) || dup_status=$?
 [ "$dup_status" -ne 0 ] || fail "duplicate forum id was accepted"
 assert_contains "$dup_out" "duplicate Discord id" "duplicate forum id refusal is explicit"
 
-DISABLED="$TMP_ROOT/disabled.json"
-cp "$CFG" "$DISABLED"
-python3 - "$DISABLED" <<'PY'
+PLACEHOLDER="$TMP_ROOT/placeholder.json"
+cp "$CFG" "$PLACEHOLDER"
+python3 - "$PLACEHOLDER" <<'PY'
 import json, sys
 p=sys.argv[1]
 data=json.load(open(p))
-data["profiles"]["lbdb"]={"enabled": True, "category_id":"121212121212121212"}
+data["profiles"]["example-client"]={"enabled": False}
 json.dump(data, open(p,"w"), indent=2, sort_keys=True)
 PY
-disabled_status=0
-disabled_out=$(fw config-check --config "$DISABLED" 2>&1) || disabled_status=$?
-[ "$disabled_status" -ne 0 ] || fail "enabled dormant profile was accepted"
-assert_contains "$disabled_out" "disabled profile lbdb" "disabled profile refusal is explicit"
+placeholder_status=0
+placeholder_out=$(fw config-check --config "$PLACEHOLDER" 2>&1) || placeholder_status=$?
+[ "$placeholder_status" -ne 0 ] || fail "dormant profile placeholder was accepted"
+assert_contains "$placeholder_out" "unsupported profile(s): example-client" "profile placeholder refusal is explicit"
 
 SECRET="$TMP_ROOT/secret.json"
 cp "$CFG" "$SECRET"
@@ -73,12 +73,15 @@ secret_out=$(fw config-check --config "$SECRET" 2>&1) || secret_status=$?
 [ "$secret_status" -ne 0 ] || fail "inline secret-looking config was accepted"
 assert_contains "$secret_out" "inline secret" "inline secret refusal is explicit"
 assert_not_contains "$secret_out" "do-not-print-this-value" "secret-looking value is not printed"
-pass "config rejects duplicate channels, enabled dormant profiles, and inline secrets"
+pass "config rejects duplicate channels, profile placeholders, and inline secrets"
 
 out=$(fw setup --dry-run --config "$CFG")
 assert_contains "$out" "no network" "setup dry-run says it is offline"
 assert_contains "$out" "temporary setup permission integer" "setup dry-run prints setup permissions"
 assert_contains "$out" "steady-state permission integer" "setup dry-run prints steady permissions"
+assert_contains "$out" "profile System / Firstmate" "setup dry-run names the system category"
+assert_contains "$out" "profile ProApplis" "setup dry-run names the ProApplis category"
+assert_contains "$out" "profile Folium" "setup dry-run names the Folium category"
 assert_contains "$out" "exchanges forum" "setup dry-run names exchange forums"
 assert_contains "$out" "artifacts forum" "setup dry-run names artifact forums"
 assert_contains "$out" "request, decision, work, status, blocked, done" "setup dry-run prints exchange tags"

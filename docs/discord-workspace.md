@@ -8,7 +8,7 @@ It does not contact Discord or Groq, create live resources, decrypt secrets, ins
 ## Presentation contract
 
 The supported workspace is one private operations guild.
-The active profile categories are ProApplis, Folium, and ARFAL.
+The active profile categories are System / Firstmate, ProApplis, and Folium.
 Each active profile has exactly two configured Discord forum channels for this phase.
 One forum is the profile's exchanges forum.
 One forum is the profile's artifacts forum.
@@ -16,7 +16,6 @@ Each forum post or thread is the Discord analogue of an operator tab.
 Voice messages, uploaded audio, and transcripts stay in the relevant exchange post.
 Every artifact is canonical in exactly one tagged artifact-forum post.
 The related exchange receives only a concise card and a link to that artifact post or private artifact URL.
-LBDB and Maratone Labs remain disabled inventory entries until a later captain approval activates them.
 There is no live voice-channel capture in this phase.
 
 ## Bot identity boundary
@@ -33,7 +32,7 @@ The default non-secret config path is `config/discord-workspace.json` under the 
 Use `bin/fm-discord-workspace.sh sample-config` to print a copyable draft.
 Use `bin/fm-discord-workspace.sh config-check --config <json>` to validate the local file.
 The config schema is owned by `bin/fm_discord_workspace_lib.py` and surfaced through `bin/fm-discord-workspace.sh --help`.
-The schema names one operations guild id, one bot application id, one bot user id, captain Discord user ids, disabled profiles, three active profiles, category ids, exchange forum ids, artifact forum ids, optional thread allowlists, exchange tags, artifact tags, artifact policy, audio policy, transcription references, and disabled live choices.
+The schema names one operations guild id, one bot application id, one bot user id, captain Discord user ids, exactly three active profiles, category ids, exchange forum ids, artifact forum ids, optional thread allowlists, exchange tags, artifact tags, artifact policy, audio policy, transcription references, and disabled live choices.
 Exchange tag defaults are request, decision, work, status, blocked, and done.
 Artifact tag defaults are report, board, document, image, audio, draft, final, and expired.
 The script validates ids and duplicate channel assignments but never creates any category, channel, thread, or tag.
@@ -59,7 +58,7 @@ A non-dry-run arm refuses in this phase even when config contains a future live-
 The source command reads only offline fixtures named by `FM_DISCORD_WORKSPACE_FIXTURE` or by `poll.fixture_file` in config.
 Without a fixture it refuses before any network call.
 The adapter accepts only messages from the configured operations guild, configured exchange forum posts or allowlisted exchange threads, configured captain user ids, and non-bot authors.
-It ignores DMs, bots, unknown guilds, unknown channels, unknown authors, artifact-forum input, disabled profiles, and invalid message ids.
+It ignores DMs, bots, unknown guilds, unknown channels, unknown authors, artifact-forum input, and invalid message ids.
 Accepted text, voice transcript, audio transcript, and audio rejection events are passed to `bin/fm-inbox.sh note` with `--source discord-workspace` and a validated `--external-id`.
 The existing captain inbox remains the durable authority and wake owner.
 The process-event adapter declares self-announcing so a successfully handled Discord event produces only the ordinary captain-inbox notification.
