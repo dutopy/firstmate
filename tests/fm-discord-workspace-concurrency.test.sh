@@ -35,9 +35,9 @@ PY
 }
 
 run_parallel() { # run_parallel <mode> <key> <payload-json> [<count>]
-  local mode=$1 key=$2 payload=$3 count=${4:-8} i out_file
+  local mode=$1 key=$2 payload=$3 count=${4:-8} out_file
   out_file=$(mktemp)
-  for i in $(seq 1 "$count"); do
+  for _ in $(seq 1 "$count"); do
     worker "$mode" "$key" "$payload" >> "$out_file" 2>&1 &
   done
   wait
