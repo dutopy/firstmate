@@ -21,7 +21,7 @@ THREAD=888888888888888881
 dl() { FM_HOME="$H" "$ROOT/bin/fm-discord-live.sh" "$@"; }
 
 start_server() { # start_server <world-file> <port-file> <guild-id>
-  python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "$TMP_ROOT/fake-server.log" 2>&1 <<'PY' &
+  setsid python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "/tmp/livekeep/fake-server.log" 2>&1 <<'PY' &
 import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -135,6 +135,10 @@ class Handler(BaseHTTPRequestHandler):
             world["creates"] = int(world.get("creates", 0)) + 1
             save(world)
             self._send(201, channel)
+        elif len(parts) == 3 and parts[2] == "typing":
+            world["typing"] = int(world.get("typing", 0)) + 1
+            save(world)
+            self._send(204, {})
         elif len(parts) == 3 and parts[2] == "messages":
             if body.get("allowed_mentions") != {"parse": []}:
                 self._send(400, {"message": "allowed_mentions must be empty parse"})
@@ -197,6 +201,7 @@ WORLD="$TMP_ROOT/world.json"
 PORT_FILE="$TMP_ROOT/port"
 printf '{"features":["COMMUNITY"],"channels":[],"threads":{},"messages":{},"creates":0,"posts":0,"counter":900000000000000000}\n' > "$WORLD"
 start_server "$WORLD" "$PORT_FILE" "$GUILD"
+echo "$$" > /tmp/livekeep/test-pid
 PORT=$(cat "$PORT_FILE")
 export FM_DISCORD_LIVE_API_BASE="http://127.0.0.1:$PORT"
 export FM_DISCORD_LIVE_SOPS="$TMP_ROOT/fake-sops"
@@ -419,6 +424,7 @@ assert_contains "$out2" "round-trip verified against the recorded message id" "r
 pass "live roundtrip posts once and verifies in both fresh and replay paths"
 
 
+
 # --- 14. process-event arm gates on the live polling flag --------------------
 pe() { FM_HOME="$1" "$ROOT/bin/fm-procevent.sh" "${@:2}"; }
 ped() { FM_HOME="$1" "$ROOT/bin/fm-procevent-discord-workspace.sh" "${@:2}"; }
@@ -530,8 +536,51 @@ NOTES19=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l |
 out=$(pe19 "$H" start discord-workspace 2>&1) || fail "installed-runner repeat failed: $out"
 NOTES19B=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
 [ "$NOTES19B" = 1 ] || fail "installed-runner repeat duplicated notes"
+probeR1=$(python3 -c "import socket;s=socket.socket();s.settimeout(1);print(s.connect_ex(('127.0.0.1',$PORT)))")
+echo "PROBE_pre_retire=$probeR1"
 pe19 "$H" retire discord-workspace >/dev/null 2>&1 || fail "installed-runner retire failed"
+probeR2=$(python3 -c "import socket;s=socket.socket();s.settimeout(1);print(s.connect_ex(('127.0.0.1',$PORT)))")
+echo "PROBE_post_retire=$probeR2"
 pass "registered argv to the task copy works under a main runner from a different code root"
+probeS1=$(python3 -c "import socket;s=socket.socket();s.settimeout(1);print(s.connect_ex(('127.0.0.1',$PORT)))")
+echo "PROBE_S1=$probeS1"
+sleep 2
+probeS2=$(python3 -c "import socket;s=socket.socket();s.settimeout(1);print(s.connect_ex(('127.0.0.1',$PORT)))")
+echo "PROBE_S2=$probeS2"
+
+
+# --- 20. live mirror posts once, converges with replies, fires typing --------
+new_home h20
+CFG20="$H/config/discord-workspace.json"
+printf 'Mirrored conversational text.\n' > "$TMP_ROOT/mirror.txt"
+out=$(FM_DISCORD_LIVE_API_BASE="$FM_DISCORD_LIVE_API_BASE" dl live-post --config "$CFG20" --thread "$THREAD" --tag main --text-file "$TMP_ROOT/mirror.txt" 2>&1) \
+  || fail "mirror post failed: base=$FM_DISCORD_LIVE_API_BASE out=$out probe=$(python3 -c "import socket;s=socket.socket();s.settimeout(1);print(s.connect_ex(('127.0.0.1',$PORT)))")"
+assert_contains "$out" "receipt recorded" "the mirror records its receipt"
+POSTS=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
+TYPING=$(python3 -c "import json;print(json.load(open('$WORLD')).get('typing',0))")
+[ "$TYPING" -ge 1 ] || fail "no typing marker fired around the mirror post"
+out=$(dl live-post --config "$CFG20" --thread "$THREAD" --tag main --text-file "$TMP_ROOT/mirror.txt" 2>&1) \
+  || fail "mirror replay failed: $out"
+assert_contains "$out" "no second post" "mirror replay reports convergence"
+POSTS2=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
+[ "$POSTS2" = "$POSTS" ] || fail "mirror replay posted again"
+# An explicit reply with the same text converges on the mirror's delivery.
+out=$(dl live-reply --config "$CFG20" --request-id "discord:$GUILD:$THREAD:777777777777777701" --text-file "$TMP_ROOT/mirror.txt" --nonce converge-nonce 2>&1) \
+  || fail "converging reply failed: $out"
+assert_contains "$out" "no second delivery" "an explicit reply with identical text converges on the mirror"
+# Operational text never mirrors.
+printf 'FIRSTMATE WATCHER WAKE: stale\n' > "$TMP_ROOT/op.txt"
+op_status=0
+op_out=$(dl live-post --config "$CFG20" --thread "$THREAD" --tag main --text-file "$TMP_ROOT/op.txt" 2>&1) || op_status=$?
+[ "$op_status" -ne 0 ] || fail "operational text was mirrored"
+assert_contains "$op_out" "refusing to mirror operational text" "operational markers are refused before any post"
+CURSOR_ENTRIES=$(python3 -c "import json;print(len(json.load(open('$H/state/discord-workspace/mirror-cursor.json'))))")
+[ "$CURSOR_ENTRIES" = 1 ] || fail "the mirror cursor logged $CURSOR_ENTRIES deliveries instead of 1"
+# Mirror refuses a thread outside the configured allowlist.
+out=$(dl live-post --config "$CFG20" --thread 123456789012345678 --tag main --text-file "$TMP_ROOT/mirror.txt" 2>&1) \
+  && fail "mirror accepted a non-allowlisted thread" || true
+assert_contains "$out" "outside the configured allowlist" "the mirror stays bounded to allowlisted threads"
+pass "live mirror posts once, fires typing, converges with replies, and stays allowlist-bounded"
 
 # --- cleanup -----------------------------------------------------------------
 kill %1 2>/dev/null || true
