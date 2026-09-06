@@ -275,7 +275,7 @@ def atomic_write_config(env: "fwl.Env", raw: Dict[str, Any]) -> None:
 def cmd_live_reply(args: Any, env: "fwl.Env", verify: bool = False) -> int:
     cfg = fwl.load_config(env, args.config)
     require_live_flag(cfg, cfg.live_posting_enabled, "live reply")
-    text = fwl.read_text_file(args.text_file)
+    text = fwl.read_text_file(args.text_file).strip()
     guild_id, channel_id, message_id, profile_key, forum_kind = cfg.profile_for_request_id(args.request_id)
     if forum_kind != "exchange":
         raise FMError("replies must target an exchange forum thread")
@@ -283,8 +283,13 @@ def cmd_live_reply(args: Any, env: "fwl.Env", verify: bool = False) -> int:
     nonce = args.nonce or f"reply:{args.request_id}:{text_digest}"
     target = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "request_id": args.request_id}
     receipt = fwl.base_receipt("reply", profile_key, target, text_digest)
-    client = DiscordClient(decrypt_token(env, cfg))
     existing = fwl.load_existing_json(fwl.receipt_path(env, nonce))
+    if existing is None and _receipt_shares_text_and_channel(env, text_digest, channel_id):
+        # Single outbound owner: the identical text already reached this thread
+        # through the mirror delivery identity, so a reply would duplicate it.
+        print("mirror exists; no second delivery")
+        return 0
+    client = DiscordClient(decrypt_token(env, cfg))
     if existing is not None:
         comparable = dict(existing)
         comparable.pop("recorded_at", None)
@@ -423,6 +428,87 @@ def cmd_live_source(args: Any, env: "fwl.Env") -> int:
     return 0
 
 
+def _receipt_shares_text_and_channel(env: "fwl.Env", digest: str, channel_id: str) -> bool:
+    receipts_dir = fwl.discord_state_path(env, "receipts")
+    if not receipts_dir.is_dir():
+        return False
+    for path in receipts_dir.glob("*.json"):
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(receipt.get("text_sha256") or "") != digest:
+            continue
+        target = receipt.get("target") if isinstance(receipt.get("target"), dict) else {}
+        if str(target.get("channel_id") or "") == channel_id:
+            return True
+    return False
+
+
+def cmd_live_post(args: Any, env: "fwl.Env") -> int:
+    """Post one mirrored conversational item with single-owner idempotency.
+
+    Same text to the same thread converges on one durable delivery identity:
+    both the mirror and any explicit reply share the text digest, so neither
+    path can issue a second post for content already delivered to the thread.
+    """
+    cfg = fwl.load_config(env, args.config)
+    require_live_flag(cfg, cfg.live_posting_enabled, "live mirror")
+    thread_id = fwl.validate_snowflake(args.thread, "--thread") or ""
+    allowed = any(
+        thread_id in p["exchange_thread_ids"] or thread_id in p["artifact_thread_ids"]
+        or thread_id in (p["exchange_forum_id"], p["artifact_forum_id"])
+        for p in cfg.profiles.values()
+    )
+    if not allowed:
+        raise FMError("mirror target thread is outside the configured allowlist")
+    text = fwl.read_text_file(args.text_file).strip()
+    if not text:
+        return 0
+    # Discord-origin and operational text never mirrors: the caller passes only
+    # terminal-origin conversation, and these markers are machinery evidence.
+    for marker in ("FIRSTMATE WATCHER WAKE", "FIRSTMATE_OP:", "\u2063", "\u26f5"):
+        if marker in text:
+            raise FMError("refusing to mirror operational text")
+    digest = fwl.sha256_text(text)
+    if _receipt_shares_text_and_channel(env, digest, thread_id):
+        print("mirror exists; no second post")
+        return 0
+    tag = "main" if args.tag == "main" else "captain"
+    nonce = f"mirror:{thread_id}:{digest}"
+    target = {"guild_id": cfg.guild_id, "channel_id": thread_id}
+    receipt = fwl.base_receipt("mirror", tag, target, digest)
+    client = DiscordClient(decrypt_token(env, cfg))
+    # The typing marker fires only around the actual post: real processing
+    # already happened in the main turn, so this is never a queued lie.
+    client.request("POST", f"/channels/{thread_id}/typing")
+    sent = client.request(
+        "POST",
+        f"/channels/{thread_id}/messages",
+        {"content": f"[{tag}] {text}", "allowed_mentions": {"parse": []}},
+    )
+    discord_message_id = str(sent.get("id") or "")
+    if not discord_message_id.isdigit():
+        raise FMError("Discord did not return a usable message id for the mirror post")
+    recorded = fwl.record_receipt(env, nonce, receipt, discord_message_id)
+    record_mirror_cursor(env, digest, thread_id, recorded)
+    print(recorded)
+    return 0
+
+
+def record_mirror_cursor(env: "fwl.Env", digest: str, thread_id: str, recorded: str) -> None:
+    cursor_path = fwl.discord_state_path(env, "mirror-cursor.json")
+    try:
+        cursor = json.loads(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else []
+    except (OSError, json.JSONDecodeError):
+        cursor = []
+    if not isinstance(cursor, list):
+        cursor = []
+    cursor.append({"digest": digest, "thread": thread_id, "result": recorded})
+    with fwl.state_transaction(env):
+        fwl.atomic_json(cursor_path, cursor[-100:])
+
+
 def registered_source_pass(env: "fwl.Env", cfg: "fwl.WorkspaceConfig", client: "DiscordClient") -> int:
     """Wire contract for the registered process-event source.
 
@@ -461,6 +547,11 @@ def main(argv: List[str]) -> int:
     p.add_argument("--request-id", required=True)
     p.add_argument("--text-file", required=True)
     p.add_argument("--nonce")
+    p = sub.add_parser("live-post")
+    fwl.add_config_argument(p)
+    p.add_argument("--thread", required=True)
+    p.add_argument("--tag", choices=("captain", "main"), required=True)
+    p.add_argument("--text-file", required=True)
     args = parser.parse_args(argv[2:])
     env = fwl.Env(argv[1])
     handlers = {
@@ -469,6 +560,7 @@ def main(argv: List[str]) -> int:
         "live-reply": cmd_live_reply,
         "live-source": cmd_live_source,
         "live-roundtrip": lambda a, e: cmd_live_reply(a, e, verify=True),
+        "live-post": cmd_live_post,
     }
     return handlers[args.command](args, env)
 

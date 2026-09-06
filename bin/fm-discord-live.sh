@@ -7,6 +7,7 @@
 #   fm-discord-live.sh live-reply --config <json> --request-id <id> --text-file <f> [--nonce <n>]
 #   fm-discord-live.sh live-source --config <json>
 #   fm-discord-live.sh live-roundtrip --config <json> --request-id <id> --text-file <f>
+#   fm-discord-live.sh live-post --config <json> --thread <id> --tag captain|main --text-file <f>
 #
 # Decrypts only the bot token into process memory (never stdout, disk, or
 # logs), talks to Discord API v10, and reuses the core workspace config,
