@@ -12,16 +12,18 @@ mkdir -p "$state"
 
 fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
-run() { FM_STATE_OVERRIDE="$state" FM_HOME="$TMP_ROOT" "$REPORTER" "$@"; }
+run() { FM_STATE_OVERRIDE="$state" FM_HOME="$TMP_ROOT" REFLEX_MAX_SCAN_BYTES="${REFLEX_MAX_SCAN_BYTES:-131072}" "$REPORTER" "$@"; }
 
 keys=()
+causes=(unknown timeout transport malformed stale)
 for n in $(seq 1 10); do
-  out=$(run intake "case-$n" "worker-$n" unknown "private raw evidence case $n")
+  cause=${causes[$(( (n - 1) % ${#causes[@]} ))]}
+  out=$(run intake "case-$n" "worker-$n" "$cause" "private raw evidence case $n")
   key=${out#*$'\t'}
   keys+=("$key")
   run report "case-$n" "$key" >/dev/null
   run review "case-$n" "$key" >/dev/null
-  [ "$(run intake "case-$n" "worker-$n" unknown "private raw evidence case $n")" = "already-intake$(printf '\t')$key" ] \
+  [ "$(run intake "case-$n" "worker-$n" "$cause" "private raw evidence case $n")" = "already-intake$(printf '\t')$key" ] \
     || fail "case $n was not intake-deduplicated"
 done
 
@@ -41,6 +43,40 @@ if run resolve unrelated ordinary-decision >/dev/null 2>&1; then
 fi
 grep -F 'needs-decision [key=ordinary-decision]' "$state/unrelated.status" >/dev/null \
   || fail 'unknown resolution mutated unrelated native decision'
+
+# A prose mention is not lifecycle ownership, and must not close a native decision.
+spoof_key=reflex-0123456789abcdef01234567
+printf '%s\n' "needs-decision [key=$spoof_key]: quoted reflex-intake [key=$spoof_key] text" > "$state/spoof.status"
+if run resolve spoof "$spoof_key" >/dev/null 2>&1; then
+  fail 'embedded reflex intake text was accepted as ownership'
+fi
+[ "$(wc -l < "$state/spoof.status")" -eq 1 ] || fail 'spoof resolution mutated native decision'
+
+# Contending identical intakes must serialize to one durable suspicion.
+contended_pids=()
+for n in $(seq 1 20); do
+  run intake contended worker unknown 'same concurrent evidence' >/dev/null &
+  contended_pids+=("$!")
+done
+for pid in "${contended_pids[@]}"; do wait "$pid" || fail 'contended intake failed'; done
+[ "$(grep -c '^reflex-intake ' "$state/contended.status")" -eq 1 ] \
+  || fail 'contended identical intakes appended duplicates'
+
+# Bounded refusal must not forget an aged lifecycle and admit a duplicate.
+old_max=${REFLEX_MAX_SCAN_BYTES:-131072}
+REFLEX_MAX_SCAN_BYTES=512
+aged=$(run intake aged worker unknown 'aged evidence')
+aged_key=${aged#*$'\t'}
+run report aged "$aged_key" >/dev/null
+run review aged "$aged_key" >/dev/null
+printf '%s\n' $(seq 1 100) >> "$state/aged.status"
+if run resolve aged "$aged_key" >/dev/null 2>&1; then
+  fail 'aged lifecycle was resolved after bounded history was lost'
+fi
+if run intake aged worker unknown 'aged evidence' >/dev/null 2>&1; then
+  fail 'aged lifecycle admitted duplicate after bounded refusal'
+fi
+REFLEX_MAX_SCAN_BYTES=$old_max
 
 all=$(run list case-1)
 case "$all" in
@@ -64,4 +100,15 @@ reflex_line='reflex-intake [key=reflex-test] [instance=x] [cause=unknown] [evide
 # shellcheck source=/dev/null
 . "$classifier"
 status_is_captain_relevant "$reflex_line" || fail 'reflex intake was not captain-relevant'
+
+# Reflex review uses the native decision fold, including its native close verb.
+native_status="$TMP_ROOT/native.status"
+native_key=reflex-aaaaaaaaaaaaaaaaaaaaaaaa
+printf '%s\n' "needs-decision [key=$native_key]: reflex review requested" > "$native_status"
+status_open_decisions "$native_status" | grep -F "$native_key" >/dev/null \
+  || fail 'reflex review was not present in native open decisions'
+printf '%s\n' "resolved [key=$native_key]: reviewed" >> "$native_status"
+if status_open_decisions "$native_status" | grep -F "$native_key" >/dev/null; then
+  fail 'native decision fold did not close reflex review'
+fi
 pass 'ten synthetic cases preserve lifecycle, privacy, deduplication, and explicit resolution'
