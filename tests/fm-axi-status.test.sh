@@ -28,14 +28,14 @@ mkdir -p "$FRESH"
 EMPTY=$(FM_HOME="$FRESH" "$AXI") || fail "empty-home aggregate failed"
 [ "$EMPTY" = 'no AXI records' ] || fail "empty home lacked explicit empty state"
 FM_HOME="$FRESH" "$AXI" write --task-id fresh --state working >/dev/null || fail "fresh-home write failed"
-expect_fail "$AXI" write --state done
-expect_fail "$AXI" write --task-id delivery --state done --kind delivery
-expect_fail "$AXI" write --task-id x --state done --unknown value
-"$AXI" write --task-id path-only --state done --kind delivery --path /private/path-only >/dev/null \
+expect_fail "$AXI" write --state 'done'
+expect_fail "$AXI" write --task-id delivery --state 'done' --kind delivery
+expect_fail "$AXI" write --task-id x --state 'done' --unknown value
+"$AXI" write --task-id path-only --state 'done' --kind delivery --path /private/path-only >/dev/null \
   || fail "path-only delivery failed"
-"$AXI" write --task-id pr-only --state done --kind delivery --pr https://github.com/example/project/pull/7 >/dev/null \
+"$AXI" write --task-id pr-only --state 'done' --kind delivery --pr https://github.com/example/project/pull/7 >/dev/null \
   || fail "PR-only delivery failed"
-"$AXI" write --task-id merge-input --state done --kind delivery \
+"$AXI" write --task-id merge-input --state 'done' --kind delivery \
   --pr https://github.com/example/project/pull/8 --merge-state merged >/dev/null \
   || fail "explicit identity-bound merge input failed"
 
@@ -49,7 +49,9 @@ git -C "$TMP_ROOT/worktree" config user.name fmtest
 git -C "$TMP_ROOT/worktree" commit -q --allow-empty -m init
 git -C "$TMP_ROOT/worktree" checkout -q -b fm/ship
 HEAD_ID=$(git -C "$TMP_ROOT/worktree" rev-parse HEAD)
+SHORT_HEAD=${HEAD_ID%"${HEAD_ID#???????}"}
 printf 'task_id=ship\nworktree=%s\nkind=ship\npr=https://github.com/example/project/pull/42\n' "$TMP_ROOT/worktree" > "$HOME_DIR/state/ship.meta"
+# shellcheck disable=SC2016 # Literal script body for the fake tmux executable.
 printf '#!/usr/bin/env bash\ncase "${1:-}" in display-message) printf "%%1\\n";; capture-pane) printf "quiet\\n> \\n";; esac\n' > "$TMP_ROOT/tmux"
 chmod +x "$TMP_ROOT/tmux"
 cat > "$TMP_ROOT/no-mistakes" <<EOF
@@ -67,7 +69,7 @@ run:
     review,running,0,0
 OUT
 elif [ "\${1:-}" = runs ]; then
-  printf '  running    fm/ship ${HEAD_ID%${HEAD_ID#???????}}  2026-09-08 09:00\n'
+  printf '  running    fm/ship $SHORT_HEAD  2026-09-08 09:00\n'
 fi
 EOF
 chmod +x "$TMP_ROOT/no-mistakes"
@@ -75,19 +77,19 @@ export PATH="$TMP_ROOT:$PATH"
 
 PATH_VALUE=/private/axi-phase1-fixture/artifact-with-a-canonical-long-name
 PR_VALUE=https://github.com/example/project/pull/42
-"$AXI" write --task-id ship --state done --kind delivery --path "$PATH_VALUE" --pr "$PR_VALUE" --merge-state open --event-id e1 >/dev/null || fail "delivery write failed"
+"$AXI" write --task-id ship --state 'done' --kind delivery --path "$PATH_VALUE" --pr "$PR_VALUE" --merge-state open --event-id e1 >/dev/null || fail "delivery write failed"
 "$AXI" write --task-id other --state blocked --capability unavailable --error-code NEEDS_INPUT --error-message 'captain must choose' --event-id other-1 >/dev/null || fail "error write failed"
 
 # Exact retries and repeated unkeyed operations converge; collisions validate before dedupe.
 BEFORE=$(sha256sum "$HOME_DIR/state/axi-status.v1.log")
-"$AXI" write --task-id ship --state done --kind delivery --path "$PATH_VALUE" --pr "$PR_VALUE" --merge-state open --event-id e1 > "$TMP_ROOT/retry" || fail "exact retry failed"
+"$AXI" write --task-id ship --state 'done' --kind delivery --path "$PATH_VALUE" --pr "$PR_VALUE" --merge-state open --event-id e1 > "$TMP_ROOT/retry" || fail "exact retry failed"
 grep -qx unchanged "$TMP_ROOT/retry" || fail "exact retry did not converge"
 expect_fail "$AXI" write --task-id ship --state INVALID --event-id e1
-expect_fail "$AXI" write --task-id collision --state done --event-id e1
-expect_fail "$AXI" write --task-id collision --state done --kind delivery --event-id e1
+expect_fail "$AXI" write --task-id collision --state 'done' --event-id e1
+expect_fail "$AXI" write --task-id collision --state 'done' --kind delivery --event-id e1
 [ "$BEFORE" = "$(sha256sum "$HOME_DIR/state/axi-status.v1.log")" ] || fail "invalid retry changed history"
-"$AXI" write --task-id repeat --state done >/dev/null || fail "first unkeyed write failed"
-"$AXI" write --task-id repeat --state done > "$TMP_ROOT/repeat" || fail "repeated unkeyed write failed"
+"$AXI" write --task-id repeat --state 'done' >/dev/null || fail "first unkeyed write failed"
+"$AXI" write --task-id repeat --state 'done' > "$TMP_ROOT/repeat" || fail "repeated unkeyed write failed"
 grep -qx unchanged "$TMP_ROOT/repeat" || fail "repeated unkeyed write did not converge"
 
 # Updates append a complete immutable event while preserving every prior event.
