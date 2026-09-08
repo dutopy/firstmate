@@ -8,7 +8,8 @@
 # tracked non-symlink fm-*.sh under this worker's configured FM_ROOT/bin.
 #
 # Each child runs under env -i with the shared filesystem-composed PATH, HOME,
-# FM_HOME, FM_ROOT_OVERRIDE, and FM_REMOTE_JOB_ACTIVE=1. Commands receive their
+# XDG_CONFIG_HOME, GH_CONFIG_DIR, FM_HOME, FM_ROOT_OVERRIDE, and
+# FM_REMOTE_JOB_ACTIVE=1. Commands receive their
 # captured stdin and have a 360-second default timeout. Their stdout and stderr
 # are independently constrained to the job library's 1048576-byte bound. A
 # record is marked done only after its bounded outputs and numeric exit status
@@ -678,6 +679,7 @@ worker_capture_output() { # <fifo> <destination>
 
 worker_run_job() { # <account-home> <job-dir>
   local account_home=$1 job=$2 root home command command_path git_bin rc deadline remaining
+  local xdg_config_home gh_config_dir
   local stdout_pipe stderr_pipe stdout_reader stderr_reader preemptible=0
   local -a argv child_env
   root=$(worker_read_text "$job" root 8192) || { worker_publish_result "$job" 126; return; }
@@ -724,6 +726,8 @@ worker_run_job() { # <account-home> <job-dir>
     *) worker_publish_result "$job" 126; return ;;
   esac
   fm_remote_job_build_child_path "$root" >/dev/null
+  xdg_config_home=${XDG_CONFIG_HOME:-$account_home/.config}
+  gh_config_dir=${GH_CONFIG_DIR:-$xdg_config_home/gh}
   for command in stdin stdout stderr; do
     [ -f "$job/$command" ] && [ ! -L "$job/$command" ] || { worker_publish_result "$job" 126; return; }
   done
@@ -747,6 +751,8 @@ worker_run_job() { # <account-home> <job-dir>
     /usr/bin/env -i
     "PATH=$FM_REMOTE_JOB_CHILD_PATH"
     "HOME=$account_home"
+    "XDG_CONFIG_HOME=$xdg_config_home"
+    "GH_CONFIG_DIR=$gh_config_dir"
     "FM_HOME=$home"
     "FM_ROOT_OVERRIDE=$root"
     FM_REMOTE_JOB_ACTIVE=1

@@ -57,7 +57,8 @@
 #
 # The worker accepts only a tracked, non-symlink executable named fm-*.sh below
 # its configured FM_ROOT/bin. Every child receives env -i with the composed
-# PATH, HOME, FM_HOME, FM_ROOT_OVERRIDE, and FM_REMOTE_JOB_ACTIVE=1. The PATH
+# PATH, HOME, XDG_CONFIG_HOME, GH_CONFIG_DIR, FM_HOME, FM_ROOT_OVERRIDE, and
+# FM_REMOTE_JOB_ACTIVE=1. The PATH
 # is intentionally filesystem-discovered rather than login-shell-derived:
 # ~/.local/bin; nvm, asdf, and mise shims/install bins; Nix; Homebrew; and the
 # system tail. No shell startup files are evaluated. Each discovered set is
@@ -834,10 +835,13 @@ fm_remote_job_plist_safe_path() {
 }
 
 fm_remote_job_render_launchagent() { # <remote-root> <account-home>
-  local root=$1 account_home=$2 worker
+  local root=$1 account_home=$2 worker xdg_config_home gh_config_dir
   worker="$root/bin/fm-remote-job-worker.sh"
+  xdg_config_home=$account_home/.config
+  gh_config_dir=$xdg_config_home/gh
   fm_remote_job_launchagent_paths "$account_home"
   fm_remote_job_plist_safe_path "$worker" && fm_remote_job_plist_safe_path "$account_home" &&
+    fm_remote_job_plist_safe_path "$xdg_config_home" && fm_remote_job_plist_safe_path "$gh_config_dir" &&
     fm_remote_job_plist_safe_path "$FM_REMOTE_JOB_LAUNCH_AGENT_LOG" || return 1
   cat <<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -854,6 +858,10 @@ fm_remote_job_render_launchagent() { # <remote-root> <account-home>
 	<dict>
 		<key>HOME</key>
 		<string>$account_home</string>
+		<key>XDG_CONFIG_HOME</key>
+		<string>$xdg_config_home</string>
+		<key>GH_CONFIG_DIR</key>
+		<string>$gh_config_dir</string>
 		<key>FM_ROOT_OVERRIDE</key>
 		<string>$root</string>
 	</dict>
@@ -1147,13 +1155,15 @@ fm_remote_job_reload_launchagent() { # <account-home> <uid>
 }
 
 fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
-  local root=$1 account_home=$2 worker pid
+  local root=$1 account_home=$2 worker pid xdg_config_home gh_config_dir
   worker="$root/bin/fm-remote-job-worker.sh"
   [ -f "$worker" ] && [ ! -L "$worker" ] && [ -x "$worker" ] || {
     FM_REMOTE_JOB_ERROR="remote job worker is not a genuine executable in the configured code root"
     return 1
   }
   fm_remote_job_prepare_state "$account_home" || return 1
+  xdg_config_home=${XDG_CONFIG_HOME:-$account_home/.config}
+  gh_config_dir=${GH_CONFIG_DIR:-$xdg_config_home/gh}
   if fm_remote_job_worker_owned_alive "$root" "$account_home"; then
     if fm_remote_job_worker_identity_matches "$root" "$account_home"; then return 0; fi
     # The owner pid is the serving child; its restart supervisor sits above it
@@ -1173,6 +1183,8 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   set -m
   nohup env \
     HOME="$account_home" \
+    XDG_CONFIG_HOME="$xdg_config_home" \
+    GH_CONFIG_DIR="$gh_config_dir" \
     FM_ROOT_OVERRIDE="$root" \
     FM_REMOTE_JOB_STATE_ROOT="$FM_REMOTE_JOB_STATE" \
     FM_REMOTE_JOB_PLATFORM_OVERRIDE="${FM_REMOTE_JOB_PLATFORM_OVERRIDE:-}" \

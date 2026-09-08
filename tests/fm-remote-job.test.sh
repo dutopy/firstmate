@@ -42,7 +42,9 @@ printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
 cat > "$REMOTE_ROOT/bin/fm-probe-job.sh" <<'SH'
 #!/bin/bash
 set -u
-printf 'home=%s\nroot=%s\nactive=%s\npath=%s\n' "$FM_HOME" "$FM_ROOT_OVERRIDE" "${FM_REMOTE_JOB_ACTIVE:-}" "$PATH"
+credential_vars=absent
+[ -n "${GH_TOKEN+x}${GITHUB_TOKEN+x}${FMX_PAIRING_TOKEN+x}" ] && credential_vars=present
+printf 'uid=%s\nhome=%s\nroot=%s\nactive=%s\npath=%s\nxdg=%s\ngh_config=%s\ncredential_vars=%s\n' "$(id -u)" "$FM_HOME" "$FM_ROOT_OVERRIDE" "${FM_REMOTE_JOB_ACTIVE:-}" "$PATH" "${XDG_CONFIG_HOME-unset}" "${GH_CONFIG_DIR-unset}" "$credential_vars"
 printf 'args:'
 printf ' <%s>' "$@"
 printf '\n'
@@ -186,7 +188,8 @@ MISE_EXPECTED=$(printf '%s\n' "$MISE_INSTALLS"/*/*/bin)
 rm -rf -- "$ACCOUNT_HOME/.local/share/mise"
 pass "operator PATH orders discovered tool installs deterministically"
 
-HOME="$ACCOUNT_HOME" PATH="$RUNTIME_BIN:/usr/bin:/bin:/usr/sbin:/sbin" FM_FAKE_PERL_LOG="$FAKE_PERL_LOG" \
+HOME="$ACCOUNT_HOME" XDG_CONFIG_HOME="$TMP_ROOT/custom-config" GH_CONFIG_DIR="$TMP_ROOT/custom-gh" \
+  PATH="$RUNTIME_BIN:/usr/bin:/bin:/usr/sbin:/sbin" FM_FAKE_PERL_LOG="$FAKE_PERL_LOG" \
   FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$STATE_ROOT" \
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux FM_REMOTE_JOB_TIMEOUT=5 \
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" > "$TMP_ROOT/worker.out" 2> "$TMP_ROOT/worker.err" &
@@ -217,6 +220,17 @@ fm_remote_job_wait "$ACCOUNT_HOME" "$JOB_ID" || fail "$FM_REMOTE_JOB_ERROR"
 OUT=$(<"$FM_REMOTE_JOB_STDOUT")
 assert_contains "$OUT" "home=$REMOTE_HOME" "the worker did not pass the staged FM_HOME"
 assert_contains "$OUT" "root=$REMOTE_ROOT" "the worker did not pass the configured root"
+case "$OUT" in uid=[0-9]*$'\n'*) : ;; *) fail "the worker context did not report a numeric uid" ;; esac
+assert_contains "$OUT" "xdg=$TMP_ROOT/custom-config" "the worker did not preserve the worker XDG config root"
+assert_contains "$OUT" "gh_config=$TMP_ROOT/custom-gh" "the worker did not preserve the worker gh config root"
+assert_contains "$OUT" 'credential_vars=absent' "credential variables crossed into the worker child"
+printf 'observed worker context: %s %s %s %s %s %s\n' \
+  "$(printf '%s\n' "$OUT" | grep '^uid=')" \
+  "$(printf '%s\n' "$OUT" | grep '^home=')" \
+  "$(printf '%s\n' "$OUT" | grep '^xdg=')" \
+  "$(printf '%s\n' "$OUT" | grep '^gh_config=')" \
+  "$(printf '%s\n' "$OUT" | grep '^path=')" \
+  "$(printf '%s\n' "$OUT" | grep '^credential_vars=')"
 assert_contains "$OUT" 'active=1' "the target did not execute inside the worker environment"
 # shellcheck disable=SC2016 # Literal shell-looking expected output is an injection probe.
 assert_contains "$OUT" 'args: <two words> <$(not executed)>' "the worker changed argv boundaries"
@@ -228,6 +242,42 @@ fm_remote_job_reap "$ACCOUNT_HOME" "$JOB_ID" || fail "the completed job could no
 assert_absent "$JOB_DIR" "reap retained a completed job record"
 assert_absent "$FAKE_PERL_LOG" "the worker invoked an unavailable Perl runtime"
 pass "the worker preserves bounded argv and stdin in an empty environment"
+
+# An unset worker configuration uses the account-home roots, including when the
+# worker is started through the Linux gateway path rather than LaunchAgent.
+fm_remote_job_stop_worker_tree "$(cat "$STATE_ROOT/worker.pid")" \
+  || fail "the custom-root worker could not be stopped before the default-root probe"
+env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR \
+  HOME="$ACCOUNT_HOME" PATH="$RUNTIME_BIN:/usr/bin:/bin:/usr/sbin:/sbin" \
+  FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$STATE_ROOT" \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux FM_REMOTE_JOB_TIMEOUT=5 \
+  "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" > "$TMP_ROOT/default-worker.out" 2> "$TMP_ROOT/default-worker.err" &
+for _ in $(seq 1 100); do
+  [ -f "$STATE_ROOT/worker.ready" ] && break
+  sleep 0.05
+done
+assert_present "$STATE_ROOT/worker.ready" "the default-root worker did not publish readiness"
+unset XDG_CONFIG_HOME GH_CONFIG_DIR
+fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" fm-probe-job.sh < /dev/null > /dev/null
+JOB_ID=$FM_REMOTE_JOB_ID
+fm_remote_job_wait "$ACCOUNT_HOME" "$JOB_ID" || fail "$FM_REMOTE_JOB_ERROR"
+OUT=$(<"$FM_REMOTE_JOB_STDOUT")
+assert_contains "$OUT" "xdg=$ACCOUNT_HOME/.config" "the worker did not apply the default XDG config root"
+assert_contains "$OUT" "gh_config=$ACCOUNT_HOME/.config/gh" "the worker did not apply the default gh config root"
+fm_remote_job_reap "$ACCOUNT_HOME" "$JOB_ID" || fail "the default-root probe could not be reaped"
+pass "the Linux worker applies account-home configuration defaults"
+
+# The rendered and installed Aqua contract must carry the same defaults.
+PLIST=$(fm_remote_job_render_launchagent "$REMOTE_ROOT" "$ACCOUNT_HOME")
+assert_contains "$PLIST" '<key>XDG_CONFIG_HOME</key>' "the LaunchAgent omitted XDG_CONFIG_HOME"
+assert_contains "$PLIST" "<string>$ACCOUNT_HOME/.config</string>" "the LaunchAgent omitted the XDG default"
+assert_contains "$PLIST" '<key>GH_CONFIG_DIR</key>' "the LaunchAgent omitted GH_CONFIG_DIR"
+assert_contains "$PLIST" "<string>$ACCOUNT_HOME/.config/gh</string>" "the LaunchAgent omitted the gh default"
+fm_remote_job_write_launchagent "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "$FM_REMOTE_JOB_ERROR"
+fm_remote_job_launchagent_contract_matches "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "the installed LaunchAgent diverged from its rendered contract"
+pass "the macOS LaunchAgent carries the account-home configuration defaults"
 
 ACTIVE_SIDE_EFFECT="$TMP_ROOT/active-side-effect"
 FM_REMOTE_JOB_TIMEOUT=10

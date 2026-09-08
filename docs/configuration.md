@@ -366,6 +366,7 @@ Other ambient names must be listed explicitly, including custom credential-store
 The command shell and worker may still create their own variables.
 Allowed values come from the destination pane at execution time; they are neither copied from the invoking Firstmate process nor written into the launch command.
 Listing a name does not provision it in a daemon's environment or transfer credentials to another machine.
+The remote job worker also exposes the account's `XDG_CONFIG_HOME` and `GH_CONFIG_DIR` roots to each child, defaulting to `$HOME/.config` and `$HOME/.config/gh`, so stored provider and GitHub CLI configuration remains visible after the worker's environment reset.
 
 Choose the minimum additions for the authentication method actually in use:
 
