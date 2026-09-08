@@ -188,16 +188,13 @@ MISE_EXPECTED=$(printf '%s\n' "$MISE_INSTALLS"/*/*/bin)
 rm -rf -- "$ACCOUNT_HOME/.local/share/mise"
 pass "operator PATH orders discovered tool installs deterministically"
 
+# Exercise the public Linux gateway start path, not only the worker executable.
 HOME="$ACCOUNT_HOME" XDG_CONFIG_HOME="$TMP_ROOT/custom-config" GH_CONFIG_DIR="$TMP_ROOT/custom-gh" \
   PATH="$RUNTIME_BIN:/usr/bin:/bin:/usr/sbin:/sbin" FM_FAKE_PERL_LOG="$FAKE_PERL_LOG" \
   FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$STATE_ROOT" \
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux FM_REMOTE_JOB_TIMEOUT=5 \
-  "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" > "$TMP_ROOT/worker.out" 2> "$TMP_ROOT/worker.err" &
-for _ in $(seq 1 100); do
-  [ -f "$STATE_ROOT/worker.ready" ] && break
-  sleep 0.05
-done
-assert_present "$STATE_ROOT/worker.ready" "the worker did not publish its readiness heartbeat"
+  fm_remote_job_ensure_worker "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "the Linux gateway did not start the custom-root worker"
 
 file_mode() {
   if [ "$(uname)" = Darwin ]; then
