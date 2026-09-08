@@ -73,12 +73,10 @@ latest_state() {  # <status-file> <key>
   # Status files are append-only and may be long-lived. Inspect only the
   # bounded suffix; callers reject unknown keys rather than scanning history.
   tail -c "$REFLEX_MAX_SCAN_BYTES" "$file" 2>/dev/null | awk -v key="$key" '
-    index($0, "[key=" key "]") {
-      if ($0 ~ /^reflex-intake /) state="intake"
-      else if ($0 ~ /^reflex-report /) state="report"
-      else if ($0 ~ /^needs-decision /) state="review"
-      else if ($0 ~ /^resolved /) state="resolved"
-    }
+    $0 ~ ("^reflex-intake \\[key=" key "\\] ") { state="intake" }
+    $0 ~ ("^reflex-report \\[key=" key "\\](:| )") { state="report" }
+    $0 ~ ("^needs-decision \\[key=" key "\\]:") { state="review" }
+    $0 ~ ("^resolved \\[key=" key "\\]:") { state="resolved" }
     END { if (state != "") print state }
   ' 2>/dev/null || true
 }
@@ -89,7 +87,27 @@ has_event() {  # <status-file> <key> <state>
 
 has_reflex_origin() {  # <status-file> <key>
   tail -c "$REFLEX_MAX_SCAN_BYTES" "$1" 2>/dev/null \
-    | awk -v key="$2" 'index($0, "reflex-intake [key=" key "]") { found=1 } END { exit(found ? 0 : 1) }'
+    | awk -v key="$2" '
+      $0 ~ ("^reflex-intake \\[key=" key "\\] \\[instance=[A-Za-z0-9._:-]+\\] \\[cause=[A-Za-z0-9._:-]+\\] \\[evidence=sha256:[0-9a-f]{64}\\]: suspicion$") { found=1 }
+      END { exit(found ? 0 : 1) }
+    '
+}
+
+valid_reflex_key() {
+  case "${1:-}" in
+    reflex-????????????????????????)
+      case "${1#reflex-}" in *[!0-9a-f]*) return 1 ;; esac ;;
+    *) return 1 ;;
+  esac
+}
+
+scan_complete() {
+  [ ! -f "$1" ] || [ "$(wc -c < "$1")" -le "$REFLEX_MAX_SCAN_BYTES" ]
+}
+
+reflex_key_or_die() {
+  valid_field "$1" || die 'invalid reflex key'
+  valid_reflex_key "$1" || die 'invalid reflex key (expected generated reflex identity)'
 }
 
 acquire_reflex_lock() {  # <status-file>
@@ -116,6 +134,7 @@ cmd_intake() {
   digest=$(sha256_text "$evidence")
   key="reflex-$(key_digest "$task|$instance|$cause|$digest")"
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
+  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
   case "$(latest_state "$file" "$key")" in
     intake|report|review)
       fm_lock_release "$file.lock"
@@ -132,10 +151,11 @@ cmd_intake() {
 cmd_report() {
   local task=$1 key=$2 file line
   valid_id "$task" || die 'invalid task id'
-  valid_field "$key" || die 'invalid reflex key'
+  reflex_key_or_die "$key"
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no suspicion exists for task'
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
+  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
   case "$(latest_state "$file" "$key")" in
     report|review) fm_lock_release "$file.lock"; printf 'already-report\t%s\n' "$key"; return 0 ;;
     resolved) fm_lock_release "$file.lock"; die 'intake is already resolved' ;;
@@ -150,10 +170,11 @@ cmd_report() {
 cmd_review() {
   local task=$1 key=$2 file line
   valid_id "$task" || die 'invalid task id'
-  valid_field "$key" || die 'invalid reflex key'
+  reflex_key_or_die "$key"
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no report exists for task'
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
+  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
   case "$(latest_state "$file" "$key")" in
     review) fm_lock_release "$file.lock"; printf 'already-review\t%s\n' "$key"; return 0 ;;
     resolved) fm_lock_release "$file.lock"; die 'report is already resolved' ;;
@@ -168,15 +189,17 @@ cmd_review() {
 cmd_resolve() {
   local task=$1 key=$2 note=${3:-resolved} file line
   valid_id "$task" || die 'invalid task id'
-  valid_field "$key" || die 'invalid reflex key'
+  reflex_key_or_die "$key"
   [ "${#note}" -le 256 ] || die 'resolution note exceeds 256 bytes'
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no reflex exists for task'
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
+  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
   has_reflex_origin "$file" "$key" || {
     fm_lock_release "$file.lock"
     die 'unknown reflex key (resolution requires an existing reflex lifecycle)'
   }
+  local state
   state=$(latest_state "$file" "$key")
   case "$state" in
     intake|report|review) ;;
