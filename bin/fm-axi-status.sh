@@ -5,6 +5,7 @@
 #   fm-axi-status.sh [--full] [--width N]
 #   fm-axi-status.sh write [--update] --task-id ID --state STATE [fields]
 #   fm-axi-status.sh validate [FILE]
+#   fm-axi-status.sh diagnostics [--full] [--width N]
 #
 # The versioned state/axi-status.v1.log file is immutable logical event history:
 # each successful new write atomically republishes the prior bytes plus one full
@@ -178,6 +179,78 @@ def usage_validate():
     print('validates and canonicalizes every axi-status.v1 record; default FILE is the live journal.')
 
 
+def usage_diagnostics():
+    print('usage: fm-axi-status.sh diagnostics [--full] [--width N]')
+    print('reads the six bounded error/log/hook targets without changing legacy files.')
+    print('runtime invocation frequency is reported as unknown unless retained evidence exists.')
+
+
+DIAGNOSTIC_TARGETS = (
+    ("state/.watch-triage.log", "runtime_log"),
+    ("state/.watch-cycle-exits.log", "runtime_log"),
+    ("state/.watch-deliveries.log", "runtime_log"),
+    ("state/x-poll.error", "runtime_error"),
+    ("bin/fm-hook-host-lib.sh", "hook_source"),
+    ("bin/fm-kimi-turnend-hook.sh", "hook_source"),
+)
+
+
+def diagnostic_records():
+    for relative, surface in DIAGNOSTIC_TARGETS:
+        path = (os.path.join(state_dir, relative[6:])
+                if relative.startswith('state/')
+                else os.path.join(os.path.dirname(state_dir), relative))
+        # The command's script root is authoritative for tracked hook sources;
+        # state remains home-local. This prevents a home override from making a
+        # source inventory silently read a different checkout.
+        if relative.startswith('bin/'):
+            path = os.path.join(os.environ['FM_AXI_SCRIPT_DIR'], relative[4:])
+        exists = os.path.isfile(path)
+        content = ''
+        if exists:
+            try:
+                with open(path, encoding='utf-8', errors='strict') as handle:
+                    content = handle.read()
+            except UnicodeDecodeError:
+                fail('INVALID_ENCODING', 'diagnostic target is not valid UTF-8', relative)
+            except OSError as exc:
+                fail('IO_ERROR', str(exc), relative, 1)
+        yield {
+            'target': relative,
+            'surface': surface,
+            'exists': 'true' if exists else 'false',
+            'bytes': str(len(content.encode('utf-8'))),
+            'lines': str(content.count('\n') + (1 if content and not content.endswith('\n') else 0)),
+            'frequency': 'unknown',
+            'content': content,
+        }
+
+
+def diagnostics_output(full, width):
+    records = list(diagnostic_records())
+    for row in records:
+        base = ('axi-output.v1 target=' + encode(row['target']) +
+                ' surface=' + row['surface'] +
+                ' exists=' + row['exists'] +
+                ' bytes=' + row['bytes'] +
+                ' lines=' + row['lines'] +
+                ' frequency=' + row['frequency'])
+        if full:
+            print(base + ' content=' + encode(row['content']))
+        else:
+            for line in wrap('target', row['target'], width):
+                print(line)
+            for label, value in (('surface', row['surface']), ('exists', row['exists']),
+                                 ('bytes', row['bytes']), ('lines', row['lines']),
+                                 ('frequency', 'unknown')):
+                for line in wrap(label, value, width):
+                    print(line)
+            print('details=omitted;')
+            print('rerun=')
+            for line in wrap('command', 'diagnostics --full', width):
+                print(line)
+
+
 def take_value(index, flag):
     if index + 1 >= len(args) or args[index + 1] == '' or args[index + 1].startswith('--'):
         fail('MISSING_OPTION_VALUE', flag + ' requires a non-empty value', flag[2:])
@@ -240,6 +313,38 @@ def compact(row, width):
 
 if args in (['--help'], ['-h']):
     usage()
+    raise SystemExit(0)
+
+if args and args[0] == 'diagnostics':
+    if args[1:] in (['--help'], ['-h']):
+        usage_diagnostics()
+        raise SystemExit(0)
+    full = False
+    width = 100
+    index = 1
+    seen = set()
+    while index < len(args):
+        flag = args[index]
+        if flag == '--full':
+            if flag in seen:
+                fail('DUPLICATE_OPTION', '--full supplied twice', 'full')
+            full = True
+            seen.add(flag)
+            index += 1
+        elif flag == '--width':
+            if flag in seen:
+                fail('DUPLICATE_OPTION', '--width supplied twice', 'width')
+            raw, index = take_value(index, flag)
+            try:
+                width = int(raw)
+            except ValueError:
+                fail('INVALID_WIDTH', 'width must be an integer', 'width')
+            if width < 20:
+                fail('INVALID_WIDTH', 'width must be at least 20', 'width')
+            seen.add(flag)
+        else:
+            fail('UNKNOWN_OPTION', 'unsupported diagnostics option', flag)
+    diagnostics_output(full, width)
     raise SystemExit(0)
 
 if args and args[0] == 'validate':

@@ -17,6 +17,8 @@ The public commands are:
     bin/fm-axi-status.sh write --task-id ID --state done --kind delivery --path /absolute/artifact
     bin/fm-axi-status.sh validate
     bin/fm-axi-status.sh validate FILE
+    bin/fm-axi-status.sh diagnostics
+    bin/fm-axi-status.sh diagnostics --full
 
 The writer stores deterministic `axi-status.v1` percent-encoded key/value records in `state/axi-status.v1.log`.
 Every record requires `task_id` and `state`.
@@ -68,3 +70,32 @@ Principle 6 appears first as required by this phase's acceptance contract:
 
 The status boundary uses no dutopy-config runtime dependency.
 The source definitions were independently captured and reviewed in dutopy-config as prerequisite evidence; this repository retains only the implementation rationale and public source link.
+
+## Bounded error, log, and hook projection
+
+`diagnostics` is an additive read-only projection for exactly six targets selected
+from the retained Firstmate source inventory. The bounded list is explicit so a
+source-file count cannot silently become a runtime-frequency claim:
+
+1. `state/.watch-triage.log` — watcher diagnostic log
+2. `state/.watch-cycle-exits.log` — watcher cycle outcomes
+3. `state/.watch-deliveries.log` — watcher delivery outcomes
+4. `state/x-poll.error` — Relay poll error record
+5. `bin/fm-hook-host-lib.sh` — tracked hook host predicate
+6. `bin/fm-kimi-turnend-hook.sh` — tracked Kimi hook installer
+
+The first four targets are home-local runtime records; the last two are tracked
+source files from the executable's own checkout. Missing targets are represented
+with `exists=false`, never fabricated. The default projection exposes target,
+surface, existence, byte count, line count, and `frequency=unknown`; `--full`
+adds percent-encoded content without changing any source or log. The selection is
+an inventory boundary, not a claim that these are the most frequently invoked
+artifacts. No retained invocation dataset with a stated time window exists for
+this bounded list, so runtime frequency remains unknown. Existing log readers and
+hook producers are unchanged, and no legacy file is rewritten.
+
+Diagnostics use the same named failure blocks and width rules as the status
+reader. Invalid width or options fail without a prompt; a UTF-8 or I/O failure
+identifies the target. The fixed behavioral fixture checks six output records,
+controlled-width output, unchanged legacy bytes, and the explicit unknown
+frequency disclosure.
