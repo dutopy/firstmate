@@ -19,6 +19,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+REFLEX_MAX_SCAN_BYTES=${REFLEX_MAX_SCAN_BYTES:-131072}
+REFLEX_MAX_LIST_LINES=${REFLEX_MAX_LIST_LINES:-512}
+REFLEX_LOCK_ATTEMPTS=${REFLEX_LOCK_ATTEMPTS:-50}
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -65,7 +68,11 @@ key_digest() { sha256_text "$1" | cut -c1-24; }
 # Print the latest lifecycle event for a key. The status log is append-only;
 # resolution is the only event that closes an open reflex record.
 latest_state() {  # <status-file> <key>
-  awk -v key="$2" '
+  local file=$1 key=$2
+  [ -f "$file" ] || return 0
+  # Status files are append-only and may be long-lived. Inspect only the
+  # bounded suffix; callers reject unknown keys rather than scanning history.
+  tail -c "$REFLEX_MAX_SCAN_BYTES" "$file" 2>/dev/null | awk -v key="$key" '
     index($0, "[key=" key "]") {
       if ($0 ~ /^reflex-intake /) state="intake"
       else if ($0 ~ /^reflex-report /) state="report"
@@ -73,21 +80,30 @@ latest_state() {  # <status-file> <key>
       else if ($0 ~ /^resolved /) state="resolved"
     }
     END { if (state != "") print state }
-  ' "$1" 2>/dev/null || true
+  ' 2>/dev/null || true
 }
 
 has_event() {  # <status-file> <key> <state>
   [ "$(latest_state "$1" "$2")" = "$3" ]
 }
 
-append_status() {  # <status-file> <line>
-  local file=$1 line=$2 lock rc=0
-  lock="${file}.lock"
+has_reflex_origin() {  # <status-file> <key>
+  tail -c "$REFLEX_MAX_SCAN_BYTES" "$1" 2>/dev/null \
+    | awk -v key="$2" 'index($0, "reflex-intake [key=" key "]") { found=1 } END { exit(found ? 0 : 1) }'
+}
+
+acquire_reflex_lock() {  # <status-file>
+  local lock="$1.lock" attempts=0
   mkdir -p "$STATE"
-  fm_lock_acquire_wait "$lock"
-  printf '%s\n' "$line" >> "$file" || rc=$?
-  fm_lock_release "$lock" || rc=$?
-  return "$rc"
+  while ! fm_lock_try_acquire "$lock"; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -lt "$REFLEX_LOCK_ATTEMPTS" ] || return 1
+    sleep 0.1
+  done
+}
+
+append_status_locked() {  # <status-file> <line>
+  printf '%s\n' "$2" >> "$1"
 }
 
 cmd_intake() {
@@ -99,12 +115,17 @@ cmd_intake() {
   file=$(task_status "$task")
   digest=$(sha256_text "$evidence")
   key="reflex-$(key_digest "$task|$instance|$cause|$digest")"
-  if [ -f "$file" ] && [ "$(latest_state "$file" "$key")" != resolved ]; then
-    printf 'already-intake\t%s\n' "$key"
-    return 0
-  fi
+  acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
+  case "$(latest_state "$file" "$key")" in
+    intake|report|review)
+      fm_lock_release "$file.lock"
+      printf 'already-intake\t%s\n' "$key"
+      return 0
+      ;;
+  esac
   line="reflex-intake [key=$key] [instance=$instance] [cause=$cause] [evidence=sha256:$digest]: suspicion"
-  append_status "$file" "$line" || die 'could not append suspicion'
+  append_status_locked "$file" "$line" || { fm_lock_release "$file.lock"; die 'could not append suspicion'; }
+  fm_lock_release "$file.lock"
   printf 'intake\t%s\n' "$key"
 }
 
@@ -114,13 +135,15 @@ cmd_report() {
   valid_field "$key" || die 'invalid reflex key'
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no suspicion exists for task'
+  acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
   case "$(latest_state "$file" "$key")" in
-    report|review) printf 'already-report\t%s\n' "$key"; return 0 ;;
-    resolved) die 'intake is already resolved' ;;
+    report|review) fm_lock_release "$file.lock"; printf 'already-report\t%s\n' "$key"; return 0 ;;
+    resolved) fm_lock_release "$file.lock"; die 'intake is already resolved' ;;
   esac
-  has_event "$file" "$key" intake || die 'report requires an open intake event'
+  has_event "$file" "$key" intake || { fm_lock_release "$file.lock"; die 'report requires an open intake event'; }
   line="reflex-report [key=$key]: bounded report; cause remains as recorded"
-  append_status "$file" "$line" || die 'could not append report'
+  append_status_locked "$file" "$line" || { fm_lock_release "$file.lock"; die 'could not append report'; }
+  fm_lock_release "$file.lock"
   printf 'report\t%s\n' "$key"
 }
 
@@ -130,13 +153,15 @@ cmd_review() {
   valid_field "$key" || die 'invalid reflex key'
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no report exists for task'
+  acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
   case "$(latest_state "$file" "$key")" in
-    review) printf 'already-review\t%s\n' "$key"; return 0 ;;
-    resolved) die 'report is already resolved' ;;
+    review) fm_lock_release "$file.lock"; printf 'already-review\t%s\n' "$key"; return 0 ;;
+    resolved) fm_lock_release "$file.lock"; die 'report is already resolved' ;;
   esac
-  has_event "$file" "$key" report || die 'review requires a report event'
+  has_event "$file" "$key" report || { fm_lock_release "$file.lock"; die 'review requires a report event'; }
   line="needs-decision [key=$key]: reflex review requested"
-  append_status "$file" "$line" || die 'could not append review trigger'
+  append_status_locked "$file" "$line" || { fm_lock_release "$file.lock"; die 'could not append review trigger'; }
+  fm_lock_release "$file.lock"
   printf 'review\t%s\n' "$key"
 }
 
@@ -147,12 +172,27 @@ cmd_resolve() {
   [ "${#note}" -le 256 ] || die 'resolution note exceeds 256 bytes'
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no reflex exists for task'
-  [ "$(latest_state "$file" "$key")" != resolved ] || {
+  acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
+  has_reflex_origin "$file" "$key" || {
+    fm_lock_release "$file.lock"
+    die 'unknown reflex key (resolution requires an existing reflex lifecycle)'
+  }
+  state=$(latest_state "$file" "$key")
+  case "$state" in
+    intake|report|review) ;;
+    resolved)
+      fm_lock_release "$file.lock"
     printf 'already-resolved\t%s\n' "$key"
     return 0
-  }
+      ;;
+    *)
+      fm_lock_release "$file.lock"
+      die 'unknown reflex key (resolution requires an existing reflex lifecycle)'
+      ;;
+  esac
   line="resolved [key=$key]: $(printf '%s' "$note" | fm_wake_clean_field)"
-  append_status "$file" "$line" || die 'could not append resolution'
+  append_status_locked "$file" "$line" || { fm_lock_release "$file.lock"; die 'could not append resolution'; }
+  fm_lock_release "$file.lock"
   printf 'resolved\t%s\n' "$key"
 }
 
@@ -160,7 +200,8 @@ cmd_list() {
   local task=$1 file
   file=$(task_status "$task")
   [ -f "$file" ] || exit 0
-  awk '/^(reflex-intake|reflex-report|needs-decision|resolved) / { print }' "$file"
+  tail -n "$REFLEX_MAX_LIST_LINES" "$file" \
+    | awk '/^(reflex-intake|reflex-report|needs-decision|resolved) / { print }'
 }
 
 case "${1:-}" in

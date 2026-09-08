@@ -26,6 +26,22 @@ for n in $(seq 1 10); do
 done
 
 [ "${#keys[@]}" -eq 10 ] || fail "expected ten keys"
+
+# Existing ordinary status and distinct evidence must not suppress intake.
+printf '%s\n' 'signal [key=ordinary]: unrelated status event' > "$state/existing.status"
+first=$(run intake existing worker-existing unknown 'first distinct evidence')
+second=$(run intake existing worker-existing unknown 'second distinct evidence')
+[ "${first#*$'\t'}" != "${second#*$'\t'}" ] || fail 'distinct suspicions reused a key'
+[ "$(wc -l < "$state/existing.status")" -eq 3 ] || fail 'existing status file lost distinct suspicion'
+
+# Unknown resolution keys must not close unrelated native decisions.
+printf '%s\n' 'needs-decision [key=ordinary-decision]: keep this decision open' > "$state/unrelated.status"
+if run resolve unrelated ordinary-decision >/dev/null 2>&1; then
+  fail 'unknown reflex key was accepted for resolution'
+fi
+grep -F 'needs-decision [key=ordinary-decision]' "$state/unrelated.status" >/dev/null \
+  || fail 'unknown resolution mutated unrelated native decision'
+
 all=$(run list case-1)
 case "$all" in
   *"private raw evidence"*) fail 'raw evidence leaked to status output' ;;
