@@ -15,8 +15,9 @@ The public, contributor, and architecture pages below now route readers to this 
 
 ## Bounded inventory
 
-This inventory covers the 13 tracked Markdown routing surfaces that mention the agent-instruction convention.
+This inventory covers the 14 tracked Markdown routing surfaces that mention the agent-instruction convention.
 It is deliberately finite: it does not treat arbitrary project clones, private homes, generated files, or test fixtures as repository instruction surfaces.
+The public `skills/stow/SKILL.md` is included because it teaches readers how project-level `CLAUDE.md` and `AGENTS.md` memory files relate; mechanics-only fixtures such as `docs/cd-guard.md` remain excluded.
 
 | Surface | Role |
 | --- | --- |
@@ -33,6 +34,7 @@ It is deliberately finite: it does not treat arbitrary project clones, private h
 | `docs/supervision-protocols/grok.md` | Grok-specific supervision pointer |
 | `docs/supervision-protocols/unknown.md` | Fallback supervision pointer |
 | `docs/turnend-guard.md` | Turn-end backstop pointer |
+| `skills/stow/SKILL.md` | Public project-memory compatibility pointer |
 
 Each row is a pointer or compatibility statement, not a second owner.
 Operational detail belongs to the named script, skill, or documentation owner.

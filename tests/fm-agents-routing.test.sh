@@ -17,7 +17,7 @@ assert_inventory() {
     in_table && /^\|/ { count++; next }
     in_table && !/^\|/ { exit }
     END { print count }' "$DOC")
-  [ "$count" -eq 13 ] || fail "routing inventory contains $count surfaces, expected 13"
+  [ "$count" -eq 14 ] || fail "routing inventory contains $count surfaces, expected 14"
   for path in \
     AGENTS.md CLAUDE.md CONTRIBUTING.md README.md docs/architecture.md \
     docs/configuration.md docs/scripts.md docs/secondmate-parent-channel.md \
@@ -29,10 +29,34 @@ assert_inventory() {
   done
 }
 
+assert_independent_public_memory_surfaces() {
+  local path discovered=0
+  if grep -Fq "| \`docs/cd-guard.md\` |" "$DOC"; then
+    fail "mechanics-only docs/cd-guard.md must remain outside the routing inventory"
+  fi
+  while IFS= read -r path; do
+    discovered=$((discovered + 1))
+    [ "$path" != "docs/cd-guard.md" ] || \
+      fail "mechanics-only docs/cd-guard.md was independently classified as a routing surface"
+    assert_present "$ROOT/$path" "$path is missing"
+    assert_grep "| \`$path\` |" "$DOC" \
+      "routing inventory omitted independently discovered public memory surface $path"
+  done < <(
+    while IFS= read -r path; do
+      if grep -Fq 'project-level memory file' "$ROOT/$path" && \
+         grep -Fq 'CLAUDE.md' "$ROOT/$path" && grep -Fq 'AGENTS.md' "$ROOT/$path"; then
+        printf '%s\n' "$path"
+      fi
+    done < <(git -C "$ROOT" ls-files '*.md' '*.mdx' '*.rst' '*.txt')
+  )
+  [ "$discovered" -gt 0 ] || fail "independent public memory-surface probe found no qualifying files"
+}
+
 test_inventory_and_canonical_pointer() {
   local fixture
   assert_present "$DOC" "routing inventory is missing"
   assert_inventory
+  assert_independent_public_memory_surfaces
   [ ! -L "$ROOT/CLAUDE.md" ] || fail "root CLAUDE.md must be a regular pointer file"
   fixture="$TMP_ROOT/pointer-owner"
   mkdir -p "$fixture"
