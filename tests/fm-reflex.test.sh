@@ -15,15 +15,26 @@ pass() { printf 'ok - %s\n' "$1"; }
 run() { FM_STATE_OVERRIDE="$state" FM_HOME="$TMP_ROOT" REFLEX_MAX_SCAN_BYTES="${REFLEX_MAX_SCAN_BYTES:-131072}" "$REPORTER" "$@"; }
 
 keys=()
-causes=(unknown timeout transport malformed stale)
+scenarios=(
+  'missing-heartbeat|worker-heartbeat|timeout|heartbeat absent after expected interval'
+  'duplicate-delivery|worker-queue|transport|same event delivered twice'
+  'malformed-payload|worker-parser|malformed|payload shape rejected by parser'
+  'stale-worker|worker-runtime|stale|worker timestamp predates current lease'
+  'unknown-cause|worker-unknown|unknown|observation lacks enough evidence to classify cause'
+  'unexpected-restart|worker-runtime|unknown|worker restarted without matching completion'
+  'task-drift|worker-task|unknown|reported task identity differs from expected task'
+  'late-report|worker-report|stale|report arrived after lifecycle moved on'
+  'partial-output|worker-output|malformed|output ended before a complete record'
+  'repeated-review|worker-review|transport|review trigger repeated by delivery retry'
+)
 for n in $(seq 1 10); do
-  cause=${causes[$(( (n - 1) % ${#causes[@]} ))]}
-  out=$(run intake "case-$n" "worker-$n" "$cause" "private raw evidence case $n")
+  IFS='|' read -r case_name instance cause observation <<< "${scenarios[$((n - 1))]}"
+  out=$(run intake "$case_name" "$instance" "$cause" "$observation")
   key=${out#*$'\t'}
   keys+=("$key")
-  run report "case-$n" "$key" >/dev/null
-  run review "case-$n" "$key" >/dev/null
-  [ "$(run intake "case-$n" "worker-$n" "$cause" "private raw evidence case $n")" = "already-intake$(printf '\t')$key" ] \
+  run report "$case_name" "$key" >/dev/null
+  run review "$case_name" "$key" >/dev/null
+  [ "$(run intake "$case_name" "$instance" "$cause" "$observation")" = "already-intake$(printf '\t')$key" ] \
     || fail "case $n was not intake-deduplicated"
 done
 
@@ -52,6 +63,16 @@ if run resolve spoof "$spoof_key" >/dev/null 2>&1; then
 fi
 [ "$(wc -l < "$state/spoof.status")" -eq 1 ] || fail 'spoof resolution mutated native decision'
 
+# Report and review apply the same structural ownership check as resolve.
+printf '%s\n' "reflex-intake [key=$spoof_key] malformed" > "$state/malformed.status"
+if run report malformed "$spoof_key" >/dev/null 2>&1; then
+  fail 'malformed intake was accepted for report'
+fi
+if run review malformed "$spoof_key" >/dev/null 2>&1; then
+  fail 'malformed intake was accepted for review'
+fi
+[ "$(wc -l < "$state/malformed.status")" -eq 1 ] || fail 'malformed lifecycle was mutated'
+
 # Contending identical intakes must serialize to one durable suspicion.
 contended_pids=()
 for n in $(seq 1 20); do
@@ -76,21 +97,40 @@ fi
 if run intake aged worker unknown 'aged evidence' >/dev/null 2>&1; then
   fail 'aged lifecycle admitted duplicate after bounded refusal'
 fi
+
+# A resolved lifecycle is also refused when its history is no longer complete;
+# bounded scanning must not silently treat it as a new suspicion.
+resolved_aged=$(run intake aged-resolved worker unknown 'resolved aged evidence')
+resolved_aged_key=${resolved_aged#*$'\t'}
+run resolve aged-resolved "$resolved_aged_key" >/dev/null
+printf '%s\n' $(seq 1 100) >> "$state/aged-resolved.status"
+if REFLEX_MAX_SCAN_BYTES=512 run intake aged-resolved worker unknown 'resolved aged evidence' >/dev/null 2>&1; then
+  fail 'aged resolved lifecycle admitted duplicate after bounded refusal'
+fi
 REFLEX_MAX_SCAN_BYTES=$old_max
 
-all=$(run list case-1)
+all=$(run list unknown-cause)
 case "$all" in
   *"private raw evidence"*) fail 'raw evidence leaked to status output' ;;
 esac
 printf '%s\n' "$all" | grep -F 'cause=unknown' >/dev/null || fail 'unknown cause was not represented explicitly'
 printf '%s\n' "$all" | grep -F 'evidence=sha256:' >/dev/null || fail 'evidence digest missing'
+printf '%s\n' 'needs-decision [key=ordinary]: unrelated native decision' >> "$state/unknown-cause.status"
+all=$(run list unknown-cause)
+printf '%s\n' "$all" | grep -F 'key=ordinary' >/dev/null && fail 'unrelated native decision leaked into reflex list'
 
-[ "$(run report case-1 "${keys[0]}")" = "already-report$(printf '\t')${keys[0]}" ] \
+# Listing refuses oversized histories instead of emitting unbounded output.
+printf 'signal [key=ordinary]: %*s\n' 2048 '' | tr ' ' x >> "$state/list-bound.status"
+if REFLEX_MAX_SCAN_BYTES=512 run list list-bound >/dev/null 2>&1; then
+  fail 'oversized list history did not fail closed'
+fi
+
+[ "$(run report missing-heartbeat "${keys[0]}")" = "already-report$(printf '\t')${keys[0]}" ] \
   || fail 'report was not idempotent'
-[ "$(run review case-1 "${keys[0]}")" = "already-review$(printf '\t')${keys[0]}" ] \
+[ "$(run review missing-heartbeat "${keys[0]}")" = "already-review$(printf '\t')${keys[0]}" ] \
   || fail 'review trigger was not idempotent'
-run resolve case-1 "${keys[0]}" 'reviewed without asserting a cause' >/dev/null
-[ "$(run resolve case-1 "${keys[0]}")" = "already-resolved$(printf '\t')${keys[0]}" ] \
+run resolve missing-heartbeat "${keys[0]}" 'reviewed without asserting a cause' >/dev/null
+[ "$(run resolve missing-heartbeat "${keys[0]}")" = "already-resolved$(printf '\t')${keys[0]}" ] \
   || fail 'resolution was not idempotent'
 
 # Existing classifier semantics must surface the new intake/report events.
@@ -101,14 +141,16 @@ reflex_line='reflex-intake [key=reflex-test] [instance=x] [cause=unknown] [evide
 . "$classifier"
 status_is_captain_relevant "$reflex_line" || fail 'reflex intake was not captain-relevant'
 
-# Reflex review uses the native decision fold, including its native close verb.
-native_status="$TMP_ROOT/native.status"
-native_key=reflex-aaaaaaaaaaaaaaaaaaaaaaaa
-printf '%s\n' "needs-decision [key=$native_key]: reflex review requested" > "$native_status"
+# Reporter output must feed the native decision fold, including its native close verb.
+native_status="$state/native.status"
+native_out=$(run intake native worker-native unknown 'native fold integration evidence')
+native_key=${native_out#*$'\t'}
+run report native "$native_key" >/dev/null
+run review native "$native_key" >/dev/null
 status_open_decisions "$native_status" | grep -F "$native_key" >/dev/null \
   || fail 'reflex review was not present in native open decisions'
-printf '%s\n' "resolved [key=$native_key]: reviewed" >> "$native_status"
+run resolve native "$native_key" reviewed >/dev/null
 if status_open_decisions "$native_status" | grep -F "$native_key" >/dev/null; then
-  fail 'native decision fold did not close reflex review'
+  fail 'native decision fold did not close reporter review'
 fi
 pass 'ten synthetic cases preserve lifecycle, privacy, deduplication, and explicit resolution'
