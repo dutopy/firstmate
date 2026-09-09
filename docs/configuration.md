@@ -701,20 +701,17 @@ See [verification/public-followup.md](verification/public-followup.md) for the c
 
 The private Discord operations workspace is configured by the local, gitignored `config/discord-workspace.json` file under the effective `FM_HOME`.
 It is separate from Relay, Hermes, and any client or audience Discord bot.
-The repository-supported phase is offline only: it validates config, renders setup and health dry-runs, plans replies and artifacts, links requests to tasks, preserves pending final replies, and exercises intake through fixtures.
-`bin/fm-discord-workspace.sh` owns the exact schema, fields, state files, receipt formats, artifact checks, final-reply guard, and command mechanics.
-`docs/discord-workspace.md` is the operator guide for the presentation contract, security boundary, dry-run setup, artifact policy, audio policy, and rollback.
-The supported presentation is one private operations guild with System / Firstmate, ProApplis, and Folium categories, each with exchanges and artifacts forum channels.
-Only those three active profiles belong in this phase's configuration.
-The config carries non-secret ids, profile metadata, allowlists, forum tag vocabularies, and disabled live choices only.
+`bin/fm-discord-workspace.sh` owns the exact non-secret schema, fields, state files, receipt formats, artifact checks, final-reply guard, and offline command mechanics.
+[`discord-workspace.md`](discord-workspace.md) owns the current operator contract for the presentation, security boundary, offline planning, bounded live activation, intake, outbound delivery, artifacts, audio, and rollback.
+The config names one private operations guild with System / Firstmate, ProApplis, and Folium profiles, each with exchanges and artifacts forum channels.
+It carries only non-secret ids, profile metadata, allowlists, forum tag vocabularies, policy choices, secret references, and live polling and posting approvals.
 Secret values never belong in this file, argv, logs, process-event records, receipts, artifact records, or inbox metadata.
-Secret references may name `config/discord-workspace.secrets.sops.yaml` and key names for a later sops+age live task, but this phase never decrypts or reads that file.
-Live choices are represented but inert for Discord `MESSAGE_CONTENT`, Omarchy versus VPS host, hosted Groq transcription, artifact access and expiry, temporary setup permissions, Community-mode requirement, live polling, and live posting.
-Apply mode for setup, live Discord health, live transcription, and non-dry-run process-event arming refuses until a later activation task supplies every approval.
-The built-in `discord-workspace` process-event adapter lives at `bin/fm-procevent-discord-workspace.sh` and uses the existing `bin/fm-procevent.sh` owner for source registration, capture, durable result acknowledgement, and retirement.
-Its offline source reads only `FM_DISCORD_WORKSPACE_FIXTURE` or `poll.fixture_file`, accepts only allowlisted operations-guild exchange forum posts or threads from allowlisted captain users, and turns accepted results into idempotent `bin/fm-inbox.sh note` records.
-The idempotency seam is `bin/fm-inbox.sh note --source <name> --external-id <id> [--metadata-file <json>]`, which records a private map under `state/inbox/external/` so replay returns the original note id and appends no second wake.
-Outbound dry-run state lives under `state/discord-workspace/`, including request records, task links, nonce-keyed receipts, pending final replies, and artifact records.
+The bounded live layer decrypts only `FIRSTMATE_DISCORD_BOT_TOKEN` from the referenced sops file into process memory.
+Hosted Groq transcription, artifact hosting, Community-mode management, and host-service deployment remain unsupported by the live layer.
+The built-in `discord-workspace` process-event adapter uses `bin/fm-procevent.sh` for source registration, capture, durable result acknowledgement, and retirement.
+With live polling disabled it reads only `FM_DISCORD_WORKSPACE_FIXTURE` or `poll.fixture_file`; with live polling enabled it performs bounded Discord polling passes and hands accepted captain messages to the idempotent external inbox seam.
+`bin/fm-inbox.sh note --source <name> --external-id <id> [--metadata-file <json>]` records a private map under `state/inbox/external/` so replay returns the original note id and appends no second wake.
+Discord workspace state lives under `state/discord-workspace/`, including request records, task links, nonce-keyed receipts, pending final replies, cursors, and artifact records.
 `bin/fm-teardown.sh` refuses to clean up a task while `state/discord-workspace/pending-followups/<task-id>.json` still records an unresolved private Discord final reply, unless explicit discard authority is carried by `--force`.
 
 ## Trusted external process-event adapters (config/extensions.d)

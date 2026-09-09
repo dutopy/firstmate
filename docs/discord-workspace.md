@@ -1,9 +1,10 @@
 # Discord workspace
 
-Firstmate's private Discord operations workspace is an offline-supported integration for one captain-owned operations guild.
+Firstmate's private Discord operations workspace integrates one captain-owned operations guild.
 It is separate from the public Relay integration and separate from any future Hermes audience bots.
-The repository support in this phase validates configuration, plans setup, plans outbound messages and artifacts, links requests to work, preserves pending final replies, and exercises intake through offline fixtures only.
-It does not contact Discord or Groq, create live resources, decrypt secrets, install tools, arm a live source, or post live messages.
+The offline core validates configuration, plans setup, outbound messages, and artifacts, links requests to work, preserves pending final replies, and exercises intake through fixtures.
+The bounded live layer adds Discord health, category and forum setup, replies, conversation mirroring, one-pass inbound polling, and continuous process-event intake.
+Hosted transcription, voice capture, webhooks, resource deletion, and arbitrary guild access remain unsupported.
 
 ## Presentation contract
 
@@ -39,24 +40,24 @@ The script validates ids and duplicate channel assignments but never creates any
 The config stores secret file paths and key names only.
 It must never store Discord tokens, Groq keys, plaintext `.env` values, or decrypted secret material.
 
-## Setup and health dry-runs
+## Offline setup and health
 
 Run `bin/fm-discord-workspace.sh setup --dry-run --config <json>` to render the planned guild tree, forum ids, thread allowlists, tag vocabulary, and permission integers.
 The dry-run prints temporary setup and steady-state permission integers without contacting Discord.
-The dry-run also prints every live choice that remains unapproved or inactive.
-`setup --apply` refuses in this phase.
+The offline command's `setup --apply` mode remains unavailable; use the bounded live layer's `setup-apply` command for live creation.
 Run `bin/fm-discord-workspace.sh health --local --config <json>` for local config and state checks without network access.
-`health --secrets`, `health --discord`, and `health --transcription` report the planned checks and refuse before live secret or network use.
-Live choices remain configurable but disabled for Discord `MESSAGE_CONTENT`, Omarchy versus VPS host, hosted Groq consent and limits, artifact access and expiry, temporary setup permissions, Community-mode requirement, live polling, and live posting.
+The offline command's `health --secrets`, `health --discord`, and `health --transcription` modes remain planning checks and refuse before live secret or network use.
+Use the bounded live layer's `health` command for authenticated Discord bot and guild checks.
+Hosted Groq transcription, artifact hosting, Community-mode management, and host-service deployment remain inactive choices.
 
 ## Inbound process-event adapter
 
 `bin/fm-procevent-discord-workspace.sh` is the built-in process-event adapter for this integration.
 Its canonical source id is `discord-workspace`.
 `arm --dry-run` prints the registration command and does not register a live source.
-A non-dry-run arm refuses in this phase even when config contains a future live-polling choice.
-The source command reads only offline fixtures named by `FM_DISCORD_WORKSPACE_FIXTURE` or by `poll.fixture_file` in config.
-Without a fixture it refuses before any network call.
+A non-dry-run arm requires live polling in the workspace config and registers the source through `bin/fm-procevent.sh`.
+With live polling disabled, the source command reads only offline fixtures named by `FM_DISCORD_WORKSPACE_FIXTURE` or by `poll.fixture_file` in config and refuses without one.
+With live polling enabled, each source invocation performs one bounded live pass.
 The adapter accepts only messages from the configured operations guild, configured exchange forum posts (a newly created child thread of a configured exchange forum, verified by its parent id) or allowlisted exchange threads, configured captain user ids, and non-bot authors.
 It ignores DMs, bots, unknown guilds, unknown channels, unknown authors, artifact-forum input, and invalid message ids.
 Accepted text, voice transcript, audio transcript, and audio rejection events are passed to `bin/fm-inbox.sh note` with `--source discord-workspace` and a validated `--external-id`.
@@ -114,17 +115,20 @@ No plaintext `.env`, Hermes recipient, client recipient, shared client key, Groq
 `bin/fm-discord-workspace.sh retire --config <json>` is a dry-run retirement check.
 It refuses while pending final replies remain.
 It preserves `state/discord-workspace/` so receipts, request links, artifact records, and pending replies remain auditable.
-If a live process-event source is activated later, retire that source through `bin/fm-procevent.sh retire discord-workspace` or a stricter owner-matching command printed by the activation task.
+Retire a registered live process-event source through `bin/fm-procevent.sh retire discord-workspace`.
 Do not delete live Discord channels, categories, posts, bot permissions, or secrets without a separate explicit captain-approved live operation.
 Rotate the Discord bot token or dedicated transcription key if compromise is suspected.
 
 ## Bounded live activation layer
 
-`bin/fm-discord-live.sh` is the only live surface, and only while the workspace config enables the matching live approval flag.
+`bin/fm-discord-live.sh` is the only live surface.
+Live replies and polling require their matching workspace config flags, while `health` and `setup-apply` run only when explicitly invoked.
 `health` verifies the exact configured operations guild and bot identity.
 `setup-apply` reuses an existing category or forum only when its name, type, and parent match exactly, creates the three profile categories with their exchanges and artifacts forums plus configured tags, writes only non-secret IDs back to the config atomically, and never enables or inspects Community mode: forum channels are created and reused directly.
-`live-reply` posts with empty `allowed_mentions` and reuses the outbound receipt so a replay never posts twice.
-`live-source` lists a guild's active threads once per pass, filters strictly by the configured exchange forum parents, reads only captain-authored non-bot messages after durable monotonic cursors, and feeds the existing external-id inbox seam.
+`live-reply` disables allowed mentions and reuses the outbound receipt.
+A request accepted from a newly created forum child thread remains replyable through its persisted, parent-verified request record.
+`live-post` mirrors captain or main conversation text only to an explicitly allowlisted child thread, prefixes the selected tag, rejects operational markers, and shares delivery deduplication with replies carrying the same text to that thread.
+`live-source` lists a guild's active threads once per pass, filters strictly by the configured exchange forum parents, reads only captain-authored non-bot messages after durable monotonic cursors, and advances each cursor only after the external-id inbox handoff succeeds.
 `live-roundtrip` posts one reply and reads it back to verify delivery.
 The bot token is decrypted from the sops secret file into process memory only and is redacted from every failure path.
 Deletion or retirement of live resources, voice capture, hosted transcription, webhooks, and non-configured guilds stay out of scope.

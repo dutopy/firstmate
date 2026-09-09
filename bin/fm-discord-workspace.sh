@@ -4,14 +4,15 @@
 # This script validates non-secret config, renders setup and health dry-runs,
 # plans outbound replies/status/artifacts, records idempotent outbound receipts,
 # links Discord-originated requests to tasks, preserves pending final follow-ups,
-# and safely refuses live setup, live posting, live health, and destructive
-# retirement until a later activation task supplies every required approval.
+# and keeps live setup, posting, health, and polling outside this entry point.
+# The bounded live operations are exposed by fm-discord-live.sh and the
+# Discord process-event adapter; destructive retirement remains unsupported.
 #
 # Usage:
 #   fm-discord-workspace.sh sample-config
 #   fm-discord-workspace.sh config-check [--config <json>]
 #   fm-discord-workspace.sh setup --dry-run [--config <json>]
-#   fm-discord-workspace.sh setup --apply [--config <json>]     (refuses in this phase)
+#   fm-discord-workspace.sh setup --apply [--config <json>]     (offline command refuses; use fm-discord-live.sh setup-apply)
 #   fm-discord-workspace.sh health [--local|--secrets|--discord|--transcription|--process-event]
 #   fm-discord-workspace.sh reply --request-id <discord:guild:channel:message> --text-file <file>
 #   fm-discord-workspace.sh status --profile <profile> --text-file <file> [--thread <id>]
@@ -26,10 +27,10 @@
 # default, or --config. It names exactly one operations guild, one Firstmate
 # operations bot identity, captain Discord user ids, System / Firstmate, ProApplis, and Folium
 # categories, exchanges and artifacts forum ids, thread allowlists, forum tag
-# vocabularies, and dry-run-only policy choices. The script never reads .env,
-# never decrypts secret values, never contacts Discord or Groq in this phase,
-# and never creates categories, channels, threads, tags, bots, permissions, or
-# live registrations.
+# vocabularies, policy choices, and live polling and posting approvals. This
+# offline entry point never reads .env, decrypts secret values, contacts Discord
+# or Groq, or creates categories, channels, threads, tags, bots, permissions,
+# or live registrations.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
