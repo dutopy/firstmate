@@ -1,0 +1,160 @@
+{
+  "consumer": "pi 0.84.4 RPC get_commands",
+  "commit": "4bfb3b0fc19f3b3653d256785cc2e69632554d56",
+  "changed_skill_count": 17,
+  "descriptions_preserved": true,
+  "skills": [
+    {
+      "name": "afk",
+      "description": "Enter away-mode supervision when the captain invokes /afk, says they are going afk, `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved. It sets a durable away-mode flag so the sub-supervisor daemon can self-handle routine wakes and escalate captain-relevant events plus bounded declared-external-wait rechecks as batched digests during walk-away stretches, then exits automatically when any real unmarked message returns firstmate to full per-wake responsiveness."
+    },
+    {
+      "name": "ask-user-authority",
+      "description": "Agent-only decision procedure for ask-user findings. Use before deciding any ask-user finding. This skill is the single owner of finding-decision policy: firstmate always applies judgment, decides findings that are unambiguous toward accepted intent, and escalates only genuinely ambiguous, expanding, or destructive ones. Finding authority is this skill's criteria, not the project's yolo posture."
+    },
+    {
+      "name": "bearings",
+      "description": "Generate a \"pick up where I left off\" fleet digest from firstmate's live fleet state. Use when the captain invokes /bearings or asks for a bearings report, morning brief, status report, catch-up, \"where did I leave off\", or \"what's in the works\". Plain /bearings is chat-only by default, /bearings file explicitly writes the dated data/status-report-<YYYY-MM-DD>.md artifact, and /bearings lavish additionally builds and arms the interactive fleet board; live PR enrichment remains opt-in and composes with the other modes. Also load this skill's board-wake handling when a procevent lavish wake's source id matches the canonical source id of the stable bearings board path."
+    },
+    {
+      "name": "bootstrap-diagnostics",
+      "description": "Agent-only handling playbook for session-start bootstrap diagnostics. Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH invalid, FLEET_SYNC, NETWORK_CHECKS, HOME_SUMMARY, BACKLOG_RECONCILE, SECONDMATE_SYNC, SECONDMATE_LIVENESS, SECONDMATE_HANDOFF, NUDGE_SECONDMATES, or FMX - or reports that an interrupted backlog cleanup may have left an endpoint or local copy, or when a standalone bin/fm-bootstrap.sh or bin/fm-startup-network.sh run prints one of those lines. A silent bootstrap section, or any other BOOTSTRAP_INFO fact, means no skill load."
+    },
+    {
+      "name": "captain-hold-lifecycle",
+      "description": "Agent-only policy for completing investigations and visual reviews without losing unresolved captain calls, and for closing what the captain owns with his actual words. Load before treating an investigation, scout report, structured review, or Lavish review as complete, before ending a visual review that exposed a captain decision, when recording or routing the captain's answer, and on any RECORD DIVERGENCE line the wake drain prints."
+    },
+    {
+      "name": "decision-hold-lifecycle",
+      "description": "Renamed pointer kept for in-flight briefs: the decisions concept collapsed into \"a task held for the captain\". Load captain-hold-lifecycle instead; this stub only redirects and will be removed one release after the collapse."
+    },
+    {
+      "name": "diagnostic-reasoning",
+      "description": "Agent-only procedure for diagnosing reported bugs. Use before scoping a reported bug and before acting on a diagnostic report. Owns end-user-aligned reproduction, causal separation, divergent-path and history inspection, counterfactual testing, and disconfirming evidence."
+    },
+    {
+      "name": "firstmate-codexapp",
+      "description": "Agent-only playbook for coordinating visible Codex Desktop threads alongside Firstmate without pretending they are a selectable shell backend. Use before creating, reading, steering, archiving, debugging, or reviewing a Codex App visible thread for Firstmate work, and before responding to requests to make Codex App native to Firstmate."
+    },
+    {
+      "name": "firstmate-coding-guidelines",
+      "description": "Agent-only reference for changing firstmate's shared, tracked material per AGENTS.md section 1. Use before editing any of that material, whether working as firstmate directly or as a crewmate briefed on a firstmate-repo task. Covers the knowledge-placement decision tree, the one-owner rule for contracts, the inline-stub pattern for content moved into a skill, AGENTS.md size discipline, trigger hygiene for new skills, and repo style rules (one sentence per line, plain dash, no agent co-author, shellcheck-clean bin scripts, colocated tests, and maintainer-verification evidence)."
+    },
+    {
+      "name": "fmx-respond",
+      "description": "Agent-only playbook for handling Relay mentions and follow-ups. Use on an \"x-mention <request_id>\" check wake to read the stashed mention, classify it, act autonomously on eligible requests, reply or dismiss, and link spawned work. Also use on an \"x-mode-error ...\" check wake to report the Relay configuration blocker instead of answering a mention. Also use on milestone and terminal wakes for a Relay-linked task before posting completion follow-ups, using typed promised-final reconciliation when registered and --final otherwise. Also use on a \"public-followup ...\" check wake, and whenever a promised final public reply must be created, reconciled, or delivered. Loaded only when Relay is enabled."
+    },
+    {
+      "name": "harness-adapters",
+      "description": "Agent-only reference for firstmate harness operations. Use before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, gemini, muse, and rovo."
+    },
+    {
+      "name": "process-event-sources",
+      "description": "Agent-only procedure for registered process-to-event sources and their wakes. Use before arming a long-polling source firstmate owns, before registering a deterministic condition->action watch, and on any `procevent <adapter> <source-id> <sequence>` check wake. Owns the arming commands, the condition->action eligibility boundary, the durable result read, which wakes must be routed to their adapter instead of acknowledged generically, the handled acknowledgement contract, the one-owner rule, the precise durability boundary, and the Lavish adapter's loss limitation."
+    },
+    {
+      "name": "project-management",
+      "description": "Agent-only procedure for Firstmate project management. Use before adding, creating, removing, or initializing a project. Cloning or registering a project is add intake and uses the same trigger. Owns project add, create, clone, remove, initialization, registry, delivery-mode, autonomy, and outward-consent decisions."
+    },
+    {
+      "name": "quota-array-dispatch",
+      "description": "Agent-only decision procedure for resolving a matched crew-dispatch profile array from quota-axi's default TOON, ranking by spendPriority after three orthogonal gates. Load when a dispatch rule or default resolves to more than one profile candidate."
+    },
+    {
+      "name": "secondmate-provisioning",
+      "description": "Agent-only reference for persistent secondmate setup and retirement. Use when creating, seeding, validating, launching, recovering, handing backlog to, pushing inherited local material into, or retiring a secondmate home, or when editing data/secondmates.md. Covers local leases, whole-home remote routes, transactional seeding, record intake for an existing or inherited domain, project clone restrictions, secondmate harness pins, inherited local-material push, idle charter, handoff helper, and teardown safety."
+    },
+    {
+      "name": "stuck-crewmate-recovery",
+      "description": "Agent-only playbook for stuck or missing ordinary Firstmate direct reports. Use when the session-start digest reports an ordinary direct report's endpoint dead or its metadata has no window, or after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive crewmate, or a failed steer. Also use on the inverse case: a live crewmate reporting the no-mistakes pipeline dead, unreachable, or timed out. Reconciles recorded work before escalating from targeted inspection through safe relaunch or failure."
+    },
+    {
+      "name": "updatefirstmate",
+      "description": "Self-update a running firstmate and its secondmates to the latest from origin. Use when the captain invokes /updatefirstmate (e.g. \"/updatefirstmate\", \"update firstmate\", \"pull the latest firstmate\"). Fast-forwards this firstmate repo's default branch and every local or remote secondmate through its guarded update path (never forced, never disruptive), then re-reads AGENTS.md and restarts every live second mate through the persist-gated restart, with a fallback re-read nudge only where a restart cannot be proven."
+    }
+  ],
+  "normal_discovery_project_skill_count": 20,
+  "normal_discovery_succeeded": true,
+  "all_project_skills": [
+    {
+      "name": "afk",
+      "description": "Enter away-mode supervision when the captain invokes /afk, says they are going afk, `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved. It sets a durable away-mode flag so the sub-supervisor daemon can self-handle routine wakes and escalate captain-relevant events plus bounded declared-external-wait rechecks as batched digests during walk-away stretches, then exits automatically when any real unmarked message returns firstmate to full per-wake responsiveness."
+    },
+    {
+      "name": "ahoy",
+      "description": "Recap visible session events and guide the captain through visibly unanswered decisions when the captain explicitly invokes /ahoy, with a Bearings fallback when /ahoy is the session's first real captain message."
+    },
+    {
+      "name": "ask-user-authority",
+      "description": "Agent-only decision procedure for ask-user findings. Use before deciding any ask-user finding. This skill is the single owner of finding-decision policy: firstmate always applies judgment, decides findings that are unambiguous toward accepted intent, and escalates only genuinely ambiguous, expanding, or destructive ones. Finding authority is this skill's criteria, not the project's yolo posture."
+    },
+    {
+      "name": "bearings",
+      "description": "Generate a \"pick up where I left off\" fleet digest from firstmate's live fleet state. Use when the captain invokes /bearings or asks for a bearings report, morning brief, status report, catch-up, \"where did I leave off\", or \"what's in the works\". Plain /bearings is chat-only by default, /bearings file explicitly writes the dated data/status-report-<YYYY-MM-DD>.md artifact, and /bearings lavish additionally builds and arms the interactive fleet board; live PR enrichment remains opt-in and composes with the other modes. Also load this skill's board-wake handling when a procevent lavish wake's source id matches the canonical source id of the stable bearings board path."
+    },
+    {
+      "name": "bootstrap-diagnostics",
+      "description": "Agent-only handling playbook for session-start bootstrap diagnostics. Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH invalid, FLEET_SYNC, NETWORK_CHECKS, HOME_SUMMARY, BACKLOG_RECONCILE, SECONDMATE_SYNC, SECONDMATE_LIVENESS, SECONDMATE_HANDOFF, NUDGE_SECONDMATES, or FMX - or reports that an interrupted backlog cleanup may have left an endpoint or local copy, or when a standalone bin/fm-bootstrap.sh or bin/fm-startup-network.sh run prints one of those lines. A silent bootstrap section, or any other BOOTSTRAP_INFO fact, means no skill load."
+    },
+    {
+      "name": "captain-hold-lifecycle",
+      "description": "Agent-only policy for completing investigations and visual reviews without losing unresolved captain calls, and for closing what the captain owns with his actual words. Load before treating an investigation, scout report, structured review, or Lavish review as complete, before ending a visual review that exposed a captain decision, when recording or routing the captain's answer, and on any RECORD DIVERGENCE line the wake drain prints."
+    },
+    {
+      "name": "decision-hold-lifecycle",
+      "description": "Renamed pointer kept for in-flight briefs: the decisions concept collapsed into \"a task held for the captain\". Load captain-hold-lifecycle instead; this stub only redirects and will be removed one release after the collapse."
+    },
+    {
+      "name": "diagnostic-reasoning",
+      "description": "Agent-only procedure for diagnosing reported bugs. Use before scoping a reported bug and before acting on a diagnostic report. Owns end-user-aligned reproduction, causal separation, divergent-path and history inspection, counterfactual testing, and disconfirming evidence."
+    },
+    {
+      "name": "firstmate-codexapp",
+      "description": "Agent-only playbook for coordinating visible Codex Desktop threads alongside Firstmate without pretending they are a selectable shell backend. Use before creating, reading, steering, archiving, debugging, or reviewing a Codex App visible thread for Firstmate work, and before responding to requests to make Codex App native to Firstmate."
+    },
+    {
+      "name": "firstmate-coding-guidelines",
+      "description": "Agent-only reference for changing firstmate's shared, tracked material per AGENTS.md section 1. Use before editing any of that material, whether working as firstmate directly or as a crewmate briefed on a firstmate-repo task. Covers the knowledge-placement decision tree, the one-owner rule for contracts, the inline-stub pattern for content moved into a skill, AGENTS.md size discipline, trigger hygiene for new skills, and repo style rules (one sentence per line, plain dash, no agent co-author, shellcheck-clean bin scripts, colocated tests, and maintainer-verification evidence)."
+    },
+    {
+      "name": "firstmate-orca",
+      "description": "Agent-only operator checklist for Firstmate's Orca runtime backend. Use when switching to Orca, spawning or supervising Orca-backed work, smoke-testing Orca backend behavior, debugging Orca task state, or reconciling Orca-backed task metadata."
+    },
+    {
+      "name": "fmx-respond",
+      "description": "Agent-only playbook for handling Relay mentions and follow-ups. Use on an \"x-mention <request_id>\" check wake to read the stashed mention, classify it, act autonomously on eligible requests, reply or dismiss, and link spawned work. Also use on an \"x-mode-error ...\" check wake to report the Relay configuration blocker instead of answering a mention. Also use on milestone and terminal wakes for a Relay-linked task before posting completion follow-ups, using typed promised-final reconciliation when registered and --final otherwise. Also use on a \"public-followup ...\" check wake, and whenever a promised final public reply must be created, reconciled, or delivered. Loaded only when Relay is enabled."
+    },
+    {
+      "name": "harness-adapters",
+      "description": "Agent-only reference for firstmate harness operations. Use before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, gemini, muse, and rovo."
+    },
+    {
+      "name": "process-event-sources",
+      "description": "Agent-only procedure for registered process-to-event sources and their wakes. Use before arming a long-polling source firstmate owns, before registering a deterministic condition->action watch, and on any `procevent <adapter> <source-id> <sequence>` check wake. Owns the arming commands, the condition->action eligibility boundary, the durable result read, which wakes must be routed to their adapter instead of acknowledged generically, the handled acknowledgement contract, the one-owner rule, the precise durability boundary, and the Lavish adapter's loss limitation."
+    },
+    {
+      "name": "project-management",
+      "description": "Agent-only procedure for Firstmate project management. Use before adding, creating, removing, or initializing a project. Cloning or registering a project is add intake and uses the same trigger. Owns project add, create, clone, remove, initialization, registry, delivery-mode, autonomy, and outward-consent decisions."
+    },
+    {
+      "name": "quota-array-dispatch",
+      "description": "Agent-only decision procedure for resolving a matched crew-dispatch profile array from quota-axi's default TOON, ranking by spendPriority after three orthogonal gates. Load when a dispatch rule or default resolves to more than one profile candidate."
+    },
+    {
+      "name": "secondmate-provisioning",
+      "description": "Agent-only reference for persistent secondmate setup and retirement. Use when creating, seeding, validating, launching, recovering, handing backlog to, pushing inherited local material into, or retiring a secondmate home, or when editing data/secondmates.md. Covers local leases, whole-home remote routes, transactional seeding, record intake for an existing or inherited domain, project clone restrictions, secondmate harness pins, inherited local-material push, idle charter, handoff helper, and teardown safety."
+    },
+    {
+      "name": "stow",
+      "description": "Sweep the current session for uncaptured durable knowledge, file it to disk, persist the open work records this session knows are unfiled or now wrong, and curate the home's tiered, decaying startup memory before a context reset. Use when the captain invokes /stow (e.g. \"/stow\", \"stow what you've learned\"), before a session reset or context compaction, or periodically to keep operational memory current."
+    },
+    {
+      "name": "stuck-crewmate-recovery",
+      "description": "Agent-only playbook for stuck or missing ordinary Firstmate direct reports. Use when the session-start digest reports an ordinary direct report's endpoint dead or its metadata has no window, or after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive crewmate, or a failed steer. Also use on the inverse case: a live crewmate reporting the no-mistakes pipeline dead, unreachable, or timed out. Reconciles recorded work before escalating from targeted inspection through safe relaunch or failure."
+    },
+    {
+      "name": "updatefirstmate",
+      "description": "Self-update a running firstmate and its secondmates to the latest from origin. Use when the captain invokes /updatefirstmate (e.g. \"/updatefirstmate\", \"update firstmate\", \"pull the latest firstmate\"). Fast-forwards this firstmate repo's default branch and every local or remote secondmate through its guarded update path (never forced, never disruptive), then re-reads AGENTS.md and restarts every live second mate through the persist-gated restart, with a fallback re-read nudge only where a restart cannot be proven."
+    }
+  ]
+}
