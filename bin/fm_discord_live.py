@@ -37,7 +37,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -276,48 +276,32 @@ def cmd_live_reply(args: Any, env: "fwl.Env", verify: bool = False) -> int:
     cfg = fwl.load_config(env, args.config)
     require_live_flag(cfg, cfg.live_posting_enabled, "live reply")
     text = fwl.read_text_file(args.text_file).strip()
-    guild_id, channel_id, message_id, profile_key, forum_kind = cfg.profile_for_request_id(args.request_id)
+    guild_id, channel_id, message_id, profile_key, forum_kind = fwl.resolve_request_id(cfg, env, args.request_id)
     if forum_kind != "exchange":
         raise FMError("replies must target an exchange forum thread")
     text_digest = fwl.sha256_text(text)
     nonce = args.nonce or f"reply:{args.request_id}:{text_digest}"
     target = {"guild_id": guild_id, "channel_id": channel_id, "message_id": message_id, "request_id": args.request_id}
     receipt = fwl.base_receipt("reply", profile_key, target, text_digest)
-    existing = fwl.load_existing_json(fwl.receipt_path(env, nonce))
-    if existing is None and _receipt_shares_text_and_channel(env, text_digest, channel_id):
-        # Single outbound owner: the identical text already reached this thread
-        # through the mirror delivery identity, so a reply would duplicate it.
-        print("mirror exists; no second delivery")
-        return 0
     client = DiscordClient(decrypt_token(env, cfg))
-    if existing is not None:
-        comparable = dict(existing)
-        comparable.pop("recorded_at", None)
-        recorded = str(existing.get("discord_message_id") or "")
-        if comparable != fwl.receipt_record(nonce, receipt, recorded):
-            raise FMError("refusing to overwrite a different Discord outbound receipt for the same nonce")
-        print(f"receipt exists for nonce {nonce}; no second delivery")
-        if not verify or not recorded:
-            return 0
-        posted = client.request("GET", f"/channels/{channel_id}/messages/{recorded}")
-        if str(posted.get("id") or "") != recorded:
-            raise FMError("round-trip verification could not read back the recorded message")
-        print("round-trip verified against the recorded message id")
-        return 0
-    sent = client.request(
-        "POST",
-        f"/channels/{channel_id}/messages",
-        {"content": text, "allowed_mentions": {"parse": []}},
+    result, discord_message_id = send_outbound_once(
+        env, client, nonce, receipt, cfg.guild_id, channel_id, text_digest, text
     )
-    discord_message_id = str(sent.get("id") or "")
-    if not discord_message_id.isdigit():
-        raise FMError("Discord did not return a usable message id for the reply")
-    print(fwl.record_receipt(env, nonce, receipt, discord_message_id))
+    if result == "shared":
+        print("matching delivery exists; no second delivery")
+        return 0
+    if result == "receipt exists":
+        print(f"receipt exists for nonce {nonce}; no second delivery")
+    else:
+        print(result)
     if verify:
         back = client.request("GET", f"/channels/{channel_id}/messages/{discord_message_id}")
         if str(back.get("id") or "") != discord_message_id:
-            raise FMError("round-trip verification could not read back the posted message")
-        print("round-trip verified against the posted message id")
+            raise FMError("round-trip verification could not read back the recorded message")
+        if result == "receipt exists":
+            print("round-trip verified against the recorded message id")
+        else:
+            print("round-trip verified against the posted message id")
     return 0
 
 
@@ -445,6 +429,52 @@ def _receipt_shares_text_and_channel(env: "fwl.Env", digest: str, channel_id: st
     return False
 
 
+def outbound_discord_nonce(guild_id: str, channel_id: str, digest: str) -> str:
+    return fwl.sha256_text(f"{guild_id}:{channel_id}:{digest}")[:24]
+
+
+def send_outbound_once(
+    env: "fwl.Env",
+    client: DiscordClient,
+    receipt_nonce: str,
+    receipt: Dict[str, Any],
+    guild_id: str,
+    channel_id: str,
+    digest: str,
+    content: str,
+    *,
+    typing: bool = False,
+) -> Tuple[str, str]:
+    with fwl.state_transaction(env):
+        existing = fwl.load_existing_json(fwl.receipt_path(env, receipt_nonce))
+        if existing is not None:
+            recorded = str(existing.get("discord_message_id") or "")
+            comparable = dict(existing)
+            comparable.pop("recorded_at", None)
+            if comparable != fwl.receipt_record(receipt_nonce, receipt, recorded):
+                raise FMError("refusing to overwrite a different Discord outbound receipt for the same nonce")
+            return "receipt exists", recorded
+        if _receipt_shares_text_and_channel(env, digest, channel_id):
+            return "shared", ""
+        if typing:
+            client.request("POST", f"/channels/{channel_id}/typing")
+        sent = client.request(
+            "POST",
+            f"/channels/{channel_id}/messages",
+            {
+                "content": content,
+                "allowed_mentions": {"parse": []},
+                "nonce": outbound_discord_nonce(guild_id, channel_id, digest),
+                "enforce_nonce": True,
+            },
+        )
+        discord_message_id = str(sent.get("id") or "")
+        if not discord_message_id.isdigit():
+            raise FMError("Discord did not return a usable message id")
+        result = fwl.record_receipt_unlocked(env, receipt_nonce, receipt, discord_message_id)
+        return result, discord_message_id
+
+
 def cmd_live_post(args: Any, env: "fwl.Env") -> int:
     """Post one mirrored conversational item with single-owner idempotency.
 
@@ -457,7 +487,6 @@ def cmd_live_post(args: Any, env: "fwl.Env") -> int:
     thread_id = fwl.validate_snowflake(args.thread, "--thread") or ""
     allowed = any(
         thread_id in p["exchange_thread_ids"] or thread_id in p["artifact_thread_ids"]
-        or thread_id in (p["exchange_forum_id"], p["artifact_forum_id"])
         for p in cfg.profiles.values()
     )
     if not allowed:
@@ -471,28 +500,30 @@ def cmd_live_post(args: Any, env: "fwl.Env") -> int:
         if marker in text:
             raise FMError("refusing to mirror operational text")
     digest = fwl.sha256_text(text)
-    if _receipt_shares_text_and_channel(env, digest, thread_id):
-        print("mirror exists; no second post")
-        return 0
     tag = "main" if args.tag == "main" else "captain"
     nonce = f"mirror:{thread_id}:{digest}"
     target = {"guild_id": cfg.guild_id, "channel_id": thread_id}
     receipt = fwl.base_receipt("mirror", tag, target, digest)
     client = DiscordClient(decrypt_token(env, cfg))
-    # The typing marker fires only around the actual post: real processing
-    # already happened in the main turn, so this is never a queued lie.
-    client.request("POST", f"/channels/{thread_id}/typing")
-    sent = client.request(
-        "POST",
-        f"/channels/{thread_id}/messages",
-        {"content": f"[{tag}] {text}", "allowed_mentions": {"parse": []}},
+    result, _discord_message_id = send_outbound_once(
+        env,
+        client,
+        nonce,
+        receipt,
+        cfg.guild_id,
+        thread_id,
+        digest,
+        f"[{tag}] {text}",
+        typing=True,
     )
-    discord_message_id = str(sent.get("id") or "")
-    if not discord_message_id.isdigit():
-        raise FMError("Discord did not return a usable message id for the mirror post")
-    recorded = fwl.record_receipt(env, nonce, receipt, discord_message_id)
-    record_mirror_cursor(env, digest, thread_id, recorded)
-    print(recorded)
+    if result == "shared":
+        print("matching delivery exists; no second post")
+        return 0
+    if result == "receipt exists":
+        print("receipt exists; no second post")
+        return 0
+    record_mirror_cursor(env, digest, thread_id, result)
+    print(result)
     return 0
 
 

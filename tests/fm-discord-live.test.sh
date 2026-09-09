@@ -22,12 +22,13 @@ dl() { FM_HOME="$H" "$ROOT/bin/fm-discord-live.sh" "$@"; }
 
 start_server() { # start_server <world-file> <port-file> <guild-id>
   setsid python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "/tmp/livekeep/fake-server.log" 2>&1 <<'PY' &
-import json, sys
+import json, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 WORLD, PORT_FILE, TOKEN, GUILD = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 BOT = "333333333333333333"
+LOCK = threading.Lock()
 
 def load():
     with open(WORLD, encoding="utf-8") as f:
@@ -143,12 +144,29 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("allowed_mentions") != {"parse": []}:
                 self._send(400, {"message": "allowed_mentions must be empty parse"})
                 return
-            world["counter"] = int(world.get("counter", 900000000000000000)) + 1
-            message = {"id": str(world["counter"]), "content": body.get("content"),
-                       "author": {"id": BOT, "bot": True}, "channel_id": parts[1]}
-            world.setdefault("messages", {}).setdefault(parts[1], []).append(message)
-            world["posts"] = int(world.get("posts", 0)) + 1
-            save(world)
+            if body.get("enforce_nonce") is not True or not isinstance(body.get("nonce"), str):
+                self._send(400, {"message": "message nonce must be enforced"})
+                return
+            with LOCK:
+                world = load()
+                messages = world.setdefault("messages", {}).setdefault(parts[1], [])
+                for message in messages:
+                    if message.get("nonce") == body["nonce"]:
+                        self._send(200, message)
+                        return
+                world["counter"] = int(world.get("counter", 900000000000000000)) + 1
+                message = {"id": str(world["counter"]), "content": body.get("content"),
+                           "author": {"id": BOT, "bot": True}, "channel_id": parts[1],
+                           "nonce": body["nonce"]}
+                messages.append(message)
+                world["posts"] = int(world.get("posts", 0)) + 1
+                fail_after_accept = int(world.get("fail_after_accept", 0))
+                if fail_after_accept:
+                    world["fail_after_accept"] = fail_after_accept - 1
+                save(world)
+            if fail_after_accept:
+                self._send(500, {"message": "accepted before response failure"})
+                return
             self._send(200, message)
         else:
             self._send(404, {"message": "not found"})
@@ -339,8 +357,9 @@ pass "live reply posts once with empty allowed_mentions and replays through the 
 
 # --- 10. live reply retries transient server errors then records once --------
 new_home h10
+printf 'Retry reply body.\n' > "$TMP_ROOT/retry-reply.txt"
 world_set '{"inject":{"path":"/messages","method":"POST","remaining":2,"status":500}}'
-out=$(dl live-reply --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" --nonce retry-nonce 2>&1) \
+out=$(dl live-reply --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/retry-reply.txt" --nonce retry-nonce 2>&1) \
   || fail "live reply did not survive two transient 500s: $out"
 POSTS3=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
 [ "$POSTS3" = 2 ] || fail "retried reply produced $POSTS3 posts instead of 1 new post"
@@ -411,7 +430,16 @@ CURSOR2=$(find "$H/state/discord-workspace/cursors" -name '*.cursor' -exec cat {
 [ "$CURSOR2" = "$EXPECTED" ] || fail "a stale lower-id message moved the cursor backwards to $CURSOR2"
 FINAL_NOTES=$(find "$H/state/inbox" -maxdepth 1 -name '*.note' 2>/dev/null | wc -l | tr -d ' ')
 [ "$FINAL_NOTES" = "$BEFORE_NOTES" ] || fail "the stale message was ingested after the cursor advanced"
-pass "live source ingests only captain messages after durable monotonic cursors"
+DYNAMIC_REQUEST=$(python3 - "$H/state/discord-workspace/requests" <<'PY'
+import glob, json, os, sys
+records = [json.load(open(path)) for path in glob.glob(os.path.join(sys.argv[1], "*.json"))]
+print(max(records, key=lambda record: int(record["message_id"]))["request_id"])
+PY
+)
+out=$(dl live-reply --config "$CFG12" --request-id "$DYNAMIC_REQUEST" --text-file "$TMP_ROOT/reply.txt" 2>&1) \
+  || fail "reply to an ingested dynamic forum thread failed: $out"
+assert_contains "$out" "receipt recorded" "the dynamic forum request resolves through its persisted record"
+pass "live source ingests captain messages and preserves dynamic reply routing"
 
 # --- 13. live roundtrip posts and verifies against Discord ------------------
 new_home h13
@@ -580,7 +608,34 @@ CURSOR_ENTRIES=$(python3 -c "import json;print(len(json.load(open('$H/state/disc
 out=$(dl live-post --config "$CFG20" --thread 123456789012345678 --tag main --text-file "$TMP_ROOT/mirror.txt" 2>&1) \
   && fail "mirror accepted a non-allowlisted thread" || true
 assert_contains "$out" "outside the configured allowlist" "the mirror stays bounded to allowlisted threads"
+out=$(dl live-post --config "$CFG20" --thread "$FORUM_F" --tag main --text-file "$TMP_ROOT/mirror.txt" 2>&1) \
+  && fail "mirror accepted a forum channel as a message target" || true
+assert_contains "$out" "outside the configured allowlist" "forum channels are not accepted as message targets"
 pass "live mirror posts once, fires typing, converges with replies, and stays allowlist-bounded"
+
+new_home h21
+world_set '{"messages":{},"posts":0,"typing":0,"fail_after_accept":0}'
+printf 'Concurrent outbound body.\n' > "$TMP_ROOT/concurrent.txt"
+pids=""
+for i in $(seq 1 8); do
+  dl live-post --config "$H/config/discord-workspace.json" --thread "$THREAD" --tag main --text-file "$TMP_ROOT/concurrent.txt" > "$TMP_ROOT/concurrent-$i.out" 2>&1 &
+  pids="$pids $!"
+done
+for pid in $pids; do
+  wait "$pid" || fail "concurrent live post failed"
+done
+POSTS=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
+[ "$POSTS" = 1 ] || fail "concurrent live posts produced $POSTS Discord messages"
+pass "concurrent outbound delivery serializes before posting"
+
+new_home h22
+world_set '{"messages":{},"posts":0,"typing":0,"fail_after_accept":1}'
+out=$(dl live-reply --config "$H/config/discord-workspace.json" --request-id "$REQUEST_ID" --text-file "$TMP_ROOT/reply.txt" 2>&1) \
+  || fail "accepted-before-response retry failed: $out"
+POSTS=$(python3 -c "import json;print(json.load(open('$WORLD'))['posts'])")
+[ "$POSTS" = 1 ] || fail "accepted-before-response retry produced $POSTS Discord messages"
+assert_contains "$out" "receipt recorded" "the accepted message retry records its receipt"
+pass "Discord nonce converges the post-before-receipt retry window"
 
 # --- cleanup -----------------------------------------------------------------
 kill %1 2>/dev/null || true

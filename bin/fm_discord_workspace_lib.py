@@ -630,7 +630,7 @@ class WorkspaceConfig:
                     return key, "artifact", p["artifact_forum_id"]
         return None
 
-    def profile_for_request_id(self, request_id: str) -> Tuple[str, str, str, str, str]:
+    def profile_for_request_id(self, request_id: str, request_record: Optional[Dict[str, Any]] = None) -> Tuple[str, str, str, str, str]:
         match = REQUEST_RE.fullmatch(request_id)
         if not match:
             raise FMError("request id must be discord:<guild_id>:<channel_or_thread_id>:<message_id>")
@@ -638,10 +638,26 @@ class WorkspaceConfig:
         if guild_id != self.guild_id:
             raise FMError("request id names a guild outside the configured operations guild")
         profile = self.profile_for_channel(channel_id)
-        if profile is None:
-            raise FMError("request id names a channel/thread outside the configured allowlist")
-        profile_key, forum_kind, forum_id = profile
-        return guild_id, channel_id, message_id, profile_key, forum_kind
+        if profile is not None:
+            profile_key, forum_kind, _forum_id = profile
+            return guild_id, channel_id, message_id, profile_key, forum_kind
+        if request_record is not None:
+            profile_key = request_record.get("profile")
+            expected = {
+                "schema": REQUEST_SCHEMA,
+                "request_id": request_id,
+                "guild_id": guild_id,
+                "channel_id": channel_id,
+                "message_id": message_id,
+                "profile": profile_key,
+                "origin": "discord-workspace",
+                "jump_url": discord_jump_url(guild_id, channel_id, message_id),
+            }
+            comparable = dict(request_record)
+            comparable.pop("recorded_at", None)
+            if profile_key in self.profiles and comparable == expected:
+                return guild_id, channel_id, message_id, profile_key, "exchange"
+        raise FMError("request id names a channel/thread outside the configured allowlist")
 
     def thread_summary(self) -> List[str]:
         rows: List[str] = []
@@ -982,7 +998,7 @@ def base_receipt(kind: str, profile: str, target: Dict[str, Any], text_digest: s
 def cmd_reply(args: argparse.Namespace, env: Env) -> int:
     cfg = load_config(env, args.config)
     text = read_text_file(args.text_file)
-    guild_id, channel_id, message_id, profile_key, forum_kind = cfg.profile_for_request_id(args.request_id)
+    guild_id, channel_id, message_id, profile_key, forum_kind = resolve_request_id(cfg, env, args.request_id)
     if forum_kind != "exchange":
         raise FMError("replies must target an allowlisted exchange forum thread")
     text_digest = sha256_text(text)
@@ -1262,7 +1278,7 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
     )
     profile = cfg.profiles[args.profile]
     if args.request_id:
-        guild_id, channel_id, _message_id, profile_key, forum_kind = cfg.profile_for_request_id(args.request_id)
+        guild_id, channel_id, _message_id, profile_key, forum_kind = resolve_request_id(cfg, env, args.request_id)
         if profile_key != args.profile or forum_kind != "exchange":
             raise FMError("artifact request link must name an exchange thread for the selected profile")
         exchange_channel_id = channel_id
@@ -1371,6 +1387,11 @@ def request_record_path(env: Env, request_id: str) -> Path:
     return discord_state_path(env, "requests", f"{sha256_text(request_id)}.json")
 
 
+def resolve_request_id(cfg: WorkspaceConfig, env: Env, request_id: str) -> Tuple[str, str, str, str, str]:
+    request = load_existing_json(request_record_path(env, request_id))
+    return cfg.profile_for_request_id(request_id, request)
+
+
 def task_link_path(env: Env, task_id: str) -> Path:
     return discord_state_path(env, "task-links", f"{task_id}.json")
 
@@ -1416,7 +1437,7 @@ def cmd_link_task(args: argparse.Namespace, env: Env) -> int:
     cfg = load_config(env, args.config)
     if not TASK_ID_RE.fullmatch(args.task_id):
         raise FMError("task id must be path-safe")
-    guild_id, channel_id, message_id, profile_key, forum_kind = cfg.profile_for_request_id(args.request_id)
+    guild_id, channel_id, message_id, profile_key, forum_kind = resolve_request_id(cfg, env, args.request_id)
     if forum_kind != "exchange":
         raise FMError("task links must originate from an exchange thread")
     request = canonical_request_record(args.request_id, guild_id, channel_id, message_id, profile_key)
@@ -1515,7 +1536,7 @@ def cmd_followup(args: argparse.Namespace, env: Env) -> int:
     if link is None:
         raise FMError("task has no Discord workspace request link")
     request_id, linked_profile = validate_task_link(link_path, link, args.task_id)
-    guild_id, channel_id, message_id, profile_key, forum_kind = cfg.profile_for_request_id(request_id)
+    guild_id, channel_id, message_id, profile_key, forum_kind = resolve_request_id(cfg, env, request_id)
     if forum_kind != "exchange":
         raise FMError("follow-up request no longer resolves to an exchange thread")
     if linked_profile != profile_key:
