@@ -1,6 +1,6 @@
 # Vigie recommendation digest
 
-`bin/fm-vigie.sh` is a read-only projection over `bin/fm-fleet-snapshot.sh`. The snapshot is authoritative for backlog, captain holds, blockers, task endpoints, reports, and secondmate summaries; Vigie does not parse prose or maintain a second ledger.
+`bin/fm-vigie.sh` is a bounded, read-only projection over `bin/fm-fleet-snapshot.sh`. The snapshot is authoritative; Vigie does not parse prose, create a ledger, or execute merge, authentication, service, update, or notification actions.
 
 Usage:
 
@@ -8,16 +8,21 @@ Usage:
     bin/fm-vigie.sh --json
     bin/fm-vigie.sh --fr
     bin/fm-vigie.sh --json --event previous.json
+    bin/fm-vigie.sh --json --daily --event previous.json
 
-The default is a compact AXI/TOON projection. `--json` emits `fm-vigie.v1`, including `action`, `reason`, `evidence`, and `unknowns` for each recommendation. `--fr` renders the same bounded recommendations as concise French notification text.
+The default is compact AXI/TOON output. `--json` emits `fm-vigie.v1`; `--fr` renders the same bounded recommendations as concise French notification text. `FM_VIGIE_MAX` defaults to 10. `FM_VIGIE_AGE_DAYS` defaults to 14.
+
+Recommendation inventory:
+
+- Ready PRs are projected from structured `ready_prs` observations and queued/in-flight backlog rows with a PR URL; client stage gates use structured `client_gates`/`gates` observations.
+- Keyed open decisions use task `hints.open_decisions` and secondmate `decisions_open` records. The task and source key remain in evidence.
+- Credential evidence and pending service/update decisions are projected when the snapshot provides `credential_evidence`/`credentials` or `pending_services`/`service_updates`/`pending_updates`. Missing source arrays are reported as `unknown` in `inventory` and `unknowns`, never treated as clear.
+- Every recommendation contains a stable `key`, action, reason, evidence, unknowns, and optional authoritative age. Stable keys deduplicate the bounded output.
 
 Daily and event semantics:
 
-- The projection is daily by contract (`cadence: daily`); scheduling is deliberately outside this command.
-- `FM_VIGIE_MAX` bounds recommendations (default 10). Recommendations are sorted by stable action key and deduplicated by that key.
-- A captain-actionable hold produces an `answer:<task-id>` recommendation. A held item aged at least 14 days says so using the authoritative `hold_age_days` field.
-- An unresolved structured blocker produces `unblock:<task-id>`.
-- A task with an explicitly dead recorded endpoint produces `inspect:<task-id>`; unknown liveness is not treated as dead.
-- `--event <previous.json>` compares recommendation keys with a prior `fm-vigie.v1` JSON result. Keys appearing now are `changes.new`; absent keys are `changes.resolved`. This is a view delta, not a state transition.
+- Scheduling is outside this command. `--daily` declares a daily view and resurfaces existing recommendations whose authoritative `age_days` is at least `FM_VIGIE_AGE_DAYS`.
+- `--event <previous.json>` compares stable recommendation keys with a prior JSON digest. `changes.new` contains additions, `changes.resolved` contains keys no longer observed, and daily `changes.resurfaced` contains aged retained items. These are view deltas, not state transitions.
+- Recommendations are sorted by action/key and capped after deduplication. Display never answers a hold, closes a blocker, changes a service, updates credentials, or marks work complete.
 
-The output identifies the approved pilot channel separately from the future desktop surface and reports that scheduling is off. It never answers a captain hold, marks a blocker done, restarts an endpoint, merges a PR, probes credentials, changes a service, or installs an update. Source-specific credential and service/update decisions remain explicit unknowns for the owning native surfaces.
+Delivery is explicit: the output identifies the approved pilot channel separately from the future desktop surface and reports `scheduled: false`. Notification scheduling or Discord activation requires separate approval.
