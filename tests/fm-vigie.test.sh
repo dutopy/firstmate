@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Behavioral tests for the bounded recommendation digest.
 set -u
+# shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 VIGIE="$ROOT/bin/fm-vigie.sh"
 TMP_ROOT=$(fm_test_tmproot fm-vigie)
