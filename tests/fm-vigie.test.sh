@@ -14,6 +14,9 @@ JSON
 SH
 chmod +x "$FAKE"
 export FM_FLEET_SNAPSHOT_BIN="$FAKE"
+# Native Hermes readers are exercised by live runs; fixture tests isolate the
+# snapshot projection and provide an unavailable native command explicitly.
+export FM_VIGIE_HERMES_BIN=/bin/false
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 out=$($VIGIE --json) || fail "json digest failed"

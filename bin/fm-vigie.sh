@@ -9,10 +9,13 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SNAPSHOT="${FM_FLEET_SNAPSHOT_BIN:-$SCRIPT_DIR/fm-fleet-snapshot.sh}"
+HERMES="${FM_VIGIE_HERMES_BIN:-$(command -v hermes 2>/dev/null || true)}"
 MAX="${FM_VIGIE_MAX:-10}"
 AGE_DAYS="${FM_VIGIE_AGE_DAYS:-14}"
+NATIVE_TIMEOUT="${FM_VIGIE_NATIVE_TIMEOUT:-20}"
 case "$MAX" in ''|*[!0-9]*|0) printf 'fm-vigie: FM_VIGIE_MAX must be a positive integer\n' >&2; exit 2 ;; esac
 case "$AGE_DAYS" in ''|*[!0-9]*) printf 'fm-vigie: FM_VIGIE_AGE_DAYS must be a non-negative integer\n' >&2; exit 2 ;; esac
+case "$NATIVE_TIMEOUT" in ''|*[!0-9]*|0) printf 'fm-vigie: FM_VIGIE_NATIVE_TIMEOUT must be a positive integer\n' >&2; exit 2 ;; esac
 
 usage() {
   printf '%s\n' \
@@ -20,8 +23,9 @@ usage() {
     '' \
     'Read-only bounded recommendation digest over fm-fleet-snapshot.sh.' \
     'Default output is compact AXI/TOON; --json is machine-readable; --fr is' \
-    'a concise French notification surface. --event compares stable observation' \
+    'a concise French notification view. --event compares stable observation' \
     'identities with a prior JSON digest. --daily resurfaces aged observations.' \
+    'Native readers are bounded by FM_VIGIE_NATIVE_TIMEOUT (default 20 seconds).' \
     'No mode mutates work or schedules delivery.'
 }
 
@@ -46,13 +50,34 @@ current=$($SNAPSHOT --json) || { printf 'fm-vigie: fleet snapshot failed\n' >&2;
 printf '%s\n' "$current" | jq -e 'type == "object" and (.schema|type)=="string"' >/dev/null \
   || { printf 'fm-vigie: fleet snapshot was not structured JSON\n' >&2; exit 1; }
 
+# These are read-only native observations, not a second ledger.  Keep the raw
+# text because several Hermes readers intentionally have no JSON mode; a
+# missing command is evidence of an unavailable source, never an empty result.
+native_cmd() {
+  local name=$1; shift
+  if [ -n "$HERMES" ] && [ -x "$HERMES" ]; then
+    timeout "$NATIVE_TIMEOUT" "$HERMES" "$@" 2>&1 | head -c 12000 || true
+  else
+    printf 'unavailable: hermes command is not installed (%s)\n' "$name"
+  fi
+}
+native=$(jq -cn \
+  --arg stats "$(native_cmd kanban-stats kanban stats --json)" \
+  --arg subscriptions "$(native_cmd kanban-notify-subscribe kanban notify-list)" \
+  --arg monitoring "$(native_cmd monitoring monitoring status)" \
+  --arg insights "$(native_cmd insights insights --days 1)" \
+  --arg doctor "$(native_cmd doctor doctor)" \
+  --arg cron "$(native_cmd cron-list cron list)" \
+  --arg cron_doctor "$(native_cmd cron-doctor cron doctor)" \
+  '{kanban:{stats:$stats,notify_subscribe:$subscriptions},monitoring:$monitoring,insights:$insights,doctor:$doctor,cron:{list:$cron,doctor:$cron_doctor},dossier_reflex:{status:"unknown",reason:"No native dossier/reflex reader is registered"}}')
+
 prior='null'
 if [ -n "$previous" ]; then
   [ -r "$previous" ] || { printf 'fm-vigie: event baseline is not readable: %s\n' "$previous" >&2; exit 2; }
   prior=$(jq -c . "$previous") || { printf 'fm-vigie: event baseline is not valid JSON\n' >&2; exit 2; }
 fi
 
-result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson daily "$daily" --argjson prior "$prior" '
+result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson daily "$daily" --argjson prior "$prior" --argjson native "$native" '
   def arr($x): if ($x|type)=="array" then $x else [] end;
   def text($x): if ($x|type)=="string" then $x else "" end;
   def rec($key; $action; $title; $reason; $evidence; $unknowns; $age):
@@ -62,6 +87,13 @@ result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson dai
   (arr($backlog.records)) as $records |
   (arr(.tasks)) as $tasks |
   (arr(.secondmate_current.records)) as $secondmates |
+  ($native) as $native |
+  # Native command output is retained as evidence.  Only deterministic,
+  # machine-readable counts are projected into recommendations; prose remains
+  # an unknown source observation rather than a guessed task state.
+  (try ($native.kanban.stats | sub("^[^{]*"; "") | fromjson) catch null) as $kanban_stats |
+  ([($native.doctor | split("\\n")[]? | select(test("⚠|not logged|No API key")))]) as $credential_lines |
+  ([($native.cron.doctor | split("\\n")[]? | select(test("issue|failed|not found"; "i")))]) as $cron_lines |
   # Ready PRs are projected from the native backlog records.  The optional
   # top-level fields are accepted only when a producer explicitly supplies
   # them; they are never synthesized by Vigie.
@@ -131,6 +163,20 @@ result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson dai
         ["Current state needs targeted reconciliation before action"];
         null)
     )
+    ,(if ($kanban_stats.by_status.ready // null) != null and ($kanban_stats.by_status.ready|tonumber) > 0 then
+       rec("kanban:ready"; "inspect:kanban-ready"; "Ready Kanban work";
+         "Native Kanban stats report ready work";
+         [{source:"hermes kanban stats --json", ready:($kanban_stats.by_status.ready|tonumber), by_status:$kanban_stats.by_status}];
+         []; null)
+      else empty end)
+    ,(if ($credential_lines|length)>0 then rec("credential:native-doctor"; "inspect-credential:native"; "Source credential evidence";
+       "Native doctor reported credential/configuration attention";
+       [{source:"hermes doctor", observations:$credential_lines}]; ["Vigie never probes or changes credentials"]; null) else empty end)
+    ,(if ($cron_lines|length)>0 then
+       rec("pending:native-cron"; "resolve-pending:native-cron"; "Cron/service pending attention";
+         "Native cron doctor reported a scheduled-job issue";
+         [{source:"hermes cron doctor", observations:$cron_lines}]; ["Vigie never changes services or updates"]; null)
+      else empty end)
   ] | sort_by([.action, .key]) | unique_by(.key) |
     map(select((.age_days // 0) >= 0))) as $all_recommendations |
   ($all_recommendations[0:$max]) as $recommendations |
@@ -143,10 +189,11 @@ result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson dai
    else {new:[], resolved:[], resurfaced:[]} end) as $changes |
   {schema:"fm-vigie.v1", generated:(.generated // "unknown"), cadence:(if $daily then "daily" elif ($prior|type)=="object" then "event" else "daily" end),
    bounded:true, max:$max, recommendations:$recommendations, changes:$changes,
-   inventory:{ready_prs:{count:($prs|length),status:(if ($prs|length)>0 then "observed" else "unknown" end)}, client_gates:{count:($gates|length),status:(if has("client_gates") then "observed" else "unknown" end)}, keyed_decisions:{count:($decisions|length),status:(if ($decisions|length)>0 then "observed" else "unknown" end)}, credential_evidence:{count:($credentials|length),status:(if has("credential_evidence") then "observed" else "unknown" end)}, pending_service_updates:{count:($pending|length),status:(if has("pending_services") then "observed" else "unknown" end)}},
+   inventory:{ready_prs:{count:($prs|length),status:(if ($prs|length)>0 then "observed" else "unknown" end)}, client_gates:{count:($gates|length),status:(if has("client_gates") then "observed" else "unknown" end)}, keyed_decisions:{count:($decisions|length),status:(if ($decisions|length)>0 then "observed" else "unknown" end)}, credential_evidence:{count:(($credentials|length)+($credential_lines|length)),status:(if has("credential_evidence") or ($credential_lines|length)>0 then "observed" else "unknown" end)}, pending_service_updates:{count:(($pending|length)+ (if ($cron_lines|length)>0 then 1 else 0 end)),status:(if has("pending_services") or ($cron_lines|length)>0 then "observed" else "unknown" end)}},
    delivery:{pilot_channel:"approved pilot only", desktop:"future; not activated", scheduled:false},
-   sources:["fm-fleet-snapshot", "kanban show/stats/notify-subscribe", "monitoring/insights/doctor/cron", "dossier/reflex"],
-   unknowns:[(if ($decisions|length)==0 then "Keyed decision evidence is unavailable in the snapshot" else empty end), (if ($credentials|length)==0 then "Source-specific credential evidence is unavailable in the snapshot" else empty end), (if ($pending|length)==0 then "Pending service/update decisions are unavailable in the snapshot" else empty end), "Display does not close work"]}
+   sources:["fm-fleet-snapshot", "hermes kanban show/stats/notify-subscribe", "hermes monitoring/insights/doctor/cron", "dossier/reflex"],
+   native:$native,
+   unknowns:[(if ($decisions|length)==0 then "Keyed decision evidence is unavailable in the snapshot" else empty end), (if ($gates|length)==0 then "Client stage-gate evidence is unavailable in native sources" else empty end), (if (($credentials|length)+($credential_lines|length))==0 then "Source-specific credential evidence is unavailable in native sources" else empty end), (if (($pending|length)+($cron_lines|length))==0 then "Pending service/update decisions are unavailable in native sources" else empty end), "Display does not close work"]}
 ' <<<"$current") || { printf 'fm-vigie: could not build digest\n' >&2; exit 1; }
 
 case "$format" in

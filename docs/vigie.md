@@ -1,6 +1,7 @@
 # Vigie recommendation digest
 
-`bin/fm-vigie.sh` is a bounded, read-only projection over `bin/fm-fleet-snapshot.sh`. The snapshot is authoritative; Vigie does not parse prose, create a ledger, or execute merge, authentication, service, update, or notification actions.
+`bin/fm-vigie.sh` is a bounded, read-only projection over `bin/fm-fleet-snapshot.sh` and native Hermes readers.
+The snapshot and native reader outputs are authoritative observations; Vigie does not create a ledger or execute merge, authentication, service, update, or notification actions.
 
 Usage:
 
@@ -16,6 +17,10 @@ Recommendation inventory:
 
 - Ready PRs are projected from the native snapshot backlog rows (queued/in-flight records with a PR URL), with the recorded URL, title, state, and gate retained as evidence. A snapshot producer may also provide structured `ready_prs`; Vigie does not invent that field or query a forge itself.
 - Client stage gates, credential evidence, and pending service/update decisions are read only from their explicitly named native snapshot fields. If the producer does not expose one of those fields, its inventory status is `unknown` rather than an inferred empty/clear result.
+- No-argument runs also read `hermes kanban stats --json`, `hermes kanban notify-list`, `hermes monitoring status`, `hermes insights --days 1`, `hermes doctor`, `hermes cron list`, and `hermes cron doctor` when Hermes is installed.
+- Native command output is retained under `native` as evidence, including non-JSON output, and unavailable commands remain explicitly unavailable.
+- Each native reader is time-bounded by `FM_VIGIE_NATIVE_TIMEOUT` (20 seconds by default) and its captured output is capped.
+- A ready Kanban count and actionable doctor or cron observations become recommendations only when the native output contains deterministic evidence.
 - Keyed open decisions use task `hints.open_decisions` and secondmate `decisions_open` records. The task and source key remain in evidence.
 - Every recommendation contains a stable `key`, action, reason, concrete observed evidence, unknowns, and optional authoritative age. Stable keys deduplicate the bounded output.
 
