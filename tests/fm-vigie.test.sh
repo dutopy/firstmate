@@ -28,6 +28,8 @@ printf '%s\n' "$out" | jq -e 'all(.recommendations[]; (.reason|type)=="string" a
 fr=$($VIGIE --fr) || fail "French surface failed"
 printf '%s\n' "$fr" | grep -F 'Vigie quotidienne' >/dev/null || fail "French heading missing"
 printf '%s\n' "$fr" | grep -F 'Répondre à hold-1' >/dev/null || fail "French action missing"
+printf '%s\n' "$fr" | grep -F 'Relire la PR pr-1' >/dev/null || fail "French PR action missing"
+printf '%s\n' "$fr" | grep -F 'Décider client-1' >/dev/null || fail "French decision action missing"
 baseline="$TMP_ROOT/baseline.json"
 printf '%s\n' '{"recommendations":[{"key":"answer:hold-1"}]}' > "$baseline"
 event=$($VIGIE --json --event "$baseline") || fail "event digest failed"
@@ -51,6 +53,10 @@ chmod +x "$UNKNOWN"
 unknown=$(FM_FLEET_SNAPSHOT_BIN="$UNKNOWN" $VIGIE --json) || fail "unknown-source digest failed"
 printf '%s\n' "$unknown" | jq -e '.inventory.keyed_decisions.status == "unknown" and (.unknowns | index("Keyed decision evidence is unavailable in the snapshot"))' >/dev/null \
   || fail "missing keyed-decision evidence was not preserved as unknown: $unknown"
+printf '%s\n' "$unknown" | jq -e '.inventory.client_gates.status == "unknown" and .inventory.credential_evidence.status == "unknown" and .inventory.pending_service_updates.status == "unknown"' >/dev/null \
+  || fail "missing native source categories were not preserved as unknown: $unknown"
+printf '%s\n' "$unknown" | jq -e 'all(.recommendations[]?; (.evidence|type)=="array")' >/dev/null \
+  || fail "unknown-source recommendations lost evidence contract"
 $VIGIE --help >/dev/null || fail "help failed"
 before=$(sha256sum "$FAKE" | awk '{print $1}')
 $VIGIE --json >/dev/null || fail "repeat read-only digest failed"

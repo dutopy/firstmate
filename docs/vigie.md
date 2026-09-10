@@ -14,10 +14,10 @@ The default is compact AXI/TOON output. `--json` emits `fm-vigie.v1`; `--fr` ren
 
 Recommendation inventory:
 
-- Ready PRs are projected from structured `ready_prs` observations and queued/in-flight backlog rows with a PR URL; client stage gates use structured `client_gates`/`gates` observations.
+- Ready PRs are projected from the native snapshot backlog rows (queued/in-flight records with a PR URL), with the recorded URL, title, state, and gate retained as evidence. A snapshot producer may also provide structured `ready_prs`; Vigie does not invent that field or query a forge itself.
+- Client stage gates, credential evidence, and pending service/update decisions are read only from their explicitly named native snapshot fields. If the producer does not expose one of those fields, its inventory status is `unknown` rather than an inferred empty/clear result.
 - Keyed open decisions use task `hints.open_decisions` and secondmate `decisions_open` records. The task and source key remain in evidence.
-- Credential evidence and pending service/update decisions are projected when the snapshot provides `credential_evidence`/`credentials` or `pending_services`/`service_updates`/`pending_updates`. Missing source arrays are reported as `unknown` in `inventory` and `unknowns`, never treated as clear.
-- Every recommendation contains a stable `key`, action, reason, evidence, unknowns, and optional authoritative age. Stable keys deduplicate the bounded output.
+- Every recommendation contains a stable `key`, action, reason, concrete observed evidence, unknowns, and optional authoritative age. Stable keys deduplicate the bounded output.
 
 Daily and event semantics:
 
