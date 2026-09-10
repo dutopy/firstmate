@@ -34,6 +34,7 @@ printf '%s\n' '{
 SH
 cat > "$TOOL" <<'SH'
 #!/usr/bin/env bash
+[ "${FM_TOOL_UPDATE_READ_ONLY:-}" = 1 ] || { printf 'read-only mode missing\n' >&2; exit 65; }
 printf '%s\n' '{"alerts":[{"tool_id":"hermes:agent","installed_version":"1.0","available_version":"1.1","status":"update_available","observed_at":"2026-09-10T14:00:00Z"}]}'
 SH
 chmod +x "$SNAPSHOT" "$TOOL" "$SUCCESS" "$FAILURE"
@@ -53,10 +54,15 @@ printf '%s\n' "$out" | jq -e '
   .recommendation_total == (.observed_keys | length) and
   (.native | keys | length) == 12 and
   .native["hermes.kanban.stats"].status == "observed" and
+  .native["firstmate.watched_tools"].observed_at == "2026-09-10T14:00:00Z" and
   .native["firstmate.dossier"].reason_code == "no_registered_reader" and
   .native["firstmate.reflex"].reason_code == "no_registered_reader" and
   (all(.observations[]; has("key") and has("category") and has("status") and has("source_id") and has("source_identity") and has("age_days") and has("observed_at") and (.evidence|type)=="array" and (.unknowns|type)=="array"))
 ' >/dev/null || fail "native source-run or observation schema is incomplete: $out"
+printf '%s\n' "$out" | jq -e '
+  ["firstmate.fleet_snapshot","hermes.kanban.task","hermes.kanban.stats","hermes.kanban.notify_list","hermes.monitoring.status","hermes.insights.day","hermes.doctor","hermes.cron.list","hermes.cron.doctor","firstmate.watched_tools"] as $sources |
+  all($sources[]; . as $source | ($out.native[$source].status == "observed" or $out.native[$source].status == "empty"))
+' --argjson out "$out" >/dev/null || fail "not every executable producer supplied successful fixture evidence"
 printf '%s\n' "$out" | jq -e '
   (.observed_keys | index("pr:pr%3A1")) and
   (.observed_keys | index("decision:task:run%3A1:client%3A1")) and
@@ -97,8 +103,92 @@ printf '%s\n' '{"observed_keys":["credential:doctor:minimax-oauth"],"recommendat
 indeterminate=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN=/missing VIGIE_FIXTURE_FAILURE=nonzero "$VIGIE" --json --event "$indeterminate_baseline") || fail "indeterminate-source digest failed"
 printf '%s\n' "$indeterminate" | jq -e '.changes.resolved == [] and ([.changes.indeterminate[].key] | index("credential:doctor:minimax-oauth"))' >/dev/null || fail "unavailable current source falsely resolved a prior key"
 
+hidden_indeterminate_baseline="$TMP_ROOT/hidden-indeterminate.json"
+printf '%s\n' '{"observed_keys":["credential:doctor:hidden-prior"],"recommendations":[]}' > "$hidden_indeterminate_baseline"
+hidden_indeterminate=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN=/missing VIGIE_FIXTURE_FAILURE=nonzero "$VIGIE" --json --event "$hidden_indeterminate_baseline") || fail "hidden indeterminate-source digest failed"
+printf '%s\n' "$hidden_indeterminate" | jq -e '.changes.resolved == [] and (.changes.indeterminate == [{"key":"credential:doctor:hidden-prior","reason_code":"nonzero_exit","source_id":"hermes.doctor"}])' >/dev/null || fail "uncapped prior key without displayed recommendation was falsely resolved"
+
+legacy_observation_baseline="$TMP_ROOT/legacy-observation.json"
+printf '%s\n' '{"observations":[{"key":"kanban:ready","source_id":"hermes.kanban.stats","actionable":false}],"recommendations":[]}' > "$legacy_observation_baseline"
+legacy_observation=$(run_vigie --json --event "$legacy_observation_baseline") || fail "legacy observation baseline digest failed"
+printf '%s\n' "$legacy_observation" | jq -e '(.changes.new | index("kanban:ready")) and (.unknowns | index("baseline_uncapped_keys_unavailable"))' >/dev/null || fail "non-recommendation legacy observation suppressed a new recommendation"
+
+duplicate_keys_baseline="$TMP_ROOT/duplicate-keys.json"
+printf '%s\n' '{"observed_keys":["kanban:ready","kanban:ready"],"recommendations":[]}' > "$duplicate_keys_baseline"
+duplicate_keys=$(run_vigie --json --event "$duplicate_keys_baseline") || fail "duplicate prior-key digest failed"
+printf '%s\n' "$duplicate_keys" | jq -e '(.changes.new | index("kanban:ready")) and .changes.resolved == [] and (.unknowns | index("baseline_uncapped_keys_unavailable"))' >/dev/null || fail "duplicate prior observed keys incorrectly enabled resolutions"
+
+ranking_baseline="$TMP_ROOT/ranking-cap-baseline.json"
+printf '%s\n' '{"observed_keys":["hold:hold%3A1"],"recommendations":[]}' > "$ranking_baseline"
+ranking_cap=$(FM_VIGIE_SOURCE_RECORD_MAX=1 FM_VIGIE_MAX=50 run_vigie --json --event "$ranking_baseline") || fail "delta-cap ranking digest failed"
+printf '%s\n' "$ranking_cap" | jq -e '.changes.meta.new.total > 1 and .changes.meta.new.truncated and ([.recommendations[].key] | index("kanban:ready")) < ([.recommendations[].key] | index("hold:hold%3A1"))' >/dev/null || fail "delta array cap changed recommendation ranking"
+
 source_capped=$(FM_VIGIE_SOURCE_RECORD_MAX=1 run_vigie --json) || fail "source-record capped digest failed"
-printf '%s\n' "$source_capped" | jq -e '([.observations[] | select(.source_id=="firstmate.fleet_snapshot" and .category=="ready_pr")] | length)==0 and ([.observations[] | select(.source_id=="firstmate.fleet_snapshot" and .category=="captain_hold")] | length)==1' >/dev/null || fail "source record cap ignored"
+printf '%s\n' "$source_capped" | jq -e '([.observations[] | select(.source_id=="firstmate.fleet_snapshot")] | length)==1 and ([.observations[] | select(.key=="hold:hold%3A1")] | length)==1' >/dev/null || fail "source record cap was not enforced across snapshot arrays"
+source_cap_baseline="$TMP_ROOT/source-cap-baseline.json"
+printf '%s\n' '{"observed_keys":["blocked:blocked%251"],"recommendations":[]}' > "$source_cap_baseline"
+source_cap_delta=$(FM_VIGIE_SOURCE_RECORD_MAX=1 run_vigie --json --event "$source_cap_baseline") || fail "source-record cap delta digest failed"
+printf '%s\n' "$source_cap_delta" | jq -e '.native["firstmate.fleet_snapshot"].status == "unknown" and .native["firstmate.fleet_snapshot"].reason_code == "record_cap_reached" and .changes.resolved == [] and (.changes.indeterminate == [{"key":"blocked:blocked%251","reason_code":"record_cap_reached","source_id":"firstmate.fleet_snapshot"}])' >/dev/null || fail "source record cap caused a false resolution"
+
+SILENT_TOOL="$TMP_ROOT/silent-tool.sh"
+cat > "$SILENT_TOOL" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$SILENT_TOOL"
+silent_tool=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$SILENT_TOOL" HERMES_KANBAN_TASK='' "$VIGIE" --json) || fail "silent watched-tool digest failed"
+printf '%s\n' "$silent_tool" | jq -e '.native["firstmate.watched_tools"].status == "unknown" and .native["firstmate.watched_tools"].reason_code == "silent_completion_not_complete"' >/dev/null || fail "silent watched-tool completion was not classified as unknown"
+
+SILENT_NOTIFY="$TMP_ROOT/silent-notify.sh"
+cat > "$SILENT_NOTIFY" <<SH
+#!/usr/bin/env bash
+if [ "\$*" = "kanban notify-list" ]; then
+  exit 0
+fi
+exec "$SUCCESS" "\$@"
+SH
+chmod +x "$SILENT_NOTIFY"
+silent_notify=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$SILENT_NOTIFY" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 "$VIGIE" --json) || fail "silent notification-list digest failed"
+printf '%s\n' "$silent_notify" | jq -e '.native["hermes.kanban.notify_list"].status == "unknown" and .native["hermes.kanban.notify_list"].reason_code == "silent_completion_not_complete"' >/dev/null || fail "silent notification list was classified as complete empty evidence"
+
+normalizer=$(python3 - "$ROOT" <<'PY'
+import importlib.util
+import json
+import pathlib
+import sys
+
+sys.dont_write_bytecode = True
+path = pathlib.Path(sys.argv[1]) / "bin" / "fm_vigie.py"
+spec = importlib.util.spec_from_file_location("fm_vigie", path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+def row(key, category, source, value, age):
+    return module.observation(
+        key, category, source, value, value, "fixture", {"source_id": source, "value": value},
+        "2026-09-10T15:00:00Z", action=f"act:{value}", age_days=age,
+    )
+
+rows = [
+    row("duplicate-key", "ready_pr", "source.a", "a", 3),
+    row("duplicate-key", "ready_pr", "source.b", "b", 4),
+    row("collision-key", "ready_pr", "source.a", "a", 1),
+    row("collision-key", "client_gate", "source.b", "b", 1),
+]
+print(json.dumps(module.merge_observations(rows), sort_keys=True))
+PY
+) || fail "normalizer executable probe failed"
+printf '%s\n' "$normalizer" | jq -e '
+  ([.[] | select(.key=="duplicate-key")] | length) == 1 and
+  ([.[] | select(.key=="duplicate-key")][0].evidence | length) == 2 and
+  ([.[] | select(.key=="duplicate-key")][0].age_days == null) and
+  ([.[] | select(.key=="duplicate-key")][0].unknowns | index("conflicting_authoritative_age")) and
+  ([.[] | select(.key=="collision-key")] | length) == 1 and
+  ([.[] | select(.key=="collision-key")][0].category == "identity_collision") and
+  ([.[] | select(.key=="collision-key")][0].actionable == false) and
+  ([.[] | select(.key=="collision-key")][0].unknowns | index("conflicting_category_identity"))
+' >/dev/null || fail "duplicate merge, authoritative age conflict, or identity collision semantics failed"
 
 UNKNOWN="$TMP_ROOT/unknown.sh"
 cat > "$UNKNOWN" <<'SH'
@@ -125,18 +215,82 @@ empty=$(FM_FLEET_SNAPSHOT_BIN="$EMPTY" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_T
 printf '%s\n' "$empty" | jq -e '.inventory.ready_prs.status == "empty" and .inventory.client_gates.status == "empty"' >/dev/null || fail "explicit empty arrays not preserved"
 
 missing_status=0
-missing=$(FM_FLEET_SNAPSHOT_BIN=/missing FM_VIGIE_HERMES_BIN=/missing FM_VIGIE_TOOL_UPDATE_BIN=/missing "$VIGIE" --json) || missing_status=$?
+missing=$(FM_FLEET_SNAPSHOT_BIN=/missing FM_VIGIE_HERMES_BIN=/missing FM_VIGIE_TOOL_UPDATE_BIN=/missing HERMES_KANBAN_TASK=task:1 "$VIGIE" --json) || missing_status=$?
 [ "$missing_status" -ne 0 ] || fail "all-missing producers should exit nonzero"
-printf '%s\n' "$missing" | jq -e 'all(.native[]; .status == "unavailable" or .status == "unknown")' >/dev/null || fail "missing producers not unavailable"
+printf '%s\n' "$missing" | jq -e '
+  all(.native[]; .status == "unavailable" or .status == "unknown") and
+  all(["firstmate.fleet_snapshot","hermes.kanban.task","hermes.kanban.stats","hermes.kanban.notify_list","hermes.monitoring.status","hermes.insights.day","hermes.doctor","hermes.cron.list","hermes.cron.doctor","firstmate.watched_tools"][]; . as $source | $missing.native[$source].reason_code == "command_missing")
+' --argjson missing "$missing" >/dev/null || fail "missing executable producers not unavailable"
 
-nonzero=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN=/missing VIGIE_FIXTURE_FAILURE=nonzero "$VIGIE" --json) || fail "nonzero-source digest failed"
-printf '%s\n' "$nonzero" | jq -e '.native["hermes.doctor"].reason_code == "nonzero_exit" and .native["hermes.doctor"].exit_code == 7 and (.native["hermes.doctor"].stdout|contains("stdout")) and (.native["hermes.doctor"].stderr|contains("stderr"))' >/dev/null || fail "nonzero source provenance missing"
+nonzero=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 VIGIE_FIXTURE_FAILURE=nonzero "$VIGIE" --json) || fail "nonzero-source digest failed"
+printf '%s\n' "$nonzero" | jq -e '
+  all(["hermes.kanban.task","hermes.kanban.stats","hermes.kanban.notify_list","hermes.monitoring.status","hermes.insights.day","hermes.doctor","hermes.cron.list","hermes.cron.doctor"][]; . as $source | $nonzero.native[$source].reason_code == "nonzero_exit" and $nonzero.native[$source].exit_code == 7 and ($nonzero.native[$source].stdout|contains("stdout")) and ($nonzero.native[$source].stderr|contains("stderr")))
+' --argjson nonzero "$nonzero" >/dev/null || fail "nonzero Hermes producer provenance missing"
 
-timed=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN=/missing FM_VIGIE_NATIVE_TIMEOUT=1 VIGIE_FIXTURE_FAILURE=timeout "$VIGIE" --json) || fail "timeout-source digest failed"
-printf '%s\n' "$timed" | jq -e '.native["hermes.doctor"].reason_code == "timeout" and .native["hermes.doctor"].timed_out' >/dev/null || fail "timeout source provenance missing"
+timed=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 FM_VIGIE_NATIVE_TIMEOUT=1 VIGIE_FIXTURE_FAILURE=timeout "$VIGIE" --json) || fail "timeout-source digest failed"
+printf '%s\n' "$timed" | jq -e '
+  all(["hermes.kanban.task","hermes.kanban.stats","hermes.kanban.notify_list","hermes.monitoring.status","hermes.insights.day","hermes.doctor","hermes.cron.list","hermes.cron.doctor"][]; . as $source | $timed.native[$source].reason_code == "timeout" and $timed.native[$source].timed_out)
+' --argjson timed "$timed" >/dev/null || fail "timeout Hermes producer provenance missing"
 
-invalid=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN=/missing VIGIE_FIXTURE_FAILURE=invalid-json "$VIGIE" --json) || fail "invalid-json source digest failed"
-printf '%s\n' "$invalid" | jq -e '.native["hermes.kanban.stats"].reason_code == "invalid_json"' >/dev/null || fail "invalid JSON provenance missing"
+invalid=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 VIGIE_FIXTURE_FAILURE=invalid-json "$VIGIE" --json) || fail "invalid-json source digest failed"
+printf '%s\n' "$invalid" | jq -e '
+  .native["hermes.kanban.task"].reason_code == "invalid_json" and
+  .native["hermes.kanban.stats"].reason_code == "invalid_json" and
+  all(["hermes.kanban.notify_list","hermes.monitoring.status","hermes.insights.day","hermes.doctor","hermes.cron.list","hermes.cron.doctor"][]; . as $source | $invalid.native[$source].status == "unknown")
+' --argjson invalid "$invalid" >/dev/null || fail "malformed or unparseable Hermes producer provenance missing"
+
+snapshot_nonzero=$(FM_FLEET_SNAPSHOT_BIN="$FAILURE" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 VIGIE_FIXTURE_FAILURE=nonzero "$VIGIE" --json) || fail "snapshot nonzero digest failed"
+printf '%s\n' "$snapshot_nonzero" | jq -e '.native["firstmate.fleet_snapshot"].status == "unavailable" and .native["firstmate.fleet_snapshot"].reason_code == "nonzero_exit" and .native["firstmate.fleet_snapshot"].exit_code == 7' >/dev/null || fail "snapshot nonzero provenance missing"
+
+snapshot_timeout=$(FM_FLEET_SNAPSHOT_BIN="$FAILURE" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 FM_VIGIE_NATIVE_TIMEOUT=1 VIGIE_FIXTURE_FAILURE=timeout "$VIGIE" --json) || fail "snapshot timeout digest failed"
+printf '%s\n' "$snapshot_timeout" | jq -e '.native["firstmate.fleet_snapshot"].status == "unavailable" and .native["firstmate.fleet_snapshot"].reason_code == "timeout" and .native["firstmate.fleet_snapshot"].timed_out' >/dev/null || fail "snapshot timeout provenance missing"
+
+snapshot_malformed=$(FM_FLEET_SNAPSHOT_BIN="$FAILURE" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 VIGIE_FIXTURE_FAILURE=invalid-json "$VIGIE" --json) || fail "snapshot malformed digest failed"
+printf '%s\n' "$snapshot_malformed" | jq -e '.native["firstmate.fleet_snapshot"].status == "unavailable" and .native["firstmate.fleet_snapshot"].reason_code == "invalid_json"' >/dev/null || fail "snapshot malformed provenance missing"
+
+snapshot_truncated=$(FM_FLEET_SNAPSHOT_BIN="$FAILURE" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$TOOL" HERMES_KANBAN_TASK=task:1 FM_VIGIE_NATIVE_MAX_BYTES=256 VIGIE_FIXTURE_FAILURE=oversized "$VIGIE" --json) || fail "snapshot truncated digest failed"
+printf '%s\n' "$snapshot_truncated" | jq -e '.native["firstmate.fleet_snapshot"].status == "unknown" and .native["firstmate.fleet_snapshot"].reason_code == "output_truncated" and .native["firstmate.fleet_snapshot"].stdout_truncated' >/dev/null || fail "snapshot truncation provenance missing"
+
+tool_nonzero=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$FAILURE" HERMES_KANBAN_TASK=task:1 VIGIE_FIXTURE_FAILURE=nonzero "$VIGIE" --json) || fail "watched-tool nonzero digest failed"
+printf '%s\n' "$tool_nonzero" | jq -e '.native["firstmate.watched_tools"].status == "unavailable" and .native["firstmate.watched_tools"].reason_code == "nonzero_exit" and .native["firstmate.watched_tools"].exit_code == 7' >/dev/null || fail "watched-tool nonzero provenance missing"
+
+tool_timeout=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$FAILURE" HERMES_KANBAN_TASK=task:1 FM_VIGIE_NATIVE_TIMEOUT=1 VIGIE_FIXTURE_FAILURE=timeout "$VIGIE" --json) || fail "watched-tool timeout digest failed"
+printf '%s\n' "$tool_timeout" | jq -e '.native["firstmate.watched_tools"].status == "unavailable" and .native["firstmate.watched_tools"].reason_code == "timeout" and .native["firstmate.watched_tools"].timed_out' >/dev/null || fail "watched-tool timeout provenance missing"
+
+tool_malformed=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$FAILURE" HERMES_KANBAN_TASK=task:1 VIGIE_FIXTURE_FAILURE=invalid-json "$VIGIE" --json) || fail "watched-tool malformed digest failed"
+printf '%s\n' "$tool_malformed" | jq -e '.native["firstmate.watched_tools"].status == "unavailable" and .native["firstmate.watched_tools"].reason_code == "invalid_json"' >/dev/null || fail "watched-tool malformed provenance missing"
+
+tool_truncated=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$FAILURE" HERMES_KANBAN_TASK=task:1 FM_VIGIE_NATIVE_MAX_BYTES=256 VIGIE_FIXTURE_FAILURE=oversized "$VIGIE" --json) || fail "watched-tool truncated digest failed"
+printf '%s\n' "$tool_truncated" | jq -e '.native["firstmate.watched_tools"].status == "unknown" and .native["firstmate.watched_tools"].reason_code == "output_truncated" and .native["firstmate.watched_tools"].stdout_truncated' >/dev/null || fail "watched-tool truncation provenance missing"
+
+CAPPED_TOOL="$TMP_ROOT/capped-tool.sh"
+cat > "$CAPPED_TOOL" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"alerts":[{"tool_id":"first","status":"update_available"},{"tool_id":"hidden","status":"update_available"}]}'
+SH
+chmod +x "$CAPPED_TOOL"
+capped_tool_baseline="$TMP_ROOT/capped-tool-baseline.json"
+printf '%s\n' '{"observed_keys":["tool-update:hidden"],"recommendations":[]}' > "$capped_tool_baseline"
+capped_tool=$(FM_FLEET_SNAPSHOT_BIN="$EMPTY" FM_VIGIE_HERMES_BIN="$SUCCESS" FM_VIGIE_TOOL_UPDATE_BIN="$CAPPED_TOOL" HERMES_KANBAN_TASK=task:1 FM_VIGIE_SOURCE_RECORD_MAX=1 "$VIGIE" --json --event "$capped_tool_baseline") || fail "capped watched-tool digest failed"
+printf '%s\n' "$capped_tool" | jq -e '.native["firstmate.watched_tools"].status == "unknown" and .native["firstmate.watched_tools"].reason_code == "record_cap_reached" and .changes.resolved == [] and (.changes.indeterminate == [{"key":"tool-update:hidden","reason_code":"record_cap_reached","source_id":"firstmate.watched_tools"}])' >/dev/null || fail "watched-tool record cap caused a false resolution"
+
+STDERR_HERMES="$TMP_ROOT/stderr-hermes.sh"
+cat > "$STDERR_HERMES" <<SH
+#!/usr/bin/env bash
+"$SUCCESS" "\$@"
+status=\$?
+python3 -c 'import sys; print("x" * 5000, file=sys.stderr)'
+exit \$status
+SH
+STDERR_TOOL="$TMP_ROOT/stderr-tool.sh"
+cat > "$STDERR_TOOL" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"alerts":[]}'
+python3 -c 'import sys; print("x" * 5000, file=sys.stderr)'
+SH
+chmod +x "$STDERR_HERMES" "$STDERR_TOOL"
+stderr_truncated=$(FM_FLEET_SNAPSHOT_BIN="$EMPTY" FM_VIGIE_HERMES_BIN="$STDERR_HERMES" FM_VIGIE_TOOL_UPDATE_BIN="$STDERR_TOOL" HERMES_KANBAN_TASK=task:1 FM_VIGIE_NATIVE_MAX_BYTES=256 "$VIGIE" --json) || fail "stderr-truncated digest failed"
+printf '%s\n' "$stderr_truncated" | jq -e '.native["hermes.kanban.stats"].status == "unknown" and .native["hermes.kanban.stats"].reason_code == "output_truncated" and .native["hermes.kanban.stats"].stderr_truncated and .native["firstmate.watched_tools"].status == "unknown" and .native["firstmate.watched_tools"].reason_code == "output_truncated" and .native["firstmate.watched_tools"].stderr_truncated' >/dev/null || fail "stderr truncation was overwritten by successful parsing"
 
 oversized_status=0
 oversized=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_VIGIE_TOOL_UPDATE_BIN=/missing FM_VIGIE_NATIVE_MAX_BYTES=64 VIGIE_FIXTURE_FAILURE=oversized "$VIGIE" --json) || oversized_status=$?
@@ -144,12 +298,15 @@ oversized=$(FM_FLEET_SNAPSHOT_BIN="$SNAPSHOT" FM_VIGIE_HERMES_BIN="$FAILURE" FM_
 printf '%s\n' "$oversized" | jq -e '.native["hermes.doctor"].stdout_truncated and (.native["hermes.doctor"].stdout|length)==64 and .native["hermes.doctor"].status == "unknown"' >/dev/null || fail "native byte cap missing"
 
 $VIGIE --help >/dev/null || fail "help failed"
-before=$(sha256sum "$SNAPSHOT" "$SUCCESS" "$TOOL")
+before=$(find "$TMP_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum; sha256sum "$SUCCESS" "$FAILURE")
+repo_before=$(find "$ROOT" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
 files_before=$(find "$TMP_ROOT" -type f -printf '%P\n' | sort)
 run_vigie --json --event "$baseline" >/dev/null || fail "repeat read-only digest failed"
-after=$(sha256sum "$SNAPSHOT" "$SUCCESS" "$TOOL")
+after=$(find "$TMP_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum; sha256sum "$SUCCESS" "$FAILURE")
+repo_after=$(find "$ROOT" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
 files_after=$(find "$TMP_ROOT" -type f -printf '%P\n' | sort)
-[ "$before" = "$after" ] || fail "digest mutated fixture input"
+[ "$before" = "$after" ] || fail "digest mutated a fixture or baseline"
 [ "$files_before" = "$files_after" ] || fail "digest created files in fixture tree"
+[ "$repo_before" = "$repo_after" ] || fail "digest wrote outside the test-owned fixture tree"
 
 pass "verified native-source JSON, failure, delta, French, and read-only surfaces"

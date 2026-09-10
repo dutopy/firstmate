@@ -66,6 +66,14 @@ def now_text() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def producer_time(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, (int, float)):
+        return dt.datetime.fromtimestamp(value, dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return fallback
+
+
 def encode_identity(value: Any) -> str:
     return str(value).replace("%", "%25").replace(":", "%3A")
 
@@ -75,13 +83,27 @@ def bounded_text(data: bytes, maximum: int) -> tuple[str, bool]:
     return data[:maximum].decode("utf-8", "replace"), truncated
 
 
+def redact_text(value: str) -> str:
+    value = re.sub(r"(?i)\b(bearer)\s+\S+", r"\1 [redacted]", value)
+    value = re.sub(
+        r'''(?i)(["'](?:token|access_token|refresh_token|client_secret|secret|api_key|password|cookie|authorization)["']\s*:\s*)["'][^"']*["']''',
+        r'\1"[redacted]"',
+        value,
+    )
+    return re.sub(
+        r"(?i)\b(token|access_token|refresh_token|client_secret|secret|api[_ -]?key|password|cookie|authorization)\s*[:=]\s*\S+",
+        r"\1=[redacted]",
+        value,
+    )
+
+
 def executable(command: str) -> str | None:
     if os.path.sep in command:
         return command if os.path.isfile(command) and os.access(command, os.X_OK) else None
     return shutil.which(command)
 
 
-def run_source(source_id: str, argv: list[str] | None, observed_at: str, timeout: int, maximum: int) -> dict[str, Any]:
+def run_source(source_id: str, argv: list[str] | None, observed_at: str, timeout: int, maximum: int, extra_env: dict[str, str] | None = None) -> dict[str, Any]:
     record: dict[str, Any] = {
         "source_id": source_id,
         "command": argv,
@@ -108,6 +130,7 @@ def run_source(source_id: str, argv: list[str] | None, observed_at: str, timeout
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
+            env={**os.environ, **(extra_env or {})},
         )
     except OSError:
         record.update(status="unavailable", reason_code="command_missing")
@@ -146,8 +169,8 @@ def run_source(source_id: str, argv: list[str] | None, observed_at: str, timeout
         thread.join(timeout=1)
     record.update(
         exit_code=exit_code,
-        stdout=bytes(captured["stdout"]).decode("utf-8", "replace"),
-        stderr=bytes(captured["stderr"]).decode("utf-8", "replace"),
+        stdout=redact_text(bytes(captured["stdout"]).decode("utf-8", "replace")),
+        stderr=redact_text(bytes(captured["stderr"]).decode("utf-8", "replace")),
         stdout_truncated=truncated["stdout"],
         stderr_truncated=truncated["stderr"],
     )
@@ -160,8 +183,19 @@ def run_source(source_id: str, argv: list[str] | None, observed_at: str, timeout
     return record
 
 
+def source_unusable(record: dict[str, Any]) -> bool:
+    return record["status"] == "unavailable" or record["stdout_truncated"] or record["stderr_truncated"]
+
+
+def set_parse_outcome(record: dict[str, Any], status: str, reason_code: str | None, capped: bool) -> None:
+    if capped:
+        record.update(status="unknown", reason_code="record_cap_reached")
+    else:
+        record.update(status=status, reason_code=reason_code)
+
+
 def parse_json_source(record: dict[str, Any], *, schema: str | None = None) -> Any | None:
-    if record["status"] == "unavailable" or record["stdout_truncated"]:
+    if source_unusable(record):
         return None
     try:
         value = json.loads(record["stdout"])
@@ -239,19 +273,34 @@ def parse_snapshot(snapshot: dict[str, Any], source: dict[str, Any], limit: int)
     source_id = source["source_id"]
     seen_at = source["observed_at"]
     inventory: dict[str, dict[str, Any]] = {}
-    backlog = snapshot.get("backlog") if isinstance(snapshot.get("backlog"), dict) else {}
-    records = limited_array(backlog.get("records"), limit)
-    tasks = limited_array(snapshot.get("tasks"), limit)
-    secondmate = snapshot.get("secondmate_current") if isinstance(snapshot.get("secondmate_current"), dict) else {}
-    secondmate_records = limited_array(secondmate.get("records"), limit)
+    backlog_value = snapshot.get("backlog")
+    backlog: dict[str, Any] = backlog_value if isinstance(backlog_value, dict) else {}
+    secondmate_value = snapshot.get("secondmate_current")
+    secondmate: dict[str, Any] = secondmate_value if isinstance(secondmate_value, dict) else {}
+    remaining = limit
+    record_cap_reached = False
+
+    def consume_records(value: Any) -> list[Any]:
+        nonlocal record_cap_reached, remaining
+        if not isinstance(value, list):
+            return []
+        rows = value[:remaining]
+        if len(rows) < len(value):
+            record_cap_reached = True
+        remaining -= len(rows)
+        return rows
+
+    records = consume_records(backlog.get("records"))
+    tasks = consume_records(snapshot.get("tasks"))
+    secondmate_records = consume_records(secondmate.get("records"))
 
     def field_records(field: str) -> tuple[list[Any], str]:
         if field not in snapshot:
             return [], "unknown"
         if not isinstance(snapshot[field], list):
             return [], "unknown"
-        rows = limited_array(snapshot[field], limit)
-        return rows, "empty" if not rows else "observed"
+        rows = consume_records(snapshot[field])
+        return rows, "empty" if not snapshot[field] else "observed"
 
     ready_rows, ready_status = field_records("ready_prs")
     derived_prs = [
@@ -266,7 +315,7 @@ def parse_snapshot(snapshot: dict[str, Any], source: dict[str, Any], limit: int)
         ready_status = "observed"
     elif ready_status == "unknown" and backlog.get("present") is True and isinstance(backlog.get("records"), list):
         ready_status = "empty"
-    for row in limited_array(ready_rows, limit):
+    for row in ready_rows:
         if not isinstance(row, dict) or row.get("id") is None:
             continue
         ident = str(row["id"])
@@ -309,7 +358,7 @@ def parse_snapshot(snapshot: dict[str, Any], source: dict[str, Any], limit: int)
         if not isinstance(task, dict) or task.get("id") is None:
             continue
         hints = task.get("hints") if isinstance(task.get("hints"), dict) else {}
-        decisions = limited_array(hints.get("open_decisions"), limit)
+        decisions = consume_records(hints.get("open_decisions"))
         if "open_decisions" not in hints:
             decision_complete = False
         for row in decisions:
@@ -333,7 +382,7 @@ def parse_snapshot(snapshot: dict[str, Any], source: dict[str, Any], limit: int)
             continue
         if "decisions_open" not in mate:
             decision_complete = False
-        for row in limited_array(mate.get("decisions_open"), limit):
+        for row in consume_records(mate.get("decisions_open")):
             if not isinstance(row, dict) or row.get("key") is None:
                 continue
             mate_id, decision_key = str(mate["id"]), str(row["key"])
@@ -419,13 +468,30 @@ def parse_snapshot(snapshot: dict[str, Any], source: dict[str, Any], limit: int)
                 ident, "endpoint_inactive", evidence, seen_at,
                 action=f"inspect:{ident}", age_days=age(task.get("age_days")),
             ))
+    if record_cap_reached:
+        source.update(status="unknown", reason_code="record_cap_reached")
+    unknown_prefixes = []
+    for inventory_name, prefix in (
+        ("ready_prs", "pr:"),
+        ("client_gates", "gate:"),
+        ("keyed_decisions", "decision:"),
+        ("credential_evidence", "credential:"),
+        ("pending_service_updates", "pending:"),
+    ):
+        if inventory[inventory_name]["status"] == "unknown":
+            unknown_prefixes.append(prefix)
+    if backlog.get("present") is not True or not isinstance(backlog.get("records"), list):
+        unknown_prefixes.extend(("hold:", "blocked:"))
+    if not isinstance(snapshot.get("tasks"), list):
+        unknown_prefixes.append("worker:")
+    source["unknown_key_prefixes"] = sorted(set(unknown_prefixes))
     return observations, inventory
 
 
 def parse_kanban_task(record: dict[str, Any]) -> list[dict[str, Any]]:
     value = parse_json_source(record)
     if not isinstance(value, dict) or not isinstance(value.get("task"), dict) or value["task"].get("id") is None:
-        if record["status"] != "unavailable":
+        if not source_unusable(record):
             record.update(status="unknown", reason_code="required_fields_missing")
         return []
     task = value["task"]
@@ -437,10 +503,11 @@ def parse_kanban_task(record: dict[str, Any]) -> list[dict[str, Any]]:
 def parse_kanban_stats(record: dict[str, Any]) -> list[dict[str, Any]]:
     value = parse_json_source(record)
     if not isinstance(value, dict) or not isinstance(value.get("by_status"), dict) or not isinstance(value["by_status"].get("ready"), (int, float)):
-        if record["status"] != "unavailable":
+        if not source_unusable(record):
             record.update(status="unknown", reason_code="required_fields_missing")
         return []
     ready = int(value["by_status"]["ready"])
+    record["observed_at"] = producer_time(value.get("now"), record["observed_at"])
     if ready == 0:
         record["status"] = "empty"
         return []
@@ -451,11 +518,13 @@ def parse_kanban_stats(record: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def parse_notify(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
-    if record["status"] == "unavailable" or record["stdout_truncated"]:
+    if source_unusable(record):
         return []
     pattern = re.compile(r"^\s*(\S+)\s+(\S+)\s+\(since event ([^)]+)\)\s+owner=(\S+)(?:\s+chat_type=(\S+))?(?:\s+mode=(\S+))?")
     rows = []
-    for line in record["stdout"].splitlines()[:limit]:
+    lines = record["stdout"].splitlines()
+    capped = len(lines) > limit
+    for line in lines[:limit]:
         match = pattern.match(line)
         if not match:
             continue
@@ -464,13 +533,14 @@ def parse_notify(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
         identity = f"{task}:{channel}:{owner}:{mode}"
         evidence = {"source_id": record["source_id"], "source_identity": identity, "task_id": task, "channel": channel, "owner": owner, "chat_type": chat_type, "mode": mode, "since_event": marker}
         rows.append(observation(f"notify:{encode_identity(task)}:{encode_identity(channel)}:{encode_identity(owner)}:{encode_identity(mode)}", "notification_subscription", record["source_id"], identity, task, "subscription_observed", evidence, record["observed_at"]))
-    record["status"] = "observed" if rows else ("empty" if not record["stdout"].strip() else "unknown")
-    record["reason_code"] = None if rows or not record["stdout"].strip() else "unparseable_output"
+    status = "observed" if rows else "unknown"
+    reason = None if rows else ("silent_completion_not_complete" if not record["stdout"].strip() else "unparseable_output")
+    set_parse_outcome(record, status, reason, capped)
     return rows
 
 
-def parse_monitoring(record: dict[str, Any]) -> list[dict[str, Any]]:
-    if record["status"] == "unavailable" or record["stdout_truncated"]:
+def parse_monitoring(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    if source_unusable(record):
         return []
     mappings = (
         ("Health export:", "health-export", "health_export_disabled"),
@@ -479,33 +549,36 @@ def parse_monitoring(record: dict[str, Any]) -> list[dict[str, Any]]:
         ("Scope:", "health-scope", "health_scope_reported"),
     )
     rows = []
-    for line in record["stdout"].splitlines():
+    lines = record["stdout"].splitlines()
+    capped = len(lines) > limit
+    for line in lines[:limit]:
         stripped = line.strip()
         for prefix, token, reason in mappings:
             if stripped.startswith(prefix):
                 evidence = {"source_id": record["source_id"], "source_identity": token, "check": token, "label": clean_line(stripped)}
                 rows.append(observation(f"monitoring:{token}", "monitoring", record["source_id"], token, prefix.rstrip(":"), reason, evidence, record["observed_at"]))
                 break
-    record["status"] = "observed" if rows else "unknown"
-    record["reason_code"] = None if rows else "unparseable_output"
+    set_parse_outcome(record, "observed" if rows else "unknown", None if rows else "unparseable_output", capped)
     return rows
 
 
-def parse_insights(record: dict[str, Any]) -> list[dict[str, Any]]:
-    if record["status"] == "unavailable" or record["stdout_truncated"]:
+def parse_insights(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    if source_unusable(record):
         return []
     labels = ("Period:", "Sessions:", "Messages:", "Tool calls:", "Total tokens:", "Model ", "Platform ")
     facts = [clean_line(line) for line in record["stdout"].splitlines() if clean_line(line).startswith(labels)]
+    capped = len(facts) > limit
+    facts = facts[:limit]
     if not facts:
         record.update(status="unknown", reason_code="unparseable_output")
         return []
-    record.update(status="observed", reason_code=None)
+    set_parse_outcome(record, "observed", None, capped)
     evidence = {"source_id": record["source_id"], "source_identity": "day-window", "reported": facts}
     return [observation("insights:day-window", "operational_insights", record["source_id"], "day-window", "Fenêtre quotidienne", "usage_window_reported", evidence, record["observed_at"])]
 
 
 def parse_doctor(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
-    if record["status"] == "unavailable" or record["stdout_truncated"]:
+    if source_unusable(record):
         return []
     mappings = (
         (re.compile(r"MiniMax OAuth \(not logged in\)"), "minimax-oauth", "provider_not_logged_in"),
@@ -513,19 +586,20 @@ def parse_doctor(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
         (re.compile(r"OpenRouter API \(not configured\)"), "openrouter-api", "provider_not_configured"),
     )
     rows = []
-    for line in record["stdout"].splitlines()[:limit]:
+    lines = record["stdout"].splitlines()
+    capped = len(lines) > limit
+    for line in lines[:limit]:
         for pattern, token, reason in mappings:
             if pattern.search(line):
                 evidence = {"source_id": record["source_id"], "source_identity": token, "check": token, "display_label": pattern.pattern, "normalized_status": "attention", "issue_label": reason}
                 rows.append(observation(f"credential:doctor:{token}", "credential_attention", record["source_id"], token, token, reason, evidence, record["observed_at"], action=f"inspect-credential:{token}", unknowns=["authoritative_age_unavailable"]))
                 break
-    record["status"] = "observed" if rows else "unknown"
-    record["reason_code"] = None if rows else "no_known_attention_labels"
+    set_parse_outcome(record, "observed" if rows else "unknown", None if rows else "no_known_attention_labels", capped)
     return rows
 
 
 def parse_cron_list(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
-    if record["status"] == "unavailable" or record["stdout_truncated"]:
+    if source_unusable(record):
         return []
     jobs: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
@@ -542,24 +616,27 @@ def parse_cron_list(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
                 current[field.group(1).lower().replace(" ", "_")] = clean_line(field.group(2))
     if current:
         jobs.append(current)
+    capped = len(jobs) > limit
     jobs = jobs[:limit]
     rows = []
     for job in jobs:
         ident = str(job["job_id"])
         evidence = {"source_id": record["source_id"], "source_identity": ident, **job}
         rows.append(observation(f"cron-job:{encode_identity(ident)}", "cron_job", record["source_id"], ident, job.get("name", ident), "cron_job_listed", evidence, record["observed_at"]))
-    record["status"] = "observed" if rows else ("empty" if "No scheduled jobs" in record["stdout"] else "unknown")
-    record["reason_code"] = None if record["status"] != "unknown" else "unparseable_output"
+    status = "observed" if rows else ("empty" if "No scheduled jobs" in record["stdout"] else "unknown")
+    set_parse_outcome(record, status, None if status != "unknown" else "unparseable_output", capped)
     return rows
 
 
 def parse_cron_doctor(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
-    if record["status"] == "unavailable" or record["stdout_truncated"]:
+    if source_unusable(record):
         return []
     rows = []
     current_id: str | None = None
     current_name: str | None = None
-    for line in record["stdout"].splitlines()[:limit]:
+    lines = record["stdout"].splitlines()
+    capped = len(lines) > limit
+    for line in lines[:limit]:
         job = re.match(r"^\s{2}(\S+)\s+(.+)$", line)
         if job and not line.lstrip().startswith(("Cron doctor", "Next:")):
             current_id, current_name = job.group(1), clean_line(job.group(2))
@@ -571,24 +648,32 @@ def parse_cron_doctor(record: dict[str, Any], limit: int) -> list[dict[str, Any]
         identity = f"{current_id}:{code}"
         evidence = {"source_id": record["source_id"], "source_identity": identity, "job_id": current_id, "job_name": current_name, "issue_code": code, "path": clean_line(issue.group(2)), "source_issue_label": issue.group(1).lower()}
         rows.append(observation(f"cron:{encode_identity(current_id)}:{code}", "pending_service_update", record["source_id"], identity, current_name or current_id, code, evidence, record["observed_at"], action=f"resolve-pending:cron:{current_id}:{code}", unknowns=["authoritative_age_unavailable"]))
-    record["status"] = "observed" if rows else ("empty" if "found 0 issue" in record["stdout"] else "unknown")
-    record["reason_code"] = None if record["status"] != "unknown" else "unparseable_output"
+    status = "observed" if rows else ("empty" if "found 0 issue" in record["stdout"] else "unknown")
+    set_parse_outcome(record, status, None if status != "unknown" else "unparseable_output", capped)
     return rows
 
 
 def parse_tool_updates(record: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    if source_unusable(record):
+        return []
+    if record["status"] != "unavailable" and not record["stdout"].strip():
+        record.update(status="unknown", reason_code="silent_completion_not_complete")
+        return []
     value = parse_json_source(record)
     if value is None:
-        if record["status"] != "unavailable" and not record["stdout"].strip():
-            record.update(status="unknown", reason_code="silent_completion_not_complete")
         return []
     alerts = value.get("alerts") if isinstance(value, dict) else None
     if not isinstance(alerts, list):
         record.update(status="unknown", reason_code="required_fields_missing")
         return []
+    source_timestamp = value.get("observed_at") if isinstance(value, dict) else None
+    if source_timestamp is None:
+        source_timestamp = next((alert.get("observed_at") for alert in alerts if isinstance(alert, dict) and alert.get("observed_at")), None)
+    record["observed_at"] = producer_time(source_timestamp, record["observed_at"])
     if not alerts:
         record.update(status="empty", reason_code=None)
         return []
+    capped = len(alerts) > limit
     rows = []
     for alert in alerts[:limit]:
         if not isinstance(alert, dict) or alert.get("tool_id") is None:
@@ -596,7 +681,7 @@ def parse_tool_updates(record: dict[str, Any], limit: int) -> list[dict[str, Any
         ident = str(alert["tool_id"])
         evidence = {"source_id": record["source_id"], "source_identity": ident, **{key: alert.get(key) for key in ("tool_id", "installed_version", "available_version", "status", "observed_at") if key in alert}}
         rows.append(observation(f"tool-update:{encode_identity(ident)}", "pending_service_update", record["source_id"], ident, ident, "tool_update_available", evidence, record["observed_at"], action=f"resolve-pending:tool-update:{ident}", unknowns=["authoritative_age_unavailable"]))
-    record["status"] = "observed" if rows else "unknown"
+    set_parse_outcome(record, "observed" if rows else "unknown", None if rows else "required_fields_missing", capped)
     return rows
 
 
@@ -618,6 +703,8 @@ def merge_observations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if len(ages) > 1:
             base["age_days"] = None
             base["unknowns"] = sorted(set(base["unknowns"] + ["conflicting_authoritative_age"]))
+        elif ages:
+            base["age_days"] = next(iter(ages))
         merged.append(base)
     for key, categories in categories_by_key.items():
         if len(categories) <= 1:
@@ -627,12 +714,31 @@ def merge_observations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(merged, key=lambda row: (row["category"].encode(), row["key"].encode(), row["source_id"].encode()))
 
 
-def source_for_prior(item: dict[str, Any]) -> str | None:
+def source_for_prior(key: str, item: dict[str, Any]) -> str | None:
     evidence = item.get("evidence")
     if isinstance(evidence, list):
         for fact in evidence:
             if isinstance(fact, dict) and isinstance(fact.get("source_id"), str):
                 return fact["source_id"]
+    if isinstance(item.get("source_id"), str):
+        return item["source_id"]
+    source_prefixes = (
+        ("credential:doctor:", "hermes.doctor"),
+        ("tool-update:", "firstmate.watched_tools"),
+        ("cron:", "hermes.cron.doctor"),
+        ("kanban:ready", "hermes.kanban.stats"),
+        ("pr:", "firstmate.fleet_snapshot"),
+        ("gate:", "firstmate.fleet_snapshot"),
+        ("decision:", "firstmate.fleet_snapshot"),
+        ("credential:", "firstmate.fleet_snapshot"),
+        ("pending:", "firstmate.fleet_snapshot"),
+        ("hold:", "firstmate.fleet_snapshot"),
+        ("blocked:", "firstmate.fleet_snapshot"),
+        ("worker:", "firstmate.fleet_snapshot"),
+    )
+    for prefix, source_id in source_prefixes:
+        if key == prefix or key.startswith(prefix):
+            return source_id
     return None
 
 
@@ -642,15 +748,22 @@ def deltas(recommendations: list[dict[str, Any]], prior: Any, daily: bool, age_d
     prior_keys: list[str] = []
     allow_resolutions = False
     prior_items: dict[str, dict[str, Any]] = {}
+    prior_recommendation_keys: list[str] = []
     if isinstance(prior, dict):
+        prior_observations = prior.get("observations")
+        if isinstance(prior_observations, list):
+            prior_items.update({row["key"]: row for row in prior_observations if isinstance(row, dict) and isinstance(row.get("key"), str)})
         prior_recs = prior.get("recommendations")
         if isinstance(prior_recs, list):
-            prior_items = {row["key"]: row for row in prior_recs if isinstance(row, dict) and isinstance(row.get("key"), str)}
-        if isinstance(prior.get("observed_keys"), list) and all(isinstance(item, str) for item in prior["observed_keys"]):
-            prior_keys = list(dict.fromkeys(prior["observed_keys"]))
+            prior_recommendations = {row["key"]: row for row in prior_recs if isinstance(row, dict) and isinstance(row.get("key"), str)}
+            prior_items.update(prior_recommendations)
+            prior_recommendation_keys = list(prior_recommendations)
+        observed_keys = prior.get("observed_keys")
+        if isinstance(observed_keys, list) and all(isinstance(item, str) for item in observed_keys) and len(observed_keys) == len(set(observed_keys)):
+            prior_keys = list(observed_keys)
             allow_resolutions = True
         else:
-            prior_keys = list(prior_items)
+            prior_keys = prior_recommendation_keys
             unknowns.append("baseline_uncapped_keys_unavailable")
     current_set, prior_set = set(current_keys), set(prior_keys)
     new = [key for key in current_keys if key not in prior_set]
@@ -660,16 +773,18 @@ def deltas(recommendations: list[dict[str, Any]], prior: Any, daily: bool, age_d
         for key in prior_keys:
             if key in current_set:
                 continue
-            source_id = source_for_prior(prior_items.get(key, {}))
+            source_id = source_for_prior(key, prior_items.get(key, {}))
             source = source_records.get(source_id or "")
-            if source and source["status"] in {"unknown", "unavailable"}:
-                indeterminate.append({"key": key, "source_id": source_id or "unknown", "reason_code": source.get("reason_code") or source["status"]})
+            prefix_unknown = source and any(key.startswith(prefix) for prefix in source.get("unknown_key_prefixes", []))
+            if source and (source["status"] in {"unknown", "unavailable"} or prefix_unknown):
+                reason = "category_unknown" if prefix_unknown and source["status"] not in {"unknown", "unavailable"} else source.get("reason_code") or source["status"]
+                indeterminate.append({"key": key, "source_id": source_id or "unknown", "reason_code": reason})
             else:
                 resolved.append(key)
     resurfaced = [row["key"] for row in recommendations if daily and row["key"] in prior_set and row["key"] not in new and row["age_days"] is not None and row["age_days"] >= age_days]
 
     def bounded(values: list[Any]) -> dict[str, Any]:
-        return {"items": values[:cap], "total": len(values), "truncated": len(values) > cap}
+        return {"items": values[:cap], "all_items": values, "total": len(values), "truncated": len(values) > cap}
 
     return {
         "new": bounded(new),
@@ -694,24 +809,31 @@ def build_digest(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     native_bytes = env_int("FM_VIGIE_NATIVE_MAX_BYTES", 12000)
     record_cap = env_int("FM_VIGIE_SOURCE_RECORD_MAX", 500)
     observed_at = now_text()
+    prior = None
+    if args.event:
+        try:
+            with open(args.event, encoding="utf-8") as handle:
+                prior = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"event baseline is not readable valid JSON: {exc}") from exc
     root = Path(__file__).resolve().parent.parent
     snapshot_bin = os.environ.get("FM_FLEET_SNAPSHOT_BIN", str(root / "bin" / "fm-fleet-snapshot.sh"))
     hermes = os.environ.get("FM_VIGIE_HERMES_BIN") or shutil.which("hermes") or "hermes"
     tool_bin = os.environ.get("FM_VIGIE_TOOL_UPDATE_BIN", str(root / "bin" / "fm-tool-update-check.sh"))
     task_id = os.environ.get("HERMES_KANBAN_TASK", "")
-    commands: list[tuple[str, list[str] | None]] = [
-        ("firstmate.fleet_snapshot", [snapshot_bin, "--json"]),
-        ("hermes.kanban.task", [hermes, "kanban", "show", "--json", task_id] if task_id else None),
-        ("hermes.kanban.stats", [hermes, "kanban", "stats", "--json"]),
-        ("hermes.kanban.notify_list", [hermes, "kanban", "notify-list"]),
-        ("hermes.monitoring.status", [hermes, "monitoring", "status"]),
-        ("hermes.insights.day", [hermes, "insights", "--days", "1"]),
-        ("hermes.doctor", [hermes, "doctor"]),
-        ("hermes.cron.list", [hermes, "cron", "list"]),
-        ("hermes.cron.doctor", [hermes, "cron", "doctor"]),
-        ("firstmate.watched_tools", [tool_bin, "check"]),
+    commands: list[tuple[str, list[str] | None, dict[str, str] | None]] = [
+        ("firstmate.fleet_snapshot", [snapshot_bin, "--json"], None),
+        ("hermes.kanban.task", [hermes, "kanban", "show", "--json", task_id] if task_id else None, None),
+        ("hermes.kanban.stats", [hermes, "kanban", "stats", "--json"], None),
+        ("hermes.kanban.notify_list", [hermes, "kanban", "notify-list"], None),
+        ("hermes.monitoring.status", [hermes, "monitoring", "status"], None),
+        ("hermes.insights.day", [hermes, "insights", "--days", "1"], None),
+        ("hermes.doctor", [hermes, "doctor"], None),
+        ("hermes.cron.list", [hermes, "cron", "list"], None),
+        ("hermes.cron.doctor", [hermes, "cron", "doctor"], None),
+        ("firstmate.watched_tools", [tool_bin, "check"], {"FM_TOOL_UPDATE_READ_ONLY": "1"}),
     ]
-    native = {source_id: run_source(source_id, argv, observed_at, timeout, native_bytes) for source_id, argv in commands}
+    native = {source_id: run_source(source_id, argv, observed_at, timeout, native_bytes, extra_env) for source_id, argv, extra_env in commands}
     if not task_id:
         native["hermes.kanban.task"].update(status="unknown", reason_code="task_id_not_supplied")
     for source_id in ("firstmate.dossier", "firstmate.reflex"):
@@ -744,13 +866,14 @@ def build_digest(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     if isinstance(snapshot, dict):
         snapshot = redact_secrets(snapshot)
         native["firstmate.fleet_snapshot"]["stdout"] = canonical(snapshot)
+        native["firstmate.fleet_snapshot"]["observed_at"] = producer_time(snapshot.get("generated"), observed_at)
         snapshot_rows, inventory = parse_snapshot(snapshot, native["firstmate.fleet_snapshot"], record_cap)
         rows.extend(snapshot_rows)
     rows.extend(parse_kanban_task(native["hermes.kanban.task"]) if task_id else [])
     rows.extend(parse_kanban_stats(native["hermes.kanban.stats"]))
     rows.extend(parse_notify(native["hermes.kanban.notify_list"], record_cap))
-    rows.extend(parse_monitoring(native["hermes.monitoring.status"]))
-    rows.extend(parse_insights(native["hermes.insights.day"]))
+    rows.extend(parse_monitoring(native["hermes.monitoring.status"], record_cap))
+    rows.extend(parse_insights(native["hermes.insights.day"], record_cap))
     doctor_rows = parse_doctor(native["hermes.doctor"], record_cap)
     rows.extend(doctor_rows)
     rows.extend(parse_cron_list(native["hermes.cron.list"], record_cap))
@@ -767,17 +890,10 @@ def build_digest(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
         inventory["pending_service_updates"]["status"] = "observed"
     observations = merge_observations(rows)
     all_recommendations = [recommendation_from(row) for row in observations if row["actionable"] and row["status"] == "observed"]
-    prior = None
-    if args.event:
-        try:
-            with open(args.event, encoding="utf-8") as handle:
-                prior = json.load(handle)
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"event baseline is not readable valid JSON: {exc}") from exc
     raw_changes, unknowns = deltas(all_recommendations, prior, args.daily, age_days, native, record_cap)
     changes = flatten_changes(raw_changes)
-    new_set = set(changes["new"])
-    resurfaced_set = set(changes["resurfaced"])
+    new_set = set(raw_changes["new"]["all_items"])
+    resurfaced_set = set(raw_changes["resurfaced"]["all_items"])
     all_recommendations.sort(key=lambda row: (
         0 if row["key"] in new_set else 1 if row["key"] in resurfaced_set else 2,
         -(row["age_days"] if row["age_days"] is not None else -1),
@@ -845,13 +961,13 @@ def render_french(digest: dict[str, Any]) -> str:
         lines.append("Aucune recommandation actionnable.")
     changes = digest["changes"]
     if changes["new"]:
-        lines.append(plural(len(changes["new"]), "nouvel élément", "nouveaux éléments"))
+        lines.append(plural(changes["meta"]["new"]["total"], "nouvel élément", "nouveaux éléments"))
     if changes["resolved"]:
-        lines.append(plural(len(changes["resolved"]), "élément résolu", "éléments résolus"))
+        lines.append(plural(changes["meta"]["resolved"]["total"], "élément résolu", "éléments résolus"))
     if changes["resurfaced"]:
-        lines.append(plural(len(changes["resurfaced"]), "élément ancien remis en avant", "éléments anciens remis en avant"))
+        lines.append(plural(changes["meta"]["resurfaced"]["total"], "élément ancien remis en avant", "éléments anciens remis en avant"))
     if changes["indeterminate"]:
-        lines.append(plural(len(changes["indeterminate"]), "élément sans état actuel vérifiable", "éléments sans état actuel vérifiable"))
+        lines.append(plural(changes["meta"]["indeterminate"]["total"], "élément sans état actuel vérifiable", "éléments sans état actuel vérifiable"))
     unknown = sum(1 for record in digest["native"].values() if record["status"] == "unknown")
     unavailable = sum(1 for record in digest["native"].values() if record["status"] == "unavailable")
     if unknown or unavailable:
