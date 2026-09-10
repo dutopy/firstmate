@@ -120,19 +120,21 @@ result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson dai
         null)
     )
   ] | sort_by([.action, .key]) | unique_by(.key) |
-    map(select((.age_days // 0) >= 0)) | .[0:$max]) as $recommendations |
+    map(select((.age_days // 0) >= 0))) as $all_recommendations |
+  ($all_recommendations[0:$max]) as $recommendations |
+  ([ $tasks[]?.hints.open_decisions[]?, $secondmates[]?.decisions_open[]? ]) as $decisions |
   (if ($prior|type) == "object" then
      ([($prior.recommendations // [])[]?.key] | unique) as $old |
-     {new: [$recommendations[] as $r | select(($old|index($r.key)) == null) | $r.key],
-      resolved: [$old[] as $k | select(([$recommendations[]?.key] | index($k)) == null) | $k],
-      resurfaced: (if $daily then [$recommendations[] as $r | select(($old|index($r.key)) != null and (($r.age_days // 0) >= $age_days)) | $r.key] else [] end)}
+     {new: [$all_recommendations[] as $r | select(($old|index($r.key)) == null) | $r.key],
+      resolved: [$old[] as $k | select(([$all_recommendations[]?.key] | index($k)) == null) | $k],
+      resurfaced: (if $daily then [$all_recommendations[] as $r | select(($old|index($r.key)) != null and (($r.age_days // 0) >= $age_days)) | $r.key] else [] end)}
    else {new:[], resolved:[], resurfaced:[]} end) as $changes |
   {schema:"fm-vigie.v1", generated:(.generated // "unknown"), cadence:(if $daily then "daily" elif ($prior|type)=="object" then "event" else "daily" end),
    bounded:true, max:$max, recommendations:$recommendations, changes:$changes,
-   inventory:{ready_prs:{count:($prs|length),status:(if ($prs|length)>0 then "observed" else "unknown" end)}, client_gates:{count:($gates|length),status:(if ($gates|length)>0 then "observed" else "unknown" end)}, keyed_decisions:{count:(([$tasks[]?.hints.open_decisions[]?, $secondmates[]?.decisions_open[]?])|length),status:"observed"}, credential_evidence:{count:($credentials|length),status:(if ($credentials|length)>0 then "observed" else "unknown" end)}, pending_service_updates:{count:($pending|length),status:(if ($pending|length)>0 then "observed" else "unknown" end)}},
+   inventory:{ready_prs:{count:($prs|length),status:(if ($prs|length)>0 then "observed" else "unknown" end)}, client_gates:{count:($gates|length),status:(if ($gates|length)>0 then "observed" else "unknown" end)}, keyed_decisions:{count:($decisions|length),status:(if ($decisions|length)>0 then "observed" else "unknown" end)}, credential_evidence:{count:($credentials|length),status:(if ($credentials|length)>0 then "observed" else "unknown" end)}, pending_service_updates:{count:($pending|length),status:(if ($pending|length)>0 then "observed" else "unknown" end)}},
    delivery:{pilot_channel:"approved pilot only", desktop:"future; not activated", scheduled:false},
    sources:["fm-fleet-snapshot", "kanban show/stats/notify-subscribe", "monitoring/insights/doctor/cron", "dossier/reflex"],
-   unknowns:[(if ($credentials|length)==0 then "Source-specific credential evidence is unavailable in the snapshot" else empty end), (if ($pending|length)==0 then "Pending service/update decisions are unavailable in the snapshot" else empty end), "Display does not close work"]}
+   unknowns:[(if ($decisions|length)==0 then "Keyed decision evidence is unavailable in the snapshot" else empty end), (if ($credentials|length)==0 then "Source-specific credential evidence is unavailable in the snapshot" else empty end), (if ($pending|length)==0 then "Pending service/update decisions are unavailable in the snapshot" else empty end), "Display does not close work"]}
 ' <<<"$current") || { printf 'fm-vigie: could not build digest\n' >&2; exit 1; }
 
 case "$format" in
