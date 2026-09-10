@@ -62,33 +62,45 @@ result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson dai
   (arr($backlog.records)) as $records |
   (arr(.tasks)) as $tasks |
   (arr(.secondmate_current.records)) as $secondmates |
+  # Ready PRs are projected from the native backlog records.  The optional
+  # top-level fields are accepted only when a producer explicitly supplies
+  # them; they are never synthesized by Vigie.
   (arr(.ready_prs) + [$records[]? | select(.pr_url != null and (.state == "in_flight" or .state == "queued" or .state == "In flight" or .state == "Queued")) |
-    {id:.id, url:.pr_url, title:.title, gate:(.gate // "PR review")}]) as $prs |
-  (arr(.client_gates) + arr(.gates)) as $gates |
-  (arr(.credential_evidence) + arr(.credentials)) as $credentials |
-  (arr(.pending_services) + arr(.service_updates) + arr(.pending_updates)) as $pending |
+    {id:.id, url:.pr_url, title:.title, state:.state, gate:(.gate // "PR review"), source:"backlog.records"}]) as $prs |
+  (if has("client_gates") then arr(.client_gates) else [] end) as $gates |
+  (if has("credential_evidence") then arr(.credential_evidence) else [] end) as $credentials |
+  (if has("pending_services") then arr(.pending_services) else [] end) as $pending |
   ([
     ($prs[]? | ("pr:" + text(.id)) as $k |
       rec($k; "review-pr:" + text(.id); ("PR ready: " + text(.title // .id));
-        "Review the recorded PR/client gate"; ["backlog.records.pr_url"]; ["Exact gate evidence may be unavailable"]; (.age_days // null))),
+        "Review the recorded PR/client gate";
+        [{source:(.source // "snapshot.ready_prs"), id:.id, url:(.url // null), title:(.title // null), state:(.state // null), gate:(.gate // null)}];
+        (if (.url // null) == null then ["PR URL is unavailable"] else [] end); (.age_days // null))),
     ($gates[]? | ("gate:" + text(.id // .key)) as $k |
       rec($k; "stage-gate:" + text(.id // .key); text(.title // .name // .id);
-        text(.reason // "Client stage gate is pending"); ["fm-fleet-snapshot.client_gates"]; []; (.age_days // null))),
+        text(.reason // "Client stage gate is pending");
+        [{source:"snapshot.client_gates", id:(.id // .key // null), title:(.title // .name // null), status:(.status // null), due:(.due // .due_at // null)}];
+        (if (.id // .key // null) == null then ["Client gate identifier is unavailable"] else [] end); (.age_days // null))),
     ($tasks[]? | . as $task | (arr(.hints.open_decisions)[]? |
       ("decision:" + text(.key)) as $k |
       rec($k; "decide:" + text(.key); text(.summary // .key); "Keyed decision remains open";
-        ["fm-fleet-snapshot.tasks.hints.open_decisions", ("task:" + $task.id)]; ["Decision owner and deadline are not inferred"]; null))),
+        [{source:"tasks.hints.open_decisions", task_id:$task.id, key:.key, summary:(.summary // null), owner:(.owner // null), deadline:(.deadline // null)}];
+        ["Decision owner and deadline are not inferred"]; null))),
     ($secondmates[]? | (arr(.decisions_open)[]? |
       ("decision:" + text(.key)) as $k |
       rec($k; "decide:" + text(.key); text(.summary // .key); "Secondmate keyed decision remains open";
-        ["fm-fleet-snapshot.secondmate_current.decisions_open"]; ["Return-channel freshness is source-owned"]; null))),
+        [{source:"secondmate_current.decisions_open", key:.key, summary:(.summary // null), owner:(.owner // null)}];
+        ["Return-channel freshness is source-owned"]; null))),
     ($credentials[]? | select((.status // "") != "ok") |
       ("credential:" + text(.id // .source)) as $k |
       rec($k; "inspect-credential:" + text(.id // .source); text(.title // .source);
-        text(.reason // "Credential evidence needs review"); ["fm-fleet-snapshot.credential_evidence"]; ["Vigie never probes or changes credentials"]; (.age_days // null))),
+        text(.reason // "Credential evidence needs review"); [{source:(.source // "snapshot.credential_evidence"), id:(.id // null), status:(.status // null), observed_at:(.observed_at // null)}];
+ ["Vigie never probes or changes credentials"]; (.age_days // null))),
     ($pending[]? | ("pending:" + text(.id // .key // .name)) as $k |
       rec($k; "resolve-pending:" + text(.id // .key // .name); text(.title // .name // .id);
-        text(.reason // "Pending service or update decision"); ["fm-fleet-snapshot.pending_services"]; ["Vigie never changes services or updates"]; (.age_days // null))),
+        text(.reason // "Pending service or update decision");
+        [{source:"snapshot.pending_services", id:(.id // .key // null), title:(.title // .name // null), status:(.status // null), age_days:(.age_days // null)}];
+        ["Vigie never changes services or updates"]; (.age_days // null))),
 
     ($records[]? |
       select((.captain_actionable // false) == true) |
@@ -131,7 +143,7 @@ result=$(jq -c --argjson max "$MAX" --argjson age_days "$AGE_DAYS" --argjson dai
    else {new:[], resolved:[], resurfaced:[]} end) as $changes |
   {schema:"fm-vigie.v1", generated:(.generated // "unknown"), cadence:(if $daily then "daily" elif ($prior|type)=="object" then "event" else "daily" end),
    bounded:true, max:$max, recommendations:$recommendations, changes:$changes,
-   inventory:{ready_prs:{count:($prs|length),status:(if ($prs|length)>0 then "observed" else "unknown" end)}, client_gates:{count:($gates|length),status:(if ($gates|length)>0 then "observed" else "unknown" end)}, keyed_decisions:{count:($decisions|length),status:(if ($decisions|length)>0 then "observed" else "unknown" end)}, credential_evidence:{count:($credentials|length),status:(if ($credentials|length)>0 then "observed" else "unknown" end)}, pending_service_updates:{count:($pending|length),status:(if ($pending|length)>0 then "observed" else "unknown" end)}},
+   inventory:{ready_prs:{count:($prs|length),status:(if ($prs|length)>0 then "observed" else "unknown" end)}, client_gates:{count:($gates|length),status:(if has("client_gates") then "observed" else "unknown" end)}, keyed_decisions:{count:($decisions|length),status:(if ($decisions|length)>0 then "observed" else "unknown" end)}, credential_evidence:{count:($credentials|length),status:(if has("credential_evidence") then "observed" else "unknown" end)}, pending_service_updates:{count:($pending|length),status:(if has("pending_services") then "observed" else "unknown" end)}},
    delivery:{pilot_channel:"approved pilot only", desktop:"future; not activated", scheduled:false},
    sources:["fm-fleet-snapshot", "kanban show/stats/notify-subscribe", "monitoring/insights/doctor/cron", "dossier/reflex"],
    unknowns:[(if ($decisions|length)==0 then "Keyed decision evidence is unavailable in the snapshot" else empty end), (if ($credentials|length)==0 then "Source-specific credential evidence is unavailable in the snapshot" else empty end), (if ($pending|length)==0 then "Pending service/update decisions are unavailable in the snapshot" else empty end), "Display does not close work"]}
@@ -151,7 +163,16 @@ case "$format" in
     jq -r '
       "Vigie quotidienne (" + (.recommendations|length|tostring) + "/" + (.max|tostring) + ")",
       (if (.recommendations|length)==0 then "Aucune recommandation actionnable." else
-        .recommendations[] | "- " + (if (.action|startswith("answer:")) then "Répondre à " + (.action|sub("^answer:";"")) elif (.action|startswith("unblock:")) then "Débloquer " + (.action|sub("^unblock:";"")) else "Inspecter " + (.action|sub("^inspect:";"")) end) + " : " + .reason end),
+        .recommendations[] | "- " +
+          (if (.action|startswith("answer:")) then "Répondre à " + (.action|sub("^answer:";""))
+           elif (.action|startswith("unblock:")) then "Débloquer " + (.action|sub("^unblock:";""))
+           elif (.action|startswith("review-pr:")) then "Relire la PR " + (.action|sub("^review-pr:";""))
+           elif (.action|startswith("stage-gate:")) then "Traiter l\u2019étape client " + (.action|sub("^stage-gate:";""))
+           elif (.action|startswith("decide:")) then "Décider " + (.action|sub("^decide:";""))
+           elif (.action|startswith("inspect-credential:")) then "Vérifier les éléments d\u2019accès " + (.action|sub("^inspect-credential:";""))
+           elif (.action|startswith("resolve-pending:")) then "Résoudre l\u2019attente " + (.action|sub("^resolve-pending:";""))
+           elif (.action|startswith("inspect:")) then "Inspecter " + (.action|sub("^inspect:";""))
+           else "Examiner " + .action end) + " : " + .reason end),
       "Livraison : pilote approuvé uniquement ; bureau futur non activé."
     ' <<<"$result" ;;
 esac
