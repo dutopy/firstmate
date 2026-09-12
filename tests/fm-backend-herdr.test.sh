@@ -632,6 +632,46 @@ test_registered_agent_with_an_unreadable_process_view_is_unknown() {
   pass "herdr stale registration: an unreadable process view refuses instead of guessing either way"
 }
 
+test_registered_agent_with_unreadable_descendant_metadata_is_unknown() {
+  local out
+  out=$(bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_pane_presence_state() { printf present; }
+    fm_backend_herdr_cli() {
+      case "${2:-}" in
+        get) printf "{\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_status\":\"working\"}}}\n" ;;
+        process-info) printf "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":100,\"foreground_processes\":[{\"pid\":100,\"name\":\"zsh\",\"argv0\":\"zsh\",\"argv\":[\"zsh\"],\"cmdline\":\"zsh\"}]}}}\n" ;;
+      esac
+    }
+    fake_ps() {
+      if [ "${1:-}" = -axo ]; then
+        printf "100 1 zsh\n101 100 pi\n"
+        return 0
+      fi
+      return 1
+    }
+    export FM_HERDR_PS_BIN=fake_ps
+    printf "%s %s" "$(fm_backend_herdr_pane_agent_state fmtest w1:p2)" "$(fm_backend_herdr_agent_state fmtest:w1:p2)"
+  ' "$ROOT")
+  [ "$out" = "unknown unreadable" ] \
+    || fail "unreadable descendant argv metadata must not prove a retained Pi registration stale/dead, got '$out'"
+  pass "herdr stale registration: unreadable descendant metadata stays conservative"
+}
+
+test_registered_status_without_an_agent_identity_is_unknown() {
+  local out
+  out=$(bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_pane_presence_state() { printf present; }
+    fm_backend_herdr_cli() { printf "{\"result\":{\"agent\":{\"agent_status\":\"working\"}}}\n"; }
+    fm_backend_herdr_pane_process_state() { printf agent; }
+    fm_backend_herdr_pane_agent_state fmtest w1:p2
+  ' "$ROOT")
+  [ "$out" = unknown ] \
+    || fail "a registered status without a readable agent identity must remain unknown, got '$out'"
+  pass "herdr stale registration: a malformed missing agent identity stays unknown"
+}
+
 test_registered_agent_with_an_empty_foreground_over_a_real_shell_settles_via_descendant_walk() {
   local sleep_bin shell_pid out
   sleep_bin=$(command -v sleep) || fail "sleep not found"
@@ -1155,7 +1195,7 @@ test_create_task_refuses_duplicate_label_when_agent_live() {
   # 3: pane get -> the pane structurally exists
   printf '{"result":{"pane":{"pane_id":"w1:p2"}}}\n' > "$resp/3.out"
   # 4: agent get -> a genuinely registered, live agent (idle, not just working)
-  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/4.out"
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle"}}}\n' > "$resp/4.out"
   # 5: pane process-info -> a live Pi process backs that registration (#4115)
   printf '%s\n' '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p2","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"node","argv0":"pi"}]}}}' > "$resp/5.out"
   fb=$(make_herdr_fakebin "$dir")
@@ -1178,7 +1218,7 @@ test_create_task_refuses_when_any_duplicate_label_is_live() {
   printf '{"error":{"code":"agent_not_found","message":"agent target w1:p2 not found"}}\n' > "$resp/4.out"
   printf '{"result":{"panes":[{"pane_id":"w1:p2","tab_id":"w1:t2"},{"pane_id":"w1:p3","tab_id":"w1:t3"}]}}\n' > "$resp/5.out"
   printf '{"result":{"pane":{"pane_id":"w1:p3"}}}\n' > "$resp/6.out"
-  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/7.out"
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle"}}}\n' > "$resp/7.out"
   # 8: pane process-info -> a live Pi process backs that registration (#4115)
   printf '%s\n' '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p3","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"node","argv0":"pi"}]}}}' > "$resp/8.out"
   fb=$(make_herdr_fakebin "$dir")
@@ -3516,7 +3556,7 @@ test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk() {
   printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate/task-p3 · p:%s"}]}}\n' "$token" > "$resp/1.out"
   printf '{"result":{"panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"}]}}\n' > "$resp/2.out"
   printf '{"result":{"pane":{"pane_id":"w1:p1"}}}\n' > "$resp/3.out"
-  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/4.out"
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle"}}}\n' > "$resp/4.out"
   # 5: process-info -> a live harness backs the registration (issue #4115)
   printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p1","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"node","argv0":"pi"}]}}}\n' > "$resp/5.out"
   out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
@@ -5190,6 +5230,8 @@ test_exhausted_settle_window_keeps_a_non_shell_foreground_live
 test_registered_agent_with_an_agent_descendant_outside_the_foreground_stays_alive
 test_agent_descendant_under_a_spaced_install_path_stays_alive
 test_registered_agent_with_an_unreadable_process_view_is_unknown
+test_registered_agent_with_unreadable_descendant_metadata_is_unknown
+test_registered_status_without_an_agent_identity_is_unknown
 test_registered_agent_with_an_empty_foreground_over_a_real_shell_settles_via_descendant_walk
 test_projection_reclaim_rollback_refuses_a_stale_registration
 test_busy_state_never_reports_a_shell_only_pane_busy

@@ -2122,7 +2122,7 @@ fm_backend_herdr_pane_process_state() {  # <session> <pane_id>
 # the settle retry.
 fm_backend_herdr_pane_process_state_sample() {  # <session> <pane_id>
   local session=$1 pane_id=$2 info shell_pid count i pid name argv0 args verdict
-  local others=0 ps_bin rows
+  local others=0 descendant_unreadable=0 ps_bin rows
   info=$(fm_backend_herdr_cli "$session" pane process-info --pane "$pane_id" 2>/dev/null) \
     || { printf 'unreadable'; return 0; }
   printf '%s' "$info" | jq -e --arg pane "$pane_id" '
@@ -2169,7 +2169,8 @@ fm_backend_herdr_pane_process_state_sample() {  # <session> <pane_id>
     || { printf 'unreadable'; return 0; }
   while IFS=$'\t' read -r pid name; do
     [ -n "$pid" ] || continue
-    args=$(LC_ALL=C "$ps_bin" -p "$pid" -o args= 2>/dev/null) || continue
+    args=$(LC_ALL=C "$ps_bin" -p "$pid" -o args= 2>/dev/null) \
+      || { descendant_unreadable=1; continue; }
     args=${args#"${args%%[![:space:]]*}"}
     argv0=${args%%[[:space:]]*}
     if [ "$(fm_agent_process_classify "$name" "$argv0" "$args" "$pid")" = agent ]; then
@@ -2198,6 +2199,7 @@ $(printf '%s\n' "$rows" | awk -v shell="$shell_pid" '
     }
   }')
 EOF
+  [ "$descendant_unreadable" -eq 0 ] || { printf 'unreadable'; return 0; }
   printf 'shell'
 }
 
@@ -2265,6 +2267,9 @@ fm_backend_herdr_pane_agent_state() {  # <session> <pane_id>
     [ "$code" = "agent_not_found" ] && printf 'no-agent' || printf 'unknown'
     return 0
   fi
+  printf '%s' "$out" | jq -e \
+    '.result.agent.agent | select(type == "string" and length > 0)' >/dev/null 2>&1 \
+    || { printf 'unknown'; return 0; }
   status=$(printf '%s' "$out" | jq -r '.result.agent.agent_status // empty' 2>/dev/null)
   case "$status" in
     working|idle|done|blocked) ;;
