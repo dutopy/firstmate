@@ -638,9 +638,9 @@ test_registered_agent_with_unreadable_descendant_metadata_is_unknown() {
     . "$0/bin/backends/herdr.sh"
     fm_backend_herdr_pane_presence_state() { printf present; }
     fm_backend_herdr_cli() {
-      case "${2:-}" in
-        get) printf "{\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_status\":\"working\"}}}\n" ;;
-        process-info) printf "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":100,\"foreground_processes\":[{\"pid\":100,\"name\":\"zsh\",\"argv0\":\"zsh\",\"argv\":[\"zsh\"],\"cmdline\":\"zsh\"}]}}}\n" ;;
+      case "${2:-}:${3:-}" in
+        agent:get) printf "{\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_status\":\"working\"}}}\n" ;;
+        pane:process-info) printf "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":100,\"foreground_processes\":[{\"pid\":100,\"name\":\"zsh\",\"argv0\":\"zsh\",\"argv\":[\"zsh\"],\"cmdline\":\"zsh\"}]}}}\n" ;;
       esac
     }
     fake_ps() {

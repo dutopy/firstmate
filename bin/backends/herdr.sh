@@ -2092,8 +2092,9 @@ fm_backend_herdr_explicit_close_pane_confirmed() {  # <session> <pane_id>
 #                settle window and the first agent or shell reading wins; only
 #                an exhausted window keeps `other`.
 #   unreadable - process-info failed, described a different pane, named no
-#                shell pid, or the process table could not be read or does not
-#                contain the shell pid. An empty foreground-process list is NOT
+#                shell pid, or the process table, required descendant metadata,
+#                or shell-pid membership could not be read. An empty
+#                foreground-process list is NOT
 #                unreadable: it is the real, momentary shape of the exec-to-
 #                shell handoff (the harness process has exited but Herdr has
 #                not yet repopulated the foreground group), so it is treated

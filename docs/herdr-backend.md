@@ -290,7 +290,8 @@ No registered status outranks the process view, because an agent killed mid-turn
 The `pane process-info` subcommand that this process-level proof depends on is present in every supported release client from the 0.7.1 floor upward (measured 2026-09-10 on the pinned 0.7.1, 0.7.3, 0.7.4, and 0.7.5 release clients - [verification](verification/runtime-backends.md) "Stale agent registration").
 The response shape the adapter parses (`result.type` of `pane_process_info`, `process_info.shell_pid`, and `foreground_processes` entries carrying `name`, `argv0`, `argv`, and `cmdline`) is verified live only on Herdr 0.9.0, with the idle-shell proof's narrower parse previously verified on 0.7.5.
 A server response below 0.9.0 has not been measured for this parse.
-An unreadable or unparseable process view reads `unknown`, which refuses lifecycle verbs and recovery rather than trusting the registration.
+An unreadable or unparseable process view, including unreadable descendant metadata, reads `unknown`, which refuses lifecycle verbs and recovery rather than trusting the registration.
+A malformed registration without a readable agent identity is likewise `unknown` rather than live.
 
 The generic Herdr agent-liveness probe reuses that pane classifier, then applies one recovery-only exception.
 A structurally gone pane or a pane read from a session positively reported as having no running server becomes `missing`, a restored agent-less shell and a stale registration over a shell-only pane both become `dead`, a registered agent with a live process becomes `alive`, and every other unexpected read becomes `unreadable`.
