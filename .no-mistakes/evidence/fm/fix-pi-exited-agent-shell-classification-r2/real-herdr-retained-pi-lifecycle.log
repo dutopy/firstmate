@@ -1,0 +1,4 @@
+Isolated real-Herdr retained-Pi lifecycle regression
+commit=ab7436f73830eaebeaa3607bc14980bdb64ca72c
+ok - retained Pi registration over a leftover shell is stale and dead for recovery
+ok - shared process classification keeps a live idle Pi alive
