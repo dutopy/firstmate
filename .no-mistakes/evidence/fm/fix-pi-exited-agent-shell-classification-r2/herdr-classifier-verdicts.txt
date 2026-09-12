@@ -1,0 +1,4 @@
+malformed agent identity -> pane=unknown
+unreadable descendant metadata -> process=unreadable pane=unknown recovery=unreadable
+retained registration over shell-only pane -> process=shell pane=stale-agent recovery=dead
+registered Pi running non-shell foreground tool -> process=other pane=live recovery=alive

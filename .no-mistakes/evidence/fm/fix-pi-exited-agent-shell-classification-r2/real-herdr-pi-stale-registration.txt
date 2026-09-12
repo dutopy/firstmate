@@ -1,0 +1,4 @@
+# pi 0.84.4 under herdr 0.8.2: registered idle, foreground [{"name":"pi","argv0":null},{"name":"git","argv0":null},{"name":"git","argv0":null},{"name":"git-remote-http","argv0":null}]
+ok - real herdr 0.8.2 + pi 0.84.4: a running registered pi classifies alive at process level
+# herdr 0.8.2 released the pi registration after /quit under a nested shell; the stale-registration branch was not exercised by this release, the agent-free verdict still held through agent_not_found
+ok - real herdr 0.8.2 + pi 0.84.4: a quit pi under a nested shell recovers as dead
