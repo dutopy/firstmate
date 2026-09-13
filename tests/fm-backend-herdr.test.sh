@@ -537,6 +537,34 @@ test_container_ensure_refuses_an_ambiguous_home_label() {
   pass "fm_backend_herdr_container_ensure: surfaces the exact ambiguous-placement refusal instead of a generic failure"
 }
 
+test_recovery_distinguishes_exited_pi_from_live_pi() {
+  local out
+  out=$(bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_pane_agent_state() { printf live; }
+    fm_backend_herdr_cli() {
+      case "${2:-}:${3:-}" in
+        agent:get)
+          printf "%s\n" "{\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_status\":\"done\"}}}"
+          ;;
+        pane:process-info)
+          if [ "${FM_TEST_PROCESS:-}" = pi ]; then
+            printf "%s\n" "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p1\",\"foreground_processes\":[{\"name\":\"pi\",\"argv0\":\"pi\"}]}}}"
+          else
+            printf "%s\n" "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p1\",\"foreground_processes\":[{\"name\":\"bash\",\"argv0\":\"bash\"}]}}}"
+          fi
+          ;;
+      esac
+    }
+    printf "%s %s" \
+      "$(FM_TEST_PROCESS=shell fm_backend_herdr_agent_state fmtest:w1:p1)" \
+      "$(FM_TEST_PROCESS=pi fm_backend_herdr_agent_state fmtest:w1:p1)"
+  ' "$ROOT")
+  [ "$out" = "dead alive" ] \
+    || fail "recovery must classify a retained shell as dead and a real Pi process as alive, got '$out'"
+  pass "herdr recovery: an exited Pi retained as a shell is dead while a real Pi remains alive"
+}
+
 # --- container_ensure / create_task ------------------------------------------
 
 test_container_ensure_starts_server_and_workspace() {
@@ -4502,6 +4530,7 @@ test_launcher_identity_refuses_a_pane_from_another_server_socket
 test_launcher_identity_refuses_an_unreadable_pane
 test_launcher_identity_refuses_a_pane_and_tab_that_disagree
 test_launcher_identity_refuses_a_workspace_missing_from_the_session
+test_recovery_distinguishes_exited_pi_from_live_pi
 test_workspace_ensure_prefers_the_launcher_over_the_first_label_match
 test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher
 test_workspace_ensure_other_home_ignores_the_launcher_identity
