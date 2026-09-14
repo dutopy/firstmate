@@ -4028,7 +4028,7 @@ SH
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 function processIdentity(pid) {
@@ -4092,6 +4092,15 @@ secondModule.default(second.pi);
 if (existsSync(stealLock)) throw new Error("orphaned continuity steal lock was not reclaimed");
 await second.handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, {});
 await new Promise((resolve) => setTimeout(resolve, 50));
+const journalBackup = `${journal}.backup`;
+renameSync(journal, journalBackup);
+mkdirSync(journal);
+const diagnosticFailure = await second.getTool().execute("journal-rename-failure", {}, undefined, undefined, {});
+if (!diagnosticFailure.details?.ok) throw new Error("journal failure altered supervision ownership");
+const temporaryFiles = readdirSync(`${process.env.FM_HOME}/state`).filter((name) => name.startsWith(".pi-watch-continuity.jsonl.tmp-"));
+if (temporaryFiles.length > 0) throw new Error(`journal failure leaked temporary files: ${temporaryFiles.join(",")}`);
+rmdirSync(journal);
+renameSync(journalBackup, journal);
 await second.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, {});
 
 const rows = readFileSync(journal, "utf8").trim().split("\n").map((line) => JSON.parse(line));

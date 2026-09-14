@@ -323,6 +323,7 @@ function continuityLockAcquire(lock: string, depth = 0): ContinuityLockOwner | n
 // Evidence only: this journal never participates in continuity decisions.
 function continuityEvent(event: string, fields: Record<string, unknown> = {}): void {
   let lockOwner: ContinuityLockOwner | null = null;
+  let temporary = "";
   try {
     mkdirSync(state, { recursive: true, mode: 0o700 });
     lockOwner = continuityLockAcquire(continuityJournalLock);
@@ -347,13 +348,19 @@ function continuityEvent(event: string, fields: Record<string, unknown> = {}): v
       const newline = kept.indexOf(10);
       bounded = newline < 0 ? Buffer.alloc(0) : kept.subarray(newline + 1);
     }
-    const temporary = `${continuityJournal}.tmp-${process.pid}-${randomUUID()}`;
+    temporary = `${continuityJournal}.tmp-${process.pid}-${randomUUID()}`;
     writeFileSync(temporary, bounded, { mode: 0o600 });
     chmodSync(temporary, 0o600);
     renameSync(temporary, continuityJournal);
+    temporary = "";
   } catch {
     // Observability must never alter continuity behavior.
   } finally {
+    if (temporary) {
+      try {
+        unlinkSync(temporary);
+      } catch {}
+    }
     if (lockOwner) continuityLockRelease(continuityJournalLock, lockOwner);
   }
 }
