@@ -334,6 +334,8 @@ function continuityEvent(event: string, fields: Record<string, unknown> = {}): v
       generation: continuityValue(fields.generation),
       predecessorArmPid: continuityValue(fields.predecessorArmPid),
       armPid: continuityValue(fields.armPid),
+      recoveryGeneration: fields.recoveryGeneration === undefined ? undefined : continuityValue(fields.recoveryGeneration),
+      watcherPid: fields.watcherPid === undefined ? undefined : continuityValue(fields.watcherPid),
       attempt: fields.attempt === undefined ? undefined : Number(fields.attempt),
       reason: fields.reason === undefined ? undefined : continuityValue(fields.reason),
     })}\n`);
@@ -722,11 +724,15 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function confirmHandlingDelivery(recovery: { generation: string; watcherPid: string }): {
+  function confirmHandlingDelivery(
+    owner: SessionGeneration,
+    recovery: { generation: string; watcherPid: string },
+  ): {
     ok: boolean;
     detail: string;
   } {
-    continuityEvent("handling-successor-ack-attempt", { generation: recovery.generation, armPid: recovery.watcherPid });
+    const evidence = { generation: owner.id, recoveryGeneration: recovery.generation, watcherPid: recovery.watcherPid };
+    continuityEvent("handling-successor-ack-attempt", evidence);
     try {
       const result = spawnSync(
         "bash",
@@ -739,13 +745,13 @@ export default function (pi: ExtensionAPI) {
       );
       if (result.status === 0) return { ok: true, detail: "" };
       const stderr = (result.stderr || "").trim();
-      continuityEvent("handling-successor-refused", { generation: recovery.generation, armPid: recovery.watcherPid, reason: `status-${result.status ?? "none"}` });
+      continuityEvent("handling-successor-refused", { ...evidence, reason: `status-${result.status ?? "none"}` });
       return {
         ok: false,
         detail: `watcher: FAILED - handling delivery confirmation was rejected (status=${result.status ?? "none"} generation=${recovery.generation} watcherPid=${recovery.watcherPid})${stderr ? `\n${stderr}` : ""}`,
       };
     } catch (error) {
-      continuityEvent("handling-successor-refused", { generation: recovery.generation, armPid: recovery.watcherPid, reason: nodeErrorCode(error) || "exception" });
+      continuityEvent("handling-successor-refused", { ...evidence, reason: nodeErrorCode(error) || "exception" });
       const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
@@ -762,9 +768,9 @@ export default function (pi: ExtensionAPI) {
       const current = owner.child ? armRecovery.get(owner.child) : undefined;
       return current ?? recovery;
     };
-    const first = confirmHandlingDelivery(snapshot());
+    const first = confirmHandlingDelivery(owner, snapshot());
     if (first.ok) return first;
-    return confirmHandlingDelivery(snapshot());
+    return confirmHandlingDelivery(owner, snapshot());
   }
 
   function offerWakeToBranch(message: string): Promise<void> | null {

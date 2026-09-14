@@ -1414,7 +1414,18 @@ if (rows.filter((row) => row.startsWith("refused ")).length < 1) {
   throw new Error(`handling-delivered was never attempted: ${rows.join(" | ")}`);
 }
 const journal = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8");
-if (!journal.includes('"event":"handling-successor-refused"')) throw new Error(`handling refusal was not recorded: ${journal}`);
+const journalRows = journal.trim().split("\n").map((line) => JSON.parse(line));
+const generationIds = new Set(journalRows.filter((row) => row.event === "generation-created").map((row) => row.generation));
+const handlingRows = journalRows.filter((row) => row.event.startsWith("handling-successor-"));
+if (!handlingRows.some((row) => row.event === "handling-successor-refused")) {
+  throw new Error(`handling refusal was not recorded: ${journal}`);
+}
+if (handlingRows.some((row) => !generationIds.has(row.generation))) {
+  throw new Error(`handling evidence used an uncreated extension generation: ${JSON.stringify(handlingRows)}`);
+}
+if (handlingRows.some((row) => row.recoveryGeneration !== "fixture-generation" || !/^[0-9]+$/.test(row.watcherPid))) {
+  throw new Error(`handling evidence omitted recovery identity: ${JSON.stringify(handlingRows)}`);
+}
 if (journal.includes("synthetic actionable close")) throw new Error("journal captured the wake payload");
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
