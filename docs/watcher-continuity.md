@@ -113,7 +113,8 @@ Only the watcher process touches `state/.last-watcher-beat`; no helper process c
 ## Pi extension continuity diagnostics
 
 The Pi extension records its generation and continuation boundary as JSON Lines in the effective state directory at `state/.pi-watch-continuity.jsonl`.
-Typed rows cover session and generation transitions, arm attempts and results, actionable closes, restoration and readiness, handling-successor refusals, rejected stale generations or session locks, typed fallback, and extension child errors.
+Typed rows cover session and generation transitions, arm attempts and results, actionable closes, restoration and readiness, handling-successor acknowledgement attempts and refusals, rejected stale generations or session locks, typed fallback, and extension child errors.
+For handling rows, `generation` identifies the owning Pi extension generation, while the watcher's recovery identity stays in the separate `recoveryGeneration` and `watcherPid` fields; `predecessorArmPid` links a close to its restoration path.
 Rows contain only bounded identifiers and classifications, never the actionable wake payload.
 The journal is atomically replaced under a cross-process, process-identity-checked lock, created with mode `0600`, and kept below a fixed 64 KiB implementation-owned cap.
 Lock contention, unavailable process identity, malformed or stale lock state that cannot be safely reclaimed, and journal I/O failure skip diagnostic rows without changing supervision behavior.
