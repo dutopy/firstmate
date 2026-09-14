@@ -4220,9 +4220,13 @@ for (let attempt = 0; attempt < 600; attempt += 1) {
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await tool.execute("journal-armed", {}, undefined, undefined, {});
-await new Promise((resolve) => setTimeout(resolve, 100));
 const journal = `${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`;
-const text = readFileSync(journal, "utf8");
+let text = "";
+for (let attempt = 0; attempt < 200; attempt += 1) {
+  text = readFileSync(journal, "utf8");
+  if (text.includes('"event":"actionable-close"')) break;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
 const bytes = Buffer.byteLength(text);
 if (bytes > 64 * 1024) throw new Error(`journal exceeded cap: ${bytes}`);
 if (bytes < 60 * 1024) throw new Error(`journal did not exercise fixed cap: ${bytes}`);
