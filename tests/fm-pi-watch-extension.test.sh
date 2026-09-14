@@ -4025,8 +4025,8 @@ printf 'signal: journal synthetic close\n'
 exit 0
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_PI_CONTINUITY_JOURNAL_MAX_BYTES=700 node --input-type=module 2>&1 <<'EOF'
-import { readFileSync, writeFileSync } from "node:fs";
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 let tool = null;
 const pi = {
@@ -4034,13 +4034,20 @@ const pi = {
   registerTool(candidate) { if (candidate.name === "fm_watch_arm_pi") tool = candidate; },
   sendUserMessage: async () => {},
 };
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
-await tool.execute("journal-0", {}, undefined, undefined, {});
+for (let attempt = 0; attempt < 600; attempt += 1) {
+  await tool.execute(`journal-missing-lock-${attempt}`, {}, undefined, undefined, {});
+}
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await tool.execute("journal-armed", {}, undefined, undefined, {});
 await new Promise((resolve) => setTimeout(resolve, 100));
-const text = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8");
-if (Buffer.byteLength(text) > 700) throw new Error(`journal exceeded cap: ${Buffer.byteLength(text)}`);
+const journal = `${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`;
+const text = readFileSync(journal, "utf8");
+const bytes = Buffer.byteLength(text);
+if (bytes > 64 * 1024) throw new Error(`journal exceeded cap: ${bytes}`);
+if (bytes < 60 * 1024) throw new Error(`journal did not exercise fixed cap: ${bytes}`);
+if ((statSync(journal).mode & 0o777) !== 0o600) throw new Error("journal mode is not private");
 for (const line of text.trim().split("\n")) JSON.parse(line);
 if (!text.includes('"event":"start-arm-attempt"')) throw new Error("missing arm attempt evidence");
 if (!text.includes('"event":"actionable-close"')) throw new Error("missing actionable close evidence");
