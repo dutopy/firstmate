@@ -110,10 +110,20 @@ The file is size-capped through `FM_WATCH_CYCLE_LOG_MAX_BYTES` and `FM_WATCH_CYC
 The default 300-second grace is unchanged.
 Only the watcher process touches `state/.last-watcher-beat`; no helper process can make a wedged watcher appear healthy.
 
+## Pi extension continuity diagnostics
+
+The Pi extension records its generation and continuation boundary as JSON Lines in the effective state directory at `state/.pi-watch-continuity.jsonl`.
+Typed rows cover session and generation transitions, arm attempts and results, actionable closes, restoration and readiness, handling-successor acknowledgement attempts and refusals, rejected stale generations or session locks, typed fallback, and extension child errors.
+For handling rows, `generation` identifies the owning Pi extension generation, while the watcher's recovery identity stays in the separate `recoveryGeneration` and `watcherPid` fields; `predecessorArmPid` links a close to its restoration path.
+Rows contain only bounded identifiers and classifications, never the actionable wake payload.
+The journal is atomically replaced under a cross-process, process-identity-checked lock, created with mode `0600`, and kept below a fixed 64 KiB implementation-owned cap.
+Lock contention, unavailable process identity, malformed or stale lock state that cannot be safely reclaimed, and journal I/O failure skip diagnostic rows without changing supervision behavior.
+
 ## Regression coverage
 
 `tests/fm-pi-watch-extension.test.sh` checks Pi's first-cycle-or-explicit-repair tool metadata and ownership-based redundant-call no-ops, then simulates actionable and empty child closes against the actual Pi and OpenCode close handlers, blocks prompt delivery to prove the successor launches first, verifies single-flight behavior, changes the session lock before close to prove ownership is rechecked, and hangs each successor arm to prove bounded fallback delivery includes the typed restoration failure.
 The same suite covers ordinary same-process session replacement for `/new`, `/resume`, `/fork`, and reload, same-instance shutdown-plus-start, automatic re-arm before any model turn, a fresh extension-module rebind carrying all in-flight actionable closes exactly once, stale prior-generation callbacks, repeated transitions with exactly one live cycle, disappearance of the shutting-down refusal after a valid replacement activates, and terminal quit still refusing late rearm.
+It also checks the bounded private Pi continuity journal for typed lifecycle evidence without wake payloads, cross-process ownership recovery, home isolation, and diagnostic-failure independence.
 `tests/fm-watch-arm.test.sh` covers durable queue replay, real remote parent-replies ingestion into the authoritative status log, decision-only OPEN DECISIONS recovery, interrupted handling replay, generation-bound acknowledgement, a persistent live successor after recovery, a watcher close inside the handling window that must leave the printed acknowledgement valid, and the self-healing moved-generation acknowledgement that consumes its handled rows and names its remedy.
 `tests/fm-watch-recovery-loop.test.sh` covers the once-per-generation announcement bound with the real Pi extension against a refused handling handshake, and a handling successor that must surface a real crew event instead of going blind.
 `tests/fm-watcher-lock.test.sh` covers verified-successor attach, recovery publication before stale-lock removal, the typed self-eviction failure, bounded and successor-linked lifecycle rows, and a SIGSTOP counterfactual that distinguishes a live PID from a stale beacon before classifying termination.

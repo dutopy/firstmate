@@ -22,8 +22,8 @@
 // event finishes the pending record, and a still-unconsumed record rides the
 // replacement handoff.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, linkSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
@@ -136,6 +136,9 @@ const armScript = `${fmRoot}/bin/fm-watch-arm.sh`;
 const marker = `${state}/.pi-watch-extension-loaded`;
 const handoffDir = `${state}/extensions/pi-primary-watch`;
 const actionableHandoff = `${handoffDir}/session-replacement-actionable.json`;
+const continuityJournal = `${state}/.pi-watch-continuity.jsonl`;
+const continuityJournalLock = `${continuityJournal}.lock`;
+const continuityJournalMaxBytes = 64 * 1024;
 const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(extensionFile)).digest("hex")}`;
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const retryMaxMs = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
@@ -196,6 +199,172 @@ function positiveInteger(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
+}
+
+function continuityValue(value: unknown): string {
+  return String(value ?? "").replace(/[\t\r\n\x00-\x1f\x7f]/g, " ").slice(0, 96);
+}
+
+type ContinuityLockOwner = {
+  pid: string;
+  identity: string;
+  token: string;
+  ownerFile: string;
+};
+
+function continuityProcessIdentity(pid: string): string {
+  if (!/^[0-9]+$/.test(pid)) return "";
+  try {
+    const statLine = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const statFields = statLine.slice(statLine.lastIndexOf(")") + 1).trim().split(/\s+/);
+    const starttime = statFields[19];
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`);
+    if (!/^[0-9]+$/.test(starttime) || cmdline.length === 0) return "";
+    const key = process.platform === "linux" ? "linux-starttime" : "proc-starttime";
+    return `${key}=${starttime} cmdline-sha256=${createHash("sha256").update(cmdline).digest("hex")}`;
+  } catch {}
+  const result = process.platform === "win32"
+    ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$p=Get-Process -Id ${pid}; \"$($p.StartTime.ToUniversalTime().Ticks) $($p.Path)\"`], { encoding: "utf8", timeout: 200 })
+    : spawnSync("ps", ["-p", pid, "-o", "lstart=", "-o", "command="], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, timeout: 200 });
+  if (result.status !== 0 || result.error) return "";
+  const output = result.stdout.trim();
+  if (!output) return "";
+  return `process-sha256=${createHash("sha256").update(output).digest("hex")}`;
+}
+
+const continuitySelfIdentity = continuityProcessIdentity(String(process.pid));
+
+function continuityLockRead(lock: string): ContinuityLockOwner | null {
+  try {
+    const stat = lstatSync(lock);
+    if (!stat.isFile() || stat.isSymbolicLink()) return null;
+    const value = JSON.parse(readFileSync(lock, "utf8")) as Record<string, unknown>;
+    if (!/^[0-9]+$/.test(String(value.pid ?? ""))) return null;
+    if (typeof value.identity !== "string" || !value.identity || value.identity.length > 160) return null;
+    if (typeof value.token !== "string" || !/^[0-9a-f-]{36}$/.test(value.token)) return null;
+    return {
+      pid: String(value.pid),
+      identity: value.identity,
+      token: value.token,
+      ownerFile: `${lock}.owner-${value.token}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function continuityLockRelease(lock: string, owner: ContinuityLockOwner): void {
+  try {
+    if (continuityLockRead(lock)?.token === owner.token) unlinkSync(lock);
+  } catch {}
+  try {
+    unlinkSync(owner.ownerFile);
+  } catch {}
+}
+
+function continuityLockTryCreate(lock: string, allowedStealToken = ""): ContinuityLockOwner | null {
+  const identity = continuitySelfIdentity;
+  if (!identity) return null;
+  const token = randomUUID();
+  const owner: ContinuityLockOwner = { pid: String(process.pid), identity, token, ownerFile: `${lock}.owner-${token}` };
+  try {
+    writeFileSync(owner.ownerFile, `${JSON.stringify({ pid: owner.pid, identity, token })}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    linkSync(owner.ownerFile, lock);
+    if (continuityLockRead(lock)?.token !== token) throw new Error("lock owner mismatch");
+    const steal = continuityLockRead(`${lock}.steal`);
+    if (steal && steal.token !== allowedStealToken) throw new Error("lock steal in progress");
+    return owner;
+  } catch {
+    continuityLockRelease(lock, owner);
+    return null;
+  }
+}
+
+function continuityLockOwnerIsActive(owner: ContinuityLockOwner): boolean {
+  if (!pidAlive(owner.pid)) return false;
+  const identity = continuityProcessIdentity(owner.pid);
+  return !identity || identity === owner.identity;
+}
+
+function continuityLockAcquire(lock: string, depth = 0): ContinuityLockOwner | null {
+  const created = continuityLockTryCreate(lock);
+  if (created) return created;
+  const expected = continuityLockRead(lock);
+  const stealLock = `${lock}.steal`;
+  if (!expected) {
+    const staleSteal = continuityLockRead(stealLock);
+    if (!staleSteal || continuityLockOwnerIsActive(staleSteal) || depth >= 8) return null;
+    const stealOwner = continuityLockAcquire(stealLock, depth + 1);
+    if (!stealOwner) return null;
+    try {
+      return continuityLockTryCreate(lock, stealOwner.token);
+    } finally {
+      continuityLockRelease(stealLock, stealOwner);
+    }
+  }
+  if (continuityLockOwnerIsActive(expected) || depth >= 8) return null;
+  const stealOwner = continuityLockAcquire(stealLock, depth + 1);
+  if (!stealOwner) return null;
+  try {
+    const current = continuityLockRead(lock);
+    if (!current || current.token !== expected.token || continuityLockOwnerIsActive(current)) return null;
+    unlinkSync(lock);
+    try {
+      unlinkSync(current.ownerFile);
+    } catch {}
+    return continuityLockTryCreate(lock, stealOwner.token);
+  } catch {
+    return null;
+  } finally {
+    continuityLockRelease(stealLock, stealOwner);
+  }
+}
+
+// Evidence only: this journal never participates in continuity decisions.
+function continuityEvent(event: string, fields: Record<string, unknown> = {}): void {
+  let lockOwner: ContinuityLockOwner | null = null;
+  let temporary = "";
+  try {
+    mkdirSync(state, { recursive: true, mode: 0o700 });
+    lockOwner = continuityLockAcquire(continuityJournalLock);
+    if (!lockOwner) return;
+    const row = Buffer.from(`${JSON.stringify({
+      at: Date.now(),
+      event: continuityValue(event),
+      generation: continuityValue(fields.generation),
+      predecessorArmPid: continuityValue(fields.predecessorArmPid),
+      armPid: continuityValue(fields.armPid),
+      recoveryGeneration: fields.recoveryGeneration === undefined ? undefined : continuityValue(fields.recoveryGeneration),
+      watcherPid: fields.watcherPid === undefined ? undefined : continuityValue(fields.watcherPid),
+      attempt: fields.attempt === undefined ? undefined : Number(fields.attempt),
+      reason: fields.reason === undefined ? undefined : continuityValue(fields.reason),
+    })}\n`);
+    let existing = Buffer.alloc(0);
+    try {
+      existing = readFileSync(continuityJournal);
+    } catch {}
+    const combined = Buffer.concat([existing, row]);
+    let bounded = combined;
+    if (combined.length > continuityJournalMaxBytes) {
+      const kept = combined.subarray(combined.length - continuityJournalMaxBytes);
+      const newline = kept.indexOf(10);
+      bounded = newline < 0 ? Buffer.alloc(0) : kept.subarray(newline + 1);
+    }
+    temporary = `${continuityJournal}.tmp-${process.pid}-${randomUUID()}`;
+    writeFileSync(temporary, bounded, { mode: 0o600 });
+    chmodSync(temporary, 0o600);
+    renameSync(temporary, continuityJournal);
+    temporary = "";
+  } catch {
+    // Observability must never alter continuity behavior.
+  } finally {
+    if (temporary) {
+      try {
+        unlinkSync(temporary);
+      } catch {}
+    }
+    if (lockOwner) continuityLockRelease(continuityJournalLock, lockOwner);
+  }
 }
 
 function parentPid(pid: string): string {
@@ -409,8 +578,10 @@ function classifyClose(stdout: string, stderr: string, code: number | null, sign
 }
 
 function createGeneration(): SessionGeneration {
+  const id = ++nextGenerationId;
+  continuityEvent("generation-created", { generation: id });
   return {
-    id: ++nextGenerationId,
+    id,
     stopping: false,
     replacement: false,
     child: null,
@@ -461,6 +632,7 @@ async function waitForGenerationChildClose(armChild: ChildProcess | null): Promi
 
 async function stopSessionGeneration(generation: SessionGeneration, replacement: boolean): Promise<void> {
   generation.replacement = replacement;
+  continuityEvent(replacement ? "generation-replacement" : "generation-shutdown", { generation: generation.id, reason: replacement ? "replacement" : "shutdown" });
   let persistedTokens = "";
   try {
     if (replacement && generation.pendingActionables.length > 0) {
@@ -552,10 +724,15 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function confirmHandlingDelivery(recovery: { generation: string; watcherPid: string }): {
+  function confirmHandlingDelivery(
+    owner: SessionGeneration,
+    recovery: { generation: string; watcherPid: string },
+  ): {
     ok: boolean;
     detail: string;
   } {
+    const evidence = { generation: owner.id, recoveryGeneration: recovery.generation, watcherPid: recovery.watcherPid };
+    continuityEvent("handling-successor-ack-attempt", evidence);
     try {
       const result = spawnSync(
         "bash",
@@ -568,11 +745,13 @@ export default function (pi: ExtensionAPI) {
       );
       if (result.status === 0) return { ok: true, detail: "" };
       const stderr = (result.stderr || "").trim();
+      continuityEvent("handling-successor-refused", { ...evidence, reason: `status-${result.status ?? "none"}` });
       return {
         ok: false,
         detail: `watcher: FAILED - handling delivery confirmation was rejected (status=${result.status ?? "none"} generation=${recovery.generation} watcherPid=${recovery.watcherPid})${stderr ? `\n${stderr}` : ""}`,
       };
     } catch (error) {
+      continuityEvent("handling-successor-refused", { ...evidence, reason: nodeErrorCode(error) || "exception" });
       const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
@@ -589,9 +768,9 @@ export default function (pi: ExtensionAPI) {
       const current = owner.child ? armRecovery.get(owner.child) : undefined;
       return current ?? recovery;
     };
-    const first = confirmHandlingDelivery(snapshot());
+    const first = confirmHandlingDelivery(owner, snapshot());
     if (first.ok) return first;
-    return confirmHandlingDelivery(snapshot());
+    return confirmHandlingDelivery(owner, snapshot());
   }
 
   function offerWakeToBranch(message: string): Promise<void> | null {
@@ -882,28 +1061,40 @@ export default function (pi: ExtensionAPI) {
   }> {
     let failure = "";
     for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
-      if (!generationIsLive(owner)) return { failure: "" };
+      if (!generationIsLive(owner)) {
+      continuityEvent("generation-rejected", { generation: owner.id, predecessorArmPid, reason: "restoration-owner-not-live" });
+      return { failure: "" };
+    }
+      continuityEvent("restoration-entry", { generation: owner.id, predecessorArmPid, attempt });
       const replacement = startArm(owner, predecessorArmPid);
       const successorChild = owner.child;
       if (replacement.ok && successorChild && await waitForReadiness(successorChild)) {
+        continuityEvent("readiness", { generation: owner.id, predecessorArmPid, armPid: String(successorChild.pid ?? ""), attempt, reason: "ready" });
         return { failure: "", recovery: armRecovery.get(successorChild) };
       }
       if (replacement.ok) {
+        continuityEvent("readiness", { generation: owner.id, predecessorArmPid, armPid: String(successorChild?.pid ?? ""), attempt, reason: "timeout-or-unready" });
         failure = "watcher: FAILED - Pi extension could not verify a ready successor watcher";
         if (!(await retireArm(successorChild))) {
+          continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "successor-retirement-timeout" });
           return {
             failure: `${failure}\nwatcher: FAILED - Pi extension could not restore watcher continuity because the unready successor arm did not exit within ${armRetireTimeoutMs}ms`,
           };
         }
       } else {
-        failure = /(?:read-only|no live session)/.test(replacement.message)
+        const lockOwnershipLost = /(?:read-only|no live session)/.test(replacement.message);
+        failure = lockOwnershipLost
           ? `watcher: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${replacement.message}`
           : `watcher: FAILED - Pi extension could not start the successor watcher cycle\n${replacement.message}`;
-        if (/(?:read-only|no live session)/.test(replacement.message)) break;
+        if (lockOwnershipLost) {
+          continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "restoration-lock-not-owned" });
+          return { failure };
+        }
       }
       if (attempt === retryLimit) break;
       await waitForRetry(attempt + 1);
     }
+    continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "restoration-retries-exhausted" });
     return { failure: `${failure}\nwatcher: FAILED - Pi extension could not restore watcher continuity after ${retryLimit} retries` };
   }
 
@@ -911,11 +1102,13 @@ export default function (pi: ExtensionAPI) {
     if (!generationIsLive(owner) || owner.child || owner.retryTimer) return;
     const ownership = lockOwnership();
     if (ownership !== "owned") {
+      continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "continuity-retry-lock-not-owned" });
       surfaceFailure(owner, `watcher: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${message}`);
       return;
     }
     owner.retryFailures += 1;
     if (owner.retryFailures > retryLimit) {
+      continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "continuity-retries-exhausted" });
       surfaceFailure(owner, `watcher: FAILED - Pi extension could not restore watcher continuity after ${retryLimit} retries\n${message}`);
       return;
     }
@@ -924,6 +1117,10 @@ export default function (pi: ExtensionAPI) {
       if (!generationIsLive(owner)) return;
       const result = startArm(owner, predecessorArmPid);
       if (!result.ok) {
+        const reason = /(?:read-only|no live session)/.test(result.message)
+          ? "continuity-retry-lock-not-owned"
+          : "continuity-retry-launch-failed";
+        continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason });
         surfaceFailure(owner, `watcher: FAILED - Pi extension could not launch a continuity retry\n${result.message}`);
       }
     }, retryDelay(owner.retryFailures));
@@ -932,10 +1129,18 @@ export default function (pi: ExtensionAPI) {
   }
 
   function startArm(owner: SessionGeneration, predecessorArmPid = ""): ArmResult {
-    if (!generationIsLive(owner)) return { ok: false, message: shuttingDownMessage };
+    continuityEvent("start-arm-attempt", { generation: owner.id, predecessorArmPid });
+    if (!generationIsLive(owner)) {
+      continuityEvent("generation-rejected", { generation: owner.id, predecessorArmPid, reason: "start-arm-not-live" });
+      return { ok: false, message: shuttingDownMessage };
+    }
     const ownership = lockOwnership();
-    if (ownership === "other") return { ok: false, message: "watcher: read-only - session lock is held by another firstmate session" };
+    if (ownership === "other") {
+      continuityEvent("session-lock-rejected", { generation: owner.id, predecessorArmPid, reason: "other-session" });
+      return { ok: false, message: "watcher: read-only - session lock is held by another firstmate session" };
+    }
     if (ownership === "missing") {
+      continuityEvent("session-lock-rejected", { generation: owner.id, predecessorArmPid, reason: "missing" });
       return {
         ok: false,
         message: "watcher: not armed - no live session holds the lock; run bin/fm-session-start.sh to reclaim it, then call fm_watch_arm_pi to re-arm",
@@ -969,6 +1174,7 @@ export default function (pi: ExtensionAPI) {
       stdio: ["ignore", "pipe", "pipe"],
     });
     owner.child = armChild;
+    continuityEvent("start-arm-result", { generation: owner.id, predecessorArmPid, armPid: String(armChild.pid ?? ""), reason: "spawned" });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -1024,6 +1230,7 @@ export default function (pi: ExtensionAPI) {
       const classification = classifyClose(stdout, stderr, code, signal);
       const predecessor = String(armChild.pid ?? "");
       if (classification.kind === "actionable") {
+        continuityEvent("actionable-close", { generation: owner.id, predecessorArmPid: predecessor, armPid: predecessor, reason: "actionable" });
         const pending = armPendingActionable.get(armChild) ?? createPendingActionable(classification.message, predecessor);
         enqueuePendingActionable(owner, pending);
         if (!generationIsLive(owner)) return;
@@ -1052,6 +1259,7 @@ export default function (pi: ExtensionAPI) {
       releaseChild();
       if (!generationIsLive(owner)) return;
       if (owner.restoring) return;
+      continuityEvent("extension-error", { generation: owner.id, armPid: String(armChild.pid ?? ""), reason: "arm-child-error" });
       scheduleRetry(owner, `watcher: FAILED - Pi extension arm child ${id} failed: ${error.message}`, String(armChild.pid ?? ""));
     });
     return {
@@ -1099,6 +1307,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on?.("session_start", async () => {
+    continuityEvent("extension-session-load", { generation: generation.id });
     if (generation.stopping) generation = createGeneration();
     activateGeneration(generation);
     markLoaded();
@@ -1106,6 +1315,7 @@ export default function (pi: ExtensionAPI) {
     activateOwnedWatch(generation);
   });
   pi.on?.("session_shutdown", async (event) => {
+    continuityEvent("extension-session-shutdown", { generation: generation.id, reason: String(event.reason ?? "unknown") });
     const replacement = event.reason === "reload" || event.reason === "new" || event.reason === "resume" || event.reason === "fork";
     if (replacementCoordinator.receiver === receiveReplacementActionable) replacementCoordinator.receiver = null;
     await stopSessionGeneration(generation, replacement);

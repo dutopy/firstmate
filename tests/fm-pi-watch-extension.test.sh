@@ -291,20 +291,25 @@ printf 'arm\n' >> "${FM_ARM_LOG:?}"
 exit 0
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=10000 FM_WATCH_REARM_RETRY_MAX_MS=10000 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=200 FM_WATCH_REARM_RETRY_MAX_MS=200 node --input-type=module 2>&1 <<'EOF'
+import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 let tool = null;
+let prompt = "";
 const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
     if (candidate.name === "fm_watch_arm_pi") tool = candidate;
   },
-  sendUserMessage: async () => {},
+  sendUserMessage: async (message) => {
+    prompt += message;
+  },
 };
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const lock = `${process.env.FM_HOME}/state/.lock`;
+writeFileSync(lock, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-first", {}, undefined, undefined, {});
@@ -323,9 +328,26 @@ if (/^watcher: healthy\b/.test(redundant.content[0]?.text)) {
 if (!redundant.content[0]?.text.includes("only after a later notification says the cycle is missing, failed, or unhealthy")) {
   throw new Error(`scheduled retry call omitted the repair-only condition: ${redundant.content[0]?.text}`);
 }
-await new Promise((resolve) => setTimeout(resolve, 100));
-const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
-if (rows.length !== 1) throw new Error(`scheduled retry call spawned ${rows.length} arm children`);
+const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+try {
+  writeFileSync(lock, `${other.pid}\n`);
+  for (let i = 0; i < 100 && !prompt; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+  if (rows.length !== 1) throw new Error(`scheduled retry call spawned ${rows.length} arm children`);
+  if (!prompt.includes("held by another firstmate session")) throw new Error(`retry lock loss was not surfaced: ${prompt}`);
+  const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+    .trim().split("\n").map((line) => JSON.parse(line));
+  if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "continuity-retry-lock-not-owned")) {
+    throw new Error("scheduled retry lock loss omitted its terminal continuity outcome");
+  }
+  if (journalRows.some((row) => row.event === "typed-fallback" && row.reason === "continuity-retry-launch-failed")) {
+    throw new Error("scheduled retry lock loss was mislabeled as launch failure");
+  }
+} finally {
+  other.kill("SIGTERM");
+}
 EOF
 )
   status=$?
@@ -1391,6 +1413,20 @@ const rows = existsSync(process.env.FM_ARM_LOG)
 if (rows.filter((row) => row.startsWith("refused ")).length < 1) {
   throw new Error(`handling-delivered was never attempted: ${rows.join(" | ")}`);
 }
+const journal = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8");
+const journalRows = journal.trim().split("\n").map((line) => JSON.parse(line));
+const generationIds = new Set(journalRows.filter((row) => row.event === "generation-created").map((row) => row.generation));
+const handlingRows = journalRows.filter((row) => row.event.startsWith("handling-successor-"));
+if (!handlingRows.some((row) => row.event === "handling-successor-refused")) {
+  throw new Error(`handling refusal was not recorded: ${journal}`);
+}
+if (handlingRows.some((row) => !generationIds.has(row.generation))) {
+  throw new Error(`handling evidence used an uncreated extension generation: ${JSON.stringify(handlingRows)}`);
+}
+if (handlingRows.some((row) => row.recoveryGeneration !== "fixture-generation" || !/^[0-9]+$/.test(row.watcherPid))) {
+  throw new Error(`handling evidence omitted recovery identity: ${JSON.stringify(handlingRows)}`);
+}
+if (journal.includes("synthetic actionable close")) throw new Error("journal captured the wake payload");
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
 EOF
@@ -1530,6 +1566,11 @@ if (rows.length !== 2) throw new Error(`unretired arm overlapped a retry: ${rows
 if (rowsAtPrompt !== 2) throw new Error(`wake arrived after an overlapping retry (${rowsAtPrompt} arm rows)`);
 if (!prompt.includes("signal: synthetic wake")) throw new Error(`original wake was lost: ${prompt}`);
 if (!prompt.includes("unready successor arm did not exit within 20ms")) throw new Error(`missing unretired-arm failure: ${prompt}`);
+const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+  .trim().split("\n").map((line) => JSON.parse(line));
+if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "successor-retirement-timeout")) {
+  throw new Error("unretired successor omitted its terminal continuity outcome");
+}
 writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
 await new Promise((resolve) => setTimeout(resolve, 80));
 EOF
@@ -1743,6 +1784,11 @@ const rows = existsSync(process.env.FM_ARM_LOG)
   : [];
 if (rows.length !== 3) throw new Error(`retry limit launched ${rows.length} arm cycles: ${rows.join(" | ")}`);
 if (!prompt.includes("after 2 retries")) throw new Error(`retry exhaustion was not surfaced: ${prompt}`);
+const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+  .trim().split("\n").map((line) => JSON.parse(line));
+if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "continuity-retries-exhausted")) {
+  throw new Error("retry exhaustion omitted its terminal continuity outcome");
+}
 EOF
 )
   status=$?
@@ -1799,6 +1845,14 @@ try {
   const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
   if (rows.length !== 1) throw new Error(`successor launched after lock loss: ${rows.join(" | ")}`);
   if (!prompt.includes("no longer owns the lock")) throw new Error(`missing lock-loss failure: ${prompt}`);
+  const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+    .trim().split("\n").map((line) => JSON.parse(line));
+  if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "restoration-lock-not-owned")) {
+    throw new Error("lock loss omitted its terminal continuity outcome");
+  }
+  if (journalRows.some((row) => row.event === "typed-fallback" && row.reason === "restoration-retries-exhausted")) {
+    throw new Error("lock loss was mislabeled as retry exhaustion");
+  }
 } finally {
   other.kill("SIGTERM");
 }
@@ -4007,6 +4061,190 @@ test_pi_replacement_tokens_are_process_unique
 test_pi_replacement_persistence_failure_stops_arm_child
 test_pi_process_exit_cleanup_listener_lifecycle
 test_pi_process_exit_cleanup_stops_arm_child
+
+test_pi_continuity_journal_records_extension_rebind() {
+  local repo home plugin out status
+  repo="$TMP_ROOT/pi-continuity-rebind-root"
+  home="$TMP_ROOT/pi-continuity-rebind-home"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+trap 'exit 0' TERM INT
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while :; do sleep 0.1; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+function processIdentity(pid) {
+  try {
+    const statLine = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = statLine.slice(statLine.lastIndexOf(")") + 1).trim().split(/\s+/);
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`);
+    const key = process.platform === "linux" ? "linux-starttime" : "proc-starttime";
+    return `${key}=${fields[19]} cmdline-sha256=${createHash("sha256").update(cmdline).digest("hex")}`;
+  } catch {}
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart=", "-o", "command="], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  return `process-sha256=${createHash("sha256").update(result.stdout.trim()).digest("hex")}`;
+}
+
+function makePi() {
+  const handlers = new Map();
+  let tool = null;
+  return {
+    handlers,
+    getTool: () => tool,
+    pi: {
+      on(event, handler) { handlers.set(event, handler); },
+      registerCommand() {},
+      registerTool(candidate) { if (candidate.name === "fm_watch_arm_pi") tool = candidate; },
+      sendUserMessage: async () => {},
+      events: { on() {} },
+    },
+  };
+}
+
+const journal = `${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`;
+const journalLock = `${journal}.lock`;
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const protectedDirectory = `${process.env.FM_HOME}/protected`;
+mkdirSync(protectedDirectory);
+writeFileSync(`${protectedDirectory}/pid`, "999999999\n");
+symlinkSync(protectedDirectory, journalLock, "dir");
+const firstModule = await import(pathToFileURL(process.env.PLUGIN).href);
+const first = makePi();
+firstModule.default(first.pi);
+if (!existsSync(protectedDirectory)) throw new Error("malformed journal lock target was removed");
+unlinkSync(journalLock);
+const identity = processIdentity(process.pid);
+writeFileSync(journalLock, `${JSON.stringify({ pid: String(process.pid), identity, token: "11111111-1111-4111-8111-111111111111" })}\n`, { mode: 0o600 });
+const owned = await first.getTool().execute("contended-diagnostics", {}, undefined, undefined, {});
+if (!owned.details?.ok) throw new Error(`journal contention altered supervision: ${JSON.stringify(owned.details)}`);
+unlinkSync(journalLock);
+writeFileSync(journalLock, `${JSON.stringify({ pid: String(process.pid), identity: "reused-process", token: "22222222-2222-4222-8222-222222222222" })}\n`, { mode: 0o600 });
+await first.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {});
+if (existsSync(journalLock)) throw new Error("reused-PID continuity journal lock was not reclaimed");
+await new Promise((resolve) => setTimeout(resolve, 50));
+await first.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "reload" }, {});
+const stale = await first.getTool().execute("stale-generation", {}, undefined, undefined, {});
+if (stale.details?.ok !== false) throw new Error("retired generation accepted a stale arm request");
+
+const stealLock = `${journalLock}.steal`;
+writeFileSync(stealLock, `${JSON.stringify({ pid: "999999999", identity: "stale-stealer", token: "33333333-3333-4333-8333-333333333333" })}\n`, { mode: 0o600 });
+const secondModule = await import(`${pathToFileURL(process.env.PLUGIN).href}?continuity-rebind`);
+const second = makePi();
+secondModule.default(second.pi);
+if (existsSync(stealLock)) throw new Error("orphaned continuity steal lock was not reclaimed");
+await second.handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, {});
+await new Promise((resolve) => setTimeout(resolve, 50));
+const journalBackup = `${journal}.backup`;
+renameSync(journal, journalBackup);
+mkdirSync(journal);
+const diagnosticFailure = await second.getTool().execute("journal-rename-failure", {}, undefined, undefined, {});
+if (!diagnosticFailure.details?.ok) throw new Error("journal failure altered supervision ownership");
+const temporaryFiles = readdirSync(`${process.env.FM_HOME}/state`).filter((name) => name.startsWith(".pi-watch-continuity.jsonl.tmp-"));
+if (temporaryFiles.length > 0) throw new Error(`journal failure leaked temporary files: ${temporaryFiles.join(",")}`);
+rmdirSync(journal);
+renameSync(journalBackup, journal);
+await second.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, {});
+
+const rows = readFileSync(journal, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+const required = [
+  "extension-session-load",
+  "extension-session-shutdown",
+  "generation-replacement",
+  "generation-created",
+  "extension-session-load",
+  "extension-session-shutdown",
+  "generation-shutdown",
+];
+let position = -1;
+for (const event of required) {
+  position = rows.findIndex((row, index) => index > position && row.event === event);
+  if (position < 0) throw new Error(`missing ordered lifecycle event: ${event}`);
+}
+if (existsSync(journalLock)) throw new Error("continuity journal lock was not released");
+if (existsSync(`${process.env.FM_ROOT_OVERRIDE}/state/.pi-watch-continuity.jsonl`)) {
+  throw new Error("continuity journal escaped the configured home");
+}
+EOF
+)
+  status=$?
+  [ "$status" -eq 0 ] || fail "Pi continuity journal must record extension-hook replacement and rebind lifecycle (exit $status): $out"
+  [ -z "$out" ] || fail "Pi continuity rebind journal test printed output: $out"
+  pass "Pi continuity journal records extension-hook replacement and rebind lifecycle"
+}
+
+test_pi_continuity_journal_records_extension_rebind
+
+test_pi_continuity_journal_is_bounded_and_typed() {
+  local repo home plugin out status
+  repo="$TMP_ROOT/pi-continuity-journal-root"
+  home="$TMP_ROOT/pi-continuity-journal-home"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+marker="${FM_HOME:?}/state/.journal-actionable-emitted"
+if [ ! -e "$marker" ]; then
+  : > "$marker"
+  printf 'signal: journal synthetic close\n'
+  exit 0
+fi
+trap 'exit 0' TERM INT
+while :; do sleep 0.1; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
+import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+let tool = null;
+const handlers = new Map();
+const pi = {
+  on(event, handler) { handlers.set(event, handler); }, registerCommand() {},
+  registerTool(candidate) { if (candidate.name === "fm_watch_arm_pi") tool = candidate; },
+  sendUserMessage: async () => {},
+};
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+for (let attempt = 0; attempt < 600; attempt += 1) {
+  await tool.execute(`journal-missing-lock-${attempt}`, {}, undefined, undefined, {});
+}
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await tool.execute("journal-armed", {}, undefined, undefined, {});
+const journal = `${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`;
+let text = "";
+for (let attempt = 0; attempt < 200; attempt += 1) {
+  text = readFileSync(journal, "utf8");
+  if (text.includes('"event":"actionable-close"')) break;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const bytes = Buffer.byteLength(text);
+if (bytes > 64 * 1024) throw new Error(`journal exceeded cap: ${bytes}`);
+if (bytes < 60 * 1024) throw new Error(`journal did not exercise fixed cap: ${bytes}`);
+if ((statSync(journal).mode & 0o777) !== 0o600) throw new Error("journal mode is not private");
+for (const line of text.trim().split("\n")) JSON.parse(line);
+if (!text.includes('"event":"start-arm-attempt"')) throw new Error("missing arm attempt evidence");
+if (!text.includes('"event":"actionable-close"')) throw new Error("missing actionable close evidence");
+if (text.includes("synthetic close")) throw new Error("journal captured wake payload");
+await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, {});
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi continuity journal must remain bounded, parseable, and payload-free"
+  [ -z "$out" ] || fail "Pi continuity journal test printed output: $out"
+  pass "Pi continuity journal is bounded, parseable, and payload-free"
+}
+
+test_pi_continuity_journal_is_bounded_and_typed
 test_opencode_plugin_package_boundary_is_explicit_esm
 test_opencode_primary_watch_plugin_uses_effective_state_home
 test_opencode_primary_watch_plugin_sources_effective_config
