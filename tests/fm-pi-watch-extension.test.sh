@@ -1812,6 +1812,14 @@ try {
   const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
   if (rows.length !== 1) throw new Error(`successor launched after lock loss: ${rows.join(" | ")}`);
   if (!prompt.includes("no longer owns the lock")) throw new Error(`missing lock-loss failure: ${prompt}`);
+  const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+    .trim().split("\n").map((line) => JSON.parse(line));
+  if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "restoration-lock-not-owned")) {
+    throw new Error("lock loss omitted its terminal continuity outcome");
+  }
+  if (journalRows.some((row) => row.event === "typed-fallback" && row.reason === "restoration-retries-exhausted")) {
+    throw new Error("lock loss was mislabeled as retry exhaustion");
+  }
 } finally {
   other.kill("SIGTERM");
 }

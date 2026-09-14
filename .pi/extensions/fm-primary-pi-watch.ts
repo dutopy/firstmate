@@ -1076,10 +1076,14 @@ export default function (pi: ExtensionAPI) {
           };
         }
       } else {
-        failure = /(?:read-only|no live session)/.test(replacement.message)
+        const lockOwnershipLost = /(?:read-only|no live session)/.test(replacement.message);
+        failure = lockOwnershipLost
           ? `watcher: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${replacement.message}`
           : `watcher: FAILED - Pi extension could not start the successor watcher cycle\n${replacement.message}`;
-        if (/(?:read-only|no live session)/.test(replacement.message)) break;
+        if (lockOwnershipLost) {
+          continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "restoration-lock-not-owned" });
+          return { failure };
+        }
       }
       if (attempt === retryLimit) break;
       await waitForRetry(attempt + 1);
