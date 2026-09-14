@@ -22,8 +22,8 @@
 // event finishes the pending record, and a still-unconsumed record rides the
 // replacement handoff.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
@@ -138,7 +138,6 @@ const handoffDir = `${state}/extensions/pi-primary-watch`;
 const actionableHandoff = `${handoffDir}/session-replacement-actionable.json`;
 const continuityJournal = `${state}/.pi-watch-continuity.jsonl`;
 const continuityJournalLock = `${continuityJournal}.lock`;
-const continuityJournalLockOwner = `${process.pid}-${randomUUID()}`;
 const continuityJournalMaxBytes = 64 * 1024;
 const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(extensionFile)).digest("hex")}`;
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
@@ -206,13 +205,76 @@ function continuityValue(value: unknown): string {
   return String(value ?? "").replace(/[\t\r\n\x00-\x1f\x7f]/g, " ").slice(0, 96);
 }
 
+function continuityLockOwner(lock: string): string {
+  try {
+    return readlinkSync(lock);
+  } catch {
+    return "";
+  }
+}
+
+function continuityLockRelease(lock: string, owner: string): void {
+  try {
+    if (continuityLockOwner(lock) !== owner) return;
+    unlinkSync(lock);
+    rmSync(owner, { recursive: true, force: true });
+  } catch {}
+}
+
+function continuityLockTryCreate(lock: string, allowedStealOwner = ""): string {
+  let owner = "";
+  try {
+    owner = mkdtempSync(`${lock}.owner.`);
+    writeFileSync(`${owner}/pid`, `${process.pid}\n`, { mode: 0o600 });
+    symlinkSync(owner, lock, "dir");
+    if (continuityLockOwner(lock) !== owner) throw new Error("lock owner mismatch");
+    const stealOwner = continuityLockOwner(`${lock}.steal`);
+    if (stealOwner && stealOwner !== allowedStealOwner) throw new Error("lock steal in progress");
+    return owner;
+  } catch {
+    if (owner) continuityLockRelease(lock, owner);
+    if (owner) rmSync(owner, { recursive: true, force: true });
+    return "";
+  }
+}
+
+function continuityLockAcquire(lock: string, depth = 0): string {
+  const created = continuityLockTryCreate(lock);
+  if (created) return created;
+  const expectedOwner = continuityLockOwner(lock);
+  if (!expectedOwner) return "";
+  let expectedPid = "";
+  try {
+    expectedPid = readFileSync(`${expectedOwner}/pid`, "utf8").trim();
+  } catch {
+    return "";
+  }
+  if (/^[0-9]+$/.test(expectedPid) && pidAlive(expectedPid)) return "";
+  if (depth >= 8) return "";
+  const stealLock = `${lock}.steal`;
+  const stealOwner = continuityLockAcquire(stealLock, depth + 1);
+  if (!stealOwner) return "";
+  try {
+    if (continuityLockOwner(lock) !== expectedOwner) return "";
+    const currentPid = readFileSync(`${expectedOwner}/pid`, "utf8").trim();
+    if (currentPid !== expectedPid || (/^[0-9]+$/.test(currentPid) && pidAlive(currentPid))) return "";
+    unlinkSync(lock);
+    rmSync(expectedOwner, { recursive: true, force: true });
+    return continuityLockTryCreate(lock, stealOwner);
+  } catch {
+    return "";
+  } finally {
+    continuityLockRelease(stealLock, stealOwner);
+  }
+}
+
 // Evidence only: this journal never participates in continuity decisions.
 function continuityEvent(event: string, fields: Record<string, unknown> = {}): void {
-  let lockOwned = false;
+  let lockOwner = "";
   try {
     mkdirSync(state, { recursive: true, mode: 0o700 });
-    writeFileSync(continuityJournalLock, `${continuityJournalLockOwner}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-    lockOwned = true;
+    lockOwner = continuityLockAcquire(continuityJournalLock);
+    if (!lockOwner) return;
     const row = JSON.stringify({
       at: Date.now(),
       event: continuityValue(event),
@@ -229,7 +291,7 @@ function continuityEvent(event: string, fields: Record<string, unknown> = {}): v
       const kept = bytes.subarray(Math.max(0, bytes.length - continuityJournalMaxBytes));
       const newline = kept.indexOf(10);
       const bounded = newline < 0 ? kept : kept.subarray(newline + 1);
-      const temporary = `${continuityJournal}.tmp-${continuityJournalLockOwner}`;
+      const temporary = `${continuityJournal}.tmp-${process.pid}`;
       writeFileSync(temporary, bounded, { mode: 0o600 });
       chmodSync(temporary, 0o600);
       renameSync(temporary, continuityJournal);
@@ -237,11 +299,7 @@ function continuityEvent(event: string, fields: Record<string, unknown> = {}): v
   } catch {
     // Observability must never alter continuity behavior.
   } finally {
-    if (lockOwned) {
-      try {
-        if (readFileSync(continuityJournalLock, "utf8").trim() === continuityJournalLockOwner) unlinkSync(continuityJournalLock);
-      } catch {}
-    }
+    if (lockOwner) continuityLockRelease(continuityJournalLock, lockOwner);
   }
 }
 

@@ -4026,7 +4026,7 @@ while :; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 function makePi() {
@@ -4048,12 +4048,19 @@ function makePi() {
 const journal = `${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`;
 const journalLock = `${journal}.lock`;
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
-writeFileSync(journalLock, "competing-writer\n", { mode: 0o600 });
+const liveOwner = mkdtempSync(`${journalLock}.owner.`);
+writeFileSync(`${liveOwner}/pid`, `${process.pid}\n`, { mode: 0o600 });
+symlinkSync(liveOwner, journalLock, "dir");
 const firstModule = await import(pathToFileURL(process.env.PLUGIN).href);
 const first = makePi();
 firstModule.default(first.pi);
 unlinkSync(journalLock);
+rmSync(liveOwner, { recursive: true });
+const orphanedOwner = mkdtempSync(`${journalLock}.owner.`);
+writeFileSync(`${orphanedOwner}/pid`, "999999999\n", { mode: 0o600 });
+symlinkSync(orphanedOwner, journalLock, "dir");
 await first.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {});
+if (existsSync(orphanedOwner)) throw new Error("orphaned continuity journal lock was not reclaimed");
 await new Promise((resolve) => setTimeout(resolve, 50));
 const owned = await first.getTool().execute("contended-diagnostics", {}, undefined, undefined, {});
 if (!owned.details?.ok) throw new Error(`journal contention altered supervision: ${JSON.stringify(owned.details)}`);
