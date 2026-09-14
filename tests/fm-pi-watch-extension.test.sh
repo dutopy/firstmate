@@ -1533,6 +1533,11 @@ if (rows.length !== 2) throw new Error(`unretired arm overlapped a retry: ${rows
 if (rowsAtPrompt !== 2) throw new Error(`wake arrived after an overlapping retry (${rowsAtPrompt} arm rows)`);
 if (!prompt.includes("signal: synthetic wake")) throw new Error(`original wake was lost: ${prompt}`);
 if (!prompt.includes("unready successor arm did not exit within 20ms")) throw new Error(`missing unretired-arm failure: ${prompt}`);
+const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+  .trim().split("\n").map((line) => JSON.parse(line));
+if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "successor-retirement-timeout")) {
+  throw new Error("unretired successor omitted its terminal continuity outcome");
+}
 writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
 await new Promise((resolve) => setTimeout(resolve, 80));
 EOF
@@ -1746,6 +1751,11 @@ const rows = existsSync(process.env.FM_ARM_LOG)
   : [];
 if (rows.length !== 3) throw new Error(`retry limit launched ${rows.length} arm cycles: ${rows.join(" | ")}`);
 if (!prompt.includes("after 2 retries")) throw new Error(`retry exhaustion was not surfaced: ${prompt}`);
+const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+  .trim().split("\n").map((line) => JSON.parse(line));
+if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "continuity-retries-exhausted")) {
+  throw new Error("retry exhaustion omitted its terminal continuity outcome");
+}
 EOF
 )
   status=$?
@@ -4142,16 +4152,23 @@ test_pi_continuity_journal_is_bounded_and_typed() {
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
-printf 'signal: journal synthetic close\n'
-exit 0
+marker="${FM_HOME:?}/state/.journal-actionable-emitted"
+if [ ! -e "$marker" ]; then
+  : > "$marker"
+  printf 'signal: journal synthetic close\n'
+  exit 0
+fi
+trap 'exit 0' TERM INT
+while :; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 let tool = null;
+const handlers = new Map();
 const pi = {
-  on() {}, registerCommand() {},
+  on(event, handler) { handlers.set(event, handler); }, registerCommand() {},
   registerTool(candidate) { if (candidate.name === "fm_watch_arm_pi") tool = candidate; },
   sendUserMessage: async () => {},
 };
@@ -4173,6 +4190,7 @@ for (const line of text.trim().split("\n")) JSON.parse(line);
 if (!text.includes('"event":"start-arm-attempt"')) throw new Error("missing arm attempt evidence");
 if (!text.includes('"event":"actionable-close"')) throw new Error("missing actionable close evidence");
 if (text.includes("synthetic close")) throw new Error("journal captured wake payload");
+await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, {});
 EOF
 )
   status=$?
