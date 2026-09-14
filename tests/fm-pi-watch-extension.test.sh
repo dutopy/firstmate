@@ -4011,6 +4011,92 @@ test_pi_replacement_persistence_failure_stops_arm_child
 test_pi_process_exit_cleanup_listener_lifecycle
 test_pi_process_exit_cleanup_stops_arm_child
 
+test_pi_continuity_journal_records_extension_rebind() {
+  local repo home plugin out status
+  repo="$TMP_ROOT/pi-continuity-rebind-root"
+  home="$TMP_ROOT/pi-continuity-rebind-home"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+trap 'exit 0' TERM INT
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+while :; do sleep 0.1; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+function makePi() {
+  const handlers = new Map();
+  let tool = null;
+  return {
+    handlers,
+    getTool: () => tool,
+    pi: {
+      on(event, handler) { handlers.set(event, handler); },
+      registerCommand() {},
+      registerTool(candidate) { if (candidate.name === "fm_watch_arm_pi") tool = candidate; },
+      sendUserMessage: async () => {},
+      events: { on() {} },
+    },
+  };
+}
+
+const journal = `${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`;
+const journalLock = `${journal}.lock`;
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(journalLock, "competing-writer\n", { mode: 0o600 });
+const firstModule = await import(pathToFileURL(process.env.PLUGIN).href);
+const first = makePi();
+firstModule.default(first.pi);
+unlinkSync(journalLock);
+await first.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {});
+await new Promise((resolve) => setTimeout(resolve, 50));
+const owned = await first.getTool().execute("contended-diagnostics", {}, undefined, undefined, {});
+if (!owned.details?.ok) throw new Error(`journal contention altered supervision: ${JSON.stringify(owned.details)}`);
+await first.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "reload" }, {});
+const stale = await first.getTool().execute("stale-generation", {}, undefined, undefined, {});
+if (stale.details?.ok !== false) throw new Error("retired generation accepted a stale arm request");
+
+const secondModule = await import(`${pathToFileURL(process.env.PLUGIN).href}?continuity-rebind`);
+const second = makePi();
+secondModule.default(second.pi);
+await second.handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, {});
+await new Promise((resolve) => setTimeout(resolve, 50));
+await second.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, {});
+
+const rows = readFileSync(journal, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+const required = [
+  "extension-session-load",
+  "extension-session-shutdown",
+  "generation-replacement",
+  "generation-created",
+  "extension-session-load",
+  "extension-session-shutdown",
+  "generation-shutdown",
+];
+let position = -1;
+for (const event of required) {
+  position = rows.findIndex((row, index) => index > position && row.event === event);
+  if (position < 0) throw new Error(`missing ordered lifecycle event: ${event}`);
+}
+if (existsSync(journalLock)) throw new Error("continuity journal lock was not released");
+if (existsSync(`${process.env.FM_ROOT_OVERRIDE}/state/.pi-watch-continuity.jsonl`)) {
+  throw new Error("continuity journal escaped the configured home");
+}
+EOF
+)
+  status=$?
+  [ "$status" -eq 0 ] || fail "Pi continuity journal must record extension-hook replacement and rebind lifecycle (exit $status): $out"
+  [ -z "$out" ] || fail "Pi continuity rebind journal test printed output: $out"
+  pass "Pi continuity journal records extension-hook replacement and rebind lifecycle"
+}
+
+test_pi_continuity_journal_records_extension_rebind
+
 test_pi_continuity_journal_is_bounded_and_typed() {
   local repo home plugin out status
   repo="$TMP_ROOT/pi-continuity-journal-root"

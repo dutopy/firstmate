@@ -22,7 +22,7 @@
 // event finishes the pending record, and a still-unconsumed record rides the
 // replacement handoff.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -137,6 +137,8 @@ const marker = `${state}/.pi-watch-extension-loaded`;
 const handoffDir = `${state}/extensions/pi-primary-watch`;
 const actionableHandoff = `${handoffDir}/session-replacement-actionable.json`;
 const continuityJournal = `${state}/.pi-watch-continuity.jsonl`;
+const continuityJournalLock = `${continuityJournal}.lock`;
+const continuityJournalLockOwner = `${process.pid}-${randomUUID()}`;
 const continuityJournalMaxBytes = 64 * 1024;
 const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(extensionFile)).digest("hex")}`;
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
@@ -206,8 +208,11 @@ function continuityValue(value: unknown): string {
 
 // Evidence only: this journal never participates in continuity decisions.
 function continuityEvent(event: string, fields: Record<string, unknown> = {}): void {
+  let lockOwned = false;
   try {
     mkdirSync(state, { recursive: true, mode: 0o700 });
+    writeFileSync(continuityJournalLock, `${continuityJournalLockOwner}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    lockOwned = true;
     const row = JSON.stringify({
       at: Date.now(),
       event: continuityValue(event),
@@ -224,13 +229,19 @@ function continuityEvent(event: string, fields: Record<string, unknown> = {}): v
       const kept = bytes.subarray(Math.max(0, bytes.length - continuityJournalMaxBytes));
       const newline = kept.indexOf(10);
       const bounded = newline < 0 ? kept : kept.subarray(newline + 1);
-      const temporary = `${continuityJournal}.tmp-${process.pid}`;
+      const temporary = `${continuityJournal}.tmp-${continuityJournalLockOwner}`;
       writeFileSync(temporary, bounded, { mode: 0o600 });
       chmodSync(temporary, 0o600);
       renameSync(temporary, continuityJournal);
     }
   } catch {
     // Observability must never alter continuity behavior.
+  } finally {
+    if (lockOwned) {
+      try {
+        if (readFileSync(continuityJournalLock, "utf8").trim() === continuityJournalLockOwner) unlinkSync(continuityJournalLock);
+      } catch {}
+    }
   }
 }
 
