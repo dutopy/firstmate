@@ -23,7 +23,7 @@
 // replacement handoff.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
@@ -136,6 +136,8 @@ const armScript = `${fmRoot}/bin/fm-watch-arm.sh`;
 const marker = `${state}/.pi-watch-extension-loaded`;
 const handoffDir = `${state}/extensions/pi-primary-watch`;
 const actionableHandoff = `${handoffDir}/session-replacement-actionable.json`;
+const continuityJournal = `${state}/.pi-watch-continuity.jsonl`;
+const continuityJournalMaxBytes = positiveInteger("FM_PI_CONTINUITY_JOURNAL_MAX_BYTES", 64 * 1024);
 const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(extensionFile)).digest("hex")}`;
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const retryMaxMs = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
@@ -196,6 +198,40 @@ function positiveInteger(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
+}
+
+function continuityValue(value: unknown): string {
+  return String(value ?? "").replace(/[\t\r\n\x00-\x1f\x7f]/g, " ").slice(0, 96);
+}
+
+// Evidence only: this journal never participates in continuity decisions.
+function continuityEvent(event: string, fields: Record<string, unknown> = {}): void {
+  try {
+    mkdirSync(state, { recursive: true, mode: 0o700 });
+    const row = JSON.stringify({
+      at: Date.now(),
+      event: continuityValue(event),
+      generation: continuityValue(fields.generation),
+      predecessorArmPid: continuityValue(fields.predecessorArmPid),
+      armPid: continuityValue(fields.armPid),
+      attempt: fields.attempt === undefined ? undefined : Number(fields.attempt),
+      reason: fields.reason === undefined ? undefined : continuityValue(fields.reason),
+    });
+    appendFileSync(continuityJournal, `${row}\n`, { mode: 0o600 });
+    chmodSync(continuityJournal, 0o600);
+    const bytes = readFileSync(continuityJournal);
+    if (bytes.length > continuityJournalMaxBytes) {
+      const kept = bytes.subarray(Math.max(0, bytes.length - continuityJournalMaxBytes));
+      const newline = kept.indexOf(10);
+      const bounded = newline < 0 ? kept : kept.subarray(newline + 1);
+      const temporary = `${continuityJournal}.tmp-${process.pid}`;
+      writeFileSync(temporary, bounded, { mode: 0o600 });
+      chmodSync(temporary, 0o600);
+      renameSync(temporary, continuityJournal);
+    }
+  } catch {
+    // Observability must never alter continuity behavior.
+  }
 }
 
 function parentPid(pid: string): string {
@@ -409,8 +445,10 @@ function classifyClose(stdout: string, stderr: string, code: number | null, sign
 }
 
 function createGeneration(): SessionGeneration {
+  const id = ++nextGenerationId;
+  continuityEvent("generation-created", { generation: id });
   return {
-    id: ++nextGenerationId,
+    id,
     stopping: false,
     replacement: false,
     child: null,
@@ -461,6 +499,7 @@ async function waitForGenerationChildClose(armChild: ChildProcess | null): Promi
 
 async function stopSessionGeneration(generation: SessionGeneration, replacement: boolean): Promise<void> {
   generation.replacement = replacement;
+  continuityEvent(replacement ? "generation-replacement" : "generation-shutdown", { generation: generation.id, reason: replacement ? "replacement" : "shutdown" });
   let persistedTokens = "";
   try {
     if (replacement && generation.pendingActionables.length > 0) {
@@ -556,6 +595,7 @@ export default function (pi: ExtensionAPI) {
     ok: boolean;
     detail: string;
   } {
+    continuityEvent("handling-successor-ack-attempt", { generation: recovery.generation, armPid: recovery.watcherPid });
     try {
       const result = spawnSync(
         "bash",
@@ -568,11 +608,13 @@ export default function (pi: ExtensionAPI) {
       );
       if (result.status === 0) return { ok: true, detail: "" };
       const stderr = (result.stderr || "").trim();
+      continuityEvent("handling-successor-refused", { generation: recovery.generation, armPid: recovery.watcherPid, reason: `status-${result.status ?? "none"}` });
       return {
         ok: false,
         detail: `watcher: FAILED - handling delivery confirmation was rejected (status=${result.status ?? "none"} generation=${recovery.generation} watcherPid=${recovery.watcherPid})${stderr ? `\n${stderr}` : ""}`,
       };
     } catch (error) {
+      continuityEvent("handling-successor-refused", { generation: recovery.generation, armPid: recovery.watcherPid, reason: nodeErrorCode(error) || "exception" });
       const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
@@ -882,13 +924,19 @@ export default function (pi: ExtensionAPI) {
   }> {
     let failure = "";
     for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
-      if (!generationIsLive(owner)) return { failure: "" };
+      if (!generationIsLive(owner)) {
+      continuityEvent("generation-rejected", { generation: owner.id, predecessorArmPid, reason: "restoration-owner-not-live" });
+      return { failure: "" };
+    }
+      continuityEvent("restoration-entry", { generation: owner.id, predecessorArmPid, attempt });
       const replacement = startArm(owner, predecessorArmPid);
       const successorChild = owner.child;
       if (replacement.ok && successorChild && await waitForReadiness(successorChild)) {
+        continuityEvent("readiness", { generation: owner.id, predecessorArmPid, armPid: String(successorChild.pid ?? ""), attempt, reason: "ready" });
         return { failure: "", recovery: armRecovery.get(successorChild) };
       }
       if (replacement.ok) {
+        continuityEvent("readiness", { generation: owner.id, predecessorArmPid, armPid: String(successorChild?.pid ?? ""), attempt, reason: "timeout-or-unready" });
         failure = "watcher: FAILED - Pi extension could not verify a ready successor watcher";
         if (!(await retireArm(successorChild))) {
           return {
@@ -904,6 +952,7 @@ export default function (pi: ExtensionAPI) {
       if (attempt === retryLimit) break;
       await waitForRetry(attempt + 1);
     }
+    continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "restoration-retries-exhausted" });
     return { failure: `${failure}\nwatcher: FAILED - Pi extension could not restore watcher continuity after ${retryLimit} retries` };
   }
 
@@ -932,10 +981,18 @@ export default function (pi: ExtensionAPI) {
   }
 
   function startArm(owner: SessionGeneration, predecessorArmPid = ""): ArmResult {
-    if (!generationIsLive(owner)) return { ok: false, message: shuttingDownMessage };
+    continuityEvent("start-arm-attempt", { generation: owner.id, predecessorArmPid });
+    if (!generationIsLive(owner)) {
+      continuityEvent("generation-rejected", { generation: owner.id, predecessorArmPid, reason: "start-arm-not-live" });
+      return { ok: false, message: shuttingDownMessage };
+    }
     const ownership = lockOwnership();
-    if (ownership === "other") return { ok: false, message: "watcher: read-only - session lock is held by another firstmate session" };
+    if (ownership === "other") {
+      continuityEvent("session-lock-rejected", { generation: owner.id, predecessorArmPid, reason: "other-session" });
+      return { ok: false, message: "watcher: read-only - session lock is held by another firstmate session" };
+    }
     if (ownership === "missing") {
+      continuityEvent("session-lock-rejected", { generation: owner.id, predecessorArmPid, reason: "missing" });
       return {
         ok: false,
         message: "watcher: not armed - no live session holds the lock; run bin/fm-session-start.sh to reclaim it, then call fm_watch_arm_pi to re-arm",
@@ -969,6 +1026,7 @@ export default function (pi: ExtensionAPI) {
       stdio: ["ignore", "pipe", "pipe"],
     });
     owner.child = armChild;
+    continuityEvent("start-arm-result", { generation: owner.id, predecessorArmPid, armPid: String(armChild.pid ?? ""), reason: "spawned" });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -1024,6 +1082,7 @@ export default function (pi: ExtensionAPI) {
       const classification = classifyClose(stdout, stderr, code, signal);
       const predecessor = String(armChild.pid ?? "");
       if (classification.kind === "actionable") {
+        continuityEvent("actionable-close", { generation: owner.id, predecessorArmPid: predecessor, armPid: predecessor, reason: "actionable" });
         const pending = armPendingActionable.get(armChild) ?? createPendingActionable(classification.message, predecessor);
         enqueuePendingActionable(owner, pending);
         if (!generationIsLive(owner)) return;
@@ -1052,6 +1111,7 @@ export default function (pi: ExtensionAPI) {
       releaseChild();
       if (!generationIsLive(owner)) return;
       if (owner.restoring) return;
+      continuityEvent("extension-error", { generation: owner.id, armPid: String(armChild.pid ?? ""), reason: "arm-child-error" });
       scheduleRetry(owner, `watcher: FAILED - Pi extension arm child ${id} failed: ${error.message}`, String(armChild.pid ?? ""));
     });
     return {
@@ -1099,6 +1159,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on?.("session_start", async () => {
+    continuityEvent("extension-session-load", { generation: generation.id });
     if (generation.stopping) generation = createGeneration();
     activateGeneration(generation);
     markLoaded();
@@ -1106,6 +1167,7 @@ export default function (pi: ExtensionAPI) {
     activateOwnedWatch(generation);
   });
   pi.on?.("session_shutdown", async (event) => {
+    continuityEvent("extension-session-shutdown", { generation: generation.id, reason: String(event.reason ?? "unknown") });
     const replacement = event.reason === "reload" || event.reason === "new" || event.reason === "resume" || event.reason === "fork";
     if (replacementCoordinator.receiver === receiveReplacementActionable) replacementCoordinator.receiver = null;
     await stopSessionGeneration(generation, replacement);

@@ -1391,6 +1391,9 @@ const rows = existsSync(process.env.FM_ARM_LOG)
 if (rows.filter((row) => row.startsWith("refused ")).length < 1) {
   throw new Error(`handling-delivered was never attempted: ${rows.join(" | ")}`);
 }
+const journal = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8");
+if (!journal.includes('"event":"handling-successor-refused"')) throw new Error(`handling refusal was not recorded: ${journal}`);
+if (journal.includes("synthetic actionable close")) throw new Error("journal captured the wake payload");
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
 EOF
@@ -4007,6 +4010,50 @@ test_pi_replacement_tokens_are_process_unique
 test_pi_replacement_persistence_failure_stops_arm_child
 test_pi_process_exit_cleanup_listener_lifecycle
 test_pi_process_exit_cleanup_stops_arm_child
+
+test_pi_continuity_journal_is_bounded_and_typed() {
+  local repo home plugin out status
+  repo="$TMP_ROOT/pi-continuity-journal-root"
+  home="$TMP_ROOT/pi-continuity-journal-home"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+printf 'signal: journal synthetic close\n'
+exit 0
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_PI_CONTINUITY_JOURNAL_MAX_BYTES=700 node --input-type=module 2>&1 <<'EOF'
+import { readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+let tool = null;
+const pi = {
+  on() {}, registerCommand() {},
+  registerTool(candidate) { if (candidate.name === "fm_watch_arm_pi") tool = candidate; },
+  sendUserMessage: async () => {},
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("journal-0", {}, undefined, undefined, {});
+await new Promise((resolve) => setTimeout(resolve, 100));
+const text = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8");
+if (Buffer.byteLength(text) > 700) throw new Error(`journal exceeded cap: ${Buffer.byteLength(text)}`);
+for (const line of text.trim().split("\n")) JSON.parse(line);
+if (!text.includes('"event":"start-arm-attempt"')) throw new Error("missing arm attempt evidence");
+if (!text.includes('"event":"actionable-close"')) throw new Error("missing actionable close evidence");
+if (text.includes("synthetic close")) throw new Error("journal captured wake payload");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi continuity journal must remain bounded, parseable, and payload-free"
+  [ -z "$out" ] || fail "Pi continuity journal test printed output: $out"
+  pass "Pi continuity journal is bounded, parseable, and payload-free"
+}
+
+test_pi_continuity_journal_is_bounded_and_typed
 test_opencode_plugin_package_boundary_is_explicit_esm
 test_opencode_primary_watch_plugin_uses_effective_state_home
 test_opencode_primary_watch_plugin_sources_effective_config
