@@ -4027,8 +4027,21 @@ SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+
+function processIdentity(pid) {
+  try {
+    const statLine = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = statLine.slice(statLine.lastIndexOf(")") + 1).trim().split(/\s+/);
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`);
+    const key = process.platform === "linux" ? "linux-starttime" : "proc-starttime";
+    return `${key}=${fields[19]} cmdline-sha256=${createHash("sha256").update(cmdline).digest("hex")}`;
+  } catch {}
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart=", "-o", "command="], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  return `process-sha256=${createHash("sha256").update(result.stdout.trim()).digest("hex")}`;
+}
 
 function makePi() {
   const handlers = new Map();
@@ -4058,23 +4071,25 @@ const first = makePi();
 firstModule.default(first.pi);
 if (!existsSync(protectedDirectory)) throw new Error("malformed journal lock target was removed");
 unlinkSync(journalLock);
-const identityResult = spawnSync("ps", ["-o", "lstart=", "-p", String(process.pid)], { encoding: "utf8" });
-const identity = identityResult.stdout.trim().replace(/\s+/g, " ");
+const identity = processIdentity(process.pid);
 writeFileSync(journalLock, `${JSON.stringify({ pid: String(process.pid), identity, token: "11111111-1111-4111-8111-111111111111" })}\n`, { mode: 0o600 });
 const owned = await first.getTool().execute("contended-diagnostics", {}, undefined, undefined, {});
 if (!owned.details?.ok) throw new Error(`journal contention altered supervision: ${JSON.stringify(owned.details)}`);
 unlinkSync(journalLock);
-writeFileSync(journalLock, `${JSON.stringify({ pid: "999999999", identity: "stale-process", token: "22222222-2222-4222-8222-222222222222" })}\n`, { mode: 0o600 });
+writeFileSync(journalLock, `${JSON.stringify({ pid: String(process.pid), identity: "reused-process", token: "22222222-2222-4222-8222-222222222222" })}\n`, { mode: 0o600 });
 await first.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {});
-if (existsSync(journalLock)) throw new Error("orphaned continuity journal lock was not reclaimed");
+if (existsSync(journalLock)) throw new Error("reused-PID continuity journal lock was not reclaimed");
 await new Promise((resolve) => setTimeout(resolve, 50));
 await first.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "reload" }, {});
 const stale = await first.getTool().execute("stale-generation", {}, undefined, undefined, {});
 if (stale.details?.ok !== false) throw new Error("retired generation accepted a stale arm request");
 
+const stealLock = `${journalLock}.steal`;
+writeFileSync(stealLock, `${JSON.stringify({ pid: "999999999", identity: "stale-stealer", token: "33333333-3333-4333-8333-333333333333" })}\n`, { mode: 0o600 });
 const secondModule = await import(`${pathToFileURL(process.env.PLUGIN).href}?continuity-rebind`);
 const second = makePi();
 secondModule.default(second.pi);
+if (existsSync(stealLock)) throw new Error("orphaned continuity steal lock was not reclaimed");
 await second.handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, {});
 await new Promise((resolve) => setTimeout(resolve, 50));
 await second.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, {});

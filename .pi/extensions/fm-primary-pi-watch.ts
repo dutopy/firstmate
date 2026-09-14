@@ -213,12 +213,26 @@ type ContinuityLockOwner = {
 };
 
 function continuityProcessIdentity(pid: string): string {
+  if (!/^[0-9]+$/.test(pid)) return "";
+  try {
+    const statLine = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const statFields = statLine.slice(statLine.lastIndexOf(")") + 1).trim().split(/\s+/);
+    const starttime = statFields[19];
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`);
+    if (!/^[0-9]+$/.test(starttime) || cmdline.length === 0) return "";
+    const key = process.platform === "linux" ? "linux-starttime" : "proc-starttime";
+    return `${key}=${starttime} cmdline-sha256=${createHash("sha256").update(cmdline).digest("hex")}`;
+  } catch {}
   const result = process.platform === "win32"
-    ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().Ticks`], { encoding: "utf8" })
-    : spawnSync("ps", ["-o", "lstart=", "-p", pid], { encoding: "utf8" });
-  if (result.status !== 0) return "";
-  return result.stdout.trim().replace(/\s+/g, " ").slice(0, 128);
+    ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$p=Get-Process -Id ${pid}; \"$($p.StartTime.ToUniversalTime().Ticks) $($p.Path)\"`], { encoding: "utf8", timeout: 200 })
+    : spawnSync("ps", ["-p", pid, "-o", "lstart=", "-o", "command="], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, timeout: 200 });
+  if (result.status !== 0 || result.error) return "";
+  const output = result.stdout.trim();
+  if (!output) return "";
+  return `process-sha256=${createHash("sha256").update(output).digest("hex")}`;
 }
+
+const continuitySelfIdentity = continuityProcessIdentity(String(process.pid));
 
 function continuityLockRead(lock: string): ContinuityLockOwner | null {
   try {
@@ -226,7 +240,7 @@ function continuityLockRead(lock: string): ContinuityLockOwner | null {
     if (!stat.isFile() || stat.isSymbolicLink()) return null;
     const value = JSON.parse(readFileSync(lock, "utf8")) as Record<string, unknown>;
     if (!/^[0-9]+$/.test(String(value.pid ?? ""))) return null;
-    if (typeof value.identity !== "string" || !value.identity || value.identity.length > 128) return null;
+    if (typeof value.identity !== "string" || !value.identity || value.identity.length > 160) return null;
     if (typeof value.token !== "string" || !/^[0-9a-f-]{36}$/.test(value.token)) return null;
     return {
       pid: String(value.pid),
@@ -249,7 +263,7 @@ function continuityLockRelease(lock: string, owner: ContinuityLockOwner): void {
 }
 
 function continuityLockTryCreate(lock: string, allowedStealToken = ""): ContinuityLockOwner | null {
-  const identity = continuityProcessIdentity(String(process.pid));
+  const identity = continuitySelfIdentity;
   if (!identity) return null;
   const token = randomUUID();
   const owner: ContinuityLockOwner = { pid: String(process.pid), identity, token, ownerFile: `${lock}.owner-${token}` };
@@ -276,8 +290,19 @@ function continuityLockAcquire(lock: string, depth = 0): ContinuityLockOwner | n
   const created = continuityLockTryCreate(lock);
   if (created) return created;
   const expected = continuityLockRead(lock);
-  if (!expected || continuityLockOwnerIsActive(expected) || depth >= 8) return null;
   const stealLock = `${lock}.steal`;
+  if (!expected) {
+    const staleSteal = continuityLockRead(stealLock);
+    if (!staleSteal || continuityLockOwnerIsActive(staleSteal) || depth >= 8) return null;
+    const stealOwner = continuityLockAcquire(stealLock, depth + 1);
+    if (!stealOwner) return null;
+    try {
+      return continuityLockTryCreate(lock, stealOwner.token);
+    } finally {
+      continuityLockRelease(stealLock, stealOwner);
+    }
+  }
+  if (continuityLockOwnerIsActive(expected) || depth >= 8) return null;
   const stealOwner = continuityLockAcquire(stealLock, depth + 1);
   if (!stealOwner) return null;
   try {
