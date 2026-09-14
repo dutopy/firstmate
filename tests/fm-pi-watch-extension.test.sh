@@ -4026,7 +4026,8 @@ while :; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 function makePi() {
@@ -4048,22 +4049,25 @@ function makePi() {
 const journal = `${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`;
 const journalLock = `${journal}.lock`;
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
-const liveOwner = mkdtempSync(`${journalLock}.owner.`);
-writeFileSync(`${liveOwner}/pid`, `${process.pid}\n`, { mode: 0o600 });
-symlinkSync(liveOwner, journalLock, "dir");
+const protectedDirectory = `${process.env.FM_HOME}/protected`;
+mkdirSync(protectedDirectory);
+writeFileSync(`${protectedDirectory}/pid`, "999999999\n");
+symlinkSync(protectedDirectory, journalLock, "dir");
 const firstModule = await import(pathToFileURL(process.env.PLUGIN).href);
 const first = makePi();
 firstModule.default(first.pi);
+if (!existsSync(protectedDirectory)) throw new Error("malformed journal lock target was removed");
 unlinkSync(journalLock);
-rmSync(liveOwner, { recursive: true });
-const orphanedOwner = mkdtempSync(`${journalLock}.owner.`);
-writeFileSync(`${orphanedOwner}/pid`, "999999999\n", { mode: 0o600 });
-symlinkSync(orphanedOwner, journalLock, "dir");
-await first.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {});
-if (existsSync(orphanedOwner)) throw new Error("orphaned continuity journal lock was not reclaimed");
-await new Promise((resolve) => setTimeout(resolve, 50));
+const identityResult = spawnSync("ps", ["-o", "lstart=", "-p", String(process.pid)], { encoding: "utf8" });
+const identity = identityResult.stdout.trim().replace(/\s+/g, " ");
+writeFileSync(journalLock, `${JSON.stringify({ pid: String(process.pid), identity, token: "11111111-1111-4111-8111-111111111111" })}\n`, { mode: 0o600 });
 const owned = await first.getTool().execute("contended-diagnostics", {}, undefined, undefined, {});
 if (!owned.details?.ok) throw new Error(`journal contention altered supervision: ${JSON.stringify(owned.details)}`);
+unlinkSync(journalLock);
+writeFileSync(journalLock, `${JSON.stringify({ pid: "999999999", identity: "stale-process", token: "22222222-2222-4222-8222-222222222222" })}\n`, { mode: 0o600 });
+await first.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {});
+if (existsSync(journalLock)) throw new Error("orphaned continuity journal lock was not reclaimed");
+await new Promise((resolve) => setTimeout(resolve, 50));
 await first.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "reload" }, {});
 const stale = await first.getTool().execute("stale-generation", {}, undefined, undefined, {});
 if (stale.details?.ok !== false) throw new Error("retired generation accepted a stale arm request");

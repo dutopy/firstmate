@@ -22,8 +22,8 @@
 // event finishes the pending record, and a still-unconsumed record rides the
 // replacement handoff.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
-import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, linkSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
@@ -205,64 +205,91 @@ function continuityValue(value: unknown): string {
   return String(value ?? "").replace(/[\t\r\n\x00-\x1f\x7f]/g, " ").slice(0, 96);
 }
 
-function continuityLockOwner(lock: string): string {
+type ContinuityLockOwner = {
+  pid: string;
+  identity: string;
+  token: string;
+  ownerFile: string;
+};
+
+function continuityProcessIdentity(pid: string): string {
+  const result = process.platform === "win32"
+    ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().Ticks`], { encoding: "utf8" })
+    : spawnSync("ps", ["-o", "lstart=", "-p", pid], { encoding: "utf8" });
+  if (result.status !== 0) return "";
+  return result.stdout.trim().replace(/\s+/g, " ").slice(0, 128);
+}
+
+function continuityLockRead(lock: string): ContinuityLockOwner | null {
   try {
-    return readlinkSync(lock);
+    const stat = lstatSync(lock);
+    if (!stat.isFile() || stat.isSymbolicLink()) return null;
+    const value = JSON.parse(readFileSync(lock, "utf8")) as Record<string, unknown>;
+    if (!/^[0-9]+$/.test(String(value.pid ?? ""))) return null;
+    if (typeof value.identity !== "string" || !value.identity || value.identity.length > 128) return null;
+    if (typeof value.token !== "string" || !/^[0-9a-f-]{36}$/.test(value.token)) return null;
+    return {
+      pid: String(value.pid),
+      identity: value.identity,
+      token: value.token,
+      ownerFile: `${lock}.owner-${value.token}`,
+    };
   } catch {
-    return "";
+    return null;
   }
 }
 
-function continuityLockRelease(lock: string, owner: string): void {
+function continuityLockRelease(lock: string, owner: ContinuityLockOwner): void {
   try {
-    if (continuityLockOwner(lock) !== owner) return;
-    unlinkSync(lock);
-    rmSync(owner, { recursive: true, force: true });
+    if (continuityLockRead(lock)?.token === owner.token) unlinkSync(lock);
+  } catch {}
+  try {
+    unlinkSync(owner.ownerFile);
   } catch {}
 }
 
-function continuityLockTryCreate(lock: string, allowedStealOwner = ""): string {
-  let owner = "";
+function continuityLockTryCreate(lock: string, allowedStealToken = ""): ContinuityLockOwner | null {
+  const identity = continuityProcessIdentity(String(process.pid));
+  if (!identity) return null;
+  const token = randomUUID();
+  const owner: ContinuityLockOwner = { pid: String(process.pid), identity, token, ownerFile: `${lock}.owner-${token}` };
   try {
-    owner = mkdtempSync(`${lock}.owner.`);
-    writeFileSync(`${owner}/pid`, `${process.pid}\n`, { mode: 0o600 });
-    symlinkSync(owner, lock, "dir");
-    if (continuityLockOwner(lock) !== owner) throw new Error("lock owner mismatch");
-    const stealOwner = continuityLockOwner(`${lock}.steal`);
-    if (stealOwner && stealOwner !== allowedStealOwner) throw new Error("lock steal in progress");
+    writeFileSync(owner.ownerFile, `${JSON.stringify({ pid: owner.pid, identity, token })}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    linkSync(owner.ownerFile, lock);
+    if (continuityLockRead(lock)?.token !== token) throw new Error("lock owner mismatch");
+    const steal = continuityLockRead(`${lock}.steal`);
+    if (steal && steal.token !== allowedStealToken) throw new Error("lock steal in progress");
     return owner;
   } catch {
-    if (owner) continuityLockRelease(lock, owner);
-    if (owner) rmSync(owner, { recursive: true, force: true });
-    return "";
+    continuityLockRelease(lock, owner);
+    return null;
   }
 }
 
-function continuityLockAcquire(lock: string, depth = 0): string {
+function continuityLockOwnerIsActive(owner: ContinuityLockOwner): boolean {
+  if (!pidAlive(owner.pid)) return false;
+  const identity = continuityProcessIdentity(owner.pid);
+  return !identity || identity === owner.identity;
+}
+
+function continuityLockAcquire(lock: string, depth = 0): ContinuityLockOwner | null {
   const created = continuityLockTryCreate(lock);
   if (created) return created;
-  const expectedOwner = continuityLockOwner(lock);
-  if (!expectedOwner) return "";
-  let expectedPid = "";
-  try {
-    expectedPid = readFileSync(`${expectedOwner}/pid`, "utf8").trim();
-  } catch {
-    return "";
-  }
-  if (/^[0-9]+$/.test(expectedPid) && pidAlive(expectedPid)) return "";
-  if (depth >= 8) return "";
+  const expected = continuityLockRead(lock);
+  if (!expected || continuityLockOwnerIsActive(expected) || depth >= 8) return null;
   const stealLock = `${lock}.steal`;
   const stealOwner = continuityLockAcquire(stealLock, depth + 1);
-  if (!stealOwner) return "";
+  if (!stealOwner) return null;
   try {
-    if (continuityLockOwner(lock) !== expectedOwner) return "";
-    const currentPid = readFileSync(`${expectedOwner}/pid`, "utf8").trim();
-    if (currentPid !== expectedPid || (/^[0-9]+$/.test(currentPid) && pidAlive(currentPid))) return "";
+    const current = continuityLockRead(lock);
+    if (!current || current.token !== expected.token || continuityLockOwnerIsActive(current)) return null;
     unlinkSync(lock);
-    rmSync(expectedOwner, { recursive: true, force: true });
-    return continuityLockTryCreate(lock, stealOwner);
+    try {
+      unlinkSync(current.ownerFile);
+    } catch {}
+    return continuityLockTryCreate(lock, stealOwner.token);
   } catch {
-    return "";
+    return null;
   } finally {
     continuityLockRelease(stealLock, stealOwner);
   }
@@ -270,12 +297,12 @@ function continuityLockAcquire(lock: string, depth = 0): string {
 
 // Evidence only: this journal never participates in continuity decisions.
 function continuityEvent(event: string, fields: Record<string, unknown> = {}): void {
-  let lockOwner = "";
+  let lockOwner: ContinuityLockOwner | null = null;
   try {
     mkdirSync(state, { recursive: true, mode: 0o700 });
     lockOwner = continuityLockAcquire(continuityJournalLock);
     if (!lockOwner) return;
-    const row = JSON.stringify({
+    const row = Buffer.from(`${JSON.stringify({
       at: Date.now(),
       event: continuityValue(event),
       generation: continuityValue(fields.generation),
@@ -283,19 +310,22 @@ function continuityEvent(event: string, fields: Record<string, unknown> = {}): v
       armPid: continuityValue(fields.armPid),
       attempt: fields.attempt === undefined ? undefined : Number(fields.attempt),
       reason: fields.reason === undefined ? undefined : continuityValue(fields.reason),
-    });
-    appendFileSync(continuityJournal, `${row}\n`, { mode: 0o600 });
-    chmodSync(continuityJournal, 0o600);
-    const bytes = readFileSync(continuityJournal);
-    if (bytes.length > continuityJournalMaxBytes) {
-      const kept = bytes.subarray(Math.max(0, bytes.length - continuityJournalMaxBytes));
+    })}\n`);
+    let existing = Buffer.alloc(0);
+    try {
+      existing = readFileSync(continuityJournal);
+    } catch {}
+    const combined = Buffer.concat([existing, row]);
+    let bounded = combined;
+    if (combined.length > continuityJournalMaxBytes) {
+      const kept = combined.subarray(combined.length - continuityJournalMaxBytes);
       const newline = kept.indexOf(10);
-      const bounded = newline < 0 ? kept : kept.subarray(newline + 1);
-      const temporary = `${continuityJournal}.tmp-${process.pid}`;
-      writeFileSync(temporary, bounded, { mode: 0o600 });
-      chmodSync(temporary, 0o600);
-      renameSync(temporary, continuityJournal);
+      bounded = newline < 0 ? Buffer.alloc(0) : kept.subarray(newline + 1);
     }
+    const temporary = `${continuityJournal}.tmp-${process.pid}-${randomUUID()}`;
+    writeFileSync(temporary, bounded, { mode: 0o600 });
+    chmodSync(temporary, 0o600);
+    renameSync(temporary, continuityJournal);
   } catch {
     // Observability must never alter continuity behavior.
   } finally {
