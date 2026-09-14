@@ -1,0 +1,29 @@
+Command: pi --approve --no-session --no-context-files --no-skills --no-prompt-templates --no-extensions -e /home/dutopy/.no-mistakes/worktrees/87dc5fbb9d99/01M2FPEE3R01B021AJ7MYW87BB/.pi/extensions/fm-primary-pi-watch.ts
+PTY window: 120x40 before process start
+Exit: 0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.no-mistakes/worktrees/87dc5fbb9d99/01M2FPEE3R01B021AJ7MYW87BB (detached)
+0.0%/0 (auto)                                                                                                    unknown
+pi v0.84.4
+escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+Press ctrl+o to show full startup help and loaded resources.
+Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+[Extensions]
+fm-primary-pi-watch.ts
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.no-mistakes/worktrees/87dc5fbb9d99/01M2FPEE3R01B021AJ7MYW87BB (detached)
+0.0%/0 (auto)                                                                                                    unknown
+Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+/home/dutopy/.local/share/mise/installs/pi/0.84.4/pi/docs/providers.md
+/home/dutopy/.local/share/mise/installs/pi/0.84.4/pi/docs/models.md
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.no-mistakes/worktrees/87dc5fbb9d99/01M2FPEE3R01B021AJ7MYW87BB (detached)
+0.0%/0 (auto)                                                                                                    unknown
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.no-mistakes/worktrees/87dc5fbb9d99/01M2FPEE3R01B021AJ7MYW87BB (detached)
+0.0%/0 (auto)                                                                                                    unknown
+✓ New session started
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.no-mistakes/worktrees/87dc5fbb9d99/01M2FPEE3R01B021AJ7MYW87BB (detached)
+0.0%/0 (auto)                                                                                                    unknown

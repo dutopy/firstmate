@@ -1,0 +1,8 @@
+{"at":1789384115664,"event":"generation-created","generation":"1","predecessorArmPid":"","armPid":""}
+{"at":1789384115805,"event":"extension-session-load","generation":"1","predecessorArmPid":"","armPid":""}
+{"at":1789384115959,"event":"extension-session-shutdown","generation":"1","predecessorArmPid":"","armPid":"","reason":"new"}
+{"at":1789384115961,"event":"generation-replacement","generation":"1","predecessorArmPid":"","armPid":"","reason":"replacement"}
+{"at":1789384115979,"event":"generation-created","generation":"2","predecessorArmPid":"","armPid":""}
+{"at":1789384115997,"event":"extension-session-load","generation":"2","predecessorArmPid":"","armPid":""}
+{"at":1789384116155,"event":"extension-session-shutdown","generation":"2","predecessorArmPid":"","armPid":"","reason":"quit"}
+{"at":1789384116156,"event":"generation-shutdown","generation":"2","predecessorArmPid":"","armPid":"","reason":"shutdown"}
