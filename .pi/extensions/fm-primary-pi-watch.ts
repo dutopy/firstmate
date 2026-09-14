@@ -1109,6 +1109,7 @@ export default function (pi: ExtensionAPI) {
         continuityEvent("readiness", { generation: owner.id, predecessorArmPid, armPid: String(successorChild?.pid ?? ""), attempt, reason: "timeout-or-unready" });
         failure = "watcher: FAILED - Pi extension could not verify a ready successor watcher";
         if (!(await retireArm(successorChild))) {
+          continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "successor-retirement-timeout" });
           return {
             failure: `${failure}\nwatcher: FAILED - Pi extension could not restore watcher continuity because the unready successor arm did not exit within ${armRetireTimeoutMs}ms`,
           };
@@ -1130,11 +1131,13 @@ export default function (pi: ExtensionAPI) {
     if (!generationIsLive(owner) || owner.child || owner.retryTimer) return;
     const ownership = lockOwnership();
     if (ownership !== "owned") {
+      continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "continuity-retry-lock-not-owned" });
       surfaceFailure(owner, `watcher: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${message}`);
       return;
     }
     owner.retryFailures += 1;
     if (owner.retryFailures > retryLimit) {
+      continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "continuity-retries-exhausted" });
       surfaceFailure(owner, `watcher: FAILED - Pi extension could not restore watcher continuity after ${retryLimit} retries\n${message}`);
       return;
     }
@@ -1143,6 +1146,7 @@ export default function (pi: ExtensionAPI) {
       if (!generationIsLive(owner)) return;
       const result = startArm(owner, predecessorArmPid);
       if (!result.ok) {
+        continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "continuity-retry-launch-failed" });
         surfaceFailure(owner, `watcher: FAILED - Pi extension could not launch a continuity retry\n${result.message}`);
       }
     }, retryDelay(owner.retryFailures));
