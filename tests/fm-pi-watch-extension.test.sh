@@ -291,20 +291,25 @@ printf 'arm\n' >> "${FM_ARM_LOG:?}"
 exit 0
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=10000 FM_WATCH_REARM_RETRY_MAX_MS=10000 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=200 FM_WATCH_REARM_RETRY_MAX_MS=200 node --input-type=module 2>&1 <<'EOF'
+import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 let tool = null;
+let prompt = "";
 const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
     if (candidate.name === "fm_watch_arm_pi") tool = candidate;
   },
-  sendUserMessage: async () => {},
+  sendUserMessage: async (message) => {
+    prompt += message;
+  },
 };
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const lock = `${process.env.FM_HOME}/state/.lock`;
+writeFileSync(lock, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-first", {}, undefined, undefined, {});
@@ -323,9 +328,26 @@ if (/^watcher: healthy\b/.test(redundant.content[0]?.text)) {
 if (!redundant.content[0]?.text.includes("only after a later notification says the cycle is missing, failed, or unhealthy")) {
   throw new Error(`scheduled retry call omitted the repair-only condition: ${redundant.content[0]?.text}`);
 }
-await new Promise((resolve) => setTimeout(resolve, 100));
-const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
-if (rows.length !== 1) throw new Error(`scheduled retry call spawned ${rows.length} arm children`);
+const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+try {
+  writeFileSync(lock, `${other.pid}\n`);
+  for (let i = 0; i < 100 && !prompt; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const rows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+  if (rows.length !== 1) throw new Error(`scheduled retry call spawned ${rows.length} arm children`);
+  if (!prompt.includes("held by another firstmate session")) throw new Error(`retry lock loss was not surfaced: ${prompt}`);
+  const journalRows = readFileSync(`${process.env.FM_HOME}/state/.pi-watch-continuity.jsonl`, "utf8")
+    .trim().split("\n").map((line) => JSON.parse(line));
+  if (!journalRows.some((row) => row.event === "typed-fallback" && row.reason === "continuity-retry-lock-not-owned")) {
+    throw new Error("scheduled retry lock loss omitted its terminal continuity outcome");
+  }
+  if (journalRows.some((row) => row.event === "typed-fallback" && row.reason === "continuity-retry-launch-failed")) {
+    throw new Error("scheduled retry lock loss was mislabeled as launch failure");
+  }
+} finally {
+  other.kill("SIGTERM");
+}
 EOF
 )
   status=$?

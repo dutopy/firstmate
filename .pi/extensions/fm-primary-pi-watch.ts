@@ -1111,7 +1111,10 @@ export default function (pi: ExtensionAPI) {
       if (!generationIsLive(owner)) return;
       const result = startArm(owner, predecessorArmPid);
       if (!result.ok) {
-        continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason: "continuity-retry-launch-failed" });
+        const reason = /(?:read-only|no live session)/.test(result.message)
+          ? "continuity-retry-lock-not-owned"
+          : "continuity-retry-launch-failed";
+        continuityEvent("typed-fallback", { generation: owner.id, predecessorArmPid, reason });
         surfaceFailure(owner, `watcher: FAILED - Pi extension could not launch a continuity retry\n${result.message}`);
       }
     }, retryDelay(owner.retryFailures));
