@@ -369,6 +369,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/jev-guard.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/orca-backend.md",
       "audience": "operator-current"
     },
