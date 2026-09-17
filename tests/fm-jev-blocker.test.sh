@@ -245,7 +245,7 @@ pass "unexpected class: fail-safe, exit 0"
 # --- an invalid confidence is a fail-safe, never a suppression ---------------
 # NaN is the reported case: without strict validation, `nan < 0.9` is false, so
 # a fixture-noise answer would suppress its wake and emit non-standard JSON.
-for bad in nan inf -0.5 1.5; do
+for bad in nan inf -0.1 1.1; do
   reset_log
   start_fake --choice test_fixture_noise --confidence "$bad"
   run_blocker "$API_KEY" "$HOME_DIR" 20 "$BLOCK_PAYLOAD" -

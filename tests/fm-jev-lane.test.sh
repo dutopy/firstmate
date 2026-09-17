@@ -224,7 +224,7 @@ pass "unexpected lane: fail-safe, exit 0"
 # --- an invalid confidence is a fail-safe, never a silent lane ---------------
 # NaN is the reported case: without strict validation, a valid lane would be
 # accepted at a non-finite confidence and emitted as non-standard JSON.
-for bad in nan inf -0.5 1.5; do
+for bad in nan inf -0.1 1.1; do
   reset_log
   start_fake --choice folium --confidence "$bad"
   run_lane "$API_KEY" "$HOME_DIR" 20 "$REQUEST_PAYLOAD" -

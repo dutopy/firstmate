@@ -22,7 +22,7 @@ Neither classifier carries authority.
 ## Shared core
 
 Both classifiers import the shared `jev_decide` core by path at `$FM_HOME/data/jev_decide.py`, overridable with `FM_JV_BLOCKER_CORE` and `FM_JV_LANE_CORE`.
-That core remains the single owner of the TypeSafe request shape, the retry and timeout behavior, and the confidence gate, so neither wrapper adds a second HTTP client and neither copies the API contract.
+That core remains the single owner of the TypeSafe request shape, the retry and timeout behavior, and the confidence gate, which rejects a non-finite or out-of-range confidence as an `ask_human` outcome at the owner, so neither wrapper adds a second HTTP client and neither copies the API contract.
 Both read the same `TYPESAFE_API_KEY` the typed dispatch resolution reads, from the environment or a `TYPESAFE_API_KEY=` line in `$FM_HOME/.env`.
 Neither ever sends a list of items: each call asks the model one atomic forced-choice question about exactly one block or one request.
 
@@ -88,3 +88,4 @@ ARFAL is a deliberately dormant lane: a confident `arfal` result parks the reque
 They cover every class and lane, the high-confidence noise suppression, a low-confidence answer that must never suppress, the ARFAL dormant flag, an API error, a malformed response, invalid input JSON, the wall-clock fallback, a missing key, the `.env` fallback, an unexpected answer, file input, and the usage errors.
 No case reaches the real network, and each classification case asserts exactly one call.
 Both suites also cover an invalid confidence (NaN, infinity, negative, and above 1) and a deliberately stale shared core that returns a non-finite confidence, asserting the default verdict, the surface flag, a numeric confidence, strict JSON, exit 0, and no network call.
+The shared core is not part of the repository: it lives at `$FM_HOME/data/jev_decide.py`, so its own `invalid_confidence` guard is verified through these wrappers rather than committed here.
