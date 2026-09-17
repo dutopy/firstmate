@@ -13,6 +13,10 @@ Each gives firstmate one typed second opinion on one narrow, recurring question,
 The scripts' headers own their exact flags, environment keys, input handling, and output shape; this page owns the contract they are held to.
 
 
+`bin/fm-jev-fred-preflight.sh` is a thin, advisory classifier over the shared `jev_decide` core, backed by typesafe.ai's System One model (Jev).
+It gives Fred's Folium work one typed second opinion before an action is taken, and it fails safe: every uncertainty resolves to the conservative class, never to a silent wave-through.
+The script's header owns the exact flags, environment keys, input handling, and output shape; this page owns the contract the pre-flight is held to.
+
 ## Advisory only, and below every hard rule
 
 The guard never carries authority.
@@ -61,6 +65,22 @@ The non-convergence detector carries no authority either.
 - It runs one question about one worker, never on every tool call and never over a list of workers.
 
 
+The pre-flight carries no authority, and it changes nothing.
+
+- It never takes, authorizes, or blocks an action.
+  `proceed` is a recommendation on the standing path, `hold_for_review` is a request to hold the action for the ordinary human review, and `human_portal` is a request to route it to the human portal instead of letting Fred take it alone.
+  Firstmate still owns every decision, and every other applicable rule still applies unchanged.
+- An `irreversible_or_secret` verdict never becomes permission to act, and a `routine_reversible` verdict never widens what Fred was already allowed to do.
+- It never overrides a hard rule, never merges without the captain, never writes to a project, and never bypasses a guard, a gate, or a refusal.
+- It classifies exactly one intended action per call and is not run on every tool call.
+
+## Read-only by construction
+
+The pre-flight is an advisory reader, so it performs no live mutation: it opens no Folium gateway, sends no Discord message, changes no service, and reads no Folium credential or secret.
+It touches only the input JSON, the shared core, and its own `TYPESAFE_API_KEY`, and the single file it writes of its own is a temporary copy of stdin input that it removes on the way out.
+It also disables Python's bytecode cache, so importing the shared core cannot leave a cache beside it in the home that owns it.
+`tests/fm-jev-fred-preflight.test.sh` proves both halves in a home the tool has never run in before: the home is exactly as it was after a run, and no temporary artifact is left behind.
+
 ## Shared core
 
 The guard imports the shared `jev_decide` core by path at `$FM_HOME/data/jev_decide.py`, overridable with `FM_JV_GUARD_CORE`.
@@ -82,6 +102,11 @@ That core remains the single owner of the TypeSafe request shape, the retry and 
 It reads the same `TYPESAFE_API_KEY` the typed dispatch resolution reads, from the environment or a `TYPESAFE_API_KEY=` line in `$FM_HOME/.env`.
 It never sends a list of items to classify: each call asks the model one atomic forced-choice question about exactly one worker.
 
+
+The pre-flight imports the shared `jev_decide` core by path at `$FM_HOME/data/jev_decide.py`, overridable with `FM_JV_FRED_PREFLIGHT_CORE`.
+That core remains the single owner of the TypeSafe request shape, the retry and timeout behavior, and the confidence gate, so the pre-flight adds no second HTTP client and no second copy of the API contract.
+It asks one atomic forced-choice question per call, makes zero change to the core, and improving the client or the gate happens in the core, once, for every caller.
+The wrapper validates the confidence it reports itself, so a stale core cannot reintroduce a routine verdict either.
 
 ## Fail-safe boundary and exit codes
 
@@ -145,6 +170,10 @@ A usage error prints nothing on stdout and makes no network call.
 The wrapper validates the confidence boundary itself rather than trusting the shared gate, so a non-finite or out-of-range answer can never compare as passing and can never become an automatic escalation.
 The emitted confidence is always a finite number in [0, 1] and the output is always strict JSON, so no `NaN` or `Infinity` literal can reach stdout.
 
+
+Confidence below the floor, any non-finite or out-of-range confidence, a missing or rejected API key, any API or network error, a malformed success response, invalid or unreadable input JSON, an unreadable shared core, and the wall-clock bound all resolve to verdict `consequential`, flag `hold_for_review`, and exit 0.
+There is no silent proceed: no error, timeout, low-confidence answer, or malformed response is ever reported as `routine_reversible`, and the emitted confidence is always a finite number in `[0, 1]` in strict JSON, so a NaN or Infinity answer can never slip past the floor.
+Exit 2 is reserved for a usage error - an unknown flag, a missing flag value, or missing `python3` - and it prints nothing on stdout and makes no network call.
 
 ## What it classifies
 
@@ -275,6 +304,18 @@ A `stalled_looping` answer at or above the floor comes back with `escalate_recov
 A `stalled_looping` answer below the floor comes back as `progressing` with `review_history`, and the model's answer stays visible in `reason`; the detector never escalates on an uncertain answer.
 
 
+## The Fred pre-flight classifier
+
+`bin/fm-jev-fred-preflight.sh` classifies the action Fred intends to take, described before anything acts on it, into exactly one of three classes.
+
+- `routine_reversible` - an ordinary action Fred already performs unattended, whose effect stays inside Fred's own workspace or mailbox, is visible to nobody new, and can be undone or ignored at will.
+- `consequential` - an action with a real, externally visible, or hard-to-undo effect that a human should see before it happens, but that is neither destructive, nor secret-exposing, nor a new commitment.
+- `irreversible_or_secret` - an action that cannot be undone once taken, or that exposes, moves, or grants access to secret or private material, including deletion, a message that cannot be recalled, an access or credential change, a payment, or a disclosure outside the intended audience.
+
+The verdict is the class itself, and the `flag` is the advisory action for it: `proceed` for `routine_reversible`, `hold_for_review` for `consequential`, and `human_portal` for `irreversible_or_secret`.
+The model's `confidence` and a short `reason` are reported beside the verdict, so the caller sees the evidence rather than only the conclusion.
+Input is one small JSON object; `action`, `target`, `context`, and `note` are the recommended fields, and the whole object is the model's `state`.
+
 ## Precedence
 
 The captain's explicit instruction outranks everything here.
@@ -303,3 +344,6 @@ No case reaches the real network, and each classification case asserts exactly o
 `tests/fm-jev-nonconvergence.test.sh` drives the public interface against `tests/assets/jev-nonconvergence-fake-typesafe.py`, a fake System One server bound to loopback on an ephemeral port.
 It covers both verdicts, the deterministic feature extraction (repeated notes, a frozen state window, a state-level and a note-level alternation), the one-atomic-question request shape, a low-confidence answer that must fall back to `progressing` plus `review_history`, a non-finite or out-of-range confidence that must resolve to the same fail-safe verdict without escalating, an API error, a malformed response, an unexpected verdict, the wall-clock bound, a missing key, the `.env` key fallback, `--task` resolution, `--lines` windowing, both no-model-call shortcuts (insufficient history and a terminal declaration), and every usage error.
 No case reaches the real network, and each judged case asserts exactly one call.
+
+`tests/fm-jev-fred-preflight.test.sh` drives the public interface against a fake System One server bound to loopback on an ephemeral port, covering all three classes, a low-confidence answer in the safe class that must never stay routine, a low-confidence answer in the unsafe class, an API error, a malformed response, an unexpected class, NaN, Infinity, and out-of-range confidences against both the shared core and a stale-core stand-in, invalid input JSON, the wall-clock bound, a missing key, the `.env` key with the environment winning, file input, the read-only promise, and the usage errors.
+No case reaches the real network, each classification case asserts exactly one call, and the suite skips cleanly when the captain-private shared core is not readable.

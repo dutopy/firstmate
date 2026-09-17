@@ -111,6 +111,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-jev-finding.sh`      | Advisory, fail-safe severity classification of one review finding, to feed one correction batch ([jev-guard.md](jev-guard.md)) |
 | `fm-jev-class.sh`        | Classify a task's intelligence class and lowest adequate effort over the shared Jev core ([jev-class-router.md](jev-class-router.md)) |
 | `fm-jev-nonconvergence.sh` | Advisory, fail-safe detector for a worker stuck in a loop, from its recent status history ([jev-guard.md](jev-guard.md)) |
+| `fm-jev-fred-preflight.sh` | Advisory, fail-safe pre-flight classification of one action Fred intends to take on Folium ([jev-guard.md](jev-guard.md)) |
 | `fm-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `fm-jev-guard.sh`        | Advisory, fail-safe action classification over the shared Jev core ([jev-guard.md](jev-guard.md)) |
 | `fm-jev-blocker.sh`      | Advisory, fail-safe classification of one worker block over the shared Jev core ([jev-guard.md](jev-guard.md)) |
