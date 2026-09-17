@@ -1088,7 +1088,7 @@ test_crew_dispatch_active_rules_are_verbose_bootstrap_info() {
   case_dir="$TMP_ROOT/dispatch-active"
   mkdir -p "$case_dir/home/config"
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
-  printf '%s\n' '{"rules":[{"when":"fresh news","use":{"harness":"grok"},"why":"current context"},{"when":"big feature","use":[{"harness":"claude","model":"claude-sonnet-5","effort":"high"},{"harness":"codex","model":"gpt-5.5","effort":"high"}]},{"when":"legacy feature","use":[{"harness":"claude"},{"harness":"codex"}],"select":"quota-balanced"}],"default":[{"harness":"pi","model":"anthropic/claude-sonnet-5","effort":"high"},{"harness":"grok","model":"grok-4.5","effort":"high"}]}' > "$case_dir/home/config/crew-dispatch.json"
+  printf '%s\n' '{"rules":[{"when":"fresh news","use":{"harness":"grok"},"why":"current context"},{"when":"big feature","use":[{"harness":"claude","model":"claude-sonnet-5","effort":"high"},{"harness":"codex","model":"gpt-5.5","effort":"high"}]},{"when":"legacy feature","use":[{"harness":"claude"},{"harness":"codex"}],"select":"quota-balanced"}],"classes":{"volume_cheap":{"harness":"pi","model":"zai/glm-5.3-flash","effort":"low"},"hard_reasoning":[{"harness":"claude","model":"claude-sonnet-5","effort":"high"}]},"default":[{"harness":"pi","model":"anthropic/claude-sonnet-5","effort":"high"},{"harness":"grok","model":"grok-4.5","effort":"high"}]}' > "$case_dir/home/config/crew-dispatch.json"
   fakebin=$(make_fake_toolchain "$case_dir")
   add_real_jq "$fakebin"
 
@@ -1099,7 +1099,7 @@ test_crew_dispatch_active_rules_are_verbose_bootstrap_info() {
   out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
     FM_BOOTSTRAP_VERBOSE_FACTS=1 FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
 
-  expect=$'BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json\nBOOTSTRAP_INFO: crew dispatch rule: fresh news -> grok\nBOOTSTRAP_INFO: crew dispatch rule: big feature -> quota-balanced[claude/claude-sonnet-5/high, codex/gpt-5.5/high]\nBOOTSTRAP_INFO: crew dispatch rule: legacy feature -> quota-balanced[claude, codex]\nBOOTSTRAP_INFO: crew dispatch default: quota-balanced[pi/anthropic/claude-sonnet-5/high, grok/grok-4.5/high]'
+  expect=$'BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json\nBOOTSTRAP_INFO: crew dispatch rule: fresh news -> grok\nBOOTSTRAP_INFO: crew dispatch rule: big feature -> quota-balanced[claude/claude-sonnet-5/high, codex/gpt-5.5/high]\nBOOTSTRAP_INFO: crew dispatch rule: legacy feature -> quota-balanced[claude, codex]\nBOOTSTRAP_INFO: crew dispatch default: quota-balanced[pi/anthropic/claude-sonnet-5/high, grok/grok-4.5/high]\nBOOTSTRAP_INFO: crew dispatch class: volume_cheap -> pi/zai/glm-5.3-flash/low\nBOOTSTRAP_INFO: crew dispatch class: hard_reasoning -> quota-balanced[claude/claude-sonnet-5/high]'
   [ "$out" = "$expect" ] || fail "active dispatch verbose info block mismatch"$'\n'"expected: $expect"$'\n'"actual:   $out"
   pass "bootstrap surfaces active crew-dispatch rules only as verbose BOOTSTRAP_INFO"
 }
@@ -1180,6 +1180,14 @@ default array profile without harness is flagged^{"default":[{"model":"gpt-5.5"}
 default array malformed effort is flagged^{"default":[{"harness":"codex","effort":3}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile model and effort must be non-empty strings, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present
 default profile floor without min_percent is flagged^{"default":[{"harness":"codex","floor":{"scope":"all_models"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile floor needs scope and min_percent 0..100
 default profile floor provider override is flagged^{"default":{"harness":"codex","floor":{"scope":"all_models","min_percent":50,"provider":"claude"}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile floor needs scope and min_percent 0..100
+class-keyed profiles are accepted^{"classes":{"volume_cheap":{"harness":"pi","model":"zai/glm-5.3-flash","effort":"low","provider":"zai"},"standard_impl":[{"harness":"claude","model":"claude-sonnet-5","effort":"medium"}],"hard_reasoning":{"harness":"codex","model":"gpt-5.6-luna","effort":"max"}},"default":{"harness":"codex"}}^empty^
+classes that are not an object are flagged^{"classes":[]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - classes must be an object
+unknown class key is flagged^{"classes":{"volum_cheap":{"harness":"pi"}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unknown class: volum_cheap
+empty class profile array is flagged^{"classes":{"volume_cheap":[]}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - each class needs a profile object or non-empty profile array
+class profile without harness is flagged^{"classes":{"volume_cheap":{"model":"zai/glm-5.3-flash"}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - each class profile needs harness
+class profile with malformed model is flagged^{"classes":{"volume_cheap":{"harness":"pi","model":5}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - class profile model and effort must be non-empty strings, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present
+class profile with unverified harness is flagged^{"classes":{"volume_cheap":{"harness":"spaceship"}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: spaceship
+class profile with unsupported effort is flagged^{"classes":{"volume_cheap":{"harness":"grok","effort":"max"}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: grok:max
 ROWS
 
   case_dir="$TMP_ROOT/dispatch-opt-in-gate"

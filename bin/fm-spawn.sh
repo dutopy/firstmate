@@ -130,9 +130,20 @@
 #   that lock itself rather than failing to resolve one;
 #   contention refuses rather than waits.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
-#   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
-#   spawns require an explicit harness so firstmate cannot silently skip dispatch
-#   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
+#   config/crew-dispatch.json is absent. When that file exists, the two-stage typed
+#   intake takes over IF this home has opted in - a non-empty TYPESAFE_API_KEY in the
+#   environment or in $FM_HOME/.env, the same gate bin/fm-dispatch-resolve.sh and
+#   bin/fm-jev-class.sh use, plus at least one class declared in the canonical
+#   `classes` block. It runs bin/fm-jev-class.sh on the task's own brief for the
+#   intelligence class and effort, hands them to bin/fm-dispatch-resolve.sh --class,
+#   and launches the profile that came back; the class stage costs one model request
+#   and the resolver adds no second one. An explicit --model/--effort still wins, a
+#   classifier fallback (low confidence, API error, timeout, malformed answer) returns
+#   to the resolver's rule/default path with its flag reported on stderr, and an
+#   explicit harness or raw launch command always wins outright. Without that opt-in,
+#   or when no concrete profile comes back, the pre-existing backstop below stays in
+#   force: the spawn refuses instead of silently skipping the configured dispatch
+#   rules. A --secondmate spawn is exempt from all of this and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
 #   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy)
@@ -500,12 +511,83 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-env-lib.sh
+. "$SCRIPT_DIR/fm-env-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
 # Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
+# ---- two-stage typed dispatch intake -----------------------------------------
+# The typed intake is enabled when this home has the typed key - the process
+# environment, else a TYPESAFE_API_KEY= line in $FM_HOME/.env, exactly as
+# bin/fm-dispatch-resolve.sh and bin/fm-jev-class.sh read it - and the canonical
+# dispatch config declares at least one class. The key's value is never
+# exported, printed, or forwarded from here; the two tools read it themselves.
+# Bootstrap unsets the exported key in firstmate's own environment, so the .env
+# line is the ordinary case.
+fm_spawn_typed_dispatch_enabled() {
+  [ -f "$CONFIG/crew-dispatch.json" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  if [ -z "${TYPESAFE_API_KEY:-}" ] && [ -z "$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")" ]; then
+    return 1
+  fi
+  jq -e '(.classes // null) != null and ((.classes | length) > 0)' "$CONFIG/crew-dispatch.json" >/dev/null 2>&1
+}
+
+# One concrete profile for this task from the two-stage Jev router, as
+# "harness|model|effort". bin/fm-jev-class.sh names the intelligence class and
+# the effort, and bin/fm-dispatch-resolve.sh --class turns that class into a
+# concrete profile from the declared class profiles with no second model
+# request. A classifier fallback (low confidence, API error, timeout, or a
+# malformed answer) returns to the resolver's existing rule/default path with
+# the flag reported on stderr, so the classifier can never block a dispatch by
+# itself. Prints nothing and returns 1 when no concrete profile was resolved, so
+# the caller keeps its own refusal.
+fm_spawn_typed_dispatch_profile() {
+  local brief=$1 class_out='' class='' effort='' flag='' resolved='' line=''
+  local token next='' harness='' model='' axis_effort=''
+  local -a class_args=()
+  [ -r "$brief" ] || return 1
+  class_out=$("$SCRIPT_DIR/fm-jev-class.sh" "$brief" 2>/dev/null) || class_out=''
+  class=$(printf '%s' "$class_out" | jq -r 'if type == "object" then (.class // "") else "" end' 2>/dev/null) || class=''
+  effort=$(printf '%s' "$class_out" | jq -r 'if type == "object" then (.effort // "") else "" end' 2>/dev/null) || effort=''
+  flag=$(printf '%s' "$class_out" | jq -r 'if type == "object" then (.flag // "") else "" end' 2>/dev/null) || flag=''
+  if [ -n "$class" ] && [ -z "$flag" ]; then
+    class_args=(--class "$class")
+    [ -z "$effort" ] || class_args+=(--effort "$effort")
+    resolved=$("$SCRIPT_DIR/fm-dispatch-resolve.sh" "$brief" "${class_args[@]}" 2>/dev/null) || resolved=''
+  else
+    echo "dispatch: the Jev class stage fell back (${flag:-malformed answer}); using the configured rules and default" >&2
+    resolved=$("$SCRIPT_DIR/fm-dispatch-resolve.sh" "$brief" 2>/dev/null) || resolved=''
+  fi
+  line=$(printf '%s\n' "$resolved" | sed -n 's/^  profile: //p' | head -n 1)
+  [ -n "$line" ] || return 1
+  # The resolver shell-quotes every axis with @sh; harness, model, and effort are
+  # identifier-like values, so a token walk recovers them without evaluating it.
+  # shellcheck disable=SC2086 # Deliberate word splitting over the quoted flags.
+  for token in $line; do
+    case "$token" in
+    --harness) next=harness ;;
+    --model) next=model ;;
+    --effort) next=effort ;;
+    *)
+      token=${token#\'}
+      token=${token%\'}
+      case "$next" in
+      harness) harness=$token ;;
+      model) model=$token ;;
+      effort) axis_effort=$token ;;
+      esac
+      next=''
+      ;;
+    esac
+  done
+  [ -n "$harness" ] || return 1
+  printf '%s|%s|%s\n' "$harness" "$model" "$axis_effort"
+}
+
 KIND=ship
 KIND_SET=0
 HARNESS_ARG=
@@ -1281,7 +1363,7 @@ if [ "$RELAUNCH" -eq 1 ] && [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart"
   exit 1
 fi
 if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in */*) false ;; *) true ;; esac then
-  if [ "$KIND" != secondmate ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
+  if [ "$KIND" != secondmate ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ] && ! fm_spawn_typed_dispatch_enabled; then
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
   fi
@@ -1913,11 +1995,30 @@ case "$ARG3" in
     harness_src='config/secondmate-harness (falling back to config/crew-harness)'
   else
     if [ -f "$CONFIG/crew-dispatch.json" ]; then
-      echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
-      exit 1
+      # The configured rules must never be silently skipped. When this home has
+      # opted into the typed intake, resolve one concrete profile in code from
+      # the task's own brief - the class stage names the class and effort, the
+      # resolver intersects the class's declared profiles with quota - so a spawn
+      # needs no explicit harness and no second model request. An explicit
+      # --model/--effort still wins, and when no concrete profile comes back the
+      # pre-existing backstop below stays in force.
+      AUTO_PROFILE=''
+      if fm_spawn_typed_dispatch_enabled; then
+        AUTO_PROFILE=$(fm_spawn_typed_dispatch_profile "$DATA/$ID/brief.md") || AUTO_PROFILE=''
+      fi
+      if [ -z "$AUTO_PROFILE" ]; then
+        echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+        exit 1
+      fi
+      IFS='|' read -r HARNESS AUTO_MODEL AUTO_EFFORT <<<"$AUTO_PROFILE"
+      [ "$MODEL_SET" -eq 1 ] || MODEL=$AUTO_MODEL
+      [ "$EFFORT_SET" -eq 1 ] || EFFORT=$AUTO_EFFORT
+      harness_src='config/crew-dispatch.json (two-stage Jev router)'
+      echo "dispatch: config/crew-dispatch.json resolved $HARNESS ${MODEL:-default}/${EFFORT:-default} from the task brief" >&2
+    else
+      HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
+      harness_src='config/crew-harness'
     fi
-    HARNESS=$("$FM_ROOT/bin/fm-harness.sh" crew)
-    harness_src='config/crew-harness'
   fi
   LAUNCH=$(launch_template "$HARNESS" "$KIND") || {
     echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2

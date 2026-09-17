@@ -109,6 +109,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-quota-axi-lib.sh`    | Shared `quota-axi` compatibility floor and quota snapshot schema validation           |
 | `fm-quota-choose.sh`     | Choose the first candidate with known positive quota from an ordered harness:model list |
 | `fm-jev-finding.sh`      | Advisory, fail-safe severity classification of one review finding, to feed one correction batch ([jev-guard.md](jev-guard.md)) |
+| `fm-jev-class.sh`        | Classify a task's intelligence class and lowest adequate effort over the shared Jev core ([jev-class-router.md](jev-class-router.md)) |
 | `fm-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `fm-jev-guard.sh`        | Advisory, fail-safe action classification over the shared Jev core ([jev-guard.md](jev-guard.md)) |
 | `fm-jev-blocker.sh`      | Advisory, fail-safe classification of one worker block over the shared Jev core ([jev-guard.md](jev-guard.md)) |

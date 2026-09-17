@@ -1,9 +1,23 @@
 #!/usr/bin/env bash
 # fm-dispatch-resolve.sh - resolve one concrete crewmate or scout dispatch
-# profile from a task brief with typesafe.ai's System One model (Jev), opt-in.
+# profile from a task brief with typesafe.ai's System One model (Jev), opt-in,
+# or from a Jev intelligence class when one is supplied.
 #
 # Usage:
 #   fm-dispatch-resolve.sh <brief-file> [--project <name>]
+#   fm-dispatch-resolve.sh <brief-file> --class <name> [--effort <low|medium|high>]
+#
+# Class path: --class names the two-stage router's first-stage answer
+#   (volume_cheap, standard_impl, or hard_reasoning) as bin/fm-jev-class.sh
+#   emits it. When the canonical config declares that class, this tool resolves
+#   the class's own declared profile set through every gate below and makes NO
+#   model request at all, so the class stage costs one call instead of two. An
+#   undeclared class (or a config without the key) falls through to the rule
+#   match, which is the documented precedence: an explicit captain instruction,
+#   then a confident Jev class, then the best-fit rule, then default, then the
+#   static harness. --effort carries the class stage's second answer and is
+#   emitted only for a chosen profile that declares no effort of its own, which
+#   is the same precedence at profile level.
 #
 # Opt-in gate: TYPESAFE_API_KEY non-empty in this process environment, else a
 #   TYPESAFE_API_KEY= line in $FM_HOME/.env read with fmx_env_get, the same
@@ -36,12 +50,14 @@
 #     profile: --harness <h> [--model <m>] [--effort <e>]     (status clear only)
 #   clear     -> pass the profile line to fm-spawn.sh unless you state a reason to override
 #   ambiguous -> confidence below the floor; decide as today from the probabilities
+#                (a class path has no model confidence and never returns this)
 #   escalate  -> the rule requires captain approval, no candidate is rankable, or a genuine tie
 #   error     -> API, network, response, or quota-axi failure; decide as today
 #   Every outcome exits 0 so an intake is never blocked by this tool.
 #   Exit 2 only for a usage or configuration error (unreadable brief, an
-#   existing unreadable rules file, malformed rules, or missing jq), which is
-#   actionable, never selected around.
+#   existing unreadable rules file, malformed rules or a malformed `classes`
+#   block, an unknown --class or --effort value, --effort without --class, or
+#   missing jq), which is actionable, never selected around.
 #
 # Environment:
 #   TYPESAFE_API_KEY is the only resolver-specific environment setting.
@@ -74,10 +90,14 @@ TS_MODEL=jev-latest
 TS_BASE=https://api.typesafe.ai
 TS_TIMEOUT=5
 DEFAULT_WHEN="No listed rule applies to this task."
+# The class vocabulary is owned by bin/fm-jev-class.sh, which is the only
+# producer of these names; this tool consumes the key and never parses prose.
+CLASS_KEYS="volume_cheap standard_impl hard_reasoning"
+EFFORT_KEYS="low medium high"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 no_rules() {
-  printf 'dispatch-resolve:\n  status: escalate\n  reason: no rules to match\n'
+  printf 'dispatch-resolve:\n  status: escalate\n  reason: %s\n' "${1:-no rules to match}"
   exit 0
 }
 usage() {
@@ -89,14 +109,31 @@ usage() {
 }
 
 BRIEF='' PROJECT='' RULES_PATH="$CONFIG/crew-dispatch.json" RULES=''
+CLASS_REQUESTED='' EFFORT_REQUESTED=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) [ $# -ge 2 ] || die "--project needs a value"; PROJECT=$2; shift 2 ;;
+    --class) [ $# -ge 2 ] || die "--class needs a value"; CLASS_REQUESTED=$2; shift 2 ;;
+    --effort) [ $# -ge 2 ] || die "--effort needs a value"; EFFORT_REQUESTED=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     -*) die "unknown flag $1" ;;
     *) [ -z "$BRIEF" ] || die "one brief file only"; BRIEF=$1; shift ;;
   esac
 done
+
+if [ -n "$CLASS_REQUESTED" ]; then
+  case " $CLASS_KEYS " in
+    *" $CLASS_REQUESTED "*) ;;
+    *) die "--class must be one of ${CLASS_KEYS// /, }" ;;
+  esac
+fi
+if [ -n "$EFFORT_REQUESTED" ]; then
+  [ -n "$CLASS_REQUESTED" ] || die "--effort requires --class (it is the class stage's second answer)"
+  case " $EFFORT_KEYS " in
+    *" $EFFORT_REQUESTED "*) ;;
+    *) die "--effort must be one of ${EFFORT_KEYS// /, }" ;;
+  esac
+fi
 
 # ---- opt-in gate ---------------------------------------------------------------
 if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
@@ -110,7 +147,12 @@ fi
 # ---- inputs --------------------------------------------------------------------
 [ -n "$BRIEF" ] || die "brief file required (see --help)"
 [ -r "$BRIEF" ] || die "brief file not readable: $BRIEF"
-[ -e "$RULES_PATH" ] || [ -L "$RULES_PATH" ] || no_rules
+if [ ! -e "$RULES_PATH" ] && [ ! -L "$RULES_PATH" ]; then
+  if [ -n "$CLASS_REQUESTED" ]; then
+    no_rules "class $CLASS_REQUESTED is undeclared (no config file) and no rules to match"
+  fi
+  no_rules
+fi
 [ -r "$RULES_PATH" ] || die "rules file not readable: $RULES_PATH"
 command -v jq >/dev/null 2>&1 || die "jq required"
 RULES=$(mktemp) || die "mktemp failed"
@@ -173,6 +215,14 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   elif has("default") and duplicate_profiles(profiles(.default)) then "default must not contain duplicate harness, model, and effort profiles"
   elif has("default") and any(profiles(.default)[]; (verified(.harness) | not)) then "each default profile must name a verified harness"
   elif has("default") and any(profiles(.default)[]; (effort_ok(.harness; .model; .effort) | not)) then "each default profile effort must be supported by its harness and model"
+  elif has("classes") and (.classes | type) != "object" then "classes must be an object"
+  elif [(.classes // {}) | keys[]? | select(. != "volume_cheap" and . != "standard_impl" and . != "hard_reasoning")] | length > 0 then
+    "unknown class: " + ([(.classes // {}) | keys[]? | select(. != "volume_cheap" and . != "standard_impl" and . != "hard_reasoning")] | unique | join(", "))
+  elif any((.classes // {})[]; (profiles(.) | length) == 0) then "each class needs a profile object or non-empty profile array"
+  elif any((.classes // {})[] | profiles(.)[]; profile_bad(.)) then "each class profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
+  elif any((.classes // {})[]; duplicate_profiles(profiles(.))) then "each class must not contain duplicate harness, model, and effort profiles"
+  elif any((.classes // {})[] | profiles(.)[]; (verified(.harness) | not)) then "each class profile must name a verified harness"
+  elif any((.classes // {})[] | profiles(.)[]; (effort_ok(.harness; .model; .effort) | not)) then "each class profile effort must be supported by its harness and model"
   else empty end
 ' "$RULES" 2>/dev/null) || die "malformed rules file: $RULES_PATH (not JSON)"
 [ -z "$rules_err" ] || die "malformed rules file: $RULES_PATH - $rules_err"
@@ -180,7 +230,8 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
 missing_provider=$(jq -r '
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
   ((.rules // [])[] | profiles(.use)[] | select(has("provider") | not) | "use\t\(.harness)"),
-  (profiles(.default // null)[] | select(has("provider") | not) | "default\t\(.harness)")
+  (profiles(.default // null)[] | select(has("provider") | not) | "default\t\(.harness)"),
+  ((.classes // {})[]? | profiles(.)[]? | select(has("provider") | not) | "class\t\(.harness)")
 ' "$RULES" | while IFS=$'\t' read -r location harness; do
   if ! fm_quota_single_provider_for_harness "$harness" >/dev/null; then
     printf '%s\t%s\n' "$location" "$harness"
@@ -200,10 +251,20 @@ while IFS= read -r h; do
   PMAP=$(jq -c --arg h "$h" --arg p "$p" '. + {($h): (if $p == "" then null else $p end)}' <<<"$PMAP")
 done < <(jq -r '
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
-  ([((.rules // [])[]) | profiles(.use)[]] + profiles(.default // null))
+  ([((.rules // [])[]) | profiles(.use)[]] + profiles(.default // null) + [((.classes // {})[]? | profiles(.)[]?)])
   | map(.harness) | unique | .[]' "$RULES")
 
 RULE_COUNT=$(jq -r '(.rules // []) | length' "$RULES")
+
+# A requested class is usable only when the canonical config declares profiles
+# for it; the full `classes` block was validated above, so an undeclared class
+# falls through to the rule match exactly as the documented precedence says.
+CLASS_DECLARED=0
+if [ -n "$CLASS_REQUESTED" ]; then
+  if jq -e --arg c "$CLASS_REQUESTED" '((.classes // {})[$c] // null) != null' "$RULES" >/dev/null 2>&1; then
+    CLASS_DECLARED=1
+  fi
+fi
 
 emit_error() {
   local reason=$1
@@ -212,7 +273,10 @@ emit_error() {
   exit 0
 }
 
-if [ "$RULE_COUNT" -eq 0 ]; then
+if [ "$RULE_COUNT" -eq 0 ] && [ "$CLASS_DECLARED" -eq 0 ]; then
+  if [ -n "$CLASS_REQUESTED" ]; then
+    no_rules "class $CLASS_REQUESTED is undeclared and no rules to match"
+  fi
   no_rules
 fi
 
@@ -220,6 +284,12 @@ RESP_FILE=$(mktemp) || die "mktemp failed"
 QUOTA=$(mktemp) || { rm -f "$RESP_FILE"; die "mktemp failed"; }
 trap 'rm -f "$RULES" "$RESP_FILE" "$QUOTA"' EXIT
 LAT_MS=null
+if [ "$CLASS_DECLARED" -eq 1 ]; then
+  # The class path asks the model nothing: the first stage already classified
+  # the task, so this stage only has to intersect the declared profile set with
+  # quota. No curl, no request body, and no response to validate.
+  printf 'null\n' > "$RESP_FILE" || emit_error "could not stage the class result"
+else
 command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   REQUEST=$(jq -n --rawfile brief "$BRIEF" --arg project "$PROJECT" --arg model "$TS_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
@@ -258,6 +328,7 @@ jq -e --slurpfile rules "$RULES" '
        (.usage.input_tokens | type) == "number" and
        (.usage.output_tokens | type) == "number"))' \
   "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
+fi
 
 # ---- quota evidence: one quota-axi --json snapshot -----------------------------
 command -v quota-axi >/dev/null 2>&1 || emit_error "quota-axi not installed"
@@ -265,9 +336,11 @@ quota-axi --json > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
 fm_quota_json_valid < "$QUOTA" || emit_error "quota-axi --json returned an invalid snapshot"
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
-RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
+RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg class "$CLASS_REQUESTED" --arg forced_effort "$EFFORT_REQUESTED" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" '
   ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
+  ($class) as $cname |
+  (if $cname == "" then null else (($cfg.classes // {})[$cname] // null) end) as $class_value |
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
   def prov($p): ([$q.providers[] | select(.provider == $p)] | first) // null;
   def rows($p): (prov($p) | .quotaSemantics.effectiveAvailability // []);
@@ -333,7 +406,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
       end
     end;
   ($a.choice) as $choice |
-  (if ($choice | test("^rule_[1-9][0-9]*$"))
+  (if ($choice | type) == "string" and ($choice | test("^rule_[1-9][0-9]*$"))
    then ($choice | ltrimstr("rule_") | tonumber)
    else null end) as $rule_number |
   (if $choice == "default" then null
@@ -344,21 +417,25 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    elif $rule == null then profiles($cfg.default // null)
    else profiles($rule.use)
    end) as $answer_use |
-  (if $choice != "default" and $rule == null then {invalid: "rule \($choice) is not in the rules file"}
+  (if $class_value != null then
+     {source: ("class:" + $cname), use: profiles($class_value), note: "the Jev class selected its declared profile set"}
+   elif $choice != "default" and $rule == null then {invalid: "rule \($choice) is not in the rules file"}
    elif $rule == null then {source: "default", use: profiles($cfg.default // null), note: "no rule matched"}
    elif ($rule.approval // "") == "captain" then {source: $choice, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
    elif $rule_floor_state == "unknown" then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.provider)/\($rule.floor.scope) is unverifiable"}
    elif $rule_floor_state == "below"
      then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
-  {
-    model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
-    rule: $choice,
-    rule_when: (if $rule == null then $none_criterion else $rule.when end | .[0:60]),
-    confidence: $a.confidence, probabilities: $a.probabilities
-  } as $ev |
+  (if $class_value != null then
+     {class: $cname, model: null, latency_ms: null, tokens: null}
+   else
+     {model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
+      rule: $choice,
+      rule_when: (if $rule == null then $none_criterion else $rule.when end | .[0:60]),
+      confidence: $a.confidence, probabilities: $a.probabilities}
+   end) as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
-  elif $a.confidence < ($floor | tonumber) then
+  elif ($class_value == null and $a.confidence < ($floor | tonumber)) then
     $ev + {status: "ambiguous", reason: "confidence \($a.confidence) below floor \($floor)", candidates: ($answer_use | map(evaluate(.)))}
   elif $sel.escalate then
     $ev + {status: "escalate", reason: $sel.escalate, candidates: ($answer_use | map(evaluate(.)))}
@@ -371,8 +448,14 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     else
       ($elig | max_by(.spendPriority)) as $best |
       ([$elig[] | select(.spendPriority == $best.spendPriority)] | length) as $ties |
+      (if $forced_effort != "" and $best.profile.effort == null
+       then {effort_applied: $forced_effort}
+       else {} end) as $effort_fill |
       if $ties > 1 then $ev + {status: "escalate", reason: "genuine spendPriority tie", note: $sel.note, candidates: $cands}
-      else $ev + {status: "clear", note: $sel.note, candidates: $cands, chosen: $best}
+      else $ev + {status: "clear", note: $sel.note, candidates: $cands, chosen: ($best + $effort_fill)}
+        + (if ($effort_fill | length) > 0 then
+             {effort_note: "effort \($forced_effort) applied because the chosen profile declares none"}
+           else {} end)
         + (if ($unranked | length) > 0 then
              {unranked_note: "\($unranked | length) eligible candidate(s) unranked (\([$unranked[].provider] | unique | join(", ")))"}
            else {} end)
@@ -386,11 +469,13 @@ TEXT=$(jq -r '
   def shell_arg: flat | @sh;
   "dispatch-resolve:",
   "  status: \(.status | flat)",
+  (if .class then "  class: \(.class | flat)" else empty end),
   "  model: \(show(.model))   latency_ms: \(show(.latency_ms))   tokens: \(show(.tokens.input_tokens))/\(show(.tokens.output_tokens))",
-  "  rule: \(.rule | flat) (\(.rule_when | flat))   confidence: \(.confidence | flat)",
-  "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))",
+  (if .rule then "  rule: \(.rule | flat) (\(.rule_when | flat))   confidence: \(.confidence | flat)" else empty end),
+  (if .probabilities then "  probabilities: \([.probabilities | to_entries[] | "\(.key | flat)=\(.value | flat)"] | join(" "))" else empty end),
   (if .reason then "  reason: \(.reason | flat)" else empty end),
   (if .note then "  note: \(.note | flat)" else empty end),
+  (if .effort_note then "  note: \(.effort_note | flat)" else empty end),
   (if .unranked_note then "  note: \(.unranked_note | flat)" else empty end),
   (.candidates[]? | "  candidate: \(.profile.harness | flat):\(show(.profile.model))"
       + (if .provider then "  provider=\(.provider | flat)" else "" end)
@@ -399,6 +484,8 @@ TEXT=$(jq -r '
       + "  -> " + (if .unranked then "eligible, unranked: \(.reason | flat): disclosed uncertainty" elif .eligible then "eligible" else "not eligible: \(.reason | flat)" end)),
   (if .chosen then "  profile: --harness \(.chosen.profile.harness | shell_arg)"
       + (if .chosen.profile.model then " --model \(.chosen.profile.model | shell_arg)" else "" end)
-      + (if .chosen.profile.effort then " --effort \(.chosen.profile.effort | shell_arg)" else "" end) else empty end)' <<<"$RESULT") || emit_error "output rendering failed"
+      + (if .chosen.profile.effort then " --effort \(.chosen.profile.effort | shell_arg)"
+         elif .chosen.effort_applied then " --effort \(.chosen.effort_applied | shell_arg)"
+         else "" end) else empty end)' <<<"$RESULT") || emit_error "output rendering failed"
 printf '%s\n' "$TEXT"
 exit 0

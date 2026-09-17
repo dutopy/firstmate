@@ -415,7 +415,7 @@ Every claude launch's inline `--settings` JSON also carries `"attribution":{"com
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.
 The shell scripts do not match those rules; firstmate chooses the best matching rule with judgment, resolves its profile object or array under the operating contract in `AGENTS.md` section 4 and `quota-array-dispatch`, and passes only concrete `--harness`, `--model`, and `--effort` flags to `fm-spawn.sh`.
-When the file exists, `fm-spawn.sh` enforces that contract by refusing crewmate and scout spawns that lack an explicit harness (`--harness`, a positional adapter, or a raw launch command).
+When the file exists, `fm-spawn.sh` enforces that contract by refusing crewmate and scout spawns that lack an explicit harness (`--harness`, a positional adapter, or a raw launch command), unless the two-stage typed intake below resolves one automatically from the task's brief.
 Batch spawns satisfy the same requirement with a shared `--harness`.
 Secondmate spawns are exempt and still resolve through `config/secondmate-harness` and its optional model and effort tokens.
 This section is the single owner of the canonical schema and its per-field semantics.
@@ -423,6 +423,11 @@ This section is the single owner of the canonical schema and its per-field seman
 
 ```json
 {
+  "classes": {
+    "volume_cheap": { "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>" },
+    "standard_impl": [{ "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>" }],
+    "hard_reasoning": { "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>" }
+  },
   "rules": [
     {
       "when": "<natural-language condition describing a kind of task>",
@@ -442,6 +447,9 @@ This section is the single owner of the canonical schema and its per-field seman
 
 Per rule, `when` and `use` are required; the top-level `rules` array itself may be absent or empty for a default-only configuration.
 Both `use` and the optional top-level `default` accept either one profile object or a non-empty array of profile objects.
+The optional top-level `classes` object maps each intelligence class named by [the class router](jev-class-router.md) - `volume_cheap`, `standard_impl`, and `hard_reasoning` - to the profile set that class dispatches through, and its values accept the same object-or-array profile forms as `default`.
+The class vocabulary is closed and owned by `bin/fm-jev-class.sh`; any other key is reported as an unknown class, and `bin/fm-jev-class.sh --profiles` performs that lookup in code so no script matches natural-language rules to reach a class profile set.
+`quota-array-dispatch` remains the sole availability and economics gate for whichever profile set is selected, and the class router's precedence above `rules` and `default` is owned by [the class-router contract](jev-class-router.md).
 The single-object form stays fully backward-compatible, and every profile needs `harness`.
 Profile `model` and `effort` fields and rule `why` are optional.
 Rule `approval` and `floor`, and profile `provider` and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
@@ -464,10 +472,11 @@ Every profile array is an implicit quota-aware choice resolved through `quota-ar
 If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.
 Except for `ultra`, which refuses unsupported profiles under the native-effort contract above, an effort value the chosen harness does not accept is recorded as `effort=` in task meta for traceability but omitted from the launch flags.
 Bootstrap reports unsupported harness/model/effort combinations as a `CREW_DISPATCH` diagnostic when they are visible in the file.
-See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a starting point to copy into local `config/crew-dispatch.json`; its Pi default declares the `claude` provider required for typed resolution of that Anthropic model.
+See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a starting point to copy into local `config/crew-dispatch.json`; its Pi default declares the `claude` provider required for typed resolution of that Anthropic model, and its `classes` block declares one profile set per intelligence class.
 When the file exists, bootstrap validates it with `jq`.
-Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
+Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, one fact for the optional default profile set, and one fact per declared class.
 Malformed JSON, malformed rules, an empty or malformed profile array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
+The same diagnostic covers a `classes` value that is not an object, an unknown class key, a class without a profile object or non-empty profile array, and a class profile whose harness, model, or effort is unusable.
 While typed resolution is active, malformed `approval`, `floor`, and present `provider` declarations receive the same diagnostic; without the key those inert declarations preserve the pre-existing bootstrap behavior.
 Missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
 While the file remains present, no crewmate or scout spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
@@ -480,18 +489,28 @@ It is off unless `TYPESAFE_API_KEY` is non-empty in the calling environment or t
 Off means one `dispatch-resolve: off` line on stderr, nothing on stdout, exit 0, and no network call, so firstmate dispatches exactly as it does without the tool.
 This section is the single owner of the tool's operator contract; the script header owns its exact flags and output lines, and "Crew dispatch profiles" above owns the declared rule and profile fields it applies.
 Rules come only from the effective home's `config/crew-dispatch.json`; `FM_CONFIG_OVERRIDE` selects the config directory for tests and specialized setup like the other scripts.
+This resolver reads `rules` and `default` for its rule-match path and the `classes` block for its class path, and it validates every block it consumes against the canonical schema.
 
 ```sh
 bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name>        # TOON block on stdout
+bin/fm-dispatch-resolve.sh data/<id>/brief.md --class volume_cheap --effort low
 ```
 
 Firstmate invokes the resolve path directly after writing the brief, without a preflight; the absent-key off line is handled exactly like every other non-clear outcome.
+With `--class`, it carries the class stage's answer from [`bin/fm-jev-class.sh`](jev-class-router.md) instead of asking the model: when the canonical config declares that class, the resolver resolves the class's own declared profile set through the same declared gates, quota evidence, and `spendPriority` argmax, and makes no model request at all, so the class stage costs one call rather than two.
+An undeclared class, or a home whose config declares no `classes` block, falls through to the rule match, which is the documented precedence: an explicit captain instruction, then a confident Jev class, then the best-fit rule, then `default`, then the static harness.
+`--effort` carries the class stage's second answer and requires `--class`; it is emitted only for a chosen profile that declares no effort of its own, and a declared profile effort still wins, which is the same precedence at profile level.
+An effort the chosen harness does not accept is omitted from the launch flags by `fm-spawn.sh`, exactly as a declared one is.
+The class path still requires the typed-resolution opt-in above; because it makes no request at all, it needs no `curl` and the key never reaches a child process on that path.
+When that opt-in is active and the canonical config declares at least one class, `bin/fm-spawn.sh` runs the two-stage router itself for a crewmate or scout spawn that carries no explicit harness: it classifies the task's own brief with `bin/fm-jev-class.sh`, passes the class and effort to this resolver, and launches the profile that comes back.
+An explicit harness, model, or effort always wins over that automatic path, a classifier fallback returns here to the rule and `default` path with its flag reported on stderr, and no concrete profile leaves the spawn's pre-existing refusal in force, so dispatch is never silently skipped and never blocked by the classifier.
 When on and at least one rule exists, the tool sends the project name and the whole brief as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, or approvals.
 An absent rules file, a default-only file, or `rules: []` returns the non-clear reason `no rules to match` without a model or quota request, leaving firstmate's existing routing in control; an existing but unreadable or malformed rules file, including a broken symlink, remains an actionable exit 2 configuration error.
 Everything after the answer runs in code: the confidence floor, the matched rule's `approval` and `floor`, each candidate's `provider` and `floor`, every applicable account-wide and model/product row from one `quota-axi --json` snapshot, and the numeric `spendPriority` argmax over candidates using each candidate's limiting row.
 Known applicable rows from a provider with partial quota semantics remain rankable; rows whose own status is not known remain unrankable.
 Any applicable `exhausted_now` row or known zero bound makes that candidate ineligible, and a known profile-floor shortfall does the same before unrelated quota uncertainty is considered.
 Missing or nonnumeric `spendPriority` evidence is never ranked, and every candidate is printed beside its evidence or the reason it was not rankable, including on ambiguous and approval-gated outcomes that emit no profile.
+A class path emits no `rule:`, `confidence:`, or `probabilities:` line and never returns `ambiguous`, because the first stage already supplied the class; it prints one `class:` line instead, and its `model:`, `latency_ms:`, and `tokens:` fields stay empty to show that no request was made.
 On the opted-in path, duplicate concrete profiles with the same harness, model, and effort inside one rule or the default array are configuration errors rather than ties.
 The result is one of `clear` (a `profile:` line ready for `fm-spawn.sh`), `ambiguous` (confidence below the floor), `escalate` (an approval-gated rule, unverifiable rule floor, nothing rankable, or a genuine tie), or `error` (API, network, malformed response metadata, rendering, or quota-axi failure), and every one of them exits 0.
 Response probabilities must contain exactly every offered choice, use numeric values from 0 through 1, and sum to approximately 1 within 0.01.

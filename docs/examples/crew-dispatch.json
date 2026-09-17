@@ -1,4 +1,20 @@
 {
+  "classes": {
+    "volume_cheap": {
+      "harness": "pi",
+      "model": "zai/glm-5.3-flash",
+      "effort": "low",
+      "provider": "zai"
+    },
+    "standard_impl": [
+      { "harness": "pi", "model": "openai-codex/gpt-5.6-luna", "effort": "medium", "provider": "codex" },
+      { "harness": "pi", "model": "zai/glm-5.3-flash", "effort": "medium", "provider": "zai" }
+    ],
+    "hard_reasoning": [
+      { "harness": "claude" },
+      { "harness": "codex", "model": "gpt-5.6-sol", "effort": "high" }
+    ]
+  },
   "rules": [
     {
       "when": "The task depends on fresh news, current events, live public facts, or recent market and product changes.",
