@@ -177,6 +177,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/harness-adapters/references/harness/agy.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/references/harness/claude.md",
       "audience": "agent-runtime"
     },
@@ -205,6 +209,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/harness-adapters/references/harness/omp.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/references/harness/opencode.md",
       "audience": "agent-runtime"
     },
@@ -222,6 +230,10 @@
     },
     {
       "path": ".agents/skills/project-management/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/quiet/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -361,6 +373,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/jev-guard.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/orca-backend.md",
       "audience": "operator-current"
     },
@@ -405,6 +421,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": "docs/supervision-protocols/omp.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": "docs/supervision-protocols/opencode.md",
       "audience": "agent-runtime"
     },
@@ -429,7 +449,15 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/verification/agy.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/dispatch-auth.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/dispatch-resolve.md",
       "audience": "maintainer-verification"
     },
     {
