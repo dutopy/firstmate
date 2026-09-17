@@ -36,12 +36,16 @@
 #                        reviewer to judge, and is never dropped.
 #
 # Fail-safe: every path that produced no usable severity - confidence below 0.9,
-#   a missing or rejected API key, any API or network error, a malformed success
-#   response, an unreadable shared core, an unusable FM_JV_FINDING_TIMEOUT value,
-#   or the wall-clock bound itself (FM_JV_FINDING_TIMEOUT, default 20s) -
-#   resolves to severity important, flag
+#   a confidence the model reports outside the finite 0..1 range (non-finite,
+#   negative, or above 1), a missing or rejected API key, any API or network
+#   error, a malformed success response, an unreadable shared core, an unusable
+#   FM_JV_FINDING_TIMEOUT value, or the wall-clock bound itself
+#   (FM_JV_FINDING_TIMEOUT, default 20s) - resolves to severity important, flag
 #   needs_review, exit 0, with the specific cause named in `reason`. There is no
-#   silent drop: every finding comes back with a typed severity to batch.
+#   silent drop: every finding comes back with a typed severity to batch, and the
+#   emitted confidence is always a finite number in [0, 1] in strict JSON, so a
+#   NaN or Infinity answer can never slip past the confidence floor and can never
+#   reach stdout.
 #
 # Exit: 0 for every classified outcome, including every fail-safe. 2 for a usage
 #   error: an unknown flag, a missing flag value, missing python3, an unreadable
@@ -125,6 +129,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 import signal
 import sys
@@ -199,14 +204,37 @@ class UsageError(Exception):
     """A caller-side mistake: nothing on stdout, exit 2, no network call."""
 
 
+def valid_confidence(value):
+    """Return the model's confidence as a float in [0, 1], or None when the
+    answer cannot be trusted: non-numeric, non-finite, negative, or above 1.
+
+    This wrapper owns its own boundary validation instead of trusting the shared
+    core's gate, so a NaN, Infinity, or out-of-range confidence is never compared
+    as if it passed the floor (NaN compares false against every bound) and is
+    never emitted as a non-JSON literal.
+    """
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+        return None
+    return confidence
+
+
 def emit(severity, confidence, flag, reason):
+    safe = valid_confidence(confidence)
     payload = {
         "severity": severity,
-        "confidence": round(float(confidence), 4),
+        "confidence": round(safe if safe is not None else 0.0, 4),
         "reason": reason[:400],
         "flag": flag,
     }
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    # allow_nan=False keeps the output strict JSON: no NaN or Infinity literal
+    # can ever be written, whatever a future change hands to this function.
+    sys.stdout.write(
+        json.dumps(payload, ensure_ascii=False, allow_nan=False) + "\n"
+    )
 
 
 class _Deadline(BaseException):
@@ -280,8 +308,16 @@ def classify(core, payload):
         block_options=(),
         instructions=INSTRUCTIONS,
     )
-    confidence = float(decision.confidence)
+    confidence = valid_confidence(decision.confidence)
     route = decision.route
+    if confidence is None:
+        return (
+            DEFAULT_SEVERITY,
+            0.0,
+            DEFAULT_FLAG,
+            "invalid confidence %r; keeping the default severity"
+            % (decision.confidence,),
+        )
     if decision.verdict is core.Verdict.PROCEED and route in SEVERITY_FLAGS:
         return route, confidence, SEVERITY_FLAGS[route], "ok"
     if route is not None and route not in SEVERITY_FLAGS:

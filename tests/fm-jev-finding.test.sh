@@ -120,6 +120,39 @@ assert_one_call() {
   assert_equals 1 "$count" "$1: exactly one System One call"
 }
 
+# The emitted confidence must always be a finite JSON number in [0, 1], and the
+# output must always be strict JSON: NaN and Infinity are not JSON literals, so
+# the parse must reject them as constants rather than accepting them leniently.
+assert_strict_confidence() {
+  local label=$1 result
+  result=$(python3 - "$TOOL_OUT" <<'PY'
+import json
+import math
+import sys
+
+
+def reject_constant(name):
+    raise ValueError("non-strict constant %s" % name)
+
+
+try:
+    payload = json.loads(sys.argv[1], parse_constant=reject_constant)
+except ValueError:
+    sys.stdout.write("non-strict")
+    raise SystemExit(0)
+value = payload.get("confidence")
+ok = (
+    isinstance(value, (int, float))
+    and not isinstance(value, bool)
+    and math.isfinite(value)
+    and 0.0 <= value <= 1.0
+)
+sys.stdout.write("ok" if ok else "out-of-range")
+PY
+)
+  assert_equals 'ok' "$result" "$label: the confidence is a finite number in [0, 1] in strict JSON"
+}
+
 # The brief's contract is one atomic forced-choice question per finding and
 # never a state list, so the request body itself is checked: exactly one
 # question, keyed `route`, with the three severities as its only options, and a
@@ -197,6 +230,23 @@ assert_equals '"needs_review"' "$(json_get "$TOOL_OUT" flag)" "an uncertain find
 assert_contains "$(json_get "$TOOL_OUT" reason)" 'below threshold' "the reason names the confidence gap"
 assert_not_contains "$(json_get "$TOOL_OUT" flag)" 'fix_now' "an uncertain finding is never promoted to blocking"
 pass "low confidence: important plus needs_review, never a drop"
+
+# --- a non-finite or out-of-range confidence never bypasses the floor --------
+# NaN compares false against every bound and Infinity or a value above 1
+# compares above the floor, so each must resolve to the default severity with a
+# valid in-range confidence instead of to the model's blocking answer.
+for boundary in nan inf -0.1 1.1; do
+  reset_log
+  start_fake --choice blocking --confidence "$boundary"
+  run_finding "$API_KEY" "$HOME_DIR" 20 "$FINDING_PAYLOAD" -
+  reap_fake
+  assert_typed_output "confidence $boundary"
+  assert_equals '"important"' "$(json_get "$TOOL_OUT" severity)" "confidence $boundary keeps the default severity"
+  assert_equals '"needs_review"' "$(json_get "$TOOL_OUT" flag)" "confidence $boundary is flagged for review"
+  assert_strict_confidence "confidence $boundary"
+  assert_one_call "confidence $boundary"
+  pass "confidence $boundary: important plus needs_review, in-range confidence, exit 0"
+done
 
 # --- an API error falls back to the default severity with a flag -------------
 reset_log

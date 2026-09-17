@@ -26,6 +26,7 @@ It never sends a list: each call asks the model one atomic forced-choice questio
 Every path that produced no usable severity resolves to severity `important`, flag `needs_review`, exit 0, with the cause named in `reason`:
 
 - confidence below 0.9;
+- a confidence the model reports outside the finite 0..1 range (non-finite, negative, or above 1);
 - a missing or rejected API key;
 - any API or network error;
 - a malformed success response;
@@ -37,6 +38,9 @@ Exit 2 is reserved for a usage error: an unknown flag, a missing flag value, mis
 A usage error prints nothing on stdout and makes no network call.
 This is the deliberate difference from the wake-side classifiers: a usage error is a caller mistake, never a finding's severity, so an empty or malformed finding is reported loudly to the caller instead of being given a default severity.
 There is no silent drop either way: a classified path always exits 0 with a typed severity, and a refused path exits 2 with the caller's mistake named.
+
+The wrapper validates the confidence boundary itself rather than trusting the shared gate, so a non-finite or out-of-range answer can never compare as passing.
+The emitted confidence is always a finite number in [0, 1] and the output is always strict JSON, so no `NaN` or `Infinity` literal can reach stdout.
 
 ## The finding severity classifier
 
@@ -84,5 +88,5 @@ A severity is a batching hint for the single correction round, nothing more.
 ## Verification
 
 `tests/fm-jev-finding.test.sh` drives the public interface against `tests/assets/jev-finding-fake-typesafe.py`, a fake System One server bound to loopback on an ephemeral port.
-It covers the three severities, the one-atomic-question request shape, a low-confidence answer that must fall back to `important` plus `needs_review`, an API error, a malformed response, an unexpected severity, the wall-clock bound, a missing key, the `.env` key fallback, file input, and every usage error (invalid JSON, empty input, an empty finding object, a JSON list, and an unknown flag).
+It covers the three severities, the one-atomic-question request shape, a low-confidence answer that must fall back to `important` plus `needs_review`, a non-finite or out-of-range confidence (`NaN`, `Infinity`, `-0.1`, `1.1`) that must resolve to the same default with an in-range numeric confidence, an API error, a malformed response, an unexpected severity, the wall-clock bound, a missing key, the `.env` key fallback, file input, and every usage error (invalid JSON, empty input, an empty finding object, a JSON list, and an unknown flag).
 No case reaches the real network, and each classification case asserts exactly one call.

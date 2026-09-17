@@ -90,7 +90,10 @@ def main() -> int:
                 },
                 "usage": {"input_tokens": 11, "output_tokens": 4},
             }
-            self._respond(200, json.dumps(answer).encode("utf-8"))
+            # allow_nan keeps the fake deliberately non-strict: a test can point
+            # --confidence at NaN or Infinity and assert that the classifier
+            # refuses to pass that answer through.
+            self._respond(200, json.dumps(answer, allow_nan=True).encode("utf-8"))
 
     server = HTTPServer(("127.0.0.1", 0), Handler)
     with open(args.port_file, "w", encoding="utf-8") as fh:
