@@ -7,9 +7,10 @@
 # classes, a low-confidence answer in the safe class that must never stay
 # routine, a low-confidence answer in the unsafe class, an API error, a
 # malformed success response, an unexpected class, NaN and Infinity (plus
-# out-of-range) confidences, invalid input JSON, the wall-clock fallback, a
-# missing key, the .env key fallback (and the environment winning over it),
-# file input, the read-only advisory promise, and the usage errors. Every
+# out-of-range) confidences, invalid input JSON, the wall-clock fallback, an
+# invalid timeout that must not disable the wall-clock bound, a missing key, the
+# .env key fallback (and the environment winning over it), file input, the
+# read-only advisory promise, and the usage errors. Every
 # request goes to that loopback server, so no case reaches the real network,
 # and each classification case asserts exactly one System One call.
 #
@@ -339,6 +340,30 @@ assert_fail_safe "timeout"
 assert_contains "$(json_get "$TOOL_OUT" reason)" 'timeout' "the reason names the timeout"
 [ "$elapsed" -lt 20 ] || fail "the wall-clock bound did not fire (elapsed ${elapsed}s)"
 pass "timeout: fail-safe inside the bound, exit 0"
+
+# --- an invalid timeout is a fail-safe, never an unbounded wait --------------
+# The reported case is NaN: `nan > 0` is false, so a bound that reached the
+# timer unvalidated would leave the call to the shared core's own retry path,
+# and Infinity or an enormous finite value overflows the timer instead. The fake
+# server holds every answer for 30s here, so a regression that let the call
+# proceed would show up as a run far beyond the bound rather than only as a
+# wrong reason string.
+for bad in nan inf -inf 1e309 1e300 0 -1 abc; do
+  reset_log
+  start_fake --choice routine_reversible --confidence 0.97 --delay 30
+  started=$(date +%s)
+  run_tool "$API_KEY" "$HOME_DIR" "$bad" "$ACTION_PAYLOAD" -
+  elapsed=$(( $(date +%s) - started ))
+  reap_fake
+  assert_typed_output "invalid timeout $bad"
+  assert_fail_safe "invalid timeout $bad"
+  assert_equals '0.0' "$(json_get "$TOOL_OUT" confidence)" "an invalid timeout $bad reports zero confidence"
+  assert_contains "$(json_get "$TOOL_OUT" reason)" 'timeout must be a finite number of seconds' "an invalid timeout $bad is refused by name"
+  assert_strict_json "$TOOL_OUT" "invalid timeout $bad"
+  assert_absent "$LOG/requests" "an invalid timeout $bad makes no network call"
+  [ "$elapsed" -lt 15 ] || fail "an invalid timeout $bad waited ${elapsed}s instead of returning inside a finite bound"
+  pass "invalid timeout $bad: fail-safe, no network call, finite wall bound"
+done
 
 # --- a missing key fails safe without any network call -----------------------
 reset_log

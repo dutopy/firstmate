@@ -171,9 +171,13 @@ The wrapper validates the confidence boundary itself rather than trusting the sh
 The emitted confidence is always a finite number in [0, 1] and the output is always strict JSON, so no `NaN` or `Infinity` literal can reach stdout.
 
 
-Confidence below the floor, any non-finite or out-of-range confidence, a missing or rejected API key, any API or network error, a malformed success response, invalid or unreadable input JSON, an unreadable shared core, and the wall-clock bound all resolve to verdict `consequential`, flag `hold_for_review`, and exit 0.
+Confidence below the floor, any non-finite or out-of-range confidence, a missing or rejected API key, any API or network error, a malformed success response, invalid or unreadable input JSON, an unreadable shared core, and an invalid wall-clock bound all resolve to verdict `consequential`, flag `hold_for_review`, and exit 0.
 There is no silent proceed: no error, timeout, low-confidence answer, or malformed response is ever reported as `routine_reversible`, and the emitted confidence is always a finite number in `[0, 1]` in strict JSON, so a NaN or Infinity answer can never slip past the floor.
 Exit 2 is reserved for a usage error - an unknown flag, a missing flag value, or missing `python3` - and it prints nothing on stdout and makes no network call.
+
+The wall-clock bound is part of that boundary rather than an option beside it.
+One finite deadline is armed before the call, so the call and its retries can never outlive it, and `FM_JV_FRED_PREFLIGHT_TIMEOUT` must be a finite number of seconds in `(0, 3600]`.
+A missing, non-numeric, zero, negative, non-finite, or above-ceiling value is a fail-safe with no network call, and so is a host that cannot arm the deadline: an invalid value can neither disable the bound nor overflow the timer, and the tool never classifies without one.
 
 ## What it classifies
 
@@ -345,5 +349,5 @@ No case reaches the real network, and each classification case asserts exactly o
 It covers both verdicts, the deterministic feature extraction (repeated notes, a frozen state window, a state-level and a note-level alternation), the one-atomic-question request shape, a low-confidence answer that must fall back to `progressing` plus `review_history`, a non-finite or out-of-range confidence that must resolve to the same fail-safe verdict without escalating, an API error, a malformed response, an unexpected verdict, the wall-clock bound, a missing key, the `.env` key fallback, `--task` resolution, `--lines` windowing, both no-model-call shortcuts (insufficient history and a terminal declaration), and every usage error.
 No case reaches the real network, and each judged case asserts exactly one call.
 
-`tests/fm-jev-fred-preflight.test.sh` drives the public interface against a fake System One server bound to loopback on an ephemeral port, covering all three classes, a low-confidence answer in the safe class that must never stay routine, a low-confidence answer in the unsafe class, an API error, a malformed response, an unexpected class, NaN, Infinity, and out-of-range confidences against both the shared core and a stale-core stand-in, invalid input JSON, the wall-clock bound, a missing key, the `.env` key with the environment winning, file input, the read-only promise, and the usage errors.
+`tests/fm-jev-fred-preflight.test.sh` drives the public interface against a fake System One server bound to loopback on an ephemeral port, covering all three classes, a low-confidence answer in the safe class that must never stay routine, a low-confidence answer in the unsafe class, an API error, a malformed response, an unexpected class, NaN, Infinity, and out-of-range confidences against both the shared core and a stale-core stand-in, invalid input JSON, the wall-clock bound (armed, and refused for every invalid `FM_JV_FRED_PREFLIGHT_TIMEOUT`), a missing key, the `.env` key with the environment winning, file input, the read-only promise, and the usage errors.
 No case reaches the real network, each classification case asserts exactly one call, and the suite skips cleanly when the captain-private shared core is not readable.

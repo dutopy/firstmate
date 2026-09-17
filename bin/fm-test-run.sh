@@ -729,7 +729,7 @@ tests/fm-inbox-external.test.sh 3338
 tests/fm-jev-blocker.test.sh 10868
 tests/fm-jev-class.test.sh 20000
 tests/fm-jev-finding.test.sh 11999
-tests/fm-jev-fred-preflight.test.sh 12000
+tests/fm-jev-fred-preflight.test.sh 16000
 tests/fm-jev-guard.test.sh 9292
 tests/fm-jev-lane.test.sh 10385
 tests/fm-kimi-harness.test.sh 18015

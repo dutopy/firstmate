@@ -44,6 +44,15 @@
 #   low-confidence answer, and no malformed response is ever reported as
 #   routine_reversible, and nothing is silently waved through.
 #
+# Wall-clock bound: one finite deadline is armed before the call, so the call
+#   and its retries can never outlive the bound. The bound is the only reason
+#   the request may wait: a missing, non-numeric, zero, negative, non-finite, or
+#   above-ceiling FM_JV_FRED_PREFLIGHT_TIMEOUT, and a host that cannot arm the
+#   deadline at all, are each a fail-safe that emits the default verdict with no
+#   network call, because a bound that cannot be armed must not become an
+#   unbounded wait. An invalid value can therefore neither disable the bound nor
+#   overflow the timer, and the tool never runs a classification without one.
+#
 # The wrapper validates the confidence itself, so a stale shared core that
 #   returned a non-finite confidence cannot reintroduce a routine verdict: any
 #   confidence that is not a finite number in [0, 1] is treated exactly like an
@@ -56,7 +65,9 @@
 #
 # Environment:
 #   FM_JV_FRED_PREFLIGHT_CORE     shared core module path (default $FM_HOME/data/jev_decide.py)
-#   FM_JV_FRED_PREFLIGHT_TIMEOUT  wall-clock bound in seconds (default 20; 0 disables)
+#   FM_JV_FRED_PREFLIGHT_TIMEOUT  wall-clock bound in seconds (default 20); must
+#                                 be a finite number of seconds in (0, 3600],
+#                                 and anything else is a fail-safe
 #   TYPESAFE_API_KEY              from this process environment, else a
 #                                 TYPESAFE_API_KEY= line in $FM_HOME/.env read
 #                                 with fmx_env_get (the environment wins). The
@@ -142,6 +153,8 @@ import signal
 import sys
 
 CONFIDENCE_THRESHOLD = 0.9
+MAX_TIMEOUT_SECONDS = 3600.0
+_TIMEOUT_RULE = "timeout must be a finite number of seconds in (0, %g]" % MAX_TIMEOUT_SECONDS
 DEFAULT_VERDICT = "consequential"
 DEFAULT_FLAG = "hold_for_review"
 FLAGS = {
@@ -278,10 +291,37 @@ def read_payload(path):
 
 
 def parse_timeout(raw):
-    timeout = float(raw)
-    if timeout < 0:
-        raise ValueError("timeout must not be negative")
+    """A finite timeout in (0, MAX_TIMEOUT_SECONDS], or an error.
+
+    This is the only value that may ever reach the timer, so a value that
+    cannot be represented there - a missing, non-numeric, zero, negative,
+    non-finite, or above-ceiling one - is rejected here instead of silently
+    disabling or overflowing the bound. There is no caller-supplied way to run
+    this classifier without a wall-clock bound.
+    """
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError("%s; got %r" % (_TIMEOUT_RULE, raw)) from None
+    if not math.isfinite(timeout) or not 0.0 < timeout <= MAX_TIMEOUT_SECONDS:
+        raise ValueError("%s; got %r" % (_TIMEOUT_RULE, raw))
     return timeout
+
+
+def arm_deadline(timeout):
+    """Arm the one wall-clock bound, or raise when this host cannot arm it.
+
+    parse_timeout has already guaranteed a finite positive value, so the timer
+    cannot overflow; a host without SIGALRM raises here and the caller turns
+    that into a fail-safe rather than a classification without a bound.
+    """
+    signal.signal(signal.SIGALRM, _on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+
+
+def clear_deadline():
+    """Disarm the wall-clock bound."""
+    signal.setitimer(signal.ITIMER_REAL, 0)
 
 
 def valid_confidence(value):
@@ -343,16 +383,24 @@ def run(core_path, input_path, timeout_raw):
             "fail_safe: %s: %s" % (type(exc).__name__, exc),
         )
         return 0
-    armed = timeout > 0 and hasattr(signal, "SIGALRM") and hasattr(signal, "setitimer")
-    if armed:
-        signal.signal(signal.SIGALRM, _on_alarm)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
+    try:
+        arm_deadline(timeout)
+    except Exception as exc:
+        # A bound that cannot be armed must not become an unbounded wait: this is
+        # a fail-safe, decided before the shared core makes any call.
+        emit(
+            DEFAULT_VERDICT,
+            0.0,
+            DEFAULT_FLAG,
+            "fail_safe: could not arm the %ss wall-clock bound: %s: %s"
+            % (timeout, type(exc).__name__, exc),
+        )
+        return 0
     try:
         try:
             verdict, confidence, flag, reason = classify(core, payload)
         finally:
-            if armed:
-                signal.setitimer(signal.ITIMER_REAL, 0)
+            clear_deadline()
         emit(verdict, confidence, flag, reason)
         return 0
     except _Deadline:
