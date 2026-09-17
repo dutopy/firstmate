@@ -102,6 +102,11 @@ That core remains the single owner of the TypeSafe request shape, the retry and 
 It reads the same `TYPESAFE_API_KEY` the typed dispatch resolution reads, from the environment or a `TYPESAFE_API_KEY=` line in `$FM_HOME/.env`.
 It never sends a list of items to classify: each call asks the model one atomic forced-choice question about exactly one worker.
 
+Every numeric input is validated at both ends.
+At the single owner, `ask()` coerces a non-finite, zero, negative, or absurd `timeout` and a non-integer or out-of-range `retries` to its safe finite defaults, and `guard()` coerces a non-finite, zero, negative, or above-one `threshold` to its safe default, so a NaN wait bound can never reach the socket and a NaN confidence floor can never turn a weak answer into a `proceed`.
+The core is local material outside this repository, so that guard is exercised against `$FM_HOME/data/jev_decide.py` directly rather than committed here; every wrapper also re-validates the numerics it passes at its own boundary, so a stale core cannot reintroduce an unvalidated value.
+A wall-clock bound that is non-finite, negative, or above its ceiling, and a host that cannot arm the bound, are fail-safes in every wrapper: the value is checked before it reaches the timer, arming the timer is itself inside the fail-safe path, and a NaN never silently arms nothing.
+
 
 The pre-flight imports the shared `jev_decide` core by path at `$FM_HOME/data/jev_decide.py`, overridable with `FM_JV_FRED_PREFLIGHT_CORE`.
 That core remains the single owner of the TypeSafe request shape, the retry and timeout behavior, and the confidence gate, so the pre-flight adds no second HTTP client and no second copy of the API contract.
@@ -110,7 +115,7 @@ The wrapper validates the confidence it reports itself, so a stale core cannot r
 
 ## Fail-safe boundary and exit codes
 
-Confidence below the floor, a missing or rejected API key, any API or network error, a malformed success response, and the wall-clock bound all resolve to `ask_human` with exit 0.
+Confidence below the floor, a missing or rejected API key, any API or network error, a malformed success response, an unusable `FM_JV_GUARD_TIMEOUT` value (non-finite, negative, or above the ceiling), a host that cannot arm the bound, and the wall-clock bound itself all resolve to `ask_human` with exit 0.
 There is no silent proceed and no silent block.
 Exit 2 is reserved for a usage or environment error - invalid input JSON, an unknown or missing rubric, missing `python3`, or an unreadable shared core - and it prints nothing on stdout and makes no network call.
 
@@ -123,7 +128,7 @@ Every path that produced no usable verdict or route resolves to the conservative
 - a malformed success response;
 - invalid or unreadable input JSON;
 - an unreadable shared core;
-- the wall-clock bound (`FM_JV_BLOCKER_TIMEOUT` / `FM_JV_LANE_TIMEOUT`, default 20s).
+- an unusable `FM_JV_BLOCKER_TIMEOUT` / `FM_JV_LANE_TIMEOUT` value (non-finite, negative, or above the ceiling), a host that cannot arm the bound, or the wall-clock bound itself (default 20s).
 
 There is no silent suppression, no silent retry, and no silent lane assignment.
 Each wrapper validates the confidence at its own boundary, so a stale shared core that returned a non-finite or out-of-range confidence cannot reintroduce a suppression or a silent lane: any such value is treated exactly like an absent verdict, and the emitted confidence is always a plain JSON number, never `NaN` or `Infinity`.
@@ -139,7 +144,7 @@ Every path that produced no usable severity resolves to severity `important`, fl
 - a malformed success response;
 - an unexpected severity the rubric does not define;
 - an unreadable shared core;
-- the wall-clock bound (`FM_JV_FINDING_TIMEOUT`, default 20s).
+- an unusable `FM_JV_FINDING_TIMEOUT` value (non-finite, negative, or above the ceiling), a host that cannot arm the bound, or the wall-clock bound itself (default 20s).
 
 Exit 2 is reserved for a usage error: an unknown flag, a missing flag value, missing `python3`, an unreadable input file, input that is not valid JSON, input that is not a JSON object, or a JSON object that carries no finding text at all.
 A usage error prints nothing on stdout and makes no network call.
@@ -161,6 +166,7 @@ Every path that produced no usable verdict resolves to verdict `progressing`, fl
 - the wall-clock bound (`FM_JV_NONCONVERGENCE_TIMEOUT`, default 20s).
 
 A timeout that is non-finite or otherwise unrepresentable is a fail-safe too, so an invalid or unusable bound can never leave a call unbounded: the numeric input is checked before it reaches the timer, and arming the timer is itself inside the fail-safe path.
+The same rule holds for every classifier above: a `FM_JV_GUARD_TIMEOUT`, `FM_JV_BLOCKER_TIMEOUT`, `FM_JV_LANE_TIMEOUT`, `FM_JV_FINDING_TIMEOUT`, `FM_JV_CLASS_TIMEOUT`, or `FM_JV_NONCONVERGENCE_TIMEOUT` value that is NaN, infinite, negative, or absurd is a bounded fail-safe rather than a silently disabled or overflowing bound.
 An error never escalates.
 A `stalled_looping` verdict requires a high-confidence answer, never the absence of one, so a broken call, a missing key, or an unusable confidence can only hand the history back to firstmate.
 
@@ -332,17 +338,17 @@ The detector is a recovery hint for a suspicious history, nothing more.
 
 ## Verification
 
-`tests/fm-jev-guard.test.sh` drives the public interface against a fake System One server bound to loopback on an ephemeral port, covering the safe, low-confidence, unsafe, `needs_human`, API-error, malformed-response, timeout, missing-key, and usage-error paths.
+`tests/fm-jev-guard.test.sh` drives the public interface against a fake System One server bound to loopback on an ephemeral port, covering the safe, low-confidence, unsafe, `needs_human`, API-error, malformed-response, timeout, non-finite-or-absurd-timeout, missing-key, and usage-error paths.
 No case reaches the real network.
 
 `tests/fm-jev-blocker.test.sh` and `tests/fm-jev-lane.test.sh` drive the public interface against `tests/assets/jev-classify-fake-typesafe.py`, a fake System One server bound to loopback on an ephemeral port.
-They cover every class and lane, the high-confidence noise suppression, a low-confidence answer that must never suppress, the ARFAL dormant flag, an API error, a malformed response, invalid input JSON, the wall-clock fallback, a missing key, the `.env` fallback, an unexpected answer, file input, and the usage errors.
+They cover every class and lane, the high-confidence noise suppression, a low-confidence answer that must never suppress, the ARFAL dormant flag, an API error, a malformed response, invalid input JSON, the wall-clock fallback, a non-finite or absurd timeout that must stay a bounded fail-safe with no request, a missing key, the `.env` fallback, an unexpected answer, file input, and the usage errors.
 No case reaches the real network, and each classification case asserts exactly one call.
 Both suites also cover an invalid confidence (NaN, infinity, negative, and above 1) and a deliberately stale shared core that returns a non-finite confidence, asserting the default verdict, the surface flag, a numeric confidence, strict JSON, exit 0, and no network call.
 The shared core is not part of the repository: it lives at `$FM_HOME/data/jev_decide.py`, so its own `invalid_confidence` guard is verified through these wrappers rather than committed here.
 
 `tests/fm-jev-finding.test.sh` drives the public interface against `tests/assets/jev-finding-fake-typesafe.py`, a fake System One server bound to loopback on an ephemeral port.
-It covers the three severities, the one-atomic-question request shape, a low-confidence answer that must fall back to `important` plus `needs_review`, a non-finite or out-of-range confidence (`NaN`, `Infinity`, `-0.1`, `1.1`) that must resolve to the same default with an in-range numeric confidence, an API error, a malformed response, an unexpected severity, the wall-clock bound, a missing key, the `.env` key fallback, file input, and every usage error (invalid JSON, empty input, an empty finding object, a JSON list, and an unknown flag).
+It covers the three severities, the one-atomic-question request shape, a low-confidence answer that must fall back to `important` plus `needs_review`, a non-finite or out-of-range confidence (`NaN`, `Infinity`, `-0.1`, `1.1`) that must resolve to the same default with an in-range numeric confidence, an API error, a malformed response, an unexpected severity, the wall-clock bound, a non-finite or absurd timeout that must stay a bounded fail-safe with no request, a missing key, the `.env` key fallback, file input, and every usage error (invalid JSON, empty input, an empty finding object, a JSON list, and an unknown flag).
 No case reaches the real network, and each classification case asserts exactly one call.
 
 `tests/fm-jev-nonconvergence.test.sh` drives the public interface against `tests/assets/jev-nonconvergence-fake-typesafe.py`, a fake System One server bound to loopback on an ephemeral port.

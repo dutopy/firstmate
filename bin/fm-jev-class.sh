@@ -44,11 +44,19 @@
 #
 # Fail-safe: a missing or rejected API key, any API or network error, a
 #   malformed or out-of-vocabulary response, a confidence that is not a finite
-#   number inside 0..1, the wall-clock bound (FM_JV_CLASS_TIMEOUT, default 20s, 0
-#   disables), and any answer below the confidence floor all resolve to the
-#   default class plus its mapped effort with exit 0. Dispatch is never blocked
-#   by this tool, and stdout is always strict JSON: a non-finite or out-of-range
-#   confidence can never reach the output as NaN or Infinity.
+#   number inside 0..1, an unusable FM_JV_CLASS_TIMEOUT value (non-finite,
+#   negative, or above the ceiling), a host that cannot arm the bound, the
+#   wall-clock bound itself (FM_JV_CLASS_TIMEOUT, default 20s, 0 disables), and
+#   any answer below the confidence floor all resolve to the default class plus
+#   its mapped effort with exit 0. Dispatch is never blocked by this tool, and
+#   stdout is always strict JSON: a non-finite or out-of-range confidence can
+#   never reach the output as NaN or Infinity.
+#
+# Wall-clock bound: one finite deadline is the only wait this tool allows, and an
+#   invalid value can neither disable it nor overflow it. The numeric input is
+#   checked before it reaches the timer, and arming the timer is itself inside
+#   the fail-safe path, so a NaN or infinite timeout is a bounded fail-safe and
+#   never an unbounded call.
 #
 # Exit: 0 for every classified outcome, including both fallbacks. 2 for a usage
 #   or environment error (unreadable or empty input, a bad threshold or default
@@ -60,9 +68,13 @@
 #
 # Environment:
 #   FM_JV_CLASS_CORE       shared core module path (default $FM_HOME/data/jev_decide.py)
-#   FM_JV_CLASS_TIMEOUT    wall-clock bound in seconds (default 20; 0 disables)
+#   FM_JV_CLASS_TIMEOUT    wall-clock bound in seconds (default 20; 0 disables);
+#                          must be a finite number in [0, 3600], and anything
+#                          else is a fail-safe, never an unbounded call
 #   FM_JV_CLASS_THRESHOLD  confidence floor for both answers (default 0.75, the
-#                          floor the live router was validated at)
+#                          floor the live router was validated at); must be a
+#                          finite number in (0, 1], and anything else is a usage
+#                          error
 #   FM_JV_CLASS_DEFAULT    class used whenever an answer falls back (default
 #                          volume_cheap, the class this home's current default
 #                          dispatch belongs to)
@@ -439,14 +451,63 @@ def read_task(path):
     return text
 
 
-def parse_float(raw, label, minimum, maximum):
+MAX_TIMEOUT_SECONDS = 3600.0
+
+
+def parse_threshold(raw):
+    """The confidence floor as a finite number in (0, 1], or a usage error.
+
+    A zero, negative, non-finite, or above-one floor is a misconfiguration, and
+    a NaN floor in particular would make every `confidence >= threshold` test
+    false; each is refused here rather than silently changing the rubric.
+    """
     try:
         value = float(raw)
-    except ValueError:
-        usage_error("%s is not a number: %s" % (label, raw))
-    if value < minimum or value > maximum:
-        usage_error("%s must be between %s and %s: %s" % (label, minimum, maximum, raw))
+    except (TypeError, ValueError):
+        usage_error("FM_JV_CLASS_THRESHOLD is not a number: %s" % raw)
+    if not math.isfinite(value) or not 0.0 < value <= 1.0:
+        usage_error(
+            "FM_JV_CLASS_THRESHOLD must be a finite number in (0, 1]: %s" % raw
+        )
     return value
+
+
+def parse_timeout(raw):
+    """The wall-clock bound as a finite number of seconds in [0, MAX].
+
+    0 keeps its documented meaning of "no bound". NaN, the infinities, a
+    negative value, and an absurd value are rejected here, before they can
+    reach the timer, so an unusable bound can neither silently disable the
+    timer nor overflow it; the caller turns this error into the fail-safe
+    outcome without making any request.
+    """
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError("timeout must be a finite number of seconds") from None
+    if not math.isfinite(timeout) or timeout < 0 or timeout > MAX_TIMEOUT_SECONDS:
+        raise ValueError(
+            "timeout must be a finite number of seconds no greater than %g"
+            % MAX_TIMEOUT_SECONDS
+        )
+    return timeout
+
+
+def arm_deadline(timeout):
+    """Arm the one wall-clock bound, or raise when this host cannot arm it.
+
+    parse_timeout has already guaranteed a finite, non-negative value, so the
+    timer can neither be disabled by NaN nor overflowed by infinity; a platform
+    that still cannot represent the bound raises here, and the caller turns that
+    into the fail-safe outcome instead of an unbounded or crashed run.
+    """
+    signal.signal(signal.SIGALRM, _on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+
+
+def clear_deadline():
+    """Disarm the wall-clock bound."""
+    signal.setitimer(signal.ITIMER_REAL, 0)
 
 
 def answer_of(response, key):
@@ -491,8 +552,7 @@ def main(argv):
         usage_error("--class must be one of %s" % ", ".join(sorted(CLASSES)))
     if forced_effort and forced_effort not in EFFORTS:
         usage_error("--effort must be one of %s" % ", ".join(sorted(EFFORTS)))
-    threshold = parse_float(threshold_raw, "FM_JV_CLASS_THRESHOLD", 0.0, 1.0)
-    timeout = parse_float(timeout_raw, "FM_JV_CLASS_TIMEOUT", 0.0, 1e9)
+    threshold = parse_threshold(threshold_raw)
     core = load_core(core_path)
     text = read_task(input_path)
 
@@ -511,16 +571,26 @@ def main(argv):
         )
         return 0
 
-    armed = timeout > 0 and hasattr(signal, "SIGALRM") and hasattr(signal, "setitimer")
-    if armed:
-        signal.signal(signal.SIGALRM, _on_alarm)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
+    try:
+        timeout = parse_timeout(timeout_raw)
+    except ValueError as exc:
+        return fallback("api_error", "fail_safe: %s" % exc)
+
+    if timeout > 0:
+        try:
+            arm_deadline(timeout)
+        except Exception as exc:
+            return fallback(
+                "api_error",
+                "fail_safe: could not arm the %ss wall-clock bound: %s: %s"
+                % (timeout, type(exc).__name__, exc),
+            )
     try:
         try:
             response = core.ask({"task": text}, QUESTIONS)
         finally:
-            if armed:
-                signal.setitimer(signal.ITIMER_REAL, 0)
+            if timeout > 0:
+                clear_deadline()
     except _Deadline:
         return fallback("api_error", "timeout: no answer within %ss" % show(timeout))
     except Exception as exc:

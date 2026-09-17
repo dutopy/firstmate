@@ -33,9 +33,17 @@
 #                enforcement action by this tool.
 #
 # Fail-safe: confidence below 0.9, a missing or rejected API key, any API or
-#   network error, a malformed success response, or the wall-clock bound
-#   (FM_JV_GUARD_TIMEOUT, default 20s, 0 disables) all resolve to ask_human with
-#   exit 0. There is no silent proceed and no silent block.
+#   network error, a malformed success response, an unusable FM_JV_GUARD_TIMEOUT
+#   value (non-finite, negative, or above the ceiling), a host that cannot arm
+#   the bound, or the wall-clock bound itself (FM_JV_GUARD_TIMEOUT, default 20s,
+#   0 disables) all resolve to ask_human with exit 0. There is no silent proceed
+#   and no silent block.
+#
+# Wall-clock bound: one finite deadline is the only wait this tool allows, and an
+#   invalid value can neither disable it nor overflow it. The numeric input is
+#   checked before it reaches the timer, and arming the timer is itself inside
+#   the fail-safe path, so a NaN or infinite timeout is a bounded ask_human and
+#   never an unbounded call.
 #
 # Exit: 0 for every classified outcome, including ask_human and block. 2 for a
 #   usage or environment error (invalid or unreadable input JSON, an unknown or
@@ -45,7 +53,9 @@
 #
 # Environment:
 #   FM_JV_GUARD_CORE     shared core module path (default $FM_HOME/data/jev_decide.py)
-#   FM_JV_GUARD_TIMEOUT  wall-clock bound in seconds (default 20; 0 disables)
+#   FM_JV_GUARD_TIMEOUT  wall-clock bound in seconds (default 20; 0 disables);
+#                        must be a finite number in [0, 3600], and anything else
+#                        is a fail-safe, never an unbounded call
 #   TYPESAFE_API_KEY     from this process environment, else a TYPESAFE_API_KEY=
 #                        line in $FM_HOME/.env read with fmx_env_get (the
 #                        environment wins). The key reaches the one python child
@@ -118,11 +128,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 import signal
 import sys
 
 CONFIDENCE_THRESHOLD = 0.9
+MAX_TIMEOUT_SECONDS = 3600.0
 PROCEED_ROUTE = {"merge": "safe_merge", "dispatch": "routine"}
 INSTRUCTIONS = {
     "merge": (
@@ -301,13 +313,41 @@ def read_payload(path):
 
 
 def parse_timeout(raw):
+    """The wall-clock bound as a finite number of seconds in [0, MAX].
+
+    0 keeps its documented meaning of "no bound". NaN, the infinities, a
+    negative value, and an absurd value are rejected here, before they can
+    reach the timer, so an unusable bound can neither silently disable the
+    timer nor overflow it; the caller turns this error into the fail-safe
+    ask_human outcome without making any request.
+    """
     try:
         timeout = float(raw)
-    except ValueError:
-        usage_error("FM_JV_GUARD_TIMEOUT is not a number of seconds: %s" % raw)
-    if timeout < 0:
-        usage_error("FM_JV_GUARD_TIMEOUT must not be negative: %s" % raw)
+    except (TypeError, ValueError):
+        raise ValueError("timeout must be a finite number of seconds") from None
+    if not math.isfinite(timeout) or timeout < 0 or timeout > MAX_TIMEOUT_SECONDS:
+        raise ValueError(
+            "timeout must be a finite number of seconds no greater than %g"
+            % MAX_TIMEOUT_SECONDS
+        )
     return timeout
+
+
+def arm_deadline(timeout):
+    """Arm the one wall-clock bound, or raise when this host cannot arm it.
+
+    parse_timeout has already guaranteed a finite, non-negative value, so the
+    timer can neither be disabled by NaN nor overflowed by infinity; a platform
+    that still cannot represent the bound raises here, and the caller turns that
+    into the fail-safe outcome instead of an unbounded or crashed run.
+    """
+    signal.signal(signal.SIGALRM, _on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+
+
+def clear_deadline():
+    """Disarm the wall-clock bound."""
+    signal.setitimer(signal.ITIMER_REAL, 0)
 
 
 def map_decision(core, decision, rubric):
@@ -345,12 +385,24 @@ def main(argv):
             "rubric must be one of %s (pass --rubric or set the rubric field)"
             % ", ".join(sorted(RUBRICS))
         )
-    timeout = parse_timeout(timeout_raw)
+    try:
+        timeout = parse_timeout(timeout_raw)
+    except ValueError as exc:
+        emit("ask_human", 0.0, None, "fail_safe: %s" % exc)
+        return 0
 
-    armed = timeout > 0 and hasattr(signal, "SIGALRM") and hasattr(signal, "setitimer")
-    if armed:
-        signal.signal(signal.SIGALRM, _on_alarm)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
+    if timeout > 0:
+        try:
+            arm_deadline(timeout)
+        except Exception as exc:
+            emit(
+                "ask_human",
+                0.0,
+                None,
+                "fail_safe: could not arm the %ss wall-clock bound: %s: %s"
+                % (timeout, type(exc).__name__, exc),
+            )
+            return 0
     try:
         try:
             decision = core.guard(
@@ -361,8 +413,8 @@ def main(argv):
                 instructions=INSTRUCTIONS[rubric],
             )
         finally:
-            if armed:
-                signal.setitimer(signal.ITIMER_REAL, 0)
+            if timeout > 0:
+                clear_deadline()
         verdict, reason = map_decision(core, decision, rubric)
         emit(verdict, decision.confidence, decision.route, reason)
         return 0

@@ -301,6 +301,46 @@ assert_contains "$(json_get "$CLASS_OUT" reason)" 'timeout' "the reason names th
 [ "$elapsed" -lt 20 ] || fail "the wall-clock bound did not fire (elapsed ${elapsed}s)"
 pass "timeout: default class and effort, api_error flag, inside the bound"
 
+# --- a non-finite or absurd bound never leaves the call unbounded -------------
+# NaN would make `timeout > 0` false and so silently arm nothing, and Infinity
+# or a huge finite value overflows the platform timer; each must resolve to the
+# default class inside a finite bound, with no request reaching the delayed
+# server.
+for bad_timeout in nan inf 1e30; do
+  reset_log
+  start_fake --class-choice volume_cheap --class-confidence 0.97 --delay 30
+  started=$(date +%s)
+  run_class "$API_KEY" "$HOME_DIR" "$bad_timeout" "$TASK" -
+  elapsed=$(( $(date +%s) - started ))
+  reap_fake
+  assert_typed_output "timeout $bad_timeout"
+  assert_equals '"volume_cheap"' "$(json_get "$CLASS_OUT" class)" "timeout $bad_timeout keeps the default class"
+  assert_equals '"api_error"' "$(json_get "$CLASS_OUT" flag)" "timeout $bad_timeout is flagged"
+  assert_contains "$(json_get "$CLASS_OUT" reason)" 'fail_safe' "the $bad_timeout reason names the fail-safe"
+  assert_absent "$LOG/body" "timeout $bad_timeout never reaches the network"
+  [ "$elapsed" -lt 10 ] || fail "timeout $bad_timeout did not return inside a finite bound (elapsed ${elapsed}s)"
+  pass "timeout $bad_timeout: fail-safe, finite bound, no request"
+done
+
+# --- an unusable confidence floor is a usage error, never a silent rubric swap -
+# A zero, negative, non-finite, or above-one threshold is refused before any
+# request, because a NaN floor would make every comparison false and silently
+# change the rubric.
+for bad_threshold in nan inf 0 -0.1 1.1; do
+  reset_log
+  start_fake --class-choice volume_cheap --class-confidence 0.97
+  CLASS_OUT=$(printf '%s' "$TASK" | TYPESAFE_API_KEY="$API_KEY" FM_HOME="$HOME_DIR" \
+    FM_JV_CLASS_THRESHOLD="$bad_threshold" TYPESAFE_BASE_URL="$BASE" bash "$TOOL" - 2>"$STDERR_FILE")
+  CLASS_RC=$?
+  CLASS_ERR=$(cat "$STDERR_FILE")
+  reap_fake
+  expect_code 2 "$CLASS_RC" "threshold $bad_threshold is a usage error"
+  assert_equals '' "$CLASS_OUT" "threshold $bad_threshold prints nothing on stdout"
+  assert_contains "$CLASS_ERR" 'FM_JV_CLASS_THRESHOLD' "threshold $bad_threshold names the threshold"
+  assert_absent "$LOG/body" "threshold $bad_threshold never reaches the network"
+  pass "threshold $bad_threshold: usage error, no network"
+done
+
 # --- a missing key fails safe without any network call -----------------------
 reset_log
 start_fake --class-choice volume_cheap --class-confidence 0.97

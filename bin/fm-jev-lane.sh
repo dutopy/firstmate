@@ -38,9 +38,16 @@
 #   or any non-finite or out-of-range confidence (NaN, infinity, negative, or
 #   above 1), a missing or rejected API key, any API or network error, a
 #   malformed success response, invalid or unreadable input JSON, an unreadable
-#   shared core, or the wall-clock bound (FM_JV_LANE_TIMEOUT, default 20s) -
-#   resolves to route null, flag ask_captain, exit 0. There is no silent lane
-#   assignment.
+#   shared core, an unusable FM_JV_LANE_TIMEOUT value (non-finite, negative, or
+#   above the ceiling), a host that cannot arm the bound, or the wall-clock bound
+#   itself (FM_JV_LANE_TIMEOUT, default 20s) - resolves to route null, flag
+#   ask_captain, exit 0. There is no silent lane assignment.
+#
+# Wall-clock bound: one finite deadline is the only wait this tool allows, and an
+#   invalid value can neither disable it nor overflow it. The numeric input is
+#   checked before it reaches the timer, and arming the timer is itself inside
+#   the fail-safe path, so a NaN or infinite timeout is a bounded fail-safe and
+#   never an unbounded call.
 #
 # The wrapper validates the confidence itself, so a stale shared core that
 #   returned a non-finite confidence cannot reintroduce a silent lane: any
@@ -54,7 +61,9 @@
 #
 # Environment:
 #   FM_JV_LANE_CORE     shared core module path (default $FM_HOME/data/jev_decide.py)
-#   FM_JV_LANE_TIMEOUT  wall-clock bound in seconds (default 20; 0 disables)
+#   FM_JV_LANE_TIMEOUT  wall-clock bound in seconds (default 20; 0 disables);
+#                       must be a finite number in [0, 3600], and anything else
+#                       is a fail-safe, never an unbounded call
 #   TYPESAFE_API_KEY    from this process environment, else a TYPESAFE_API_KEY=
 #                       line in $FM_HOME/.env read with fmx_env_get (the
 #                       environment wins). The key reaches the one python child
@@ -249,11 +258,45 @@ def read_payload(path):
     return payload
 
 
+MAX_TIMEOUT_SECONDS = 3600.0
+
+
 def parse_timeout(raw):
-    timeout = float(raw)
-    if timeout < 0:
-        raise ValueError("timeout must not be negative")
+    """The wall-clock bound as a finite number of seconds in [0, MAX].
+
+    0 keeps its documented meaning of "no bound". NaN, the infinities, a
+    negative value, and an absurd value are rejected here, before they can
+    reach the timer, so an unusable bound can neither silently disable the
+    timer nor overflow it; the caller turns this error into the fail-safe
+    outcome without making any request.
+    """
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError("timeout must be a finite number of seconds") from None
+    if not math.isfinite(timeout) or timeout < 0 or timeout > MAX_TIMEOUT_SECONDS:
+        raise ValueError(
+            "timeout must be a finite number of seconds no greater than %g"
+            % MAX_TIMEOUT_SECONDS
+        )
     return timeout
+
+
+def arm_deadline(timeout):
+    """Arm the one wall-clock bound, or raise when this host cannot arm it.
+
+    parse_timeout has already guaranteed a finite, non-negative value, so the
+    timer can neither be disabled by NaN nor overflowed by infinity; a platform
+    that still cannot represent the bound raises here, and the caller turns that
+    into the fail-safe outcome instead of an unbounded or crashed run.
+    """
+    signal.signal(signal.SIGALRM, _on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+
+
+def clear_deadline():
+    """Disarm the wall-clock bound."""
+    signal.setitimer(signal.ITIMER_REAL, 0)
 
 
 def valid_confidence(value):
@@ -315,16 +358,26 @@ def run(core_path, input_path, timeout_raw):
             "fail_safe: %s: %s" % (type(exc).__name__, exc),
         )
         return 0
-    armed = timeout > 0 and hasattr(signal, "SIGALRM") and hasattr(signal, "setitimer")
-    if armed:
-        signal.signal(signal.SIGALRM, _on_alarm)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
+    if timeout > 0:
+        try:
+            arm_deadline(timeout)
+        except Exception as exc:
+            # A bound that cannot be armed must not become an unbounded wait:
+            # this fail-safe is decided before the shared core makes any call.
+            emit(
+                None,
+                0.0,
+                DEFAULT_FLAG,
+                "fail_safe: could not arm the %ss wall-clock bound: %s: %s"
+                % (timeout, type(exc).__name__, exc),
+            )
+            return 0
     try:
         try:
             route, confidence, flag, reason = classify(core, payload)
         finally:
-            if armed:
-                signal.setitimer(signal.ITIMER_REAL, 0)
+            if timeout > 0:
+                clear_deadline()
         emit(route, confidence, flag, reason)
         return 0
     except _Deadline:

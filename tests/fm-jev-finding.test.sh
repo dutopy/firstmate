@@ -295,6 +295,27 @@ assert_contains "$(json_get "$TOOL_OUT" reason)" 'timeout' "the reason names the
 [ "$elapsed" -lt 20 ] || fail "the wall-clock bound did not fire (elapsed ${elapsed}s)"
 pass "timeout: fail-safe inside the bound, exit 0"
 
+# --- a non-finite or absurd bound never leaves the call unbounded -------------
+# NaN would make `timeout > 0` false and so silently arm nothing, and Infinity
+# or a huge finite value overflows the platform timer; each must resolve to the
+# default severity inside a finite bound, with no request reaching the delayed
+# server.
+for bad_timeout in nan inf 1e30; do
+  reset_log
+  start_fake --choice blocking --confidence 0.97 --delay 30
+  started=$(date +%s)
+  run_finding "$API_KEY" "$HOME_DIR" "$bad_timeout" "$FINDING_PAYLOAD" -
+  elapsed=$(( $(date +%s) - started ))
+  reap_fake
+  assert_typed_output "timeout $bad_timeout"
+  assert_equals '"important"' "$(json_get "$TOOL_OUT" severity)" "timeout $bad_timeout keeps the default severity"
+  assert_equals '"needs_review"' "$(json_get "$TOOL_OUT" flag)" "timeout $bad_timeout keeps the fail-safe flag"
+  assert_contains "$(json_get "$TOOL_OUT" reason)" 'fail_safe' "the $bad_timeout reason names the fail-safe"
+  assert_absent "$LOG/requests" "timeout $bad_timeout never reaches the network"
+  [ "$elapsed" -lt 10 ] || fail "timeout $bad_timeout did not return inside a finite bound (elapsed ${elapsed}s)"
+  pass "timeout $bad_timeout: fail-safe, finite bound, no request"
+done
+
 # --- a missing key fails safe without any network call -----------------------
 reset_log
 start_fake --choice blocking --confidence 0.97
