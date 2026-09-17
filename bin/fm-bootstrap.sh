@@ -1153,7 +1153,8 @@ crew_dispatch_validate() {
       end;
     def configured_profiles:
       ([(.rules // [])[]? | profiles(.use?)[]?]
-        + (if has("default") then [profiles(.default)[]?] else [] end));
+        + (if has("default") then [profiles(.default)[]?] else [] end)
+        + [(.classes // {})[]? | profiles(.)[]?]);
     def malformed_optional_fields($items):
       ($items | any(has("model") and (((.model | type) != "string") or (.model | length) == 0)))
       or ($items | any(has("effort") and (((.effort | type) != "string") or (.effort | length) == 0)))
@@ -1206,6 +1207,17 @@ crew_dispatch_validate() {
       else "default profile model and effort must be non-empty strings when present"
       end
     elif $typed and has("default") and malformed_profile_floors([profiles(.default)[]?]) then "default profile floor needs scope and min_percent 0..100"
+    elif has("classes") and (.classes | type) != "object" then "classes must be an object"
+    elif [(.classes // {}) | keys[]? | select(. != "volume_cheap" and . != "standard_impl" and . != "hard_reasoning")] | length > 0 then
+      "unknown class: " + ([(.classes // {}) | keys[]? | select(. != "volume_cheap" and . != "standard_impl" and . != "hard_reasoning")] | unique | join(", "))
+    elif [(.classes // {})[]? | profiles(.) | length] | any(. == 0) then "each class needs a profile object or non-empty profile array"
+    elif [(.classes // {})[]? | profiles(.)[]? | select(type != "object")] | length > 0 then "each class profile must be an object"
+    elif [(.classes // {})[]? | profiles(.)[]? | select((.harness? | type) != "string" or (.harness | length) == 0)] | length > 0 then "each class profile needs harness"
+    elif malformed_optional_fields([(.classes // {})[]? | profiles(.)[]?]) then
+      if $typed then "class profile model and effort must be non-empty strings, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
+      else "class profile model and effort must be non-empty strings when present"
+      end
+    elif $typed and malformed_profile_floors([(.classes // {})[]? | profiles(.)[]?]) then "class profile floor needs scope and min_percent 0..100"
     else
       (configured_profiles
         | map(.harness)
@@ -1237,7 +1249,8 @@ crew_dispatch_validate() {
       end;
     (["BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json"]
       + [(.rules // [])[]? | "BOOTSTRAP_INFO: crew dispatch rule: " + (.when | tostring) + " -> " + profile_set(.use; .select?)]
-      + (if has("default") then ["BOOTSTRAP_INFO: crew dispatch default: " + profile_set(.default; null)] else [] end))
+      + (if has("default") then ["BOOTSTRAP_INFO: crew dispatch default: " + profile_set(.default; null)] else [] end)
+      + (if has("classes") then [.classes | to_entries[] | "BOOTSTRAP_INFO: crew dispatch class: " + (.key | tostring) + " -> " + profile_set(.value; null)] else [] end))
     | .[]
   ' "$file"
   fi

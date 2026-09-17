@@ -635,4 +635,122 @@ expect_code 0 "$code" "--help exits 0"
 assert_contains "$out" 'Usage:' "--help prints usage"
 pass "configuration errors exit 2 before any network call"
 
+# --- the class path: a Jev class selects the profile with no model request ----
+CLASS_RULES="$TMP_ROOT/class-rules.json"
+cat > "$CLASS_RULES" <<'JSON'
+{
+  "classes": {
+    "volume_cheap": { "harness": "cursor", "model": "cursor-grok-4.6-medium" },
+    "standard_impl": [
+      { "harness": "codex", "model": "gpt-5.6-sol" },
+      { "harness": "cursor", "model": "cursor-grok-4.6-high" }
+    ],
+    "hard_reasoning": { "harness": "claude", "model": "fable", "effort": "xhigh" }
+  },
+  "rules": [
+    { "when": "A simple bug fix with a stated root cause.", "use": { "harness": "claude", "model": "sonnet", "effort": "high" } }
+  ],
+  "default": { "harness": "claude", "model": "opus" }
+}
+JSON
+
+cp "$CLASS_RULES" "$RULES"
+reset_log
+write_response "$RESPONSE" rule_1 0.99
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager --class volume_cheap
+expect_code 0 "$code" "a declared class exits 0"
+assert_contains "$out" '  status: clear' "a declared class resolves"
+assert_contains "$out" '  class: volume_cheap' "the class path names its source"
+assert_not_contains "$out" '  rule:' "the class path emits no rule line"
+assert_not_contains "$out" '  probabilities:' "the class path emits no probability line"
+assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'" "the declared class profile reaches the profile line"
+assert_absent "$LOG/argv" "the class path makes no model request"
+assert_equals 1 "$(wc -l <"$LOG/quota-axi.calls" | tr -d ' ')" "the class path takes one quota snapshot"
+pass "a declared class resolves its own profile set with no model request"
+
+# The class array still passes every declared gate and the spendPriority argmax.
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class standard_impl
+assert_contains "$out" '  status: clear' "the class array resolves"
+assert_contains "$out" 'candidate: codex:gpt-5.6-sol  provider=codex' "every class candidate is reported"
+assert_contains "$out" 'candidate: cursor:cursor-grok-4.6-high  provider=cursor' "every class candidate is reported"
+assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-high'" "the class array resolves by spendPriority argmax"
+assert_absent "$LOG/argv" "the class array needs no model request"
+pass "a class profile array resolves through the same gates and argmax"
+
+# --effort fills a chosen profile that declares none, and loses to a declared one.
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class standard_impl --effort high
+assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-high' --effort 'high'" "--effort fills a profile that declares none"
+assert_contains "$out" 'note: effort high applied because the chosen profile declares none' "the applied effort is disclosed"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class hard_reasoning --effort low
+assert_contains "$out" "  profile: --harness 'claude' --model 'fable' --effort 'xhigh'" "a declared profile effort wins over --effort"
+assert_not_contains "$out" "--effort 'low'" "the supplied effort never replaces a declared one"
+pass "--effort is the class default and a declared profile effort wins"
+
+# A class whose only candidate fails a declared floor escalates without a profile.
+printf '%s\n' '{"classes":{"volume_cheap":{"harness":"claude","model":"fable","floor":{"scope":"model:fable","min_percent":50}}},"rules":[],"default":{"harness":"codex","model":"gpt-5.6-sol"}}' > "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class volume_cheap
+expect_code 0 "$code" "an unrankable class exits 0"
+assert_contains "$out" '  status: escalate' "an unrankable class escalates"
+assert_contains "$out" '  class: volume_cheap' "the class path still names its source"
+assert_contains "$out" 'not eligible: profile floor model:fable below 50%' "the class candidate carries its ineligibility evidence"
+assert_not_contains "$out" '  profile:' "an unrankable class emits no profile line"
+pass "a class with no eligible candidate escalates instead of guessing"
+
+# An undeclared class falls through to the best-fit rule, as the precedence says.
+cp "$BASE_RULES" "$RULES"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class volume_cheap
+assert_contains "$out" '  status: clear' "an undeclared class still resolves"
+assert_contains "$out" '  rule: rule_4' "an undeclared class falls through to the rule match"
+assert_not_contains "$out" '  class:' "the fall-through reports no class line"
+assert_present "$LOG/argv" "the fall-through asks the model as before"
+printf '%s\n' '{"default":{"harness":"codex","model":"gpt-5.6-sol"}}' > "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class volume_cheap
+expect_code 0 "$code" "an undeclared class with no rules exits 0"
+assert_contains "$out" 'reason: class volume_cheap is undeclared and no rules to match' "the escalate reason names the undeclared class"
+assert_absent "$LOG/argv" "an undeclared class with no rules makes no model request"
+pass "an undeclared class falls through, and reports itself when nothing else applies"
+
+# Usage errors and a malformed canonical config never reach the network.
+cp "$CLASS_RULES" "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class spaceship
+expect_code 2 "$code" "an unknown class value exits 2"
+assert_contains "$err" '--class must be one of volume_cheap, standard_impl, hard_reasoning' "the unknown class names the vocabulary"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --effort high
+expect_code 2 "$code" "--effort without --class exits 2"
+assert_contains "$err" '--effort requires --class' "the orphan effort explains itself"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class volume_cheap --effort ultra
+expect_code 2 "$code" "an unknown effort value exits 2"
+assert_contains "$err" '--effort must be one of low, medium, high' "the unknown effort names the vocabulary"
+
+for bad in \
+  '{"classes":[],"default":{"harness":"codex"}}|classes must be an object' \
+  '{"classes":{"typo":{"harness":"cursor"}},"default":{"harness":"codex"}}|unknown class: typo' \
+  '{"classes":{"volume_cheap":[]}}|each class needs a profile object or non-empty profile array' \
+  '{"classes":{"volume_cheap":{}}}|each class profile needs harness' \
+  '{"classes":{"volume_cheap":{"harness":"cursor","model":5}}}|each class profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present' \
+  '{"classes":{"volume_cheap":{"harness":"cursor","provider":"CURSOR"}}}|each class profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present' \
+  '{"classes":{"volume_cheap":{"harness":"cursor","floor":{"scope":"all_models"}}}}|each class profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present' \
+  '{"classes":{"volume_cheap":{"harness":"spaceship"}}}|each class profile must name a verified harness' \
+  '{"classes":{"volume_cheap":{"harness":"grok","effort":"max"}}}|each class profile effort must be supported by its harness and model' \
+  '{"classes":{"volume_cheap":[{"harness":"cursor"},{"harness":"cursor"}]}}|each class must not contain duplicate harness, model, and effort profiles' \
+  '{"classes":{"volume_cheap":{"harness":"pi"}},"default":{"harness":"codex"}}|class profiles whose harness lacks one authoritative provider family require provider: pi'; do
+  reset_log
+  printf '%s\n' "${bad%%|*}" > "$RULES"
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class volume_cheap
+  expect_code 2 "$code" "malformed class config exits 2: ${bad#*|}"
+  assert_contains "$err" "malformed rules file: $RULES - ${bad#*|}" "the class config defect is named: ${bad#*|}"
+  assert_absent "$LOG/argv" "the class config defect never reaches the network"
+  assert_absent "$LOG/quota-axi.calls" "the class config defect never reads quota"
+done
+cp "$BASE_RULES" "$RULES"
+pass "the class path, its fall-through, and its configuration errors"
+
 printf '# all fm-dispatch-resolve tests passed\n'
