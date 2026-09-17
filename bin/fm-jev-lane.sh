@@ -34,11 +34,18 @@
 #   which marks the request dormant so firstmate can park it. This tool carries
 #   no authority to wake, launch, or fund an ARFAL lane.
 #
-# Fail-safe: every path that produced no usable route - confidence below 0.9, a
-#   missing or rejected API key, any API or network error, a malformed success
-#   response, invalid or unreadable input JSON, an unreadable shared core, or
-#   the wall-clock bound (FM_JV_LANE_TIMEOUT, default 20s) - resolves to route
-#   null, flag ask_captain, exit 0. There is no silent lane assignment.
+# Fail-safe: every path that produced no usable route - confidence below 0.9
+#   or any non-finite or out-of-range confidence (NaN, infinity, negative, or
+#   above 1), a missing or rejected API key, any API or network error, a
+#   malformed success response, invalid or unreadable input JSON, an unreadable
+#   shared core, or the wall-clock bound (FM_JV_LANE_TIMEOUT, default 20s) -
+#   resolves to route null, flag ask_captain, exit 0. There is no silent lane
+#   assignment.
+#
+# The wrapper validates the confidence itself, so a stale shared core that
+#   returned a non-finite confidence cannot reintroduce a silent lane: any
+#   confidence that is not a finite number in [0, 1] is treated exactly like an
+#   absent route, and the emitted confidence is always a plain JSON number.
 #
 # Exit: 0 for every classified outcome, including every fail-safe. 2 for a usage
 #   error (an unknown flag, a missing flag value, or missing python3), which
@@ -117,6 +124,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 import signal
 import sys
@@ -200,13 +208,16 @@ class _Deadline(BaseException):
 
 
 def emit(route, confidence, flag, reason):
+    # allow_nan=False keeps the output strict JSON: a non-finite confidence can
+    # never reach stdout even if a caller passes one by mistake.
+    conf = valid_confidence(confidence)
     payload = {
         "route": route,
-        "confidence": round(float(confidence), 4),
-        "reason": reason[:400],
+        "confidence": round(conf, 4) if conf is not None else 0.0,
+        "reason": str(reason)[:400],
         "flag": flag,
     }
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False, allow_nan=False) + "\n")
 
 
 def _on_alarm(unused_signum: int, unused_frame: object) -> None:
@@ -245,6 +256,19 @@ def parse_timeout(raw):
     return timeout
 
 
+def valid_confidence(value):
+    """A finite confidence in [0, 1], or None for anything unusable."""
+    if isinstance(value, bool):
+        return None
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+        return None
+    return confidence
+
+
 def classify(core, payload):
     decision = core.guard(
         payload,
@@ -253,8 +277,16 @@ def classify(core, payload):
         block_options=(),
         instructions=INSTRUCTIONS,
     )
-    confidence = float(decision.confidence)
-    route = decision.route
+    route = decision.route if isinstance(decision.route, str) else None
+    confidence = valid_confidence(decision.confidence)
+    if confidence is None:
+        return (
+            None,
+            0.0,
+            DEFAULT_FLAG,
+            "invalid or missing confidence %r; asking the captain"
+            % (decision.confidence,),
+        )
     if decision.verdict is core.Verdict.PROCEED and route in FLAGS:
         return route, confidence, FLAGS[route], "ok"
     if route is not None and route not in FLAGS:

@@ -31,6 +31,7 @@ Neither ever sends a list of items: each call asks the model one atomic forced-c
 Every path that produced no usable verdict or route resolves to the conservative default with its flag and exits 0:
 
 - confidence below 0.9;
+- a confidence that is not a finite number in [0, 1] (NaN, infinity, negative, or above 1);
 - a missing or rejected API key;
 - any API or network error;
 - a malformed success response;
@@ -39,6 +40,7 @@ Every path that produced no usable verdict or route resolves to the conservative
 - the wall-clock bound (`FM_JV_BLOCKER_TIMEOUT` / `FM_JV_LANE_TIMEOUT`, default 20s).
 
 There is no silent suppression, no silent retry, and no silent lane assignment.
+Each wrapper validates the confidence at its own boundary, so a stale shared core that returned a non-finite or out-of-range confidence cannot reintroduce a suppression or a silent lane: any such value is treated exactly like an absent verdict, and the emitted confidence is always a plain JSON number, never `NaN` or `Infinity`.
 Exit 2 is reserved for a usage error - an unknown flag, a missing flag value, or missing `python3` - which prints nothing on stdout and makes no network call.
 Invalid input JSON and an unreadable core are fail-safes here rather than usage errors, because either could otherwise suppress a wake or misroute a request, and a safe typed answer is always available.
 
@@ -85,3 +87,4 @@ ARFAL is a deliberately dormant lane: a confident `arfal` result parks the reque
 `tests/fm-jev-blocker.test.sh` and `tests/fm-jev-lane.test.sh` drive the public interface against `tests/assets/jev-classify-fake-typesafe.py`, a fake System One server bound to loopback on an ephemeral port.
 They cover every class and lane, the high-confidence noise suppression, a low-confidence answer that must never suppress, the ARFAL dormant flag, an API error, a malformed response, invalid input JSON, the wall-clock fallback, a missing key, the `.env` fallback, an unexpected answer, file input, and the usage errors.
 No case reaches the real network, and each classification case asserts exactly one call.
+Both suites also cover an invalid confidence (NaN, infinity, negative, and above 1) and a deliberately stale shared core that returns a non-finite confidence, asserting the default verdict, the surface flag, a numeric confidence, strict JSON, exit 0, and no network call.

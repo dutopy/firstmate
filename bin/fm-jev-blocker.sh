@@ -35,12 +35,18 @@
 #                         fail-safe path); surface the block to the captain
 #                         anyway, exactly as if the classifier were absent.
 #
-# Fail-safe: every path that produced no usable verdict - confidence below 0.9,
-#   a missing or rejected API key, any API or network error, a malformed success
-#   response, invalid or unreadable input JSON, an unreadable shared core, or
-#   the wall-clock bound (FM_JV_BLOCKER_TIMEOUT, default 20s) - resolves to
-#   verdict needs_captain_decision, flag surface_captain, exit 0. There is no
-#   silent suppression and no silent retry.
+# Fail-safe: every path that produced no usable verdict - confidence below 0.9
+#   or any non-finite or out-of-range confidence (NaN, infinity, negative, or
+#   above 1), a missing or rejected API key, any API or network error, a
+#   malformed success response, invalid or unreadable input JSON, an unreadable
+#   shared core, or the wall-clock bound (FM_JV_BLOCKER_TIMEOUT, default 20s) -
+#   resolves to verdict needs_captain_decision, flag surface_captain, exit 0.
+#   There is no silent suppression and no silent retry.
+#
+# The wrapper validates the confidence itself, so a stale shared core that
+#   returned a non-finite confidence cannot reintroduce a suppression: any
+#   confidence that is not a finite number in [0, 1] is treated exactly like an
+#   absent verdict, and the emitted confidence is always a plain JSON number.
 #
 # Exit: 0 for every classified outcome, including every fail-safe. 2 for a usage
 #   error (an unknown flag, a missing flag value, or missing python3), which
@@ -120,6 +126,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 import signal
 import sys
@@ -217,13 +224,16 @@ def usage_error(message):
 
 
 def emit(verdict, confidence, flag, reason):
+    # allow_nan=False keeps the output strict JSON: a non-finite confidence can
+    # never reach stdout even if a caller passes one by mistake.
+    conf = valid_confidence(confidence)
     payload = {
         "verdict": verdict,
-        "confidence": round(float(confidence), 4),
-        "reason": reason[:400],
+        "confidence": round(conf, 4) if conf is not None else 0.0,
+        "reason": str(reason)[:400],
         "flag": flag,
     }
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False, allow_nan=False) + "\n")
 
 
 def _on_alarm(unused_signum: int, unused_frame: object) -> None:
@@ -262,6 +272,19 @@ def parse_timeout(raw):
     return timeout
 
 
+def valid_confidence(value):
+    """A finite confidence in [0, 1], or None for anything unusable."""
+    if isinstance(value, bool):
+        return None
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+        return None
+    return confidence
+
+
 def classify(core, payload):
     decision = core.guard(
         payload,
@@ -270,8 +293,16 @@ def classify(core, payload):
         block_options=(),
         instructions=INSTRUCTIONS,
     )
-    confidence = float(decision.confidence)
-    route = decision.route
+    route = decision.route if isinstance(decision.route, str) else None
+    confidence = valid_confidence(decision.confidence)
+    if confidence is None:
+        return (
+            DEFAULT_VERDICT,
+            0.0,
+            DEFAULT_FLAG,
+            "invalid or missing confidence %r; surfacing to the captain"
+            % (decision.confidence,),
+        )
     if decision.verdict is core.Verdict.PROCEED and route in FLAGS:
         return route, confidence, FLAGS[route], "ok"
     if route is not None and route not in FLAGS:

@@ -17,6 +17,7 @@ set -u
 
 TOOL="$ROOT/bin/fm-jev-blocker.sh"
 FAKE_SERVER="$ROOT/tests/assets/jev-classify-fake-typesafe.py"
+STALE_CORE="$ROOT/tests/assets/jev-stale-core.py"
 SHARED_CORE=${FM_JV_BLOCKER_CORE:-/home/dutopy/atelier/data/jev_decide.py}
 
 command -v python3 >/dev/null 2>&1 || {
@@ -117,6 +118,38 @@ assert_one_call() {
   assert_equals 1 "$count" "$1: exactly one System One call"
 }
 
+# assert_strict_json <text> <msg>: the text parses as strict JSON, so no NaN or
+# Infinity constant slipped into the typed output.
+assert_strict_json() {
+  local out=$1 msg=$2
+  python3 - "$out" <<'PY' || fail "$msg: output is not strict JSON"
+import json
+import sys
+
+
+def reject(constant):
+    raise ValueError("non-finite JSON constant: " + constant)
+
+
+json.loads(sys.argv[1], parse_constant=reject)
+PY
+}
+
+# run_core <core> <key> <home> <timeout> <payload> [tool args...]: like
+# run_blocker, but against an explicit shared core so a stale-core case never
+# depends on the real core's current behavior.
+run_core() {
+  local core=$1 key=$2 home=$3 timeout=$4 payload=$5 _out _rc
+  shift 5
+  _out=$(printf '%s' "$payload" | TYPESAFE_API_KEY="$key" FM_HOME="$home" \
+    FM_JV_BLOCKER_CORE="$core" FM_JV_BLOCKER_TIMEOUT="$timeout" \
+    TYPESAFE_BASE_URL="$BASE" "$TOOL" "$@" 2>"$STDERR_FILE")
+  _rc=$?
+  TOOL_OUT=$_out
+  TOOL_RC=$_rc
+  TOOL_ERR=$(cat "$STDERR_FILE")
+}
+
 # --- a real business blocker at high confidence is reported as an ordinary blocker
 reset_log
 start_fake --choice real_business_blocker --confidence 0.97
@@ -208,6 +241,35 @@ assert_typed_output "unexpected class"
 assert_equals '"needs_captain_decision"' "$(json_get "$TOOL_OUT" verdict)" "an unexpected class surfaces to the captain"
 assert_contains "$(json_get "$TOOL_OUT" reason)" 'unexpected class' "the reason names the unexpected class"
 pass "unexpected class: fail-safe, exit 0"
+
+# --- an invalid confidence is a fail-safe, never a suppression ---------------
+# NaN is the reported case: without strict validation, `nan < 0.9` is false, so
+# a fixture-noise answer would suppress its wake and emit non-standard JSON.
+for bad in nan inf -0.5 1.5; do
+  reset_log
+  start_fake --choice test_fixture_noise --confidence "$bad"
+  run_blocker "$API_KEY" "$HOME_DIR" 20 "$BLOCK_PAYLOAD" -
+  reap_fake
+  assert_typed_output "invalid confidence $bad"
+  assert_equals '"needs_captain_decision"' "$(json_get "$TOOL_OUT" verdict)" "confidence $bad surfaces to the captain"
+  assert_equals '"surface_captain"' "$(json_get "$TOOL_OUT" flag)" "confidence $bad never suppresses"
+  assert_equals '0.0' "$(json_get "$TOOL_OUT" confidence)" "confidence $bad is reported as a numeric zero"
+  assert_strict_json "$TOOL_OUT" "invalid confidence $bad"
+  pass "invalid confidence $bad: fail-safe default, strict JSON"
+done
+
+# --- a stale core cannot push an invalid confidence past the wrapper ---------
+reset_log
+export FM_JV_STALE_ROUTE=test_fixture_noise
+run_core "$STALE_CORE" "$API_KEY" "$HOME_DIR" 20 "$BLOCK_PAYLOAD" -
+unset FM_JV_STALE_ROUTE
+assert_typed_output "stale core"
+assert_equals '"needs_captain_decision"' "$(json_get "$TOOL_OUT" verdict)" "a stale core's non-finite confidence surfaces to the captain"
+assert_equals '"surface_captain"' "$(json_get "$TOOL_OUT" flag)" "a stale core cannot suppress a wake"
+assert_equals '0.0' "$(json_get "$TOOL_OUT" confidence)" "a stale core's confidence is reported as numeric zero"
+assert_strict_json "$TOOL_OUT" "stale core"
+assert_absent "$LOG/requests" "the stale-core case makes no network call"
+pass "stale core with a non-finite confidence: wrapper fail-safe, no network"
 
 # --- invalid input JSON fails safe without any network call ------------------
 reset_log

@@ -17,6 +17,7 @@ set -u
 
 TOOL="$ROOT/bin/fm-jev-lane.sh"
 FAKE_SERVER="$ROOT/tests/assets/jev-classify-fake-typesafe.py"
+STALE_CORE="$ROOT/tests/assets/jev-stale-core.py"
 SHARED_CORE=${FM_JV_LANE_CORE:-/home/dutopy/atelier/data/jev_decide.py}
 
 command -v python3 >/dev/null 2>&1 || {
@@ -117,6 +118,38 @@ assert_one_call() {
   assert_equals 1 "$count" "$1: exactly one System One call"
 }
 
+# assert_strict_json <text> <msg>: the text parses as strict JSON, so no NaN or
+# Infinity constant slipped into the typed output.
+assert_strict_json() {
+  local out=$1 msg=$2
+  python3 - "$out" <<'PY' || fail "$msg: output is not strict JSON"
+import json
+import sys
+
+
+def reject(constant):
+    raise ValueError("non-finite JSON constant: " + constant)
+
+
+json.loads(sys.argv[1], parse_constant=reject)
+PY
+}
+
+# run_core <core> <key> <home> <timeout> <payload> [tool args...]: like run_lane,
+# but against an explicit shared core so a stale-core case never depends on the
+# real core's current behavior.
+run_core() {
+  local core=$1 key=$2 home=$3 timeout=$4 payload=$5 _out _rc
+  shift 5
+  _out=$(printf '%s' "$payload" | TYPESAFE_API_KEY="$key" FM_HOME="$home" \
+    FM_JV_LANE_CORE="$core" FM_JV_LANE_TIMEOUT="$timeout" \
+    TYPESAFE_BASE_URL="$BASE" "$TOOL" "$@" 2>"$STDERR_FILE")
+  _rc=$?
+  TOOL_OUT=$_out
+  TOOL_RC=$_rc
+  TOOL_ERR=$(cat "$STDERR_FILE")
+}
+
 # --- each active lane routes normally ----------------------------------------
 for lane in system proapplis folium; do
   reset_log
@@ -187,6 +220,35 @@ assert_typed_output "unexpected lane"
 assert_equals 'null' "$(json_get "$TOOL_OUT" route)" "an unexpected lane assigns no lane"
 assert_contains "$(json_get "$TOOL_OUT" reason)" 'unexpected lane' "the reason names the unexpected lane"
 pass "unexpected lane: fail-safe, exit 0"
+
+# --- an invalid confidence is a fail-safe, never a silent lane ---------------
+# NaN is the reported case: without strict validation, a valid lane would be
+# accepted at a non-finite confidence and emitted as non-standard JSON.
+for bad in nan inf -0.5 1.5; do
+  reset_log
+  start_fake --choice folium --confidence "$bad"
+  run_lane "$API_KEY" "$HOME_DIR" 20 "$REQUEST_PAYLOAD" -
+  reap_fake
+  assert_typed_output "invalid confidence $bad"
+  assert_equals 'null' "$(json_get "$TOOL_OUT" route)" "confidence $bad assigns no lane"
+  assert_equals '"ask_captain"' "$(json_get "$TOOL_OUT" flag)" "confidence $bad asks the captain"
+  assert_equals '0.0' "$(json_get "$TOOL_OUT" confidence)" "confidence $bad is reported as a numeric zero"
+  assert_strict_json "$TOOL_OUT" "invalid confidence $bad"
+  pass "invalid confidence $bad: fail-safe default, strict JSON"
+done
+
+# --- a stale core cannot push an invalid confidence past the wrapper ---------
+reset_log
+export FM_JV_STALE_ROUTE=folium
+run_core "$STALE_CORE" "$API_KEY" "$HOME_DIR" 20 "$REQUEST_PAYLOAD" -
+unset FM_JV_STALE_ROUTE
+assert_typed_output "stale core"
+assert_equals 'null' "$(json_get "$TOOL_OUT" route)" "a stale core's non-finite confidence assigns no lane"
+assert_equals '"ask_captain"' "$(json_get "$TOOL_OUT" flag)" "a stale core cannot assign a silent lane"
+assert_equals '0.0' "$(json_get "$TOOL_OUT" confidence)" "a stale core's confidence is reported as numeric zero"
+assert_strict_json "$TOOL_OUT" "stale core"
+assert_absent "$LOG/requests" "the stale-core case makes no network call"
+pass "stale core with a non-finite confidence: wrapper fail-safe, no network"
 
 # --- invalid input JSON fails safe without any network call ------------------
 reset_log
