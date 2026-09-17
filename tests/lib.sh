@@ -195,6 +195,46 @@ trap 'fm_test_cleanup; exit 143' TERM
 trap 'fm_test_cleanup; exit 129' HUP
 trap 'fm_test_cleanup; exit 131' QUIT
 
+# --- mise-managed toolchain under a sandboxed HOME ---------------------------
+#
+# Suites that sandbox HOME - the spawn world does, so a stubbed claude launch
+# cannot write the developer's own ~/.claude.json - inherit the ambient PATH but
+# lose the state mise keeps under HOME. mise finds its config by walking up from
+# the working directory, so a suite running inside this checkout still reaches
+# the developer's ~/.config/mise/config.toml, while the trust store that file is
+# checked against is looked up under the sandbox HOME
+# (`<home>/.local/state/mise/trusted-configs`), where nothing was ever trusted.
+# mise then refuses to parse its own config and every one of its shims fails:
+# bin/fm-claude-trust.sh records Claude's workspace trust through `node` and
+# refuses when that fails, so a claude spawn stops before the router, profile,
+# or trace-context logic under test is reached, and bin/fm-spawn.sh's backlog
+# gate reads a failed `tasks-axi` probe as an inaccessible data directory.
+#
+# Away from this checkout the same shims do not fail but drift instead: config
+# discovery no longer reaches the pinned version, so they fall back to whatever
+# other tool PATH happens to offer.
+#
+# The sandbox exists to keep fixture writes out of the developer's HOME, not to
+# hide the toolchain from it, so a child is pointed at the very config, installs,
+# and trust this developer's own shell already uses. Mise's state and cache
+# still land under the sandbox HOME, nothing is added to PATH, and a child that
+# never invokes mise is unaffected. A host without mise, or one whose installed
+# tools do not live under its data directory, keeps its previous behavior.
+fm_test_pin_mise_toolchain() {
+  local home config_dir data_dir
+  command -v mise >/dev/null 2>&1 || return 0
+  home=${HOME:-}
+  [ -n "$home" ] || return 0
+  config_dir=${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$home/.config}/mise}
+  data_dir=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$home/.local/share}/mise}
+  [ -d "$data_dir" ] || return 0
+  MISE_CONFIG_DIR=$config_dir
+  MISE_DATA_DIR=$data_dir
+  MISE_TRUSTED_CONFIG_PATHS="$config_dir${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
+  export MISE_CONFIG_DIR MISE_DATA_DIR MISE_TRUSTED_CONFIG_PATHS
+}
+fm_test_pin_mise_toolchain
+
 # fm_test_reap_orphans: best-effort sweep for fixture roots left behind by a
 # prior run that was killed hard enough to skip the traps above (e.g. a
 # SIGKILL timeout). Only removes directories carrying the .fm-test-fixture
