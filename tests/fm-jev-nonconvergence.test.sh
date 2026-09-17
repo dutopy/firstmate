@@ -351,6 +351,28 @@ assert_contains "$(json_get "$TOOL_OUT" reason)" 'timeout' "the reason names the
 [ "$elapsed" -lt 20 ] || fail "the wall-clock bound did not fire (elapsed ${elapsed}s)"
 pass "timeout: fail-safe inside the bound, exit 0"
 
+# --- a non-finite or unrepresentable bound never leaves the call unbounded ---
+# NaN would make `timeout > 0` false and so silently arm nothing, and Infinity
+# or a huge finite value overflows the platform timer; each must resolve to the
+# fail-safe verdict carrying the real history, inside a finite bound, with no
+# request reaching the delayed server.
+for bad_timeout in nan inf 1e30; do
+  reset_log
+  start_fake --choice stalled_looping --confidence 0.97 --delay 30
+  started=$(date +%s)
+  run_detector "$API_KEY" "$HOME_DIR" "$bad_timeout" '' "$STALL_FILE"
+  elapsed=$(( $(date +%s) - started ))
+  reap_fake
+  assert_typed_output "timeout $bad_timeout"
+  assert_equals '"progressing"' "$(json_get "$TOOL_OUT" verdict)" "timeout $bad_timeout keeps the fail-safe verdict"
+  assert_equals '"review_history"' "$(json_get "$TOOL_OUT" flag)" "timeout $bad_timeout hands the history back"
+  assert_contains "$(json_get "$TOOL_OUT" reason)" 'fail_safe' "the reason names the fail-safe"
+  assert_equals '6' "$(json_get "$(features_of "$TOOL_OUT")" cycles)" "timeout $bad_timeout still carries the real history"
+  assert_no_call "timeout $bad_timeout"
+  [ "$elapsed" -lt 10 ] || fail "timeout $bad_timeout did not return inside a finite bound (elapsed ${elapsed}s)"
+  pass "timeout $bad_timeout: fail-safe, real features, finite bound, no request"
+done
+
 # --- a missing key fails safe without any network call ----------------------
 reset_log
 start_fake --choice stalled_looping --confidence 0.97
@@ -474,7 +496,7 @@ assert_contains "$TOOL_ERR" 'unknown flag --bogus' "the usage error names the fl
 assert_no_call "unknown flag"
 pass "unknown flag: usage error, exit 2, no network"
 
-for bad_lines in 0 abc; do
+for bad_lines in 0 abc 10001; do
   reset_log
   start_fake --choice stalled_looping --confidence 0.97
   run_detector "$API_KEY" "$HOME_DIR" 20 '' --lines "$bad_lines" "$STALL_FILE"

@@ -33,6 +33,7 @@ Every path that produced no usable verdict resolves to verdict `progressing`, fl
 - an unreadable shared core;
 - the wall-clock bound (`FM_JV_NONCONVERGENCE_TIMEOUT`, default 20s).
 
+A timeout that is non-finite or otherwise unrepresentable is a fail-safe too, so an invalid or unusable bound can never leave a call unbounded: the numeric input is checked before it reaches the timer, and arming the timer is itself inside the fail-safe path.
 An error never escalates.
 A `stalled_looping` verdict requires a high-confidence answer, never the absence of one, so a broken call, a missing key, or an unusable confidence can only hand the history back to firstmate.
 

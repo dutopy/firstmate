@@ -73,14 +73,18 @@
 #
 # Exit: 0 for every judged outcome, including every fail-safe and both
 #   no-model-call shortcuts. 2 for a usage error: an unknown flag, a missing
-#   flag value, a non-positive or non-integer --lines, --task together with a
-#   history file, missing python3, or a named history or task status file that
-#   cannot be read. A usage error prints nothing on stdout and makes no network
-#   call.
+#   flag value, a --lines outside the supported 1..10000 range, --task together
+#   with a history file, missing python3, or a named history or task status file
+#   that cannot be read. A usage error prints nothing on stdout and makes no
+#   network call.
 #
 # Environment:
 #   FM_JV_NONCONVERGENCE_CORE     shared core module path (default $FM_HOME/data/jev_decide.py)
-#   FM_JV_NONCONVERGENCE_TIMEOUT  wall-clock bound in seconds (default 20; 0 disables)
+#   FM_JV_NONCONVERGENCE_TIMEOUT  wall-clock bound in seconds (default 20; 0
+#                                 disables). The value must be finite and
+#                                 non-negative: a non-finite or unrepresentable
+#                                 bound is a fail-safe (progressing plus
+#                                 review_history), never an unbounded call.
 #   FM_STATE_OVERRIDE             state directory that --task resolves against
 #                                 (default $FM_HOME/state)
 #   TYPESAFE_API_KEY              from this process environment, else a
@@ -187,6 +191,7 @@ from collections import Counter
 CONFIDENCE_THRESHOLD = 0.9
 DEFAULT_VERDICT = "progressing"
 FALLBACK_FLAG = "review_history"
+MAX_LINES = 10000
 VERDICT_FLAGS = {
     "progressing": "continue",
     "stalled_looping": "escalate_recovery",
@@ -309,20 +314,49 @@ def read_history(path):
 
 
 def parse_lines(raw):
+    """The window size as a positive integer inside a finite range."""
     try:
         count = int(raw)
     except (TypeError, ValueError):
         raise UsageError("--lines must be a positive integer") from None
-    if count < 1:
-        raise UsageError("--lines must be a positive integer")
+    if count < 1 or count > MAX_LINES:
+        raise UsageError(
+            "--lines must be a positive integer no greater than %d" % MAX_LINES
+        )
     return count
 
 
 def parse_timeout(raw):
-    timeout = float(raw)
+    """The wall-clock bound as a finite, non-negative number of seconds.
+
+    0 disables the bound by contract. NaN and infinity reach neither the timer
+    nor the request: the value is rejected here so the run can fail safe with
+    the real history instead of falling through to an unbounded call.
+    """
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError("timeout must be a finite number of seconds") from None
+    if not math.isfinite(timeout):
+        raise ValueError("timeout must be a finite number of seconds")
     if timeout < 0:
         raise ValueError("timeout must not be negative")
     return timeout
+
+
+def arm_deadline(timeout):
+    """Arm the wall-clock bound; return True when a timer is armed.
+
+    A finite timeout the platform still cannot represent (a very large value,
+    for example) raises out of here into the run's fail-safe path, so an
+    unusable bound can neither leave the call unbounded nor escape as a raw
+    traceback.
+    """
+    if timeout <= 0 or not hasattr(signal, "SIGALRM") or not hasattr(signal, "setitimer"):
+        return False
+    signal.signal(signal.SIGALRM, _on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+    return True
 
 
 def parse_event(line):
@@ -475,6 +509,7 @@ def run(core_path, input_path, lines_raw, timeout_raw, task):
     try:
         core = load_core(core_path)
         timeout = parse_timeout(timeout_raw)
+        armed = arm_deadline(timeout)
     except Exception as exc:
         emit(
             DEFAULT_VERDICT,
@@ -484,10 +519,6 @@ def run(core_path, input_path, lines_raw, timeout_raw, task):
             features,
         )
         return 0
-    armed = timeout > 0 and hasattr(signal, "SIGALRM") and hasattr(signal, "setitimer")
-    if armed:
-        signal.signal(signal.SIGALRM, _on_alarm)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
     try:
         try:
             verdict, confidence, flag, reason = classify(core, task, features, events)
