@@ -1056,31 +1056,28 @@ test_container_ensure_refuses_an_ambiguous_home_label() {
   pass "fm_backend_herdr_container_ensure: surfaces the exact ambiguous-placement refusal instead of a generic failure"
 }
 
+# The Pi recovery narrowing that used to live in the adapter is superseded by
+# the shared process-level proof (`stale-agent`), so this keeps its
+# user-visible contract on the reference path: a registered Pi whose process is
+# gone over a shell-only pane reads dead for recovery, while a live Pi process
+# keeps the registration alive.
 test_recovery_distinguishes_exited_pi_from_live_pi() {
-  local out
-  out=$(bash -c '
-    . "$0/bin/backends/herdr.sh"
-    fm_backend_herdr_pane_agent_state() { printf live; }
-    fm_backend_herdr_cli() {
-      case "${2:-}:${3:-}" in
-        agent:get)
-          printf "%s\n" "{\"result\":{\"agent\":{\"agent\":\"pi\",\"agent_status\":\"done\"}}}"
-          ;;
-        pane:process-info)
-          if [ "${FM_TEST_PROCESS:-}" = pi ]; then
-            printf "%s\n" "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p1\",\"foreground_processes\":[{\"name\":\"pi\",\"argv0\":\"pi\"}]}}}"
-          else
-            printf "%s\n" "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p1\",\"foreground_processes\":[{\"name\":\"bash\",\"argv0\":\"bash\"}]}}}"
-          fi
-          ;;
-      esac
-    }
-    printf "%s %s" \
-      "$(FM_TEST_PROCESS=shell fm_backend_herdr_agent_state fmtest:w1:p1)" \
-      "$(FM_TEST_PROCESS=pi fm_backend_herdr_agent_state fmtest:w1:p1)"
-  ' "$ROOT")
-  [ "$out" = "dead alive" ] \
-    || fail "recovery must classify a retained shell as dead and a real Pi process as alive, got '$out'"
+  local sleep_bin shell_pid out
+  sleep_bin=$(command -v sleep) || fail "sleep not found"
+  # The exited shape: Herdr keeps the pi row while the pane's foreground is a
+  # shell with no harness descendant.
+  "$sleep_bin" 300 &
+  shell_pid=$!
+  out=$(stale_registration_case recovery-exited-pi 'done' "$(shell_only_process_info "$shell_pid")")
+  kill "$shell_pid" 2>/dev/null || true
+  [ "$out" = "stale-agent dead refused" ] \
+    || fail "recovery must read an exited Pi retained as a shell as dead, got '$out'"
+  # The live shape on Herdr 0.9.0: the interpreter is the kernel name and only
+  # argv0 says pi.
+  out=$(FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 stale_registration_case recovery-live-pi 'done' \
+    '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p2","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"node","argv0":"pi","argv":["pi"],"cmdline":"pi"}]}}}')
+  [ "$out" = "live alive refused" ] \
+    || fail "recovery must keep a real Pi process alive, got '$out'"
   pass "herdr recovery: an exited Pi retained as a shell is dead while a real Pi remains alive"
 }
 

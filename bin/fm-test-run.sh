@@ -701,6 +701,9 @@ tests/fm-control.test.sh 54301
 tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 21
 tests/fm-cursor-primary.test.sh 54947
+tests/fm-discord-live.test.sh 38579
+tests/fm-discord-workspace-concurrency.test.sh 3394
+tests/fm-discord-workspace.test.sh 33532
 tests/fm-dispatch-resolve.test.sh 1800
 tests/fm-daemon.test.sh 26870
 tests/fm-documentation-audiences.test.sh 732
@@ -722,7 +725,12 @@ tests/fm-herdr-submit-confirm-live-e2e.test.sh 23
 tests/fm-herdr-version-floor-live-e2e.test.sh 23
 tests/fm-home-summary-refresh.test.sh 34793
 tests/fm-inactive-reconcile.test.sh 74399
+tests/fm-inbox-external.test.sh 3338
+tests/fm-jev-blocker.test.sh 10868
 tests/fm-jev-class.test.sh 20000
+tests/fm-jev-finding.test.sh 11999
+tests/fm-jev-guard.test.sh 9292
+tests/fm-jev-lane.test.sh 10385
 tests/fm-kimi-harness.test.sh 18015
 tests/fm-lint-workflows.test.sh 855
 tests/fm-live-gate.test.sh 6000
@@ -742,6 +750,7 @@ tests/fm-pi-primary-live-e2e.test.sh 20
 tests/fm-pi-watch-extension.test.sh 42970
 tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pr-check-security.test.sh 172215
+tests/fm-procevent-discord-workspace.test.sh 24257
 tests/fm-procevent-quota.test.sh 1949
 tests/fm-procevent-when.test.sh 17392
 tests/fm-procevent.test.sh 69715
@@ -811,6 +820,7 @@ tests/fm-wake-drain-unread-status.test.sh 35078
 tests/fm-wake-queue.test.sh 56674
 tests/fm-watch-arm.test.sh 69464
 tests/fm-watch-checkpoint.test.sh 5779
+tests/fm-watch-inbox-surface.test.sh 4135
 tests/fm-watch-recovery-loop.test.sh 58731
 tests/fm-watch-triage.test.sh 262626
 tests/fm-watcher-lock.test.sh 88554

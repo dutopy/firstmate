@@ -2065,47 +2065,6 @@ fm_backend_herdr_explicit_close_pane_confirmed() {  # <session> <pane_id>
   [ "$presence" = dead ]
 }
 
-# fm_backend_herdr_pi_process_state: independently classify a registered Pi's
-# foreground process. Herdr can retain an agent registry row after Pi exits to
-# the pane's shell, so agent_status=done/idle is not process-liveness proof.
-# `pane process-info` is a protocol-level read of the exact pane and its
-# foreground group: a named Pi proves live, while a non-empty group made only
-# of recognized shells proves the agent stopped. Any other shape stays unknown.
-fm_backend_herdr_pi_process_state() {  # <session> <pane_id>
-  local info count name argv0 base saw_shell=0
-  info=$(fm_backend_herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null) || {
-    printf 'unknown'
-    return 0
-  }
-  printf '%s' "$info" | jq -e --arg pane "$2" '
-    .result.type == "pane_process_info"
-    and .result.process_info.pane_id == $pane
-    and (.result.process_info.foreground_processes | type) == "array"
-  ' >/dev/null 2>&1 || { printf 'unknown'; return 0; }
-  count=$(printf '%s' "$info" | jq -r '.result.process_info.foreground_processes | length' 2>/dev/null)
-  case "$count" in ''|*[!0-9]*|0) printf 'unknown'; return 0 ;; esac
-  while IFS=$'\t' read -r name argv0; do
-    base=${name##*/}
-    base=${base#-}
-    argv0=${argv0##*/}
-    argv0=${argv0#-}
-    case "$base:$argv0" in
-      pi:*|Pi:*|pi-signed:*|pi-launcher:*|*:pi|*:Pi|*:pi-signed|*:pi-launcher)
-        printf 'live'
-        return 0
-        ;;
-      sh:*|bash:*|zsh:*|dash:*|ksh:*|fish:*|*:sh|*:bash|*:zsh|*:dash|*:ksh|*:fish)
-        saw_shell=1
-        ;;
-      *) printf 'unknown'; return 0 ;;
-    esac
-  done < <(printf '%s' "$info" | jq -r '
-    .result.process_info.foreground_processes[]
-    | [(.name // ""), (.argv0 // (.argv[0] // ""))] | @tsv
-  ' 2>/dev/null)
-  [ "$saw_shell" -eq 1 ] && printf 'dead' || printf 'unknown'
-}
-
 # fm_backend_herdr_pane_process_state: what the operating system says is
 # running in <pane_id>, as one of agent|shell|other|unreadable, from `pane
 # process-info` plus the real process table. This is the process-level proof
@@ -2379,29 +2338,12 @@ fm_backend_herdr_server_running_state() {  # <session>
 # whose state cannot itself be read, still yields `unreadable` here too: absence
 # is claimed only from positive evidence of it.
 fm_backend_herdr_agent_state() {  # <target>
-  local target=$1 pane_state out agent status process_state
+  local target=$1
   fm_backend_herdr_parse_target "$target" || { printf 'unreadable'; return 0; }
-  pane_state=$(fm_backend_herdr_pane_agent_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
-  case "$pane_state" in
+  case "$(fm_backend_herdr_pane_agent_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")" in
     dead) printf 'missing' ;;
     no-agent|stale-agent) printf 'dead' ;;
-    live)
-      # The strict pane classifier deliberately preserves registered-agent
-      # authority for destructive husk handling. Recovery alone may narrow a
-      # stale Pi row by checking the exact foreground process group.
-      out=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" agent get "$FM_BACKEND_HERDR_PANE" 2>/dev/null) || {
-        printf 'alive'
-        return 0
-      }
-      agent=$(printf '%s' "$out" | jq -r '.result.agent.agent // empty' 2>/dev/null)
-      status=$(printf '%s' "$out" | jq -r '.result.agent.agent_status // empty' 2>/dev/null)
-      if [ "$agent" = pi ] && [ "$status" != working ]; then
-        process_state=$(fm_backend_herdr_pi_process_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
-        [ "$process_state" = dead ] && { printf 'dead'; return 0; }
-        [ "$process_state" = unknown ] || [ "$process_state" = live ] || { printf 'unreadable'; return 0; }
-      fi
-      printf 'alive'
-      ;;
+    live) printf 'alive' ;;
     *)
       case "$(fm_backend_herdr_server_running_state "$FM_BACKEND_HERDR_SESSION")" in
         stopped) printf 'missing' ;;
