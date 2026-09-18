@@ -81,6 +81,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-procevent.sh`        | Register, supervise, capture, classify, acknowledge, and safely retire built-in or explicitly bound process-event sources |
 | `fm-procevent-remote-reply.sh` | Relay the remote-secondmate status stream through non-destructive process-event deltas |
 | `fm-procevent-discord-workspace.sh` | Built-in offline process-event adapter for private Discord workspace intake |
+| `fm-procevent-discord-conversation-console.sh` | Built-in process-event adapter for the Discord conversation console: one bounded #firstmate inbound pass per invocation |
 | `fm-procevent-quota.sh`  | Wake Firstmate when tracked quota drops below a threshold, is exhausted, or cannot be polled |
 | `fm-procevent-when.sh`   | Fire a trust-bound deterministic action at most once when its registered condition holds, then wake with the outcome |
 | `fm-gate-refuse-lib.sh`  | Shared no-mistakes gate-context refusal for fleet lifecycle entrypoints               |
@@ -162,6 +163,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note, dictate one, read status, ask a side question |
 | `fm-discord-workspace.sh` | Validate and dry-run private Discord workspace setup, replies, artifacts, links, final follow-ups, and retirement |
 | `fm-discord-session-mirror.sh` | Mirror each live Firstmate session into its project's Discord sessions forum, file artifacts, and turn a captain thread into a session bound to it |
+| `fm-discord-conversation-console.sh` | Talk to Firstmate from Discord: capture #firstmate captain messages and answer in the same conversation thread ([discord-conversation-console.md](discord-conversation-console.md)) |
 | `fm-mail.sh`             | General-purpose mail plane: read unseen IMAP mail, send one SMTP message, or surface new mail as a `check` wake via `poll` (configuration in the home's gitignored `.env`) |
 | `fm-mail.py`             | The IMAP/SMTP engine behind `fm-mail.sh` |
 | `fm-mail-check.sh`       | Standing received-mail poll: `arm` registers a watcher check that runs `fm-mail.sh poll` on the watcher cadence (new mail still wakes via the poll; the check's own line also wakes unless the poll is a proven no-op), `disarm` removes it |
