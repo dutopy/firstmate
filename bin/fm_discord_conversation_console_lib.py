@@ -12,6 +12,13 @@ parallel conversations never cross. Only configured captain Discord user ids are
 accepted; every other message is ignored and recorded as ignored, never silently
 dropped.
 
+A captain voice message or supported audio attachment with no caption is
+transcribed through Groq Whisper large-v3 (bin/fm_groq_whisper.py) and fed into
+the same capture path as typed text, so the acknowledgement, fast path, typing
+indicator, and full turn behave identically. The temporary audio is deleted
+before the request returns and neither the audio nor the transcription key is
+ever written to a durable record or a log.
+
 The bot token is decrypted into process memory only through the shared owner in
 ``bin/fm_discord_live.py``; it is never printed, logged, or written to disk, and
 every failure path is redacted. Live reads and writes stay disabled unless the
@@ -67,7 +74,9 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -81,6 +90,10 @@ _live_spec = importlib.util.spec_from_file_location("fm_discord_live", SCRIPT_DI
 live = importlib.util.module_from_spec(_live_spec)
 _live_spec.loader.exec_module(live)
 
+_whisper_spec = importlib.util.spec_from_file_location("fm_groq_whisper", SCRIPT_DIR / "fm_groq_whisper.py")
+whisper = importlib.util.module_from_spec(_whisper_spec)
+_whisper_spec.loader.exec_module(whisper)
+
 FMError = fwl.FMError
 
 SCHEMA = "fm-discord-conversation-console.config.v1"
@@ -91,6 +104,7 @@ LAST_PASS_SCHEMA = "fm-discord-conversation-console.last-pass.v1"
 CONNECTION_SCHEMA = "fm-discord-conversation-console.connection.v1"
 FAST_PATH_SCHEMA = "fm-discord-conversation-console.fast-path.v1"
 TYPING_SCHEMA = "fm-discord-conversation-console.typing.v1"
+TRANSCRIPT_SCHEMA = "fm-discord-conversation-console.transcript.v1"
 SOURCE_ID = "discord-conversation-console"
 GATEWAY_SOURCE_ID = "discord-conversation-console-gateway"
 ADAPTER = "discord-conversation-console"
@@ -100,6 +114,22 @@ INBOX_SOURCE = "discord"
 DEFAULT_MAX_MESSAGES = 100
 DEFAULT_MAX_THREADS = 100
 DEFAULT_MAX_IGNORED = 500
+
+# Audio transcription. An audio attachment is downloaded from Discord into one
+# temporary file, transcribed through Groq Whisper large-v3 in French with the
+# captain's vocabulary prompt, and fed into the same capture path as text. The
+# temporary audio is deleted before the request returns, and neither the audio
+# nor the API key is ever written to a durable record or a log.
+DEFAULT_AUDIO_MAX_BYTES = 25 * 1024 * 1024
+DEFAULT_AUDIO_MAX_DURATION_SECONDS = 600
+DEFAULT_TRANSCRIPTION_KEY_ENV = whisper.DEFAULT_KEY_ENV
+DEFAULT_TRANSCRIPTION_MODEL = whisper.DEFAULT_MODEL
+DEFAULT_TRANSCRIPTION_LANGUAGE = whisper.DEFAULT_LANGUAGE
+DEFAULT_TRANSCRIPTION_PROMPT = whisper.DEFAULT_PROMPT
+DEFAULT_TRANSCRIPTION_BASE_URL = whisper.DEFAULT_BASE_URL
+DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS = whisper.DEFAULT_TIMEOUT_SECONDS
+DEFAULT_TRANSCRIPTION_PREFIX = "Transcription : "
+MAX_TRANSCRIPT_RECORDS = 5000
 
 # The fast path. The deterministic acknowledgement is posted the moment a
 # captain message is captured, then Jev decides whether the message can be
@@ -357,6 +387,82 @@ class ConsoleConfig:
         )
         if self.gateway_backoff_max < self.gateway_backoff_base:
             raise FMError("gateway.backoff_max_seconds must be at least gateway.backoff_base_seconds")
+        self._parse_audio(raw)
+        self._parse_transcription(raw)
+
+    def _parse_audio(self, raw: Dict[str, Any]) -> None:
+        """The Discord-CDN allowlist and bounds shared with the workspace schema."""
+        audio = raw.get("audio") if isinstance(raw.get("audio"), dict) else {}
+        self.audio_max_bytes = fwl.validate_positive_json_integer(
+            audio.get("max_bytes", DEFAULT_AUDIO_MAX_BYTES), "audio.max_bytes"
+        )
+        max_duration = audio.get("max_duration_secs", DEFAULT_AUDIO_MAX_DURATION_SECONDS)
+        if isinstance(max_duration, bool) or not isinstance(max_duration, (int, float)):
+            raise FMError("audio.max_duration_secs must be a positive finite number")
+        self.audio_max_duration_secs = float(max_duration)
+        if not (self.audio_max_duration_secs > 0):
+            raise FMError("audio.max_duration_secs must be a positive finite number")
+        self.audio_delete_raw = fwl.validate_bool(
+            audio.get("delete_temporary_raw", audio.get("delete_temporary_audio", True)),
+            "audio.delete_temporary_raw",
+            default=True,
+        )
+        self.audio_cdn_hosts: List[str] = []
+        seen: set = set()
+        for index, value in enumerate(fwl.as_list(audio.get("allowed_cdn_hosts", fwl.DEFAULT_CDN_HOSTS), "audio.allowed_cdn_hosts")):
+            label = f"audio.allowed_cdn_hosts[{index}]"
+            if not isinstance(value, str) or not value or value != value.lower() or len(value) > 253:
+                raise FMError(f"{label} must be a normalized lowercase hostname")
+            if any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", part) for part in value.split(".")):
+                raise FMError(f"{label} must be a normalized lowercase hostname")
+            if value in seen:
+                raise FMError(f"{label} duplicates an earlier hostname")
+            seen.add(value)
+            self.audio_cdn_hosts.append(value)
+        if not self.audio_cdn_hosts:
+            raise FMError("audio.allowed_cdn_hosts must not be empty")
+        # fwl.validate_audio_attachment reads these names on a workspace-shaped
+        # config; the console config exposes the same names so one validator
+        # owns the CDN, size, duration, and MIME rules.
+        self.cdn_hosts = self.audio_cdn_hosts
+
+    def _parse_transcription(self, raw: Dict[str, Any]) -> None:
+        tx = raw.get("transcription") if isinstance(raw.get("transcription"), dict) else {}
+        # On by default: the captain asked to talk instead of type, and a missing
+        # key still yields one honest line rather than silence.
+        self.transcription_enabled = fwl.bool_from_path(raw, ["transcription.enabled", "transcription_enabled"], True)
+        provider = tx.get("provider", "groq")
+        if not isinstance(provider, str) or provider not in ("disabled", "groq"):
+            raise FMError("transcription.provider must be disabled or groq")
+        self.transcription_provider = provider
+        key_env = tx.get("api_key", DEFAULT_TRANSCRIPTION_KEY_ENV)
+        if not isinstance(key_env, str) or not fwl.SECRET_REFERENCE_RE.fullmatch(key_env):
+            raise FMError("transcription.api_key must be an uppercase secret reference name")
+        self.transcription_key_env = key_env
+        try:
+            self.transcription_model = whisper.validate_model(str(tx.get("model", DEFAULT_TRANSCRIPTION_MODEL)))
+            self.transcription_language = whisper.validate_language(str(tx.get("language", DEFAULT_TRANSCRIPTION_LANGUAGE)))
+            self.transcription_prompt = whisper.validate_prompt(str(tx.get("prompt", DEFAULT_TRANSCRIPTION_PROMPT)))
+            configured_base = tx.get("base_url", DEFAULT_TRANSCRIPTION_BASE_URL)
+            if not isinstance(configured_base, str):
+                raise FMError("transcription.base_url must be a string")
+            self.transcription_base_url = whisper.api_base_url(configured_base)
+        except whisper.GroqError as exc:
+            raise FMError(str(exc)) from exc
+        self.transcription_timeout = env_float(
+            "FM_GROQ_TIMEOUT",
+            tx.get("timeout_seconds", DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS),
+            "transcription.timeout_seconds",
+        )
+        if self.transcription_timeout > whisper.MAX_TIMEOUT_SECONDS:
+            raise FMError(f"transcription.timeout_seconds must be at most {whisper.MAX_TIMEOUT_SECONDS:g}")
+        prefix = tx.get("transcript_prefix", DEFAULT_TRANSCRIPTION_PREFIX)
+        if not isinstance(prefix, str) or len(prefix) > 200:
+            raise FMError("transcription.transcript_prefix must be a string of at most 200 characters")
+        self.transcription_prefix = prefix
+        self.transcription_post_transcript = fwl.bool_from_path(
+            raw, ["transcription.post_transcript", "transcription_post_transcript"], True
+        )
 
     @classmethod
     def load(cls, env: "fwl.Env", path_text: Optional[str]) -> "ConsoleConfig":
@@ -403,6 +509,24 @@ def sample_config() -> Dict[str, Any]:
             "backoff_max_seconds": DEFAULT_BACKOFF_MAX_SECONDS,
             "fallback_poll_seconds": DEFAULT_FALLBACK_POLL_SECONDS,
             "fallback_after_attempts": DEFAULT_FALLBACK_AFTER_ATTEMPTS,
+        },
+        "audio": {
+            "max_bytes": DEFAULT_AUDIO_MAX_BYTES,
+            "max_duration_secs": DEFAULT_AUDIO_MAX_DURATION_SECONDS,
+            "delete_temporary_raw": True,
+            "allowed_cdn_hosts": list(fwl.DEFAULT_CDN_HOSTS),
+        },
+        "transcription": {
+            "enabled": True,
+            "provider": "groq",
+            "api_key": DEFAULT_TRANSCRIPTION_KEY_ENV,
+            "model": DEFAULT_TRANSCRIPTION_MODEL,
+            "language": DEFAULT_TRANSCRIPTION_LANGUAGE,
+            "prompt": DEFAULT_TRANSCRIPTION_PROMPT,
+            "base_url": DEFAULT_TRANSCRIPTION_BASE_URL,
+            "timeout_seconds": DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
+            "transcript_prefix": DEFAULT_TRANSCRIPTION_PREFIX,
+            "post_transcript": True,
         },
         "bounds": {
             "max_messages_per_channel": DEFAULT_MAX_MESSAGES,
@@ -593,6 +717,58 @@ def prune_fast_path_records(directory: Path) -> None:
             pass
 
 
+def transcript_record_path(env: "fwl.Env", request_id: str) -> Path:
+    return console_state_path(env, "transcripts", f"{fwl.sha256_text(request_id)}.json")
+
+
+def load_transcript_record(env: "fwl.Env", request_id: str) -> Optional[Dict[str, Any]]:
+    if not request_id:
+        return None
+    try:
+        record = fwl.load_existing_json(transcript_record_path(env, request_id))
+    except FMError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def store_transcript_record(env: "fwl.Env", request_id: str, record: Dict[str, Any]) -> None:
+    stored = dict(record)
+    stored.update({"schema": TRANSCRIPT_SCHEMA, "request_id": request_id, "recorded_at": fwl.utc_now()})
+    path = transcript_record_path(env, request_id)
+    with fwl.state_transaction(env):
+        fwl.atomic_json(path, stored)
+        prune_transcript_records(path.parent)
+
+
+def prune_transcript_records(directory: Path) -> None:
+    try:
+        records = sorted(directory.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    for stale in records[MAX_TRANSCRIPT_RECORDS:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def transcript_counts(env: "fwl.Env") -> Dict[str, int]:
+    directory = console_state_path(env, "transcripts")
+    ok = failed = 0
+    if directory.is_dir():
+        for path in directory.glob("*.json"):
+            try:
+                record = fwl.load_existing_json(path)
+            except FMError:
+                continue
+            if isinstance(record, dict):
+                if record.get("status") == "ok":
+                    ok += 1
+                else:
+                    failed += 1
+    return {"ok": ok, "failed": failed}
+
+
 def fast_path_counts(env: "fwl.Env") -> Dict[str, Any]:
     """Read-only counts and the most recent audit, for status."""
     result: Dict[str, Any] = {"acks": 0, "audits": 0, "last": {}}
@@ -716,7 +892,7 @@ def normalize_message(
     parent_id: str,
     message: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Classify one Discord message into an accepted text event or an ignored event."""
+    """Classify one Discord message into an accepted text, audio, or ignored event."""
     guild_id = channel.guild_id
     message_id = str(message.get("id") or "")
     author = message.get("author") if isinstance(message.get("author"), dict) else {}
@@ -749,12 +925,43 @@ def normalize_message(
     if "content" in message and not isinstance(content_value, str):
         return ignored_event(base, "invalid-content")
     content = content_value.strip() if isinstance(content_value, str) else ""
+    attachments = message.get("attachments") or []
+    if not isinstance(attachments, list) or any(not isinstance(item, dict) for item in attachments):
+        return ignored_event(base, "invalid-attachments")
+    if audio_attachment_present(message, attachments):
+        # An audio message with no typed caption becomes an audio event; the
+        # transcript is fed back through the text capture path once produced.
+        if not content:
+            event = dict(base)
+            event["kind"] = "audio"
+            event["content"] = ""
+            event["attachments"] = attachments
+            event["flags"] = message.get("flags", 0)
+            return event
     if not content:
         return ignored_event(base, "empty-message")
     event = dict(base)
     event["kind"] = "text"
     event["content"] = content
     return event
+
+
+def audio_attachment_present(message: Dict[str, Any], attachments: List[Dict[str, Any]]) -> bool:
+    """Whether Discord marks this message as carrying audio, without validating it.
+
+    Detection is deliberately lenient so an unsupported or oversized audio
+    attachment still reaches the transcribe path and earns an honest reply
+    instead of being silently ignored.
+    """
+    flags = message.get("flags", 0)
+    if isinstance(flags, int) and not isinstance(flags, bool) and flags & fwl.VOICE_MESSAGE_FLAG:
+        return True
+    for attachment in attachments:
+        ctype = fwl.attachment_content_type(attachment)
+        ext = Path(str(attachment.get("filename") or "")).suffix.lower()
+        if ctype.startswith(fwl.ALLOWED_AUDIO_MIME_PREFIXES) or ext in fwl.ALLOWED_AUDIO_EXTENSIONS:
+            return True
+    return False
 
 
 def ignored_event(base: Dict[str, Any], reason: str) -> Dict[str, Any]:
@@ -772,6 +979,7 @@ def event_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
     allowed = [
         "schema", "source", "kind", "label", "guild_id", "channel_id", "parent_id",
         "thread_id", "message_id", "author_id", "external_id", "request_id", "jump_url", "timestamp",
+        "transcript",
     ]
     return {key: event[key] for key in allowed if key in event}
 
@@ -786,6 +994,8 @@ def note_body(event: Dict[str, Any]) -> str:
     lines.append(f"from: {event.get('author_id')}")
     if event.get("jump_url"):
         lines.append(f"link: {event.get('jump_url')}")
+    if event.get("transcript"):
+        lines.append("transcript: Groq Whisper large-v3 (fr) of the captain's audio message")
     lines.append("")
     lines.append(str(event.get("content") or ""))
     lines.append("")
@@ -1157,6 +1367,181 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
 
 
 # ---------------------------------------------------------------------------
+# Audio transcription
+# ---------------------------------------------------------------------------
+
+def route_inbound_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any]) -> bool:
+    """Route one normalized inbound event; True when it produced a durable effect.
+
+    A text event goes straight to the shared capture path. An audio event is
+    transcribed into text and then handed to that exact same path, so the
+    acknowledgement, fast path, typing indicator, and full turn behave
+    identically and the answer still lands in the originating thread.
+    """
+    kind = event.get("kind")
+    if kind == "text":
+        route_text_event(env, cfg, client, event)
+        return True
+    if kind == "audio":
+        return route_audio_event(env, cfg, client, event)
+    return False
+
+
+def audio_failure_text(reason: str) -> str:
+    return f"Je n'ai pas pu transcrire ce message audio : {reason}"
+
+
+def route_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any]) -> bool:
+    """Download, transcribe, and feed one audio message through the text path.
+
+    Exactly once per request: a durable transcript record keyed by the request
+    id means a replay reuses the first transcript and never downloads or calls
+    Groq again. Every failure is recorded and answered with one honest line in
+    the same conversation instead of silence.
+    """
+    request_id = str(event.get("request_id") or "")
+    if not cfg.transcription_enabled or cfg.transcription_provider != "groq":
+        event["reason"] = "audio-transcription-disabled"
+        return False
+    if not request_id:
+        event["reason"] = "audio-without-message-id"
+        return False
+    existing = load_transcript_record(env, request_id)
+    if existing is not None:
+        if existing.get("status") == "ok":
+            _deliver_transcript(env, cfg, client, event, str(existing.get("text") or ""))
+            return True
+        event["reason"] = "audio-transcription-failed"
+        return False
+    try:
+        meta, text = _transcribe_audio_event(env, cfg, client, event)
+    except FMError as exc:
+        reason = client.redact(str(exc))
+        store_transcript_record(env, request_id, {"status": "failed", "reason": reason[:500]})
+        _post_honest_failure(env, cfg, client, event, reason)
+        event["reason"] = f"audio-transcription-failed: {reason[:120]}"
+        return False
+    store_transcript_record(env, request_id, {"status": "ok", "text": text, **meta})
+    _post_transcript(env, cfg, client, event, text, request_id)
+    _deliver_transcript(env, cfg, client, event, text)
+    return True
+
+
+def _audio_candidate_url(message: Dict[str, Any], attachment_id: str) -> str:
+    for attachment in message.get("attachments") or []:
+        if isinstance(attachment, dict) and fwl.attachment_id(attachment) == attachment_id:
+            return str(attachment.get("url") or "")
+    return ""
+
+
+def _transcribe_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    """Validate, download, and transcribe one audio attachment; delete it always."""
+    flags_value = event.get("flags", 0)
+    flags = flags_value if isinstance(flags_value, int) and not isinstance(flags_value, bool) else 0
+    message = {
+        "id": str(event.get("message_id") or ""),
+        "content": "",
+        "attachments": event.get("attachments") or [],
+        "flags": flags,
+    }
+    meta, audio_kind = fwl.validate_audio_attachment(cfg, message, flags)
+    url = validate_audio_cdn_url(_audio_candidate_url(message, str(meta.get("id") or "")), cfg)
+    tmp_dir = console_state_path(env, "audio-tmp")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(tmp_dir, 0o700)
+    except OSError:
+        pass
+    suffix = Path(str(meta.get("filename") or "")).suffix[:16]
+    fd, tmp_name = tempfile.mkstemp(prefix=".audio.", suffix=suffix, dir=str(tmp_dir))
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        client.download_attachment(url, tmp_path, cfg.audio_max_bytes)
+        api_key = whisper.resolve_api_key(env.home, cfg.transcription_key_env)
+        if not api_key:
+            raise FMError(
+                f"transcription is enabled but {cfg.transcription_key_env} is not set in the environment or {env.home}/.env"
+            )
+        try:
+            text = whisper.transcribe(
+                tmp_path,
+                str(meta.get("filename") or "audio"),
+                api_key=api_key,
+                model=cfg.transcription_model,
+                language=cfg.transcription_language,
+                prompt=cfg.transcription_prompt,
+                base_url=cfg.transcription_base_url,
+                timeout=cfg.transcription_timeout,
+            )
+        except whisper.GroqError as exc:
+            raise FMError(str(exc)) from exc
+    finally:
+        if cfg.audio_delete_raw:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+    text = text.strip()
+    if not text:
+        raise FMError("the audio contained no recognizable speech")
+    record_meta = {
+        "model": cfg.transcription_model,
+        "language": cfg.transcription_language,
+        "attachment_id": str(meta.get("id") or ""),
+        "size": meta.get("size"),
+        "duration_secs": meta.get("duration_secs"),
+        "audio_kind": audio_kind,
+    }
+    return record_meta, text
+
+
+def validate_audio_cdn_url(url: str, cfg: "ConsoleConfig") -> str:
+    if not url:
+        raise FMError("audio attachment is missing its download URL")
+    return fwl.validate_discord_cdn_url(url, cfg)
+
+
+def _deliver_transcript(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any], text: str) -> None:
+    if not text:
+        return
+    text_event = dict(event)
+    text_event["kind"] = "text"
+    text_event["content"] = text
+    text_event["transcript"] = True
+    text_event.pop("attachments", None)
+    text_event.pop("flags", None)
+    route_text_event(env, cfg, client, text_event)
+
+
+def _post_transcript(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any], text: str, request_id: str) -> None:
+    """Show what was heard in the thread, once, before the answer arrives."""
+    if not (cfg.transcription_post_transcript and cfg.live_posting_enabled):
+        return
+    body = _safe_fast_path_text(cfg.transcription_prefix + text, cfg.fast_path_max_answer_chars)
+    if not body:
+        return
+    try:
+        post_fast_path_message(env, client, str(event.get("channel_id") or ""), body, f"transcript:{request_id}")
+    except FMError:
+        pass
+
+
+def _post_honest_failure(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any], reason: str) -> None:
+    """Answer a failed transcription with one honest line, never silence."""
+    if not cfg.live_posting_enabled:
+        return
+    body = _safe_fast_path_text(audio_failure_text(reason), cfg.fast_path_max_answer_chars)
+    if not body:
+        body = "Je n'ai pas pu transcrire ce message audio."
+    request_id = str(event.get("request_id") or "")
+    try:
+        post_fast_path_message(env, client, str(event.get("channel_id") or ""), body, f"transcript-failure:{request_id}")
+    except FMError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Discord HTTP helpers
 # ---------------------------------------------------------------------------
 
@@ -1203,6 +1588,48 @@ class ConsoleClient:
     def typing(self, channel_id: str) -> None:
         """Emit the Discord typing indicator in one channel (best effort)."""
         self.client.request("POST", f"/channels/{channel_id}/typing")
+
+    def download_attachment(self, url: str, dest: Path, max_bytes: int) -> int:
+        """Stream one validated CDN attachment to a local file under the byte cap.
+
+        The destination is a mode-0600 temporary file the caller deletes; the
+        byte count is enforced both from Content-Length and while streaming, so
+        a lying header cannot exceed the configured bound.
+        """
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bot {self.token}",
+                "User-Agent": live.USER_AGENT,
+                "Accept": "*/*",
+            },
+        )
+        total = 0
+        try:
+            with urllib.request.urlopen(request, timeout=60.0) as response:
+                length = response.headers.get("Content-Length")
+                if length is not None:
+                    try:
+                        if int(length) > max_bytes:
+                            raise FMError("audio attachment exceeds the configured size limit")
+                    except ValueError:
+                        pass
+                with open(dest, "wb") as handle:
+                    while True:
+                        chunk = response.read(65536)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise FMError("audio attachment exceeds the configured size limit")
+                        handle.write(chunk)
+        except urllib.error.HTTPError as exc:
+            raise FMError(self.redact(f"audio download failed with HTTP {exc.code}")) from exc
+        except urllib.error.URLError as exc:
+            raise FMError(self.redact(f"audio download failed: {exc.reason}")) from exc
+        if total <= 0:
+            raise FMError("the downloaded audio was empty")
+        return total
 
     def channel(self, channel_id: str) -> Dict[str, Any]:
         info = self.client.request("GET", f"/channels/{channel_id}")
@@ -1259,8 +1686,7 @@ def ingest_message(
 ) -> str:
     """Capture or record one message through the shared path, whichever transport saw it."""
     event = normalize_message(cfg, channel, channel_id, parent_id, message)
-    if event.get("kind") == "text":
-        route_text_event(env, cfg, client, event)
+    if route_inbound_event(env, cfg, client, event):
         return "captured"
     append_ignored(env, [ignored_record(event, channel, channel_id)], cfg.max_ignored)
     return "ignored"
@@ -1294,8 +1720,7 @@ def process_target(
     for message in messages:
         event = normalize_message(cfg, channel, target_id, parent_id, message)
         message_id = str(event.get("message_id") or "")
-        if event.get("kind") == "text":
-            route_text_event(env, cfg, client, event)
+        if route_inbound_event(env, cfg, client, event):
             captured += 1
         else:
             ignored += 1
@@ -1821,6 +2246,12 @@ def cmd_config_check(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"fast-path classifier: {cfg.fast_path_classifier}")
         print(f"fast-path classifier timeout: {round(cfg.fast_path_timeout, 3)}s")
     print(f"gateway url: {gateway_host_label(cfg.gateway_url)}")
+    print(f"audio transcription: {'on' if cfg.transcription_enabled else 'off'}")
+    if cfg.transcription_enabled:
+        print(f"transcription model: {cfg.transcription_model}")
+        print(f"transcription language: {cfg.transcription_language}")
+        print(f"transcription key reference: {cfg.transcription_key_env}")
+        print(f"transcription audio bound: {cfg.audio_max_bytes} bytes, {cfg.audio_max_duration_secs:g}s")
     return 0
 
 
@@ -2043,6 +2474,11 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
     print(f"live posting: {'on' if cfg.live_posting_enabled else 'off'}")
     print(f"live gateway: {'on' if cfg.live_gateway_enabled else 'off'}")
     print(f"fast path: {'on' if cfg.fast_path_enabled else 'off'}")
+    print(f"audio transcription: {'on' if cfg.transcription_enabled else 'off'}")
+    if cfg.transcription_enabled:
+        counts = transcript_counts(env)
+        print(f"transcripts recorded: {counts['ok']} ok, {counts['failed']} failed")
+        print(f"transcription model: {cfg.transcription_model} ({cfg.transcription_language})")
     fast_counts = fast_path_counts(env)
     print(f"fast-path acks: {fast_counts['acks']}")
     print(f"fast-path audited messages: {fast_counts['audits']}")

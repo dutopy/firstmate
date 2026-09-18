@@ -702,6 +702,8 @@ tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 21
 tests/fm-cursor-primary.test.sh 54947
 tests/fm-discord-console-fast-path.test.sh 18000
+tests/fm-discord-conversation-console-audio.test.sh 5000
+tests/fm-discord-conversation-console.test.sh 16000
 tests/fm-discord-live.test.sh 38579
 tests/fm-discord-workspace-concurrency.test.sh 3394
 tests/fm-discord-workspace.test.sh 33532

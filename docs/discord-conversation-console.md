@@ -49,9 +49,17 @@ It names:
   `backoff_base_seconds` and `backoff_max_seconds`, and the
   `fallback_poll_seconds` and `fallback_after_attempts` that bound the polling
   fallback.
+- `audio`: the Discord CDN host allowlist and the size and duration bounds for an
+  incoming voice message or uploaded audio attachment.
+- `transcription`: the Groq Whisper switch, the API key reference, the model, the
+  language, the vocabulary prompt, and the transcript display choice; on by
+  default.
 - `bounds`: the per-pass message, thread, and retained ignored-record caps.
 
-The config stores only secret file paths and key names, never a token.
+The config stores only secret file paths and key names, never a token or an API
+key value. The Groq key itself is resolved from the environment first and then
+from `GROQ_API_KEY=` in the home's gitignored `.env`, so the native secret
+integration materializes it without a second bridge.
 
 ## Inbound
 
@@ -59,7 +67,8 @@ One bounded pass reads each configured `#firstmate` channel and the active and
 archived public threads under it, newest messages last, after a durable
 monotonic cursor per channel or thread.
 An accepted message is a non-empty text message whose author is one of
-`captain_user_ids` and is not the bot.
+`captain_user_ids` and is not the bot, or an audio message from the same captain
+whose text is produced by transcription (`Audio transcription` below).
 Each accepted message becomes one durable captain-inbox note through
 `bin/fm-inbox.sh note --source discord --external-id <message id>`
 (`inbox replay idempotency` in `discord-workspace.md` owns that seam).
@@ -151,6 +160,45 @@ posted; the hard deadline bounds a keeper whose answer never comes.
 There is exactly one keeper per conversation, a replayed capture never restarts
 one, and a fast answer or an ignored message never starts one.
 `status` reports how many keepers are active.
+
+## Audio transcription
+
+The captain can talk instead of typing.
+When a captain message carries a Discord voice message or a supported audio
+attachment and no typed caption, the console downloads the audio inside the
+configured CDN allowlist, transcribes it through Groq Whisper
+`whisper-large-v3` in French with the captain's vocabulary prompt, and feeds the
+transcript into the exact same capture path as a typed message.
+The acknowledgement, the fast path, the typing indicator, and the full turn
+behave identically, the durable request id still names the originating thread, and
+the answer lands there.
+
+The transcript is shown in the thread (`transcription.post_transcript`, default
+on) so the captain can see what was heard before firstmate answers.
+Transcription is on by default (`transcription.enabled`, `transcription.provider=groq`);
+setting `transcription.enabled=false` turns it off, and then an audio message is
+ignored exactly as before.
+
+The temporary audio lives in one mode-0600 file under the console state, is read
+once, and is deleted before the request returns, including on every failure path.
+The transcript record keeps only text and non-secret metadata, so no audio and no
+API key ever reaches a durable record or a log.
+
+The config keys are `transcription.enabled`, `transcription.provider`,
+`transcription.api_key` (the uppercase secret reference, default `GROQ_API_KEY`),
+`transcription.model` (fixed at `whisper-large-v3`, never turbo),
+`transcription.language` (default `fr`), `transcription.prompt`,
+`transcription.base_url`, `transcription.timeout_seconds`,
+`transcription.transcript_prefix`, and `transcription.post_transcript`.
+The shared `audio` section owns `max_bytes`, `max_duration_secs`,
+`delete_temporary_raw`, and `allowed_cdn_hosts`.
+A transcription is exactly once per request id: a replayed capture reuses the
+first transcript and never downloads or calls Groq again.
+A missing key, an unsupported or oversized attachment, a download error, or a
+failed transcription is answered with one honest line in the same conversation
+instead of silence, and the failed request is recorded durably.
+`status` reports the switch, the recorded transcript counts, and the model and
+language.
 
 ## Outbound
 
@@ -270,3 +318,14 @@ turn and stops with the answer.
 a fake System One server, covering both routes and every fail-safe path.
 The measured live latencies and the observed full-turn baseline are recorded in
 [`verification/discord-console-fast-path.md`](verification/discord-console-fast-path.md).
+
+`tests/fm-discord-conversation-console-audio.test.sh` drives transcription
+against a fake local Discord CDN and a fake local Groq API: a captain voice
+message becomes the message text and is answered in its thread, the transcript is
+shown there, a replay makes no second Groq call and posts no second transcript,
+the temporary audio is deleted after success and after failure, the bot token and
+the Groq key never reach durable state or the listener output, a corrupt and an
+oversized audio each produce one honest reply instead of a crash, and a disabled
+transcription leaves audio on the existing ignored path.
+The dependency contract is owned by
+[`verification/discord-console-audio-transcription.md`](verification/discord-console-audio-transcription.md).

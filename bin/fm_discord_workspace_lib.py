@@ -1668,9 +1668,13 @@ def discord_jump_url(guild_id: str, channel_id: str, message_id: str) -> str:
 
 def validate_discord_cdn_url(url: str, cfg: WorkspaceConfig) -> str:
     parsed = urlparse(url)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise FMError("attachment URL is not https")
     host = parsed.hostname.lower() if parsed.hostname else ""
+    # https is the contract; FM_DISCORD_ALLOW_INSECURE_CDN is a loopback-only
+    # test seam that never loosens the host allowlist below.
+    insecure_hosts = {item.strip() for item in os.environ.get("FM_DISCORD_ALLOW_INSECURE_CDN", "").split(",") if item.strip()}
+    secure = parsed.scheme == "https" or (parsed.scheme == "http" and host in insecure_hosts)
+    if not secure or not parsed.netloc:
+        raise FMError("attachment URL is not https")
     if host not in cfg.cdn_hosts:
         raise FMError("attachment URL host is not in the Discord CDN allowlist")
     return url
