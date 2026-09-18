@@ -224,6 +224,147 @@ PY
 
 world_get() { python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],0))" "$WORLD" "$1"; }
 
+# --- loopback fake Discord webhook endpoint ---------------------------------
+WEBHOOK_TOKEN=faketoken-webhook-mirror
+WEBHOOK_ID=1550452099039633499
+
+start_webhook_server() {
+  WEBHOOK_WORLD="$TMP_ROOT/webhook-world.json"
+  WEBHOOK_PORT_FILE="$TMP_ROOT/webhook-port"
+  printf '{"posts":[],"edits":[],"thread_posts":[],"counter":940000000000000000}\n' > "$WEBHOOK_WORLD"
+  setsid python3 - "$WEBHOOK_WORLD" "$WEBHOOK_PORT_FILE" "$WEBHOOK_ID" "$WEBHOOK_TOKEN" > "$TMP_ROOT/webhook-server.log" 2>&1 <<'PY' &
+import json, sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
+
+WORLD, PORT_FILE, WEBHOOK_ID, WEBHOOK_TOKEN = sys.argv[1:5]
+
+
+def load():
+    with open(WORLD, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save(world):
+    with open(WORLD, "w", encoding="utf-8") as f:
+        json.dump(world, f)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _send(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _split(self):
+        url = urlparse(self.path)
+        parts = [p for p in url.path.split("/") if p]
+        query = parse_qs(url.query)
+        return parts, query
+
+    def _authorized(self, parts):
+        return len(parts) >= 2 and parts[0] == "webhooks" and parts[1] == WEBHOOK_ID and parts[2] == WEBHOOK_TOKEN
+
+    def _body(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        try:
+            return json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            return {}
+
+    def do_POST(self):
+        parts, query = self._split()
+        world = load()
+        if not self._authorized(parts):
+            self._send(401, {"message": "Unauthorized", "note": "leak " + WEBHOOK_TOKEN})
+            return
+        body = self._body()
+        if body.get("allowed_mentions") != {"parse": []}:
+            self._send(400, {"message": "allowed_mentions must be empty parse"})
+            return
+        world["counter"] = int(world["counter"]) + 1
+        message = {"id": str(world["counter"]), "channel_id": str(world["counter"]), "content": body.get("content")}
+        if "thread_id" in query:
+            world["thread_posts"].append({"thread_id": query["thread_id"][0], "content": body.get("content")})
+        elif body.get("thread_name"):
+            world["posts"].append({
+                "thread_name": body["thread_name"],
+                "username": body.get("username"),
+                "applied_tags": list(body.get("applied_tags") or []),
+                "content": body.get("content"),
+                "id": message["id"],
+            })
+        else:
+            self._send(400, {"message": "thread_name or thread_id is required"})
+            return
+        save(world)
+        self._send(200, message)
+
+    def do_PATCH(self):
+        parts, query = self._split()
+        world = load()
+        if not self._authorized(parts) or len(parts) != 5 or parts[3] != "messages":
+            self._send(401, {"message": "Unauthorized"})
+            return
+        body = self._body()
+        world["edits"].append({"message_id": parts[4], "thread_id": query.get("thread_id", [""])[0], "content": body.get("content")})
+        save(world)
+        self._send(200, {"id": parts[4], "content": body.get("content")})
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+with open(PORT_FILE, "w", encoding="utf-8") as f:
+    f.write(str(server.server_port))
+server.serve_forever()
+PY
+  for _ in $(seq 1 60); do
+    [ -s "$WEBHOOK_PORT_FILE" ] && break
+    sleep 0.1
+  done
+  [ -s "$WEBHOOK_PORT_FILE" ] || fail "fake Discord webhook server did not start"
+  local webhook_port
+  webhook_port=$(cat "$WEBHOOK_PORT_FILE")
+  export FM_DISCORD_MIRROR_WEBHOOK_API_BASE="http://127.0.0.1:$webhook_port"
+}
+
+write_webhook_file() { # write_webhook_file <project-key>
+  cat > "$H/config/discord-webhooks.json" <<JSON
+{"webhooks": [
+  {"guild": "Hermes", "guild_slug": "hermes", "project": "Firstmate & Supervision", "kind": "sessions",
+   "channel_id": "$FORUM_A", "webhook_id": "$WEBHOOK_ID",
+   "url": "https://discord.com/api/webhooks/$WEBHOOK_ID/$WEBHOOK_TOKEN"}
+]}
+JSON
+  python3 - "$H/config/discord-session-mirror.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+project = data["projects"]["atelier"]
+project["tag_ids"] = {
+    "session": "900000000000000001",
+    "worktree": "900000000000000002",
+    "actif": "900000000000000003",
+    "en-attente": "900000000000000004",
+    "bloque": "900000000000000005",
+    "termine": "900000000000000006",
+}
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+PY
+}
+
 new_world() {
   cat > "$WORLD" <<JSON
 {
@@ -638,5 +779,81 @@ assert_contains "$DENIED" "error: Discord API GET" "a refused live pass names th
 printf '%s' "$DENIED" | grep -q "Traceback" && fail "a live refusal printed a traceback: $DENIED"
 printf '%s' "$DENIED" | grep -q "$FAKE_TOKEN" && fail "the token leaked into failure output"
 pass "a refused live pass reports one bounded, redacted error line"
+
+# --- 14. the webhook transport posts without any bot membership ---------------
+new_world
+new_home c14
+start_webhook_server
+add_task m-hook "$TMP_ROOT/project"
+set_state m-hook working
+write_webhook_file
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || fail "webhook sync failed: $out"
+assert_contains "$out" "via the webhook transport" "sync uses the configured webhook transport"
+assert_contains "$out" "transports=webhook" "the pass reports the webhook transport"
+python3 - "$WEBHOOK_WORLD" <<'PY' || fail "the webhook post is not the expected forum thread"
+import json, sys
+world = json.load(open(sys.argv[1]))
+posts = world["posts"]
+assert len(posts) == 1, posts
+post = posts[0]
+assert post["thread_name"] == "Firstmate & supervision - m-hook - atelier-24", post["thread_name"]
+assert post["username"] == "Firstmate & supervision - atelier-24", post["username"]
+assert sorted(post["applied_tags"]) == sorted(["900000000000000001", "900000000000000002", "900000000000000003"]), post
+assert "**Worktree :** atelier-24" in post["content"] and "**Session :** m-hook" in post["content"], post
+PY
+BOT_GETS=$(world_get gets)
+[ "$BOT_GETS" = "0" ] || fail "the webhook transport still called the bot API ($BOT_GETS gets)"
+pass "a configured webhook creates one correctly titled, tagged, per-session-identity forum post without any bot membership"
+
+# --- 15. the webhook transport edits the same card and never re-posts --------
+set_state m-hook blocked
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || fail "webhook state change failed: $out"
+assert_contains "$out" "session card updated in place" "a state change edits the card in place"
+assert_contains "$out" "a webhook cannot re-tag an existing thread" "the re-tag limit is reported, not hidden"
+python3 - "$WEBHOOK_WORLD" <<'PY' || fail "the webhook transport re-posted or missed the edit"
+import json, sys
+world = json.load(open(sys.argv[1]))
+assert len(world["posts"]) == 1, world["posts"]
+assert len(world["edits"]) == 1, world["edits"]
+assert "**Etat :** blocked" in world["edits"][0]["content"], world["edits"][0]
+PY
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || fail "webhook repeat sync failed: $out"
+python3 - "$WEBHOOK_WORLD" <<'PY' || fail "a repeated webhook pass was not a no-op"
+import json, sys
+world = json.load(open(sys.argv[1]))
+assert len(world["posts"]) == 1 and len(world["edits"]) == 1, (world["posts"], world["edits"])
+PY
+pass "a webhook state change edits one live card and a repeated pass is a no-op"
+
+# --- 16. the webhook transport reports missing tag ids instead of guessing ---
+new_home c16
+start_webhook_server
+write_webhook_file
+python3 - "$H/config/discord-session-mirror.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+del data["projects"]["atelier"]["tag_ids"]
+json.dump(data, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
+add_task m-notags "$TMP_ROOT/project"
+set_state m-notags working
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || fail "missing-tag-id sync failed: $out"
+assert_contains "$out" "has no configured tag id for session, worktree, actif" "unconfigured tag ids are reported exactly"
+assert_contains "$out" "skipped" "an unconfigured tag vocabulary blocks the post instead of guessing"
+python3 - "$H/config/discord-session-mirror.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["allow_untagged"] = True
+json.dump(data, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || fail "opt-in untagged sync failed: $out"
+assert_contains "$out" "posting without tags; no configured tag id for" "the opt-in reports the untagged post"
+python3 - "$WEBHOOK_WORLD" <<'PY' || fail "the opt-in untagged post did not land"
+import json, sys
+world = json.load(open(sys.argv[1]))
+assert len(world["posts"]) == 1, world["posts"]
+assert world["posts"][0]["applied_tags"] == [], world["posts"][0]
+PY
+pass "a missing tag id is reported exactly, blocks the post, and only an explicit opt-in publishes untagged"
 
 echo "fm-discord-session-mirror tests passed"

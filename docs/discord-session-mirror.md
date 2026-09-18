@@ -50,26 +50,60 @@ It owns, and the code never hard-codes:
 
 - `projects`: one entry per Firstmate project, mapping a project key to a
   `label`, the `guild_id`, the project's `sessions_forum_id`, an optional
-  `artifact_forum_id` with an optional `artifact_tags` map, and the absolute
-  `paths` of that project's clones. A task is matched to a project by the
-  `project=` path in its `state/<id>.meta`, longest matching path first.
+  `artifact_forum_id` with an optional `artifact_tags` map, an optional
+  `tag_ids` map, and the absolute `paths` of that project's clones. A task is
+  matched to a project by the `project=` path in its `state/<id>.meta`, longest
+  matching path first.
 - `session_tag` and `worktree_tag`: the two always-applied forum tags.
 - `state_tags`: the reconciled-state-to-tag table. The default maps `working` to
   `actif`, `parked` and `paused` to `en-attente`, `blocked` and `failed` to
   `bloque`, `done` to `termine`, and `unknown` to `en-attente`. Every reconciled
   state must be mapped.
+- `tag_ids`: the forum tag vocabulary as a name-to-id map. A member bot reads
+  that vocabulary live; a webhook cannot read a channel at all, so the webhook
+  transport needs it here.
 - `captain_user_ids`: the Discord accounts allowed to start a session request.
 - `live.posting`: the only switch that permits a Discord write. It is off by
   default, and every write command is a printed plan while it is off.
+- `allow_untagged`: with it off, an unconfigured `tag_ids` entry blocks the post
+  and says so; with it on, the session thread is published without tags and the
+  exact missing names are printed on every creation.
+- `webhook_file`: the captain-owned webhook inventory, `config/discord-webhooks.json`
+  by default.
 - `bounds.max_tasks_per_pass` and `bounds.max_thread_listing`: the per-pass and
   per-forum API bounds.
+
+## Posting identity
+
+The primary transport is a Discord webhook from the configured webhook file,
+matched to the project forum by `kind` (`sessions`, `artifacts`, `emails`) and
+`channel_id`. A webhook needs no bot membership, which is what lets the mirror
+publish into a guild the Firstmate bot has not been invited to. When no webhook
+matches the target forum, the mirror falls back to the member-bot transport.
+
+Each session posts under a readable per-session identity,
+`<project label> - <worktree name>` (for example
+`Firstmate & Supervision - atelier-24`), so the captain sees who is speaking,
+while the exact worktree name stays in the thread title and in the card.
+
+A webhook is bounded by design: it can create a forum post, edit the message it
+created, and post a link message into a thread of its own forum. It cannot read
+a channel, so thread recognition still needs the member-bot transport; and it
+cannot change an existing thread's tags, so with the webhook transport the state
+tag is applied when the thread is created and later state changes are carried by
+the live card. `sync` says exactly that when it happens instead of silently
+pretending the tags moved.
+
+## Session card and triggers
 
 The bot token follows the existing Firstmate Discord convention: only the
 reference is stored here (`secret_file`, a normalized
 `config/<name>.sops.yaml` path, plus `discord_bot_token_key`). The value is
 decrypted into process memory by the shared owner in `bin/fm_discord_live.py`,
 is never printed, logged, or written to disk, and is redacted from every failure
-path. A token-like or operational string is refused before any publish.
+path. A token-like or operational string is refused before any publish. Webhook
+execute urls and their tokens are read from the webhook file at runtime, kept in
+memory, and never printed, logged, or written into mirror state.
 
 ## One session thread per live task
 
@@ -104,12 +138,15 @@ guessed.
 
 Posting is exact-once across restarts. Each task's thread id, card message id,
 card digest, and applied tag ids live in a durable per-task record under
-`state/discord-workspace/session-mirror/sessions/`. A pass that finds no record
-still looks for an existing thread by the deterministic title in the forum's
-active threads and, only then, in that forum's archived public threads - so a
-crash between Discord creating the thread and the record landing adopts the
+`state/discord-workspace/session-mirror/sessions/`. A member-bot pass that finds
+no record still looks for an existing thread by the deterministic title in the
+forum's active threads and, only then, in that forum's archived public threads -
+so a crash between Discord creating the thread and the record landing adopts the
 existing thread instead of creating a second one, and a record that outlives
-`state/<id>.meta` is reported as orphaned rather than deleted.
+`state/<id>.meta` is reported as orphaned rather than deleted. The webhook
+transport cannot read those listings, so it records a create intent before it
+posts and refuses to create again until that intent is resolved; the reported
+remedy is a `bind --task <id> --thread <id>` after checking the forum.
 
 A pass makes no poll loop and no sleep: it is one bounded sequence of API calls,
 deferred past `bounds.max_tasks_per_pass` with the deferred task ids printed.
@@ -148,7 +185,9 @@ bin/fm-discord-session-mirror.sh request --thread <thread id> [--text-file <ask>
 
 The thread is recognized only when it is a forum thread whose parent is a
 configured project sessions forum and whose starter message was written by a
-configured captain account and not by a bot. On acceptance the mirror writes a
+configured captain account and not by a bot. Recognition reads the thread, so it
+needs the member-bot transport; with only webhooks configured, `request` says so
+and `bind` is the path. On acceptance the mirror writes a
 durable request record, wakes firstmate through the existing captain-inbox seam
 (`bin/fm-inbox.sh note --source discord-session-mirror --external-id <thread>`),
 and the session is bound to that thread with:
@@ -158,7 +197,9 @@ bin/fm-discord-session-mirror.sh bind --thread <thread id> --task <task id>
 ```
 
 An explicit plain-language request is the same command with `--thread` naming
-the target thread and `--text-file` carrying the captain's words.
+the target thread and `--text-file` carrying the captain's words, and a thread
+whose id is known (from the captain, or from the project orchestrator) is bound
+with `bind` even when only the webhook transport is configured.
 
 Anything else is refused in the same thread, with the exact reason and the list
 of recognized forums, and the refusal is recorded durably - an unrecognized or

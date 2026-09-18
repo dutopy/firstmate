@@ -47,6 +47,9 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -95,6 +98,15 @@ REQUIRED_STATE_KEYS = tuple(DEFAULT_STATE_TAGS)
 DEFAULT_SESSION_TAG = "session"
 DEFAULT_WORKTREE_TAG = "worktree"
 ARTIFACT_KINDS = ("report", "patch", "pr")
+DEFAULT_WEBHOOK_FILE = "config/discord-webhooks.json"
+WEBHOOK_KINDS = ("sessions", "artifacts", "emails")
+WEBHOOK_URL_RE = re.compile(
+    r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/(?:v[0-9]+/)?webhooks/([0-9]{5,32})/([A-Za-z0-9_.\-]{20,200})$"
+)
+WEBHOOK_MAX_RETRIES = 3
+WEBHOOK_API_BASE = "https://discord.com/api/v10"
+WEBHOOK_USER_AGENT = "firstmate-discord-session-mirror (bounded webhook transport, +https://localhost)"
+USERNAME_LIMIT = 80
 
 TITLE_LIMIT = 100
 BODY_LIMIT = 2000
@@ -162,6 +174,28 @@ def validate_positive_int(value: Any, field: str, maximum: int) -> int:
     return value
 
 
+def validate_config_file_reference(value: Any, field: str, home: Path) -> str:
+    """A non-secret JSON config reference under the home's config directory."""
+    if not isinstance(value, str):
+        raise FMError(f"{field} must be a normalized JSON file reference under config/")
+    parts = value.split("/")
+    if (
+        Path(value).is_absolute()
+        or len(parts) < 2
+        or parts[0] != "config"
+        or any(part in ("", ".", "..") for part in parts)
+        or not value.endswith(".json")
+    ):
+        raise FMError(f"{field} must be a normalized .json file reference under config/")
+    candidate = (home / value).resolve()
+    config_root = (home / "config").resolve()
+    try:
+        candidate.relative_to(config_root)
+    except ValueError as exc:
+        raise FMError(f"{field} must not escape the config directory through symlinks") from exc
+    return value
+
+
 class MirrorProject:
     def __init__(self, key: str, raw: Dict[str, Any], seen_ids: Dict[str, str]) -> None:
         self.key = key
@@ -203,6 +237,16 @@ class MirrorProject:
             if not expanded.is_absolute() or any(part in (".", "..") for part in expanded.parts):
                 raise FMError(f"{label} must be an absolute path without dot components")
             self.paths.append(os.path.realpath(str(expanded)))
+        raw_tag_ids = raw.get("tag_ids")
+        self.tag_ids: Dict[str, str] = {}
+        if raw_tag_ids is not None:
+            if not isinstance(raw_tag_ids, dict):
+                raise FMError(f"{prefix}.tag_ids must be a JSON object mapping a forum tag name to its id")
+            for name, value in raw_tag_ids.items():
+                tag_name = validate_tag_name(name, f"{prefix}.tag_ids key")
+                sid = fwl.validate_snowflake(value, f"{prefix}.tag_ids.{name}")
+                assert sid is not None
+                self.tag_ids[tag_name] = sid
 
     def artifact_tag_for(self, kind: str) -> Optional[str]:
         return self.artifact_tags.get(kind)
@@ -235,6 +279,11 @@ class MirrorConfig:
         if not self.captain_user_ids:
             raise FMError("captain_user_ids must contain at least one captain Discord user id")
         self.live_posting = fwl.bool_from_path(raw, ["live.posting"], False)
+        # A webhook cannot read a forum's tag vocabulary, so tag ids come from
+        # config. With this opt-in the mirror still publishes the session thread
+        # when they are unconfigured, and says so, instead of leaving the session
+        # invisible; without it an unconfigured tag vocabulary blocks the post.
+        self.allow_untagged = fwl.bool_from_path(raw, ["allow_untagged"], False)
         self.state_tags = validate_state_tag_map(raw.get("state_tags"))
         self.session_tag = validate_tag_name(raw.get("session_tag", DEFAULT_SESSION_TAG), "session_tag")
         self.worktree_tag = validate_tag_name(raw.get("worktree_tag", DEFAULT_WORKTREE_TAG), "worktree_tag")
@@ -243,6 +292,9 @@ class MirrorConfig:
             raise FMError("bounds must be a JSON object")
         self.max_tasks_per_pass = validate_positive_int(bounds.get("max_tasks_per_pass", MAX_TASKS_DEFAULT), "bounds.max_tasks_per_pass", 500)
         self.max_thread_listing = validate_positive_int(bounds.get("max_thread_listing", MAX_BOUND_DEFAULT), "bounds.max_thread_listing", 1000)
+        self.webhook_file = validate_config_file_reference(
+            raw.get("webhook_file", DEFAULT_WEBHOOK_FILE), "webhook_file", home
+        )
         projects = raw.get("projects")
         if not isinstance(projects, dict) or not projects:
             raise FMError("projects must be a non-empty JSON object mapping a project key to its Discord forums")
@@ -297,6 +349,8 @@ def sample_config() -> Dict[str, Any]:
         "discord_bot_token_key": "FIRSTMATE_DISCORD_BOT_TOKEN",
         "captain_user_ids": ["000000000000000001"],
         "live": {"posting": False},
+        "allow_untagged": False,
+        "webhook_file": DEFAULT_WEBHOOK_FILE,
         "session_tag": DEFAULT_SESSION_TAG,
         "worktree_tag": DEFAULT_WORKTREE_TAG,
         "state_tags": dict(DEFAULT_STATE_TAGS),
@@ -308,6 +362,14 @@ def sample_config() -> Dict[str, Any]:
                 "sessions_forum_id": "000000000000000002",
                 "artifact_forum_id": "000000000000000003",
                 "artifact_tags": {"report": "rapport", "patch": "patch", "pr": "pr"},
+                "tag_ids": {
+                    "session": "000000000000000010",
+                    "worktree": "000000000000000011",
+                    "actif": "000000000000000012",
+                    "en-attente": "000000000000000013",
+                    "bloque": "000000000000000014",
+                    "termine": "000000000000000015",
+                },
                 "paths": ["/absolute/path/to/example-project"],
             }
         },
@@ -408,6 +470,11 @@ def render_card(project: MirrorProject, task_id: str, worktree: str, branch: str
     lines.append(f"**Etat :** {state}")
     lines.append(CARD_FOOTER)
     return "\n".join(lines)
+
+
+def session_identity(project: MirrorProject, worktree: str) -> str:
+    """The readable speaker label the captain sees in a session thread."""
+    return truncate(f"{project.label} - {worktree}", USERNAME_LIMIT)
 
 
 def assert_publishable(text: str, field: str) -> str:
@@ -515,6 +582,279 @@ class MirrorClient:
         if not isinstance(data, dict):
             raise FMError(f"thread starter message for {thread_id} was malformed")
         return data
+
+
+# --------------------------------------------------------------------------
+# webhook transport
+# --------------------------------------------------------------------------
+
+
+class WebhookEntry:
+    """One project forum webhook from the captain-owned webhook file.
+
+    The execute url and its token are secrets: they are read at runtime, kept
+    only in memory, and never printed, logged, or written into mirror state.
+    """
+
+    def __init__(self, raw: Dict[str, Any], index: int) -> None:
+        prefix = f"webhooks[{index}]"
+        if not isinstance(raw, dict):
+            raise FMError(f"{prefix} must be a JSON object")
+        self.guild = bounded_text(raw.get("guild", ""), f"{prefix}.guild", 80, allow_empty=True)
+        self.guild_slug = bounded_text(raw.get("guild_slug", ""), f"{prefix}.guild_slug", 40, allow_empty=True)
+        self.project = bounded_text(raw.get("project", ""), f"{prefix}.project", 80, allow_empty=True)
+        self.kind = str(raw.get("kind") or "")
+        if self.kind not in WEBHOOK_KINDS:
+            raise FMError(f"{prefix}.kind must be one of {', '.join(WEBHOOK_KINDS)}")
+        self.channel_id = fwl.validate_snowflake(raw.get("channel_id"), f"{prefix}.channel_id") or ""
+        self.webhook_id = fwl.validate_snowflake(raw.get("webhook_id"), f"{prefix}.webhook_id", required=False) or ""
+        match = WEBHOOK_URL_RE.fullmatch(str(raw.get("url") or ""))
+        if match is None:
+            raise FMError(f"{prefix}.url must be a Discord webhook execute url")
+        self.token = match.group(2)
+        if self.webhook_id and self.webhook_id != match.group(1):
+            raise FMError(f"{prefix}.webhook_id does not match the execute url")
+        self.webhook_id = self.webhook_id or match.group(1)
+        # Only the identity and the token are kept: the execute url is composed
+        # at call time, so no url is ever stored, printed, or written to state.
+
+    @property
+    def api_base(self) -> str:
+        return (os.environ.get("FM_DISCORD_MIRROR_WEBHOOK_API_BASE") or WEBHOOK_API_BASE).rstrip("/")
+
+    @property
+    def execute_url(self) -> str:
+        return f"{self.api_base}/webhooks/{self.webhook_id}/{self.token}"
+
+    def redact(self, text: str) -> str:
+        return text.replace(self.token, "[REDACTED]").replace(self.execute_url, "[webhook]")
+
+
+class WebhookStore:
+    """The captain-owned webhook file; a missing file simply means no webhooks."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.entries: List[WebhookEntry] = []
+        self.error = ""
+        if path.is_symlink():
+            raise FMError(f"refusing unsafe webhook file: {path}")
+        if not path.exists():
+            return
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise FMError(f"webhook file is malformed: {path}") from exc
+        items = raw.get("webhooks") if isinstance(raw, dict) else raw
+        if not isinstance(items, list):
+            raise FMError(f"webhook file must hold a list of webhooks: {path}")
+        for index, item in enumerate(items):
+            self.entries.append(WebhookEntry(item, index))
+
+    def for_channel(self, kind: str, channel_id: str) -> Optional[WebhookEntry]:
+        if not channel_id:
+            return None
+        for entry in self.entries:
+            if entry.kind == kind and entry.channel_id == channel_id:
+                return entry
+        return None
+
+
+class WebhookClient:
+    """Bounded webhook transport: create a forum post, edit it, post a link."""
+
+    def __init__(self, entry: WebhookEntry) -> None:
+        self.entry = entry
+        self.calls = 0
+
+    def _request(self, method: str, path: str, body: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        url = f"{self.entry.execute_url}{path}"
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {"Content-Type": "application/json", "User-Agent": WEBHOOK_USER_AGENT, "Accept": "application/json"}
+        last = ""
+        for attempt in range(WEBHOOK_MAX_RETRIES + 1):
+            self.calls += 1
+            request = urllib.request.Request(url, data=data, headers=headers, method=method)
+            try:
+                with urllib.request.urlopen(request) as response:
+                    payload = response.read().decode("utf-8")
+                    return json.loads(payload) if payload else {}
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", "replace")
+                if exc.code == 429 and attempt < WEBHOOK_MAX_RETRIES:
+                    time.sleep(self._retry_after(exc.headers))
+                    continue
+                if 500 <= exc.code < 600 and attempt < WEBHOOK_MAX_RETRIES:
+                    time.sleep(0.5)
+                    continue
+                raise FMError(self.entry.redact(f"Discord webhook {method} {path or '/'} failed with HTTP {exc.code}: {detail}"))
+            except urllib.error.URLError as exc:
+                last = self.entry.redact(f"Discord webhook transport failure: {exc.reason}")
+                if attempt < WEBHOOK_MAX_RETRIES:
+                    time.sleep(0.5)
+                    continue
+                raise FMError(last)
+        raise FMError(last or "Discord webhook call failed")
+
+    @staticmethod
+    def _retry_after(headers: Any) -> float:
+        try:
+            value = headers.get("Retry-After")
+            if value:
+                return min(float(value) / 1000.0, 30.0)
+        except (TypeError, ValueError):
+            pass
+        return 0.5
+
+    def create_forum_post(
+        self, thread_name: str, content: str, username: str, applied_tags: List[str]
+    ) -> Dict[str, Any]:
+        body: Dict[str, Any] = {
+            "content": content,
+            "username": truncate(username, USERNAME_LIMIT),
+            "thread_name": thread_name,
+            "allowed_mentions": {"parse": []},
+        }
+        if applied_tags:
+            body["applied_tags"] = applied_tags
+        data = self._request("POST", "?wait=true", body)
+        if not isinstance(data, dict) or not str(data.get("id") or "").isdigit():
+            raise FMError("Discord did not return a usable forum post id")
+        return data
+
+    def edit_message(self, message_id: str, thread_id: str, content: str) -> None:
+        self._request("PATCH", f"/messages/{message_id}?thread_id={thread_id}", {"content": content})
+
+    def post_message(self, thread_id: str, content: str) -> Dict[str, Any]:
+        data = self._request(
+            "POST",
+            f"?thread_id={thread_id}&wait=true",
+            {"content": content, "allowed_mentions": {"parse": []}},
+        )
+        if not isinstance(data, dict) or not str(data.get("id") or "").isdigit():
+            raise FMError("Discord did not return a usable message id")
+        return data
+
+
+class Transport:
+    """One posting identity for one project forum.
+
+    A configured webhook for that exact (kind, forum) is the primary transport
+    and needs no bot membership. It is bounded by design: it can create a forum
+    post, edit the message it created, and post a link message, but it cannot
+    read a channel and it cannot change an existing thread's tags. Everything
+    that needs reading or re-tagging falls back to the member-bot transport.
+    """
+
+    def __init__(
+        self,
+        passing: "Pass",
+        project: MirrorProject,
+        kind: str,
+        forum_id: str,
+    ) -> None:
+        self.passing = passing
+        self.project = project
+        self.kind = kind
+        self.forum_id = forum_id
+        self.webhook = passing.webhooks.for_channel(kind, forum_id)
+        self.webhook_client: Optional[WebhookClient] = WebhookClient(self.webhook) if self.webhook is not None else None
+        self._bot: Optional[MirrorClient] = None
+
+    @property
+    def name(self) -> str:
+        return "webhook" if self.webhook is not None else "bot"
+
+    @property
+    def identity(self) -> str:
+        if self.webhook is not None:
+            return self.webhook.webhook_id
+        return self.project.guild_id
+
+    def bot(self, env: Env) -> MirrorClient:
+        if self._bot is None:
+            self._bot = self.passing.client_for(env)
+        return self._bot
+
+    def redact(self, text: str) -> str:
+        if self.webhook is not None:
+            text = self.webhook.redact(text)
+        if self._bot is not None:
+            text = self._bot.redact(text)
+        return text
+
+    def resolve_tag_ids(self, env: Env, wanted: List[str]) -> Tuple[List[str], List[str]]:
+        if self.webhook is not None:
+            ids: List[str] = []
+            missing: List[str] = []
+            for name in wanted:
+                tag_id = self.project.tag_ids.get(name)
+                if tag_id:
+                    if tag_id not in ids:
+                        ids.append(tag_id)
+                else:
+                    missing.append(name)
+            return ids, missing
+        available = self.passing.available_tags(env, self.forum_id)
+        by_name = {tag["name"]: tag["id"] for tag in available}
+        ids = []
+        missing = []
+        for name in wanted:
+            if name in by_name:
+                if by_name[name] not in ids:
+                    ids.append(by_name[name])
+            else:
+                missing.append(name)
+        return ids, missing
+
+    def create_forum_post(self, env: Env, title: str, content: str, tag_ids: List[str], username: str) -> Tuple[str, str]:
+        """Create the forum post, returning (thread id, posting identity)."""
+        if self.webhook_client is not None:
+            posted = self.webhook_client.create_forum_post(title, content, username, tag_ids)
+            author = posted.get("author") if isinstance(posted.get("author"), dict) else {}
+            return str(posted["id"]), str(author.get("username") or "")
+        created = self.bot(env).create_forum_thread(self.forum_id, title, content, tag_ids)
+        return str(created["id"]), ""
+
+    def edit_card(self, env: Env, thread_id: str, message_id: str, content: str) -> None:
+        if self.webhook_client is not None:
+            self.webhook_client.edit_message(message_id, thread_id, content)
+            return
+        self.bot(env).edit_message(thread_id, message_id, content)
+
+    def post_message(self, env: Env, thread_id: str, content: str) -> str:
+        if self.webhook_client is not None:
+            return str(self.webhook_client.post_message(thread_id, content)["id"])
+        return str(self.bot(env).post_message(thread_id, content)["id"])
+
+    def set_thread_tags(self, env: Env, thread_id: str, tag_ids: List[str]) -> bool:
+        """Only a member bot can re-tag an existing thread; a webhook cannot."""
+        if self.webhook is not None:
+            return False
+        self.bot(env).set_thread_tags(thread_id, tag_ids)
+        return True
+
+    def reads_channels(self) -> bool:
+        return self.webhook is None
+
+    def forum_threads(self, env: Env) -> Dict[str, Dict[str, Any]]:
+        """Existing threads by name; empty when the transport cannot read."""
+        if self.webhook is not None:
+            return {}
+        return self.passing.forum_threads(env, self.project, self.forum_id)
+
+    def thread(self, env: Env, thread_id: str) -> Dict[str, Any]:
+        if self.webhook is not None:
+            raise FMError(
+                "recognizing a thread needs a reading identity; invite the Firstmate bot to the guild "
+                "or bind the thread explicitly with bind --thread <id> --task <id>"
+            )
+        return self.bot(env).thread(thread_id)
+
+    def starter_message(self, env: Env, thread_id: str) -> Dict[str, Any]:
+        if self.webhook is not None:
+            raise FMError("a webhook transport cannot read a thread starter message")
+        return self.bot(env).starter_message(thread_id)
 
 
 # --------------------------------------------------------------------------
@@ -682,10 +1022,27 @@ class Pass:
         self.lines: List[str] = []
         self.client: Optional[MirrorClient] = None
         self.failures = 0
+        self.transport_names: List[str] = []
+        self._transports: List[Transport] = []
         self._tag_cache: Dict[str, List[Dict[str, str]]] = {}
+        self.webhooks = WebhookStore(state.env.home / cfg.webhook_file)
 
     def note(self, line: str) -> None:
         self.lines.append(line)
+
+    def redact(self, text: str) -> str:
+        for transport in self._transports:
+            text = transport.redact(text)
+        if self.client is not None:
+            text = self.client.redact(text)
+        return text
+
+    def transport(self, project: MirrorProject, kind: str, forum_id: str) -> Transport:
+        transport = Transport(self, project, kind, forum_id)
+        if transport.name not in self.transport_names:
+            self.transport_names.append(transport.name)
+        self._transports.append(transport)
+        return transport
 
     def client_for(self, env: Env) -> MirrorClient:
         if self.client is None:
@@ -705,20 +1062,6 @@ class Pass:
             self._tag_cache[forum_id] = tags
         return self._tag_cache[forum_id]
 
-    def resolve_tags(self, env: Env, forum_id: str, wanted: List[str]) -> Tuple[List[str], List[str]]:
-        """Map wanted tag names to ids using the forum's live tag vocabulary."""
-        available = self.available_tags(env, forum_id)
-        by_name = {tag["name"]: tag["id"] for tag in available}
-        ids: List[str] = []
-        missing: List[str] = []
-        for name in wanted:
-            if name in by_name:
-                if by_name[name] not in ids:
-                    ids.append(by_name[name])
-            else:
-                missing.append(name)
-        return ids, missing
-
     def forum_threads(self, env: Env, project: MirrorProject, forum_id: str) -> Dict[str, Dict[str, Any]]:
         client = self.client_for(env)
         found: Dict[str, Dict[str, Any]] = {}
@@ -730,6 +1073,16 @@ class Pass:
                 if str(thread.get("parent_id") or "") == forum_id:
                     found.setdefault(str(thread.get("name") or ""), thread)
         return found
+
+    def api_calls(self) -> int:
+        total = self.client.calls if self.client is not None else 0
+        seen: set[int] = set()
+        for transport in self._transports:
+            client = transport.webhook_client
+            if client is not None and id(client) not in seen:
+                seen.add(id(client))
+                total += client.calls
+        return total
 
 
 def cmd_sync(args: argparse.Namespace, env: Env) -> int:
@@ -753,14 +1106,13 @@ def cmd_sync(args: argparse.Namespace, env: Env) -> int:
         except ERRTYPES as exc:
             # One task's failure never hides the rest of the pass, and it never
             # looks like success: the reasons are printed and the pass exits 1.
-            message = passing.client.redact(str(exc)) if passing.client is not None else str(exc)
             passing.failures += 1
-            passing.note(f"{task['task']}: error: {message}")
+            passing.note(f"{task['task']}: error: {passing.redact(str(exc))}")
     for line in passing.lines:
         print(line)
     print(
         f"mirror pass complete: live={'yes' if live else 'no'} tasks={len(tasks)} "
-        f"failed={passing.failures} api_calls={passing.client.calls if passing.client else 0}"
+        f"failed={passing.failures} transports={','.join(passing.transport_names) or 'none'} api_calls={passing.api_calls()}"
     )
     return 1 if passing.failures else 0
 
@@ -776,8 +1128,15 @@ def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, ta
     state_tag = cfg.state_tags[state_name]
     record = state.session_record(task_id)
     title = render_thread_title(project.label, task_id, worktree)
+    transport = passing.transport(project, "sessions", project.sessions_forum_id)
     if record is not None and record.get("project") != project.key:
         passing.note(f"{task_id}: skipped, recorded thread belongs to project {record.get('project')} but the task now reports {project.key}")
+        return
+    if record is not None and record.get("create_intent"):
+        passing.note(
+            f"{task_id}: unresolved create intent from {record.get('create_intent')}; the webhook transport cannot read the "
+            f"forum, so verify the thread and record it with bind --task {task_id} --thread <id> instead of risking a duplicate"
+        )
         return
     if record is None:
         record = {
@@ -786,6 +1145,7 @@ def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, ta
             "project": project.key,
             "guild_id": project.guild_id,
             "forum_id": project.sessions_forum_id,
+            "transport": transport.name,
             "thread_id": "",
             "thread_name": title,
             "created_thread": False,
@@ -795,61 +1155,91 @@ def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, ta
         }
     if not record.get("thread_id"):
         if not passing.live:
-            passing.note(f"{task_id}: would create thread '{title}' in forum {project.sessions_forum_id}")
+            passing.note(f"{task_id}: would create thread '{title}' in forum {project.sessions_forum_id} via the {transport.name} transport")
             return
-        existing = passing.forum_threads(env, project, project.sessions_forum_id).get(title)
+        existing = transport.forum_threads(env).get(title)
         if existing is not None:
             record["thread_id"] = str(existing.get("id") or "")
             record["created_thread"] = False
             record["card_message_id"] = record["thread_id"]
             record["applied_tag_ids"] = [str(tag) for tag in (existing.get("applied_tags") or [])]
             try:
-                starter = passing.client_for(env).starter_message(record["thread_id"])
+                starter = transport.starter_message(env, record["thread_id"])
                 record["card_sha256"] = fwl.sha256_text(str(starter.get("content") or ""))
-            except FMError:
+            except ERRTYPES:
                 # A missing or unreadable starter message only means the card is
                 # rewritten on this pass; it never authorizes a second thread.
                 record.pop("card_sha256", None)
             passing.note(f"{task_id}: adopted existing thread {record['thread_id']} by exact title")
         else:
             card = render_card(project, task_id, worktree, worktree_branch(task["worktree"]), state_name)
-            tag_ids, missing = passing.resolve_tags(env, project.sessions_forum_id, [cfg.session_tag, cfg.worktree_tag, state_tag])
-            if missing:
-                passing.note(f"{task_id}: skipped, forum {project.sessions_forum_id} lacks tag(s): {', '.join(missing)}")
+            tag_ids, missing = transport.resolve_tag_ids(env, [cfg.session_tag, cfg.worktree_tag, state_tag])
+            if missing and not (transport.webhook is not None and cfg.allow_untagged):
+                missing_label = "has no configured tag id for" if transport.webhook is not None else "lacks tag(s):"
+                passing.note(f"{task_id}: skipped, forum {project.sessions_forum_id} {missing_label} {', '.join(missing)}")
                 return
-            created = passing.client_for(env).create_forum_thread(project.sessions_forum_id, title, card, tag_ids)
-            record["thread_id"] = str(created["id"])
+            if missing:
+                passing.note(
+                    f"{task_id}: posting without tags; no configured tag id for {', '.join(missing)} - add "
+                    f"projects.{project.key}.tag_ids (a webhook cannot read a forum's tag vocabulary), then tag the thread once "
+                    f"a member bot is available"
+                )
+            if transport.webhook is not None:
+                # The webhook transport cannot read the forum back, so the intent
+                # is durable before the call: a crash in that window is reported
+                # for verification instead of risking a duplicate thread.
+                record["create_intent"] = utc_now()
+                state.save_session(task_id, record)
+            thread_id, posting_identity = transport.create_forum_post(
+                env, title, card, tag_ids, session_identity(project, worktree)
+            )
+            if posting_identity:
+                record["posting_identity"] = posting_identity
+            record["thread_id"] = thread_id
             record["created_thread"] = True
-            record["card_message_id"] = record["thread_id"]
+            record["card_message_id"] = thread_id
             record["card_sha256"] = fwl.sha256_text(card)
             record["applied_tag_ids"] = tag_ids
             record["state"] = state_name
             record["state_tag"] = state_tag
-            passing.note(f"{task_id}: created thread {record['thread_id']} ({title})")
+            record.pop("create_intent", None)
+            passing.note(f"{task_id}: created thread {thread_id} ({title}) via the {transport.name} transport")
     if not passing.live:
         passing.note(f"{task_id}: would reconcile state={state_name} tag={state_tag} (thread {record.get('thread_id') or 'none'})")
         return
     worktree = record.get("worktree") or worktree
-    tag_ids, missing = passing.resolve_tags(env, project.sessions_forum_id, [cfg.session_tag, cfg.worktree_tag, state_tag])
+    tag_ids, missing = transport.resolve_tag_ids(env, [cfg.session_tag, cfg.worktree_tag, state_tag])
     if missing:
-        passing.note(f"{task_id}: state tag not reconciled, forum lacks tag(s): {', '.join(missing)}")
+        if transport.webhook is not None and cfg.allow_untagged:
+            # Already reported when the thread was created; the card carries the
+            # state and no webhook can re-tag an existing thread.
+            pass
+        else:
+            missing_label = "has no configured tag id for" if transport.webhook is not None else "lacks tag(s):"
+            passing.note(f"{task_id}: state tag not reconciled, forum {project.sessions_forum_id} {missing_label} {', '.join(missing)}")
     elif sorted(str(x) for x in (record.get("applied_tag_ids") or [])) != sorted(tag_ids):
-        passing.client_for(env).set_thread_tags(record["thread_id"], tag_ids)
-        record["applied_tag_ids"] = tag_ids
-        passing.note(f"{task_id}: tags now {cfg.session_tag}, {cfg.worktree_tag}, {state_tag}")
+        if transport.set_thread_tags(env, record["thread_id"], tag_ids):
+            record["applied_tag_ids"] = tag_ids
+            passing.note(f"{task_id}: tags now {cfg.session_tag}, {cfg.worktree_tag}, {state_tag}")
+        else:
+            record["applied_tag_ids"] = tag_ids
+            passing.note(
+                f"{task_id}: state {state_name} is in the card; a webhook cannot re-tag an existing thread, "
+                f"so tags stay {cfg.session_tag}, {cfg.worktree_tag} until a member bot is available"
+            )
     card = render_card(project, task_id, worktree, worktree_branch(task["worktree"]), state_name)
     card_digest = fwl.sha256_text(card)
     card_message_id = str(record.get("card_message_id") or "")
     if not card_message_id:
-        posted = passing.client_for(env).post_message(record["thread_id"], card)
-        record["card_message_id"] = str(posted["id"])
+        record["card_message_id"] = transport.post_message(env, record["thread_id"], card)
         record["card_sha256"] = card_digest
         passing.note(f"{task_id}: session card posted in {record['thread_id']}")
     elif record.get("card_sha256") != card_digest:
-        passing.client_for(env).edit_message(record["thread_id"], card_message_id, card)
+        transport.edit_card(env, record["thread_id"], card_message_id, card)
         record["card_sha256"] = card_digest
         passing.note(f"{task_id}: session card updated in place in {record['thread_id']}")
     record["schema"] = SESSION_SCHEMA
+    record["transport"] = transport.name
     record["state"] = state_name
     record["state_tag"] = state_tag
     record["worktree"] = worktree
@@ -871,10 +1261,13 @@ def cmd_report(args: argparse.Namespace, env: Env) -> int:
     print(f"config: {cfg.path}")
     print(f"live posting: {'enabled' if cfg.live_posting else 'disabled'}")
     print("projects:")
+    webhooks = WebhookStore(env.home / cfg.webhook_file)
+    print(f"webhook file: {cfg.webhook_file} ({len(webhooks.entries)} entries; urls never printed)")
     for key in sorted(cfg.projects):
         project = cfg.projects[key]
         artifact = project.artifact_forum_id or "(none configured)"
-        print(f"- {key}: guild {project.guild_id} sessions {project.sessions_forum_id} artifacts {artifact} paths {', '.join(project.paths)}")
+        sessions_transport = "webhook" if webhooks.for_channel("sessions", project.sessions_forum_id) else "bot"
+        print(f"- {key}: guild {project.guild_id} sessions {project.sessions_forum_id} ({sessions_transport}) artifacts {artifact} paths {', '.join(project.paths)}")
     seen: set[str] = set()
     print("sessions:")
     for task in tasks:
@@ -947,19 +1340,25 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
         print(f"dry-run: would post artifact kind={kind} tag={artifact_tag or '(none)'} to forum {project.artifact_forum_id} and link it from the session thread")
         return 0
     passing = Pass(cfg, state, live)
-    client = passing.client_for(env)
     if record is None:
-        existing = passing.forum_threads(env, project, project.artifact_forum_id).get(thread_title)
+        artifact_transport = passing.transport(project, "artifacts", project.artifact_forum_id)
+        existing = artifact_transport.forum_threads(env).get(thread_title)
         if existing is not None:
             thread_id = str(existing.get("id") or "")
             created = False
         else:
             wanted = [artifact_tag] if artifact_tag else []
-            tag_ids, missing = passing.resolve_tags(env, project.artifact_forum_id, wanted)
+            tag_ids, missing = artifact_transport.resolve_tag_ids(env, wanted)
             if missing:
-                raise FMError(f"artifact forum {project.artifact_forum_id} lacks tag(s): {', '.join(missing)}")
-            posted = client.create_forum_thread(project.artifact_forum_id, thread_title, f"**{title}**\n\n{body}", tag_ids)
-            thread_id = str(posted["id"])
+                missing_label = "has no configured tag id for" if artifact_transport.webhook is not None else "lacks tag(s):"
+                raise FMError(f"artifact forum {project.artifact_forum_id} {missing_label} {', '.join(missing)}")
+            thread_id, _identity = artifact_transport.create_forum_post(
+                env,
+                thread_title,
+                f"**{title}**\n\n{body}",
+                tag_ids,
+                session_identity(project, task["task"]),
+            )
             created = True
         record = {
             "schema": ARTIFACT_SCHEMA,
@@ -969,6 +1368,7 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
             "title": title,
             "guild_id": project.guild_id,
             "forum_id": project.artifact_forum_id,
+            "transport": artifact_transport.name,
             "thread_id": thread_id,
             "thread_name": thread_title,
             "created_thread": created,
@@ -977,7 +1377,7 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
             "created_at": utc_now(),
         }
         state.save_artifact(nonce_digest, record)
-        print(f"artifact thread {thread_id} recorded ({'created' if created else 'adopted'})")
+        print(f"artifact thread {thread_id} recorded ({'created' if created else 'adopted'}) via the {artifact_transport.name} transport")
     else:
         thread_id = str(record.get("thread_id") or "")
         print(f"artifact already recorded for this content: thread {thread_id}")
@@ -989,8 +1389,13 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
     if record.get("link_message_id"):
         print("session thread already links this artifact")
         return 0
-    message = client.post_message(session["thread_id"], f"Artefact ({kind}) : {title}\nhttps://discord.com/channels/{project.guild_id}/{thread_id}")
-    record["link_message_id"] = str(message["id"])
+    session_transport = passing.transport(project, "sessions", project.sessions_forum_id)
+    message_id = session_transport.post_message(
+        env,
+        session["thread_id"],
+        f"Artefact ({kind}) : {title}\nhttps://discord.com/channels/{project.guild_id}/{thread_id}",
+    )
+    record["link_message_id"] = message_id
     record["link_digest"] = link_digest
     state.save_artifact(nonce_digest, record)
     print(f"session thread {session['thread_id']} now links artifact {thread_id}")
@@ -1020,7 +1425,13 @@ def cmd_request(args: argparse.Namespace, env: Env) -> int:
         return 0
     passing = Pass(cfg, state, live)
     client = passing.client_for(env)
-    channel = client.thread(thread_id)
+    try:
+        channel = client.thread(thread_id)
+    except ERRTYPES as exc:
+        raise FMError(
+            f"cannot read thread {thread_id} to recognize it ({client.redact(str(exc))}); recognition needs a "
+            "reading identity, so bind the thread explicitly with bind --thread <id> --task <id> instead"
+        ) from exc
     parent_id = str(channel.get("parent_id") or "")
     thread_type = int(channel.get("type") or -1)
     project = cfg.project_for_sessions_forum(parent_id) if thread_type in THREAD_TYPES else None
@@ -1163,11 +1574,13 @@ def cmd_bind(args: argparse.Namespace, env: Env) -> int:
         print(f"dry-run: would bind task {task['task']} to thread {thread_id} in project {project.key}")
         return 0
     passing = Pass(cfg, state, live)
-    client = passing.client_for(env)
-    channel = client.thread(thread_id)
-    parent_id = str(channel.get("parent_id") or "")
-    if parent_id != project.sessions_forum_id:
-        raise FMError(f"thread {thread_id} is not in project {project.key} sessions forum {project.sessions_forum_id}")
+    transport = passing.transport(project, "sessions", project.sessions_forum_id)
+    channel: Dict[str, Any] = {}
+    if transport.reads_channels():
+        channel = transport.thread(env, thread_id)
+        parent_id = str(channel.get("parent_id") or "")
+        if parent_id != project.sessions_forum_id:
+            raise FMError(f"thread {thread_id} is not in project {project.key} sessions forum {project.sessions_forum_id}")
     worktree = worktree_name(task["worktree"]) if task["worktree"] else task["task"]
     state_name = reconciled_state(env, task["task"])
     record = state.session_record(task["task"]) or {
@@ -1176,6 +1589,7 @@ def cmd_bind(args: argparse.Namespace, env: Env) -> int:
         "project": project.key,
         "guild_id": project.guild_id,
         "forum_id": project.sessions_forum_id,
+        "transport": transport.name,
         "thread_id": thread_id,
         "created_thread": False,
         "card_message_id": "",
@@ -1187,24 +1601,28 @@ def cmd_bind(args: argparse.Namespace, env: Env) -> int:
     record["thread_id"] = thread_id
     record["thread_name"] = str(channel.get("name") or render_thread_title(project.label, task["task"], worktree))
     record["worktree"] = worktree
+    record.pop("create_intent", None)
     card = render_card(project, task["task"], worktree, worktree_branch(task["worktree"]) if task["worktree"] else "", state_name)
     card_message_id = str(record.get("card_message_id") or "")
     if card_message_id:
-        client.edit_message(thread_id, card_message_id, card)
+        transport.edit_card(env, thread_id, card_message_id, card)
     else:
-        posted = client.post_message(thread_id, card)
-        card_message_id = str(posted["id"])
+        card_message_id = transport.post_message(env, thread_id, card)
     record["card_message_id"] = card_message_id
     record["card_sha256"] = fwl.sha256_text(card)
     record["state"] = state_name
     record["state_tag"] = cfg.state_tags[state_name]
-    tag_ids, missing = passing.resolve_tags(env, project.sessions_forum_id, [cfg.session_tag, cfg.worktree_tag, cfg.state_tags[state_name]])
+    tag_ids, missing = transport.resolve_tag_ids(env, [cfg.session_tag, cfg.worktree_tag, cfg.state_tags[state_name]])
     if missing:
         print(f"warning: forum lacks tag(s) {', '.join(missing)}; the session is bound without them")
     else:
         record["applied_tag_ids"] = tag_ids
-        if sorted(str(x) for x in (channel.get("applied_tags") or [])) != sorted(tag_ids):
-            client.set_thread_tags(thread_id, tag_ids)
+        if transport.reads_channels():
+            if sorted(str(x) for x in (channel.get("applied_tags") or [])) != sorted(tag_ids):
+                transport.set_thread_tags(env, thread_id, tag_ids)
+        elif not record.get("thread_created_with_tags"):
+            print("warning: a webhook cannot re-tag an existing thread; the bound card carries the state")
+    record["transport"] = transport.name
     state.save_session(task["task"], record)
     if request is not None:
         request["task"] = task["task"]
@@ -1226,14 +1644,24 @@ def cmd_sample_config(args: argparse.Namespace, env: Env) -> int:
 
 def cmd_config_check(args: argparse.Namespace, env: Env) -> int:
     cfg = load_config(env, args.config)
+    webhooks = WebhookStore(env.home / cfg.webhook_file)
     print(f"config ok: {cfg.path}")
     print(f"secret file: {cfg.secret_file} (key {cfg.token_key})")
+    print(f"webhook file: {cfg.webhook_file} ({len(webhooks.entries)} entr{'y' if len(webhooks.entries) == 1 else 'ies'}, urls never printed)")
     print(f"live posting: {'enabled' if cfg.live_posting else 'disabled'}")
     print("session tags: " + ", ".join([cfg.session_tag, cfg.worktree_tag, *sorted(set(cfg.state_tags.values()))]))
     print("state tags: " + ", ".join(f"{key}={cfg.state_tags[key]}" for key in REQUIRED_STATE_KEYS))
     for key in sorted(cfg.projects):
         project = cfg.projects[key]
-        print(f"project {key}: label={project.label} guild={project.guild_id} sessions={project.sessions_forum_id} artifacts={project.artifact_forum_id or '(none)'} paths={', '.join(project.paths)}")
+        sessions_transport = "webhook" if webhooks.for_channel("sessions", project.sessions_forum_id) else "bot"
+        artifacts_transport = "-"
+        if project.artifact_forum_id:
+            artifacts_transport = "webhook" if webhooks.for_channel("artifacts", project.artifact_forum_id) else "bot"
+        print(
+            f"project {key}: label={project.label} guild={project.guild_id} sessions={project.sessions_forum_id} "
+            f"artifacts={project.artifact_forum_id or '(none)'} transports=sessions:{sessions_transport}/artifacts:{artifacts_transport} "
+            f"tag_ids={len(project.tag_ids)} paths={', '.join(project.paths)}"
+        )
     return 0
 
 
