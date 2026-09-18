@@ -119,6 +119,9 @@ It is off by default; `fast_path.enabled` turns it on, and it does nothing unles
 For every accepted captain message the console first posts a short deterministic
 acknowledgement in the same thread (or channel) - `fast_path.acknowledgement`,
 no model and no wait - so a reaction is visible at once.
+`fast_path.acknowledgement_enabled` (default on) turns that message off while
+keeping the typing indicator; at least one visible sign of activity must remain,
+so a config that disables both is refused.
 Then Jev, through `bin/fm-jev-console-route.sh`, decides whether the message is a
 plain status lookup answerable from durable records or needs the full turn.
 A confident `fast_answer` builds the answer deterministically from
@@ -139,11 +142,12 @@ external-id idempotence.
 Every message also gets one `fast-path/audits/<request>.json` record under the
 console state naming the classifier verdict, its confidence, and the chosen path,
 so the routing is auditable.
-`status` reports the fast-path switch, the acknowledgement and audit counts, and
-the last route.
+`status` reports the fast-path switch, the acknowledgement and typing switches,
+the acknowledgement and audit counts, and the last route.
 
 The config keys are `fast_path.enabled`, `fast_path.answers`,
-`fast_path.acknowledgement`, `fast_path.classifier_command`,
+`fast_path.acknowledgement`, `fast_path.acknowledgement_enabled`,
+`fast_path.typing`, `fast_path.classifier_command`,
 `fast_path.classifier_timeout_seconds`, and `fast_path.max_answer_chars`.
 
 ## Typing indicator
@@ -326,7 +330,10 @@ same fakes: the acknowledgement and the record-backed answer are posted in the
 channel and in the thread with no full-turn capture, an uncertain and a failing
 classification both fall back to the full turn and still capture, a replayed
 capture posts no second acknowledgement, the disabled default leaves the
-existing capture path unchanged, and the typing indicator is bounded to a full
+existing capture path unchanged, the acknowledgement switch off posts no
+acknowledgement while the typing indicator still appears, the acknowledgement
+defaults on when the switch is absent, disabling both the acknowledgement and
+the typing indicator is refused, and the typing indicator is bounded to a full
 turn and stops with the answer.
 `tests/fm-jev-console-route.test.sh` drives the console-route classifier against
 a fake System One server, covering both routes and every fail-safe path.

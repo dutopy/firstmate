@@ -344,6 +344,9 @@ class ConsoleConfig:
             if marker in ack_text:
                 raise FMError("fast_path.acknowledgement must not contain operational text")
         self.fast_path_ack_text = ack_text.strip()
+        self.fast_path_ack_enabled = fwl.bool_from_path(
+            raw, ["fast_path.acknowledgement_enabled", "fast_path_acknowledgement_enabled"], True
+        )
         classifier = fast_path.get("classifier_command")
         if classifier is None or classifier == "":
             self.fast_path_classifier = (SCRIPT_DIR / "fm-jev-console-route.sh").resolve()
@@ -385,6 +388,11 @@ class ConsoleConfig:
             raise FMError(
                 "fast_path.typing_max_seconds must be between %g and %g"
                 % (MIN_TYPING_MAX_SECONDS, MAX_TYPING_MAX_SECONDS)
+            )
+        if not self.fast_path_ack_enabled and not self.fast_path_typing_enabled:
+            raise FMError(
+                "fast_path cannot disable both the acknowledgement and the typing indicator; "
+                "at least one visible sign of activity is required"
             )
         gateway = raw.get("gateway") if isinstance(raw.get("gateway"), dict) else {}
         configured_url = gateway.get("url") if isinstance(gateway.get("url"), str) else ""
@@ -520,6 +528,7 @@ def sample_config() -> Dict[str, Any]:
             "enabled": False,
             "answers": True,
             "acknowledgement": DEFAULT_FAST_PATH_ACK,
+            "acknowledgement_enabled": True,
             "typing": True,
             "typing_interval_seconds": DEFAULT_TYPING_INTERVAL_SECONDS,
             "typing_max_seconds": DEFAULT_TYPING_MAX_SECONDS,
@@ -1594,11 +1603,12 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
         return "captured"
     ack_message_id = ""
     ack_at: Optional[float] = None
-    try:
-        ack_message_id = ensure_fast_path_ack(env, cfg, client, event)
-        ack_at = time.time()
-    except FMError:
-        ack_message_id = ""
+    if cfg.fast_path_ack_enabled:
+        try:
+            ack_message_id = ensure_fast_path_ack(env, cfg, client, event)
+            ack_at = time.time()
+        except FMError:
+            ack_message_id = ""
     decision = load_fast_path_record(env, "decisions", request_id)
     new_decision = decision is None
     if decision is None:
@@ -2577,6 +2587,7 @@ def cmd_config_check(args: argparse.Namespace, env: "fwl.Env") -> int:
     print(f"fast path: {'on' if cfg.fast_path_enabled else 'off'}")
     if cfg.fast_path_enabled:
         print(f"fast-path answers: {'on' if cfg.fast_path_answers_enabled else 'off'}")
+        print(f"fast-path acknowledgement: {'on' if cfg.fast_path_ack_enabled else 'off'}")
         print(f"fast-path typing: {'on' if cfg.fast_path_typing_enabled else 'off'}")
         print(f"fast-path classifier: {cfg.fast_path_classifier}")
         print(f"fast-path classifier timeout: {round(cfg.fast_path_timeout, 3)}s")
@@ -2813,6 +2824,9 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
     print(f"live posting: {'on' if cfg.live_posting_enabled else 'off'}")
     print(f"live gateway: {'on' if cfg.live_gateway_enabled else 'off'}")
     print(f"fast path: {'on' if cfg.fast_path_enabled else 'off'}")
+    if cfg.fast_path_enabled:
+        print(f"fast-path acknowledgement: {'on' if cfg.fast_path_ack_enabled else 'off'}")
+        print(f"fast-path typing: {'on' if cfg.fast_path_typing_enabled else 'off'}")
     print(f"audio transcription: {'on' if cfg.transcription_enabled else 'off'}")
     if cfg.transcription_enabled:
         counts = transcript_counts(env)

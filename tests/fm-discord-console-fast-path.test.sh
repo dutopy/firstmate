@@ -470,4 +470,73 @@ assert_absent "$H/state/discord-workspace/conversation-console/typing/$CH2.json"
 assert_absent "$H/state/discord-workspace/conversation-console/fast-path/decisions" "an ignored message writes no fast-path decision"
 pass "an ignored message starts no keeper and posts nothing"
 
+# --- 10. the acknowledgement switch off posts no ack but keeps typing --------
+# A fresh home turns the acknowledgement off while leaving typing on. Every
+# message is a full turn (the classifier is uncertain), so the typing keeper
+# must still start while no acknowledgement message is posted.
+ACK_TEXT="On it - checking the records."
+start_typesafe fast_answer 0.4
+make_home h7 on
+CFG7="$H/config/discord-conversation-console.json"
+python3 - "$CFG7" <<'PY'
+import json, sys
+path = sys.argv[1]
+cfg = json.load(open(path))
+cfg["fast_path"]["acknowledgement_enabled"] = False
+json.dump(cfg, open(path, "w"), indent=2, sort_keys=True)
+PY
+ACKS_BEFORE=$(python3 - "$WORLD" "$CH" "$ACK_TEXT" <<'PY'
+import json, sys
+world, ch, ack = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+print(sum(1 for m in world.get("posts", {}).get(ch, []) if m["content"] == ack))
+PY
+)
+TYPING_BEFORE=$(python3 -c "import json;print(len(json.load(open('$WORLD')).get('typing', [])))")
+out=$(dc listen --config "$CFG7" 2>&1) || fail "ack-off listen failed: $out"
+for _ in $(seq 1 100); do
+  TYPING_OFF_OK=$(python3 - "$WORLD" "$TYPING_BEFORE" "$CH" "$T1" <<'PY'
+import json, sys
+world, before, ch, t1 = json.load(open(sys.argv[1])), int(sys.argv[2]), sys.argv[3], sys.argv[4]
+channels = {entry["channel_id"] for entry in world.get("typing", [])[before:]}
+print("ok" if {ch, t1} <= channels else "wait")
+PY
+)
+  [ "$TYPING_OFF_OK" = "ok" ] && break
+  sleep 0.1
+done
+assert_equals "ok" "$TYPING_OFF_OK" "typing still appears when the acknowledgement is off"
+ACKS_AFTER=$(python3 - "$WORLD" "$CH" "$ACK_TEXT" <<'PY'
+import json, sys
+world, ch, ack = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+print(sum(1 for m in world.get("posts", {}).get(ch, []) if m["content"] == ack))
+PY
+)
+assert_equals "$ACKS_BEFORE" "$ACKS_AFTER" "the acknowledgement switch off posts no acknowledgement"
+assert_contains "$(dc status --config "$CFG7" 2>&1)" "fast-path acknowledgement: off" "status reports the acknowledgement switch off"
+pass "the acknowledgement switch off posts no acknowledgement and keeps typing"
+
+# --- 11. the acknowledgement defaults on when the switch is absent -----------
+# h1's config never names the switch, so the default must be the old behaviour.
+out=$(dc config-check --config "$CFG" 2>&1) || fail "default config-check failed: $out"
+assert_contains "$out" "fast-path acknowledgement: on" "the acknowledgement defaults on when the switch is absent"
+assert_contains "$out" "fast-path typing: on" "typing defaults on when the switch is absent"
+pass "the acknowledgement defaults on when the switch is absent"
+
+# --- 12. disabling both visible activity signs is refused --------------------
+make_home h8 on
+CFG8="$H/config/discord-conversation-console.json"
+python3 - "$CFG8" <<'PY'
+import json, sys
+path = sys.argv[1]
+cfg = json.load(open(path))
+cfg["fast_path"]["acknowledgement_enabled"] = False
+cfg["fast_path"]["typing"] = False
+json.dump(cfg, open(path, "w"), indent=2, sort_keys=True)
+PY
+out=$(dc config-check --config "$CFG8" 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] || fail "a config disabling both the acknowledgement and typing must be refused"
+assert_contains "$out" "at least one visible sign" "the refusal names the missing visible activity"
+pass "disabling both the acknowledgement and typing is refused"
+
 printf '# all fm-discord-console-fast-path tests passed\n'
