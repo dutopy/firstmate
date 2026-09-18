@@ -129,3 +129,8 @@ Rotate the Discord bot token or dedicated transcription key if compromise is sus
 The bot token is decrypted from the sops secret file into process memory only and is redacted from every failure path.
 Deletion or retirement of live resources, voice capture, hosted transcription, webhooks, and non-configured guilds stay out of scope.
 For continuous inbound listening, arm the built-in process-event source with `bin/fm-procevent-discord-workspace.sh arm --config <json>` once live polling is enabled; it registers `bin/fm-procevent.sh register discord-workspace discord-workspace -- bin/fm-procevent-discord-workspace.sh source --config <json>`, and retirement stays `bin/fm-procevent.sh retire discord-workspace`.
+
+The per-project session mirror is a separate capability with its own bounded live
+surface and its own non-secret config: [discord-session-mirror.md](discord-session-mirror.md)
+owns its channels, tags, trigger, and idempotence contract, and it reuses the
+token handling, state lock, receipts, and safety primitives owned here.

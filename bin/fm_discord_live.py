@@ -60,9 +60,15 @@ def redact(text: str, token: str) -> str:
     return text.replace(token, "[REDACTED]")
 
 
-def decrypt_token(env: "fwl.Env", cfg: "fwl.WorkspaceConfig") -> str:
-    """Decrypt only the bot token into process memory. Never printed."""
-    secret_ref = str((cfg.transcription or {}).get("secret_file") or "config/discord-workspace.secrets.sops.yaml")
+def decrypt_token_from(env: "fwl.Env", secret_ref: str, key: str = TOKEN_KEY) -> str:
+    """Decrypt only one named token into process memory from a secret file.
+
+    The secret file reference is a normalized `config/<name>.sops.yaml` path
+    under the effective home. The value is never printed, logged, or written
+    to disk; every caller is responsible for redacting failure text with
+    `redact`. This is the single owner of Firstmate's Discord token handling,
+    shared by the workspace live layer and the session mirror.
+    """
     path = Path(secret_ref).expanduser()
     if not path.is_absolute():
         path = env.home / path
@@ -79,17 +85,23 @@ def decrypt_token(env: "fwl.Env", cfg: "fwl.WorkspaceConfig") -> str:
         raise FMError("secret decryption failed; the secret file was not modified")
     token = ""
     for line in proc.stdout.splitlines():
-        match = re.fullmatch(rf"{TOKEN_KEY}:\s*(\S+)\s*", line)
+        match = re.fullmatch(rf"{re.escape(key)}:\s*(\S+)\s*", line)
         if match:
             token = match.group(1)
             break
     if not token:
-        raise FMError(f"decrypted secret file does not contain {TOKEN_KEY}")
+        raise FMError(f"decrypted secret file does not contain {key}")
     for bad in ("\n", "\r"):
         if bad in token:
             raise FMError("decrypted token contains a newline; refusing")
     proc.stdout = ""
     return token
+
+
+def decrypt_token(env: "fwl.Env", cfg: "fwl.WorkspaceConfig") -> str:
+    """Decrypt the workspace bot token into process memory. Never printed."""
+    secret_ref = str((cfg.transcription or {}).get("secret_file") or "config/discord-workspace.secrets.sops.yaml")
+    return decrypt_token_from(env, secret_ref, TOKEN_KEY)
 
 
 class DiscordError(FMError):
