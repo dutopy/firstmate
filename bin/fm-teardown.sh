@@ -131,6 +131,27 @@
 # These refusals are not relaxed by --force: --force authorizes discarding THIS
 # task's unlanded work, never another task's live work. Nothing of this task's
 # own is removed by a refusal; reconcile whichever record is wrong and re-run.
+# Shared-slot reconciliation (teardown-shared-slot). The exclusivity refusal
+# above is right, but by itself it is a deadlock: when two FINISHED task records
+# name one pool slot, each teardown names the other as its blocker and neither
+# can ever clean up - the recurring finished-task stale wakes the fleet kept
+# seeing (observed 2026-09-18). So the collision is now evaluated before it is
+# refused: this task's own record must be a finished task whose deliverable is
+# recorded outside the worktree, every OTHER record on the slot must
+# also be a finished task whose deliverable is outside AND whose endpoint is
+# provably dead or agent-free, and the shared copy must hold no unlanded work.
+# Only then is the slot returned once, under the durable reconciliation receipt
+# bin/fm-wake-lib.sh's fm_treehouse_slot_reconciled_* owns, which lets each
+# co-owner's later teardown skip every slot step and clean up only its own
+# records. Anything short of all three proofs refuses exactly as before, and
+# --force never lifts it: a shared copy with preserved unlanded work still
+# refuses, because that is the one thing this path must never reset. The current task's own endpoint is deliberately
+# NOT required gone, since closing it is this teardown's job.
+# The finished/deliverable/endpoint and unlanded-work proofs live in
+# task_record_is_finished_with_deliverable_outside, task_record_endpoint_is_gone,
+# and shared_worktree_slot_is_landed; the last of these reuses the SAME
+# landed-work rules as the ordinary path with --force and the scout exemption
+# cleared, so the collision path can never be weaker than the ordinary one.
 # Orca is not a pool slot and proves its path through
 # require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
@@ -2220,8 +2241,9 @@ collect_local_firstmate_states() {
 }
 
 require_exclusive_worktree_slot_record() {
-  local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
-  local slot state_dir other other_id field other_path other_slot
+  local record_meta=$1 record_id=$2 record_state=$3 worktree=$4 reconcile=${5:-0}
+  local slot state_dir other other_id field other_path other_slot i refusal_reason=''
+  local -a other_ids=() other_metas=() other_states=()
   slot=$(canonical_existing_dir "$worktree") || return 0
   collect_local_firstmate_states "$record_state" || return 1
   for state_dir in "${TREEHOUSE_OWNER_STATES[@]}"; do
@@ -2234,19 +2256,156 @@ require_exclusive_worktree_slot_record() {
         [ -n "$other_path" ] || continue
         other_slot=$(canonical_existing_dir "$other_path") || continue
         [ "$other_slot" = "$slot" ] || continue
-        echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
-        echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
-        echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
-        return 1
+        other_ids+=("$other_id")
+        other_metas+=("$other")
+        other_states+=("$state_dir")
+        break
       done
     done
   done
+  [ "${#other_ids[@]}" -gt 0 ] || return 0
+  if [ "$reconcile" = 1 ]; then
+    # The proofs are evaluated in cheap-to-expensive order and SHORT-CIRCUIT: a
+    # record-only failure refuses before any endpoint probe touches the runtime,
+    # so the common unsafe collision still changes nothing and invokes nothing
+    # beyond ordinary reads. Only a collision that already looks settled pays for
+    # the backend liveness reads.
+    if task_record_is_finished_with_deliverable_outside "$record_meta" "$record_id" "$record_state"; then
+      :
+    else
+      case $? in
+        2) refusal_reason="this task's own record ($record_id) is not a finished task";;
+        *) refusal_reason="this task's own record ($record_id) is finished but its deliverable is not recorded outside the shared copy";;
+      esac
+    fi
+    if [ -z "$refusal_reason" ]; then
+      for i in "${!other_ids[@]}"; do
+        if task_record_is_finished_with_deliverable_outside "${other_metas[$i]}" "${other_ids[$i]}" "${other_states[$i]}"; then
+          :
+        else
+          case $? in
+            2) refusal_reason="task ${other_ids[$i]} is not a finished task";;
+            *) refusal_reason="task ${other_ids[$i]} is finished but its deliverable is not recorded outside the shared copy";;
+          esac
+          break
+        fi
+        if ! task_record_endpoint_is_gone "${other_metas[$i]}"; then
+          refusal_reason="task ${other_ids[$i]} still has a live or unproven endpoint"
+          break
+        fi
+      done
+    fi
+    if [ -z "$refusal_reason" ] && ! shared_worktree_slot_is_landed "$slot"; then
+      refusal_reason="the shared copy holds work that has not landed"
+      [ -z "$SHARED_SLOT_LANDED_DETAIL" ] \
+        || refusal_reason="$refusal_reason (${SHARED_SLOT_LANDED_DETAIL#REFUSED: })"
+    fi
+    if [ -z "$refusal_reason" ]; then
+      TEARDOWN_SHARED_SLOT_SETTLED=1
+      TEARDOWN_SHARED_SLOT_OWNERS=("${other_ids[@]}")
+      echo "teardown: pool slot $slot is shared by task $record_id and ${other_ids[*]}, all settled; returning it once and recording the reconciliation beside the slot" >&2
+      return 0
+    fi
+  fi
+  echo "REFUSED: task $record_id's recorded worktree $slot is also recorded for task ${other_ids[0]}." >&2
+  echo "Returning that pool slot would kill ${other_ids[0]}'s processes and reset its copy, so nothing was changed - not even with --force." >&2
+  if [ "$reconcile" = 1 ] && [ -n "$refusal_reason" ]; then
+    echo "The shared slot is not provably settled: $refusal_reason." >&2
+  fi
+  echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh ${other_ids[0]}), then re-run teardown." >&2
+  return 1
+}
+
+# Values shared by the shared-slot reconciliation below. Set by
+# require_exclusive_worktree_slot_record when a collision was proven settled and
+# read by the one slot-release site that must record the reconciliation.
+TEARDOWN_SHARED_SLOT_SETTLED=0
+TEARDOWN_SHARED_SLOT_OWNERS=()
+TEARDOWN_RECONCILIATION_RECEIPT=0
+
+# 0 only when a task record is a provably FINISHED task whose deliverable is
+# recorded outside the shared worktree. "Finished" is the record's own latest
+# status verb, exactly as the watcher's classifier reads it: `done:` is the only
+# verb that says the task's own work is complete. `failed:` deliberately does
+# not qualify - a failed task may hold work the captain has not dispositioned -
+# and neither does `needs-decision`/`blocked`/`paused`.
+#
+# The proof returns 0 when the record is a finished task whose deliverable is
+# recorded outside the worktree, 2 when it is not finished, and 3 when it is
+# finished but its outside deliverable is missing. The caller turns that into an
+# actionable refusal naming the exact reason instead of one opaque "not settled".
+#
+# A scout's deliverable is its report, so the report must exist outside the
+# worktree. A ship's deliverable is its landed change, which the shared-slot
+# landed check proves for the whole slot; that is why ships need no separate
+# check here.
+#
+# This is a per-record proof of COMPLETENESS, never a replacement for the
+# landed-work safety check below: a finished task can still leave unlanded work
+# behind, and shared_worktree_slot_is_landed is what refuses that in every case.
+task_record_is_finished_with_deliverable_outside() {  # <meta> <id> <state-dir>
+  local meta=$1 id=$2 state_dir=$3 kind home report verb
+  status_line_verb "$(last_status_line "$state_dir/$id.status")" verb
+  [ "$verb" = "done" ] || return 2
+  kind=$(fm_meta_get "$meta" kind)
+  [ -n "$kind" ] || kind=ship
+  [ "$kind" = scout ] || return 0
+  home=$(dirname "$state_dir")
+  report="$home/data/$id/report.md"
+  [ -f "$report" ] && [ ! -L "$report" ] && [ -s "$report" ] || return 3
+  return 0
+}
+
+# 0 only when a task record's recorded endpoint is PROVABLY gone or agent-free.
+# Every ambiguous, unreadable, or unverified endpoint state returns 1, because a
+# live endpoint is the one thing this reconciliation must never reset under.
+task_record_endpoint_is_gone() {  # <meta>
+  local meta=$1 backend target state
+  backend=$(fm_backend_of_meta "$meta") || return 1
+  target=$(fm_backend_target_of_meta "$meta") || return 1
+  [ -n "$backend" ] && [ -n "$target" ] || return 1
+  state=$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || printf 'unreadable')
+  case "$state" in
+    dead|missing) return 0 ;;
+  esac
+  return 1
+}
+
+# The first REFUSED: line the ordinary safety check printed for the shared
+# copy, so the caller can name the concrete reason in its own refusal instead of
+# reporting one opaque "not provably settled". Empty when the check refused
+# without a line of its own (a locked or unreadable copy).
+SHARED_SLOT_LANDED_DETAIL=
+
+# 0 only when a shared worktree holds nothing that would be lost by returning
+# it to the pool. This is the force-proof half of the reconciliation: it reuses
+# the SAME landed-work rules the ordinary teardown applies, but with --force
+# cleared and the task-kind exemption removed, so neither this task's own
+# uncommitted work nor a co-owner's unmerged commits can slip through the
+# collision path.
+# These shadows are function-local rather than a subshell: bash's dynamic
+# scoping makes them what the nested safety check reads, MODE and PROJ still come
+# from the task as usual, and the isolation is explicit to a reader and to
+# ShellCheck, which cannot otherwise see that a subshell's assignments never
+# reach the caller.
+shared_worktree_slot_is_landed() {  # <slot>
+  local slot=$1 out
+  SHARED_SLOT_LANDED_DETAIL=
+  [ -d "$slot" ] || return 1
+  local WT=$slot KIND=ship
+  local FORCE='' PR_URL=''
+  local TEARDOWN_WORKTREE_BRANCH_FOR_SAFETY=''
+  if out=$(validate_worktree_teardown_safety 2>&1); then
+    return 0
+  fi
+  SHARED_SLOT_LANDED_DETAIL=$(printf '%s\n' "$out" | grep -m1 '^REFUSED:' || true)
+  return 1
 }
 
 require_exclusive_task_worktree_slot() {
   local slot
   slot=$(teardown_live_slot_path) || return 0
-  require_exclusive_worktree_slot_record "$META" "$ID" "$STATE" "$slot"
+  require_exclusive_worktree_slot_record "$META" "$ID" "$STATE" "$slot" 1
 }
 
 # Positive slot ownership, read from the claim the task that took the slot wrote
@@ -2300,7 +2459,29 @@ require_owned_task_worktree_slot() {
   slot=$(teardown_live_slot_path) || return 0
   require_owned_worktree_slot_record "$ID" "$slot" || rc=$?
   case "$rc" in
-    0) return 0 ;;
+    0)
+      # A claim this task itself holds wins over any receipt: a relaunch onto the
+      # same slot is a live ownership, and fm_treehouse_slot_owner_claim drops
+      # the receipt as it claims. Only an ABSENT claim can be the "already
+      # returned by a shared-slot reconciliation" state the receipt records.
+      if [ "$FM_TREEHOUSE_SLOT_OWNER" = absent ]; then
+        fm_treehouse_slot_reconciled_state "$slot" "$ID"
+        case "$FM_TREEHOUSE_SLOT_RECONCILED" in
+          named)
+            TEARDOWN_SLOT_REASSIGNED=1
+            TEARDOWN_SLOT_REASSIGNED_TO=
+            TEARDOWN_SLOT_REASSIGNED_HOME=
+            echo "warning: task $ID's recorded worktree $slot was already returned to its pool by a shared-slot reconciliation recorded beside the slot, so its processes, copy, and claim are left untouched and only $ID's own cleanup runs." >&2
+            return 0
+            ;;
+          unsafe)
+            echo "REFUSED: task $ID's recorded worktree $slot carries a slot-reconciliation receipt that cannot be read, so the slot cannot be proved to be this task's; nothing was changed - not even with --force." >&2
+            return 1
+            ;;
+        esac
+      fi
+      return 0
+      ;;
     "$TEARDOWN_SLOT_REASSIGNED_RC")
       TEARDOWN_SLOT_REASSIGNED=1
       TEARDOWN_SLOT_REASSIGNED_TO=$FM_TREEHOUSE_SLOT_OWNER_ID
@@ -3470,10 +3651,27 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
+  # A settled shared-slot reconciliation records WHY this slot went back with
+  # other records still naming it, before the return, and removes the receipt if
+  # the return does not happen. The race this closes: writing the receipt only
+  # after a successful return would leave a co-owner unprotected in a crash
+  # between the two, while a receipt left behind after a FAILED return would tell
+  # a co-owner to skip a slot that never actually left. See
+  # bin/fm-wake-lib.sh's fm_treehouse_slot_reconciled_* for the record.
+  if [ "$TEARDOWN_SHARED_SLOT_SETTLED" = 1 ]; then
+    fm_treehouse_slot_reconciled_write "$WT" "$ID" "$ID" "${TEARDOWN_SHARED_SLOT_OWNERS[@]}" || {
+      echo "error: cannot record the shared-slot reconciliation beside $WT; teardown aborted before returning the slot" >&2
+      exit 1
+    }
+    TEARDOWN_RECONCILIATION_RECEIPT=1
+  fi
+  if ! teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check"; then
+    if [ "$TEARDOWN_RECONCILIATION_RECEIPT" = 1 ]; then
+      fm_treehouse_slot_reconciled_remove "$WT"
+    fi
     echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
     exit 1
-  }
+  fi
   # The slot is back in the pool, so this task's claim on it is spent. Dropping
   # it here - and only after a return that succeeded - keeps a returned slot
   # unclaimed until its next holder claims it, and leaves the claim in place

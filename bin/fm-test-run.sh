@@ -802,6 +802,7 @@ tests/fm-tangle-guard.test.sh 9662
 tests/fm-task-delivery.test.sh 5952
 tests/fm-task-inbox.test.sh 25369
 tests/fm-teardown-endpoint-safety.test.sh 4620
+tests/fm-teardown-shared-slot.test.sh 26766
 tests/fm-teardown.test.sh 97603
 tests/fm-test-fixture-cleanup.test.sh 915
 tests/fm-test-fixtures.test.sh 151

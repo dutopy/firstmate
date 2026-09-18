@@ -1845,6 +1845,78 @@ test_terminal_stale_surfaced() {
   pass "a stale pane sitting on a terminal status is surfaced (queue + exit)"
 }
 
+# --- a FINISHED task whose endpoint is gone is settled, not re-surfaced -------
+# The recurring stale-endpoint noise from the shared-slot deadlock: a finished
+# task's pane lingers (an exited agent leaves a shell) while cleanup is blocked,
+# and every pane-hash change re-surfaced it as a stale wake. A task whose own
+# status log says `done:` and whose endpoint is provably dead or missing has
+# nothing left to inspect and no live worker to recover, so it is settled: the
+# wake is absorbed and the hash suppressor advanced, exactly as for a
+# provably-working stale, so no later poll of the same finished task re-fires.
+test_finished_task_gone_endpoint_settled() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case finished-gone-endpoint); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-finished"
+  printf 'dutopy@host repo %% ' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/finished.meta"
+  printf 'done: PR https://example.test/pr/9 merged\n' > "$state/finished.status"
+  sig=$(seen_sig "$state/finished.status"); printf '%s' "$sig" > "$state/.seen-finished_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "dutopy@host repo % ")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  # The window is present but its foreground command is a shell: an exited agent.
+  # A missing window is the same settled state through a failed capture, so this
+  # covers the agent-free-but-lingering half of the real fleet.
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CURRENT_COMMAND=bash \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "watcher exited for a finished task with a gone endpoint (should settle): $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "a finished task with a gone endpoint printed a stale wake"
+  [ ! -s "$state/.wake-queue" ] || fail "a finished task with a gone endpoint enqueued a wake"
+  [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] \
+    || fail "the settled finished task did not advance its stale suppressor"
+  grep -F 'endpoint gone, settled' "$state/.watch-triage.log" >/dev/null \
+    || fail "the settled absorb was not recorded in triage: $(tail -3 "$state/.watch-triage.log")"
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional watcher stop"
+  pass "a finished task whose endpoint is gone is settled instead of re-surfaced"
+}
+
+# The control: the same gone endpoint with a still-open captain call must keep
+# the ordinary terminal stale path, so settling a finished task can never silence
+# an unresolved decision or a failure that still needs firstmate.
+test_unfinished_task_with_gone_endpoint_still_surfaces() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid
+  dir=$(make_case open-call-gone-endpoint); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  window="test:fm-open-call"
+  printf 'dutopy@host repo %% ' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/open-call.meta"
+  printf 'needs-decision [key=shape]: pick the API shape\n' > "$state/open-call.status"
+  sig=$(seen_sig "$state/open-call.status"); printf '%s' "$sig" > "$state/.seen-open-call_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "dutopy@host repo % ")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CURRENT_COMMAND=bash \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 \
+    || { reap "$pid"; fail "an open captain call with a gone endpoint did not surface"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "an open captain call with a gone endpoint did not print a stale wake"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the open-call stale failed"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null \
+    || fail "an open captain call with a gone endpoint was not queued"
+  pass "an unfinished captain call with a gone endpoint still surfaces"
+}
+
 # --- stale pane, STALE terminal status overridden by an active run: absorbed ---
 # Regression for the 2026-07 herdr false-surface incidents: a crew's own status
 # log gets no new entry once firstmate hands it to a no-mistakes validation
@@ -2832,12 +2904,19 @@ test_open_captain_call_bounds_stale_churn() {
 # The other half of the same bound, and the one that decides whether widening the
 # wait was safe: the identical fixtures with NO hold must keep alarming on every
 # new hash, on both branches.
+#
+# A `done:` delivery is deliberately absent from this matrix now. A finished task
+# whose endpoint is provably gone is settled by the watcher (no wake at all, so
+# there is no churn to bound); that behaviour is owned by
+# test_finished_task_gone_endpoint_settled above, with
+# test_unfinished_task_with_gone_endpoint_still_surfaces as its open-call
+# control. The terminal-branch guard here therefore uses `blocked:`, which is
+# captain-relevant and unresolved and must keep alarming.
 test_stale_churn_without_a_captain_call_still_alarms() {
   local spec name line dir state out capture round wakes
   command -v tasks-axi >/dev/null 2>&1 \
     || { echo "skip: tasks-axi not found (unheld stale alarm)"; return 0; }
   for spec in \
-    'unheld-delivery|done: PR https://example.invalid/pull/1 checks green' \
     'unheld-blocker|blocked: cannot reach the release host' \
     'unheld-worker-line|working: still tidying the branch'
   do
@@ -5146,6 +5225,8 @@ test_routine_appends_after_a_classified_event_stay_absorbed
 test_unreadable_status_reports_once_per_file_state
 test_permission_recovery_surfaces_preserved_status
 test_terminal_stale_surfaced
+test_finished_task_gone_endpoint_settled
+test_unfinished_task_with_gone_endpoint_still_surfaces
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold

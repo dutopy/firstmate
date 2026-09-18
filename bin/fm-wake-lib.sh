@@ -1296,6 +1296,10 @@ fm_treehouse_slot_owner_claim() {  # <worktree> <task-id> <home>
     printf 'home=%s\n' "$home"
   } > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   mv -f "$tmp" "$marker" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  # A reconciled receipt names the tasks whose slot already went back to the
+  # pool. A genuinely new claim supersedes it, so a later holder never reads a
+  # previous generation's reconciliation as its own.
+  rm -f "$(fm_treehouse_slot_reconciled_marker "$worktree" 2>/dev/null)" 2>/dev/null || true
 }
 
 # Read the claim on a pool slot and compare it with a task id.
@@ -1345,6 +1349,111 @@ fm_treehouse_slot_owner_release() {  # <worktree> <task-id>
   [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || return 0
   marker=$(fm_treehouse_slot_owner_marker "$worktree") || return 0
   rm -f "$marker" 2>/dev/null || true
+}
+
+# Shared-slot reconciliation receipt: <pool>/<slot>/.fm-slot-reconciled.
+#
+# A finished task's teardown may return a pool slot that several task records
+# name, but only once EVERY record on it is provably settled (see
+# bin/fm-teardown.sh's shared-slot reconciliation). The slot then goes back to
+# the pool while the settled co-owners' records remain to be cleaned up on their
+# own later runs. This receipt is that durable bridge: it names the slot, when
+# it was released, which task released it, and every task record it carried, so
+# a later teardown of a co-owner can see that its slot is already back in the
+# pool and skip every step that would kill processes in, reset, or return a slot
+# that is no longer its own. It lives beside the owner claim (a sibling of the
+# checkout, never inside it) and is dropped by the next claim on the slot.
+#
+# It is deliberately NOT retired by a read: only a new claim or an explicit
+# removal clears it, so a crash between releasing the slot and finishing any one
+# record's cleanup still leaves the reconciliation visible.
+#
+# Where this sits relative to the owner claim: the claim is the slot's live
+# ownership truth, this receipt is only the "already returned" record. A receipt
+# is consulted only when the claim reads absent; a claim that names a new holder
+# wins, and a claim that names this task (a relaunch onto the same slot) wins
+# too, because fm_treehouse_slot_owner_claim removes the receipt as it claims.
+#
+# See why Treehouse's own state cannot answer this for crewmate slots in the
+# slot-owner claim comment above.
+fm_treehouse_slot_reconciled_marker() {  # <worktree>
+  local worktree=$1 slot
+  slot=$(CDPATH='' cd -- "$worktree" 2>/dev/null && pwd -P) || return 1
+  printf '%s/.fm-slot-reconciled\n' "$(dirname "$slot")"
+}
+
+# Write the reconciliation receipt. The rename is atomic, so a reader sees
+# either no receipt or a complete one. The task that released the slot and every
+# owner record it carried are both recorded; an owner list is required, because
+# a receipt naming nobody could never release a co-owner's later teardown.
+fm_treehouse_slot_reconciled_write() {  # <worktree> <released-by> <owner>...
+  local worktree=$1 by=$2; shift 2
+  local marker tmp slot owner count=0
+  [ -n "$by" ] || return 1
+  [ "$#" -gt 0 ] || return 1
+  marker=$(fm_treehouse_slot_reconciled_marker "$worktree") || return 1
+  slot=$(CDPATH='' cd -- "$worktree" 2>/dev/null && pwd -P) || return 1
+  if { [ -e "$marker" ] || [ -L "$marker" ]; } \
+     && { [ ! -f "$marker" ] || [ -L "$marker" ]; }; then
+    return 1
+  fi
+  for owner in "$@"; do
+    [ -n "$owner" ] && count=$((count + 1))
+  done
+  [ "$count" -gt 0 ] || return 1
+  tmp="$marker.tmp.${BASHPID:-$$}"
+  rm -f "$tmp" || return 1
+  {
+    printf 'slot=%s\n' "$slot"
+    printf 'released=%s\n' "$(date +%s)"
+    printf 'released_by=%s\n' "$by"
+    for owner in "$@"; do
+      [ -n "$owner" ] || continue
+      printf 'owner=%s\n' "$owner"
+    done
+  } > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$marker" 2>/dev/null || { rm -f "$tmp"; return 1; }
+}
+
+fm_treehouse_slot_reconciled_remove() {  # <worktree>
+  local marker
+  marker=$(fm_treehouse_slot_reconciled_marker "$1" 2>/dev/null) || return 0
+  rm -f "$marker" 2>/dev/null || true
+}
+
+# Read the receipt and compare it with a task id. Sets
+# FM_TREEHOUSE_SLOT_RECONCILED to one of:
+#   absent - no receipt, or one that names no task
+#   named  - the receipt names this task: its slot already went back to the pool
+#   unsafe - a receipt exists but cannot be read as one
+# The receipt is record-of-fact evidence, never ownership: callers consult it
+# only when the owner claim reads absent, so it can never override a live claim.
+fm_treehouse_slot_reconciled_state() {  # <worktree> <task-id>
+  local worktree=$1 id=$2 marker line owner found=0 saw_record=0
+  FM_TREEHOUSE_SLOT_RECONCILED=unsafe
+  marker=$(fm_treehouse_slot_reconciled_marker "$worktree") || return 0
+  if [ ! -e "$marker" ] && [ ! -L "$marker" ]; then
+    FM_TREEHOUSE_SLOT_RECONCILED=absent
+    return 0
+  fi
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      slot=*|released=*|released_by=*) saw_record=1 ;;
+      owner=*)
+        saw_record=1
+        owner=${line#owner=}
+        [ "$owner" != "$id" ] || found=1
+        ;;
+      *) return 0 ;;
+    esac
+  done < "$marker" || return 0
+  [ "$saw_record" -eq 1 ] || return 0
+  if [ "$found" -eq 1 ]; then
+    FM_TREEHOUSE_SLOT_RECONCILED=named
+  else
+    FM_TREEHOUSE_SLOT_RECONCILED=absent
+  fi
 }
 
 fm_failure_episode_reset() {

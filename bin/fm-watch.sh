@@ -1034,6 +1034,45 @@ clear_write_tracking() {  # <window-key>
   rm -f "$STATE/.writing-since-$key" "$STATE/.writing-resurfaced-$key"
 }
 
+# A task whose own status log declares it FINISHED (`done:`) and whose recorded
+# endpoint is provably gone or agent-free is settled cleanup residue, not a
+# stopped worker: the outcome was already reported when it finished, the durable
+# record still names it, and the only remaining act is routine cleanup. So the
+# watcher must not keep re-surfacing its idle/lingering pane as a stale wake. On
+# the real fleet a finished task's pane lingers - an exited agent leaves a shell
+# - while a shared-slot collision blocks its teardown, and every pane-hash change
+# re-surfaced it; that is exactly the recurring stale-endpoint noise this
+# settles.
+# Settling here rather than only in cleanup is deliberate: cleanup does remove a
+# finished task's endpoint record, but only once cleanup actually runs, and a
+# blocked or deferred cleanup - a shared pool slot whose records could not be
+# reconciled above all - left the same finished task re-alarming on every pane
+# change. "Does this pane need attention?" is the watcher's own question, and
+# for a finished task with a provably gone endpoint the answer is no. The
+# cleanup obligation is not lost with the alarm: the durable record still prints
+# in the session-start fleet digest, where its endpoint reads dead, and the
+# task's own `done:` event was surfaced once when it landed.
+# Only `done:` counts as finished. needs-decision, blocked, failed, and paused
+# are captain-relevant or unresolved and keep the ordinary stale path, and a
+# scout whose report has not yet been read is still surfaced by its own terminal
+# event. A task under an open captain call is never settled either: that call is
+# still owed an answer, and the existing captain-call bound (first sight alarms,
+# repeats inside the window are absorbed) stays exactly as it was. Every endpoint
+# verdict short of proven `dead`/`missing` returns 1, so an alive, ambiguous,
+# unreadable, or unverified endpoint is never silenced.
+finished_task_endpoint_settled() {  # <task> <window>
+  local task=$1 win=$2 verb state
+  [ -n "$task" ] || return 1
+  status_line_verb "$(last_status_line "$STATE/$task.status")" verb
+  [ "$verb" = "done" ] || return 1
+  task_captain_call_open "$task" && return 1
+  state=$(fm_backend_agent_state "$(window_backend "$win")" "$win" 2>/dev/null || printf 'unreadable')
+  case "$state" in
+    dead|missing) return 0 ;;
+  esac
+  return 1
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # watcher restart between recording the hash and recording the timer), or
@@ -2526,7 +2565,17 @@ EOF
           # authoritative source fm-crew-state.sh itself already prioritizes
           # over the log) a chance to override before trusting the log.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
+            if finished_task_endpoint_settled "$(window_to_task "$w" "$STATE")" "$w"; then
+              # Settled, not silent: the finished task's own `done:` event was
+              # already surfaced, and a gone endpoint leaves nothing to inspect
+              # or recover, so this pane is cleanup residue. Marking the hash
+              # reported keeps every later poll of it inert instead of
+              # re-surfacing the same finished task on each pane change.
+              printf '%s' "$h" > "$sf"
+              rm -f "$ssf" "$ewf"
+              clear_write_tracking "$key"
+              triage_log "absorbed stale (finished task, endpoint gone, settled): $w"
+            elif crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
               printf '%s' "$h" > "$sf"
               date +%s > "$ssf"
               clear_write_tracking "$key"
