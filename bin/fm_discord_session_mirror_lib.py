@@ -64,6 +64,10 @@ fwl = _load_module("fwl", "fm_discord_workspace_lib.py")
 fdl = _load_module("fdl", "fm_discord_live.py")
 
 FMError = fwl.FMError
+# The live layer loads its own copy of the workspace library, so its error
+# class object is not identical to this module's even though both mean the same
+# thing. Catch both so a live refusal prints one bounded line, never a traceback.
+ERRTYPES = (FMError, fdl.FMError)
 Env = fwl.Env
 die = fwl.die
 
@@ -677,6 +681,7 @@ class Pass:
         self.live = live
         self.lines: List[str] = []
         self.client: Optional[MirrorClient] = None
+        self.failures = 0
         self._tag_cache: Dict[str, List[Dict[str, str]]] = {}
 
     def note(self, line: str) -> None:
@@ -743,11 +748,21 @@ def cmd_sync(args: argparse.Namespace, env: Env) -> int:
     if deferred:
         passing.note(f"deferred {len(deferred)} task(s) beyond bounds.max_tasks_per_pass: " + ", ".join(row["task"] for row in deferred))
     for task in tasks:
-        sync_task(passing, cfg, env, state, task)
+        try:
+            sync_task(passing, cfg, env, state, task)
+        except ERRTYPES as exc:
+            # One task's failure never hides the rest of the pass, and it never
+            # looks like success: the reasons are printed and the pass exits 1.
+            message = passing.client.redact(str(exc)) if passing.client is not None else str(exc)
+            passing.failures += 1
+            passing.note(f"{task['task']}: error: {message}")
     for line in passing.lines:
         print(line)
-    print(f"mirror pass complete: live={'yes' if live else 'no'} tasks={len(tasks)} api_calls={passing.client.calls if passing.client else 0}")
-    return 0
+    print(
+        f"mirror pass complete: live={'yes' if live else 'no'} tasks={len(tasks)} "
+        f"failed={passing.failures} api_calls={passing.client.calls if passing.client else 0}"
+    )
+    return 1 if passing.failures else 0
 
 
 def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, task: Dict[str, str]) -> None:
@@ -1275,7 +1290,7 @@ def main(argv: List[str]) -> int:
     args = parser.parse_args(argv[2:])
     try:
         return int(args.func(args, env))
-    except FMError as exc:
+    except ERRTYPES as exc:
         print(f"fm-discord-session-mirror: {exc}", file=sys.stderr)
         return 1
     except BrokenPipeError:

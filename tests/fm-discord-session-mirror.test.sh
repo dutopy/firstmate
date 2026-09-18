@@ -89,6 +89,8 @@ class Handler(BaseHTTPRequestHandler):
         save(world)
         if parts == ["users", "@me"]:
             self._send(200, {"id": world.get("bot_id", BOT), "username": "fake-bot"})
+        elif world.get("deny"):
+            self._send(403, {"message": "Missing Access", "code": 50001})
         elif len(parts) == 4 and parts[0] == "guilds" and parts[2:] == ["threads", "active"]:
             guild = parts[1]
             self._send(200, {"threads": [t for t in world.get("threads", []) if t.get("guild_id") == guild]})
@@ -618,5 +620,23 @@ set_state m-tag2 working
 out=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || fail "tag-gap sync failed: $out"
 assert_contains "$out" "lacks tag(s): worktree, actif" "a missing forum tag is reported with its exact names"
 pass "a missing forum tag vocabulary is reported instead of guessed"
+
+# --- 13. a live refusal is one bounded line, never a traceback ---------------
+new_world
+new_home c13
+add_task m-denied "$TMP_ROOT/project"
+set_state m-denied working
+python3 - "$WORLD" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+world["deny"] = True
+json.dump(world, open(sys.argv[1], "w"))
+PY
+DENIED=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) && DENIED_RC=0 || DENIED_RC=$?
+[ "$DENIED_RC" = "1" ] || fail "a refused live pass did not exit nonzero"
+assert_contains "$DENIED" "error: Discord API GET" "a refused live pass names the failing call"
+printf '%s' "$DENIED" | grep -q "Traceback" && fail "a live refusal printed a traceback: $DENIED"
+printf '%s' "$DENIED" | grep -q "$FAKE_TOKEN" && fail "the token leaked into failure output"
+pass "a refused live pass reports one bounded, redacted error line"
 
 echo "fm-discord-session-mirror tests passed"
