@@ -701,6 +701,7 @@ tests/fm-control.test.sh 54301
 tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 21
 tests/fm-cursor-primary.test.sh 54947
+tests/fm-discord-console-fast-path.test.sh 18000
 tests/fm-discord-live.test.sh 38579
 tests/fm-discord-workspace-concurrency.test.sh 3394
 tests/fm-discord-workspace.test.sh 33532
@@ -728,6 +729,7 @@ tests/fm-inactive-reconcile.test.sh 74399
 tests/fm-inbox-external.test.sh 3338
 tests/fm-jev-blocker.test.sh 10868
 tests/fm-jev-class.test.sh 20000
+tests/fm-jev-console-route.test.sh 8000
 tests/fm-jev-finding.test.sh 11999
 tests/fm-jev-fred-preflight.test.sh 16000
 tests/fm-jev-guard.test.sh 9292

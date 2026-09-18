@@ -326,6 +326,24 @@ The verdict is the class itself, and the `flag` is the advisory action for it: `
 The model's `confidence` and a short `reason` are reported beside the verdict, so the caller sees the evidence rather than only the conclusion.
 Input is one small JSON object; `action`, `target`, `context`, and `note` are the recommended fields, and the whole object is the model's `state`.
 
+## The console-route classifier
+
+`bin/fm-jev-console-route.sh` classifies one captured Discord console message into exactly one route and reports it as `verdict`:
+
+```json
+{"verdict": "fast_answer|full_turn", "confidence": 0.0, "reason": "text", "flag": "action"}
+```
+
+| verdict       | flag                 | what the console does with it                                              |
+| ------------- | -------------------- | -------------------------------------------------------------------------- |
+| `fast_answer` | `answer_from_records` | Answer the message directly from durable records, with no full turn.        |
+| `full_turn`   | `full_turn`          | Route the message to the full firstmate turn exactly as if the tool were absent. |
+
+The confidence floor is 0.9.
+Every path that produced no usable verdict - a low-confidence answer, any non-finite or out-of-range confidence, a missing or rejected API key, any API or network error, a malformed success response, an unexpected route, unreadable input, an unreadable shared core, or the wall-clock bound - resolves to `full_turn` and exit 0, so an uncertain console route can never take the fast path.
+Input is one small JSON object; `message` (the captain text) and `label` (the channel label) are the recommended fields, and the whole object is the model's `state`.
+The console contract is owned by [`discord-conversation-console.md`](discord-conversation-console.md).
+
 ## Precedence
 
 The captain's explicit instruction outranks everything here.
@@ -357,3 +375,15 @@ No case reaches the real network, and each judged case asserts exactly one call.
 
 `tests/fm-jev-fred-preflight.test.sh` drives the public interface against a fake System One server bound to loopback on an ephemeral port, covering all three classes, a low-confidence answer in the safe class that must never stay routine, a low-confidence answer in the unsafe class, an API error, a malformed response, an unexpected class, NaN, Infinity, and out-of-range confidences against both the shared core and a stale-core stand-in, invalid input JSON, the wall-clock bound (armed, and refused for every invalid `FM_JV_FRED_PREFLIGHT_TIMEOUT`), a missing key, the `.env` key with the environment winning, file input, the read-only promise, and the usage errors.
 No case reaches the real network, each classification case asserts exactly one call, and the suite skips cleanly when the captain-private shared core is not readable.
+
+`tests/fm-jev-console-route.test.sh` drives the console-route classifier against
+`tests/assets/jev-classify-fake-typesafe.py`, a fake System One server bound to
+loopback on an ephemeral port.
+It covers both routes, a low-confidence `fast_answer` that must fall back to
+`full_turn`, an API error, a malformed response, an unexpected route, a
+non-finite or out-of-range confidence, a stale core, invalid input JSON, the
+wall-clock bound, a non-finite or absurd timeout that must stay a bounded
+fail-safe with no request, a missing key, the `.env` key fallback with the
+environment winning, file input, and every usage error.
+No case reaches the real network, and each classification case asserts exactly
+one call.

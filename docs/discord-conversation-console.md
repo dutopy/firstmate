@@ -42,6 +42,9 @@ It names:
   inbound read and the outbound write; both default to off.
 - `live.gateway`: prefer the permanent Discord gateway connection over the
   bounded REST polling pass; defaults to off.
+- `fast_path`: the instant acknowledgement, the Jev-gated record-backed answer,
+  and the typing indicator; off by default. `docs/discord-conversation-console.md`
+  owns the keys and the contract.
 - `gateway`: the gateway `url`, the `intents` bitfield, the reconnect
   `backoff_base_seconds` and `backoff_max_seconds`, and the
   `fallback_poll_seconds` and `fallback_after_attempts` that bound the polling
@@ -94,6 +97,60 @@ gateway, so it never goes silent; the fallback ends as soon as a connection is
 established.
 The transport is a supervised process, never an LLM agent, and consumes no model
 quota.
+
+## Fast path
+
+The transport is instant, but a full firstmate turn takes tens of seconds to drain
+the fleet queue, review state, and answer.
+The fast path removes that wait for the messages that do not need a full turn,
+without changing what happens to the ones that do.
+It is off by default; `fast_path.enabled` turns it on, and it does nothing unless
+`live.posting` is also on.
+
+For every accepted captain message the console first posts a short deterministic
+acknowledgement in the same thread (or channel) - `fast_path.acknowledgement`,
+no model and no wait - so a reaction is visible at once.
+Then Jev, through `bin/fm-jev-console-route.sh`, decides whether the message is a
+plain status lookup answerable from durable records or needs the full turn.
+A confident `fast_answer` builds the answer deterministically from
+`bin/fm-crew-state.sh`, the backlog, and the in-flight list, and posts it in the
+same thread; the full-turn route captures the message exactly as before.
+
+Fail-closed is the whole contract: any missing classifier, error, timeout,
+malformed verdict, low confidence, unbuildable answer, or failed post sends the
+message to the full firstmate turn through the same durable external-id capture.
+The fast path never guesses and never answers a message it cannot state from the
+records.
+
+Idempotence is by request id.
+The acknowledgement, the fast answer, and the decision each have a durable record
+under `fast_path/` in the console state, so a replayed capture posts no second
+acknowledgement and no second answer; the full-turn capture keeps its existing
+external-id idempotence.
+Every message also gets one `fast-path/audits/<request>.json` record under the
+console state naming the classifier verdict, its confidence, and the chosen path,
+so the routing is auditable.
+`status` reports the fast-path switch, the acknowledgement and audit counts, and
+the last route.
+
+The config keys are `fast_path.enabled`, `fast_path.answers`,
+`fast_path.acknowledgement`, `fast_path.classifier_command`,
+`fast_path.classifier_timeout_seconds`, and `fast_path.max_answer_chars`.
+
+## Typing indicator
+
+A full turn can take a minute or more, so the captain should see that firstmate is
+working.
+When a message is routed to the full turn, `fast_path.typing` (default on) starts a
+bounded typing keeper for that conversation: a short-lived detached process that
+re-emits the Discord typing indicator every `fast_path.typing_interval_seconds`
+until the durable stop marker is removed or `fast_path.typing_max_seconds`
+passes.
+The reply command removes the marker, so the indicator stops when the answer is
+posted; the hard deadline bounds a keeper whose answer never comes.
+There is exactly one keeper per conversation, a replayed capture never restarts
+one, and a fast answer or an ignored message never starts one.
+`status` reports how many keepers are active.
 
 ## Outbound
 
@@ -201,3 +258,15 @@ selected transport, the permanent connection identifies with an online presence
 and re-delivers a message after a forced disconnect without a second capture, an
 unreachable connection falls back to polling without a duplicate capture, and a
 crashed connection daemon is launched again by the next supervision cycle.
+
+`tests/fm-discord-console-fast-path.test.sh` drives the fast path against the
+same fakes: the acknowledgement and the record-backed answer are posted in the
+channel and in the thread with no full-turn capture, an uncertain and a failing
+classification both fall back to the full turn and still capture, a replayed
+capture posts no second acknowledgement, the disabled default leaves the
+existing capture path unchanged, and the typing indicator is bounded to a full
+turn and stops with the answer.
+`tests/fm-jev-console-route.test.sh` drives the console-route classifier against
+a fake System One server, covering both routes and every fail-safe path.
+The measured live latencies and the observed full-turn baseline are recorded in
+[`verification/discord-console-fast-path.md`](verification/discord-console-fast-path.md).

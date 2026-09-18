@@ -32,6 +32,8 @@ Usage (via bin/fm-discord-conversation-console.sh):
     fm-discord-conversation-console.sh reply [--config <json>] --text-file <f>
         (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
         [--nonce <n>] [--dry-run]
+    fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
+        [--interval <n>] [--max-seconds <n>] [--stop]
     fm-discord-conversation-console.sh status [--config <json>]
     fm-discord-conversation-console.sh start [--config <json>] [--dry-run]
     fm-discord-conversation-console.sh stop [--config <json>]
@@ -56,6 +58,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import socket
 import ssl
 import struct
@@ -86,6 +89,8 @@ IGNORED_SCHEMA = "fm-discord-conversation-console.ignored.v1"
 THREAD_SCHEMA = "fm-discord-conversation-console.thread.v1"
 LAST_PASS_SCHEMA = "fm-discord-conversation-console.last-pass.v1"
 CONNECTION_SCHEMA = "fm-discord-conversation-console.connection.v1"
+FAST_PATH_SCHEMA = "fm-discord-conversation-console.fast-path.v1"
+TYPING_SCHEMA = "fm-discord-conversation-console.typing.v1"
 SOURCE_ID = "discord-conversation-console"
 GATEWAY_SOURCE_ID = "discord-conversation-console-gateway"
 ADAPTER = "discord-conversation-console"
@@ -95,6 +100,54 @@ INBOX_SOURCE = "discord"
 DEFAULT_MAX_MESSAGES = 100
 DEFAULT_MAX_THREADS = 100
 DEFAULT_MAX_IGNORED = 500
+
+# The fast path. The deterministic acknowledgement is posted the moment a
+# captain message is captured, then Jev decides whether the message can be
+# answered directly from durable records. A classifier that is missing, slow,
+# wrong, or malformed routes the message to the full firstmate turn exactly as
+# if the fast path did not exist.
+DEFAULT_FAST_PATH_ACK = "On it - checking the records."
+DEFAULT_FAST_PATH_TIMEOUT_SECONDS = 5.0
+DEFAULT_FAST_PATH_MAX_ANSWER_CHARS = 1900
+CLASSIFIER_ENV_TIMEOUT = "FM_JV_CONSOLE_ROUTE_TIMEOUT"
+# One bounded shell read may not outlive the whole fast path; per-command bound.
+FAST_PATH_READ_TIMEOUT_SECONDS = 10.0
+# The reconciled states bin/fm-crew-state.sh can print, in plain captain words.
+FAST_PATH_STATE_WORDS = {
+    "working": "in progress",
+    "parked": "waiting on a review or your input",
+    "paused": "paused on an external wait",
+    "done": "done",
+    "blocked": "blocked",
+    "failed": "did not complete",
+    "unknown": "not clear from the records",
+}
+FAST_PATH_TASK_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{2,119}")
+FAST_PATH_BACKLOG_LINE_RE = re.compile(r"^- \[[ xX]\] ([A-Za-z0-9][A-Za-z0-9._-]{1,119}) (?:-|$)")
+# A fleet-wide fast answer is offered only for a message that plainly asks for
+# current status, so a misclassified greeting can never draw a status dump.
+FAST_PATH_QUESTION_HINTS = (
+    "status", "stand", "state", "running", "in flight", "flight", "blocked",
+    "waiting", "progress", "happening", "going on", "where",
+    "statut", "\u00e9tat", "etat", "o\u00f9", "en cours", "bloqu\u00e9", "bloque",
+)
+# A blocked-specific answer is built from the per-task reconciled state, so the
+# reply names the tasks that are actually blocked rather than the in-flight list.
+FAST_PATH_BLOCKED_HINTS = ("blocked", "bloqu\u00e9", "bloque")
+# Per-record-kind retention, so the per-message fast-path records stay bounded.
+FAST_PATH_MAX_RECORDS = 5000
+
+# The typing indicator. Discord expires a typing state after about ten seconds,
+# so a full-turn message needs a bounded keeper that re-emits it while firstmate
+# works and stops the moment the answer is posted. The keeper is a short-lived
+# detached process with a hard deadline and a durable stop marker, never an
+# unbounded loop, and it is started only for a full turn.
+DEFAULT_TYPING_INTERVAL_SECONDS = 8.0
+DEFAULT_TYPING_MAX_SECONDS = 900.0
+MIN_TYPING_INTERVAL_SECONDS = 1.0
+MAX_TYPING_INTERVAL_SECONDS = 60.0
+MIN_TYPING_MAX_SECONDS = 30.0
+MAX_TYPING_MAX_SECONDS = 3600.0
 
 # The permanent Discord gateway connection. The default intent bitfield is
 # GUILDS (1) | GUILD_MESSAGES (512) | MESSAGE_CONTENT (32768); the captain has
@@ -222,6 +275,62 @@ class ConsoleConfig:
         self.live_polling_enabled = fwl.bool_from_path(raw, ["live.polling", "approvals.live_polling", "live_polling"], False)
         self.live_posting_enabled = fwl.bool_from_path(raw, ["live.posting", "approvals.live_posting", "live_posting"], False)
         self.live_gateway_enabled = fwl.bool_from_path(raw, ["live.gateway", "approvals.live_gateway", "live_gateway"], False)
+        fast_path = raw.get("fast_path") if isinstance(raw.get("fast_path"), dict) else {}
+        self.fast_path_enabled = fwl.bool_from_path(raw, ["fast_path.enabled", "fast_path_enabled"], False)
+        self.fast_path_answers_enabled = fwl.bool_from_path(raw, ["fast_path.answers", "fast_path_answers"], True)
+        ack_text = fast_path.get("acknowledgement")
+        if ack_text is None:
+            ack_text = DEFAULT_FAST_PATH_ACK
+        if not isinstance(ack_text, str) or not ack_text.strip():
+            raise FMError("fast_path.acknowledgement must be a non-empty string")
+        if len(ack_text.strip()) > 300:
+            raise FMError("fast_path.acknowledgement must be 300 characters or fewer")
+        for marker in REFUSED_MARKERS:
+            if marker in ack_text:
+                raise FMError("fast_path.acknowledgement must not contain operational text")
+        self.fast_path_ack_text = ack_text.strip()
+        classifier = fast_path.get("classifier_command")
+        if classifier is None or classifier == "":
+            self.fast_path_classifier = (SCRIPT_DIR / "fm-jev-console-route.sh").resolve()
+        elif isinstance(classifier, str):
+            self.fast_path_classifier = Path(classifier).expanduser().resolve()
+        else:
+            raise FMError("fast_path.classifier_command must be a path string")
+        self.fast_path_timeout = env_float(
+            CLASSIFIER_ENV_TIMEOUT,
+            fast_path.get("classifier_timeout_seconds", DEFAULT_FAST_PATH_TIMEOUT_SECONDS),
+            "fast_path.classifier_timeout_seconds",
+        )
+        if self.fast_path_timeout > 60.0:
+            raise FMError("fast_path.classifier_timeout_seconds must be at most 60")
+        self.fast_path_max_answer_chars = fwl.validate_positive_json_integer(
+            fast_path.get("max_answer_chars", DEFAULT_FAST_PATH_MAX_ANSWER_CHARS),
+            "fast_path.max_answer_chars",
+            2000,
+        )
+        self.fast_path_typing_enabled = fwl.bool_from_path(
+            raw, ["fast_path.typing", "fast_path_typing"], True
+        )
+        self.fast_path_typing_interval = env_float(
+            "FM_CONSOLE_TYPING_INTERVAL",
+            fast_path.get("typing_interval_seconds", DEFAULT_TYPING_INTERVAL_SECONDS),
+            "fast_path.typing_interval_seconds",
+        )
+        if not MIN_TYPING_INTERVAL_SECONDS <= self.fast_path_typing_interval <= MAX_TYPING_INTERVAL_SECONDS:
+            raise FMError(
+                "fast_path.typing_interval_seconds must be between %g and %g"
+                % (MIN_TYPING_INTERVAL_SECONDS, MAX_TYPING_INTERVAL_SECONDS)
+            )
+        self.fast_path_typing_max_seconds = env_float(
+            "FM_CONSOLE_TYPING_MAX_SECONDS",
+            fast_path.get("typing_max_seconds", DEFAULT_TYPING_MAX_SECONDS),
+            "fast_path.typing_max_seconds",
+        )
+        if not MIN_TYPING_MAX_SECONDS <= self.fast_path_typing_max_seconds <= MAX_TYPING_MAX_SECONDS:
+            raise FMError(
+                "fast_path.typing_max_seconds must be between %g and %g"
+                % (MIN_TYPING_MAX_SECONDS, MAX_TYPING_MAX_SECONDS)
+            )
         gateway = raw.get("gateway") if isinstance(raw.get("gateway"), dict) else {}
         configured_url = gateway.get("url") if isinstance(gateway.get("url"), str) else ""
         self.gateway_url = os.environ.get("FM_DISCORD_LIVE_GATEWAY_URL") or configured_url.strip() or DEFAULT_GATEWAY_URL
@@ -276,6 +385,17 @@ def sample_config() -> Dict[str, Any]:
             {"label": "Internal server B", "guild_id": "111111111111111112", "channel_id": "444444444444444442"},
         ],
         "live": {"polling": False, "posting": False, "gateway": False},
+        "fast_path": {
+            "enabled": False,
+            "answers": True,
+            "acknowledgement": DEFAULT_FAST_PATH_ACK,
+            "typing": True,
+            "typing_interval_seconds": DEFAULT_TYPING_INTERVAL_SECONDS,
+            "typing_max_seconds": DEFAULT_TYPING_MAX_SECONDS,
+            "classifier_command": "",
+            "classifier_timeout_seconds": DEFAULT_FAST_PATH_TIMEOUT_SECONDS,
+            "max_answer_chars": DEFAULT_FAST_PATH_MAX_ANSWER_CHARS,
+        },
         "gateway": {
             "url": DEFAULT_GATEWAY_URL,
             "intents": DEFAULT_GATEWAY_INTENTS,
@@ -318,6 +438,193 @@ def last_pass_path(env: "fwl.Env") -> Path:
 
 def connection_path(env: "fwl.Env") -> Path:
     return console_state_path(env, "connection.json")
+
+
+def fast_path_record_path(env: "fwl.Env", kind: str, request_id: str) -> Path:
+    """One durable fast-path record, keyed by the request it belongs to."""
+    if kind not in ("acks", "answers", "decisions", "audits"):
+        raise FMError(f"unknown fast-path record kind: {kind}")
+    return console_state_path(env, "fast-path", kind, f"{fwl.sha256_text(request_id)}.json")
+
+
+def typing_path(env: "fwl.Env", channel_id: str) -> Path:
+    return console_state_path(env, "typing", f"{channel_id}.json")
+
+
+def read_typing_record(env: "fwl.Env", channel_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        record = fwl.load_existing_json(typing_path(env, channel_id))
+    except FMError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def pid_alive(pid: Any) -> bool:
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def stop_typing(env: "fwl.Env", channel_id: str) -> bool:
+    """Remove the typing marker for one channel so its keeper stops; idempotent."""
+    path = typing_path(env, channel_id)
+    with fwl.state_transaction(env):
+        if not path.exists() or path.is_symlink():
+            return False
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+    return True
+
+
+def ensure_typing(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any]) -> None:
+    """Start or refresh the bounded typing keeper for this channel, once per request.
+
+    The keeper is a short-lived detached process: it re-emits the Discord typing
+    indicator every interval until the durable stop marker is removed (by the
+    reply command) or its hard deadline passes. Starting it only on a new
+    full-turn decision keeps a replayed capture from restarting it.
+    """
+    if not cfg.fast_path_typing_enabled:
+        return
+    channel_id = str(event.get("channel_id") or "")
+    request_id = str(event.get("request_id") or "")
+    if not channel_id.isdigit() or not request_id:
+        return
+    now = time.time()
+    max_seconds = cfg.fast_path_typing_max_seconds
+    with fwl.state_transaction(env):
+        existing = read_typing_record(env, channel_id)
+        if isinstance(existing, dict):
+            requests = [r for r in existing.get("request_ids") or [] if isinstance(r, str)]
+            expires_at = existing.get("expires_at")
+            spawned_epoch = existing.get("spawned_epoch")
+            starting = (
+                existing.get("pid") in (0, None)
+                and isinstance(spawned_epoch, (int, float))
+                and now - spawned_epoch < 10
+            )
+            live = (pid_alive(existing.get("pid")) or starting) and isinstance(expires_at, (int, float)) and expires_at > now
+            if live:
+                if request_id not in requests:
+                    requests.append(request_id)
+                fwl.atomic_json(
+                    typing_path(env, channel_id),
+                    {
+                        "schema": TYPING_SCHEMA,
+                        "channel_id": channel_id,
+                        "request_ids": requests[-20:],
+                        "pid": existing.get("pid"),
+                        "started_at": existing.get("started_at") or fwl.utc_now(),
+                        "expires_at": min(now + max_seconds, float(expires_at)),
+                        "spawned_epoch": spawned_epoch,
+                        "updated_at": fwl.utc_now(),
+                    },
+                )
+                return
+        fwl.atomic_json(
+            typing_path(env, channel_id),
+            {
+                "schema": TYPING_SCHEMA,
+                "channel_id": channel_id,
+                "request_ids": [request_id],
+                "pid": 0,
+                "started_at": fwl.utc_now(),
+                "expires_at": now + max_seconds,
+                "spawned_epoch": now,
+                "updated_at": fwl.utc_now(),
+            },
+        )
+        command = [
+            str(env.script_dir / "fm-discord-conversation-console.sh"),
+            "typing",
+            "--config",
+            str(cfg.path),
+            "--channel",
+            channel_id,
+        ]
+        try:
+            subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+        except OSError:
+            # A keeper that cannot start must not fail the capture; the reply
+            # command's stop is a no-op and the marker expires on its own.
+            pass
+
+
+def load_fast_path_record(env: "fwl.Env", kind: str, request_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        record = fwl.load_existing_json(fast_path_record_path(env, kind, request_id))
+    except FMError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def store_fast_path_record(env: "fwl.Env", kind: str, request_id: str, record: Dict[str, Any]) -> None:
+    stored = dict(record)
+    stored.update({"schema": FAST_PATH_SCHEMA, "kind": kind, "request_id": request_id, "recorded_at": fwl.utc_now()})
+    path = fast_path_record_path(env, kind, request_id)
+    with fwl.state_transaction(env):
+        fwl.atomic_json(path, stored)
+        prune_fast_path_records(path.parent)
+
+
+def prune_fast_path_records(directory: Path) -> None:
+    """Keep only the newest FAST_PATH_MAX_RECORDS records in one kind's directory."""
+    try:
+        records = sorted(directory.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    for stale in records[FAST_PATH_MAX_RECORDS:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def fast_path_counts(env: "fwl.Env") -> Dict[str, Any]:
+    """Read-only counts and the most recent audit, for status."""
+    result: Dict[str, Any] = {"acks": 0, "audits": 0, "last": {}}
+    for kind, key in (("acks", "acks"), ("audits", "audits")):
+        directory = console_state_path(env, "fast-path", kind)
+        try:
+            result[key] = len(list(directory.glob("*.json"))) if directory.is_dir() else 0
+        except OSError:
+            result[key] = 0
+    directory = console_state_path(env, "fast-path", "audits")
+    newest: Optional[Path] = None
+    newest_mtime = -1.0
+    try:
+        if directory.is_dir():
+            for path in directory.glob("*.json"):
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime > newest_mtime:
+                    newest_mtime = mtime
+                    newest = path
+    except OSError:
+        newest = None
+    if newest is not None:
+        try:
+            record = fwl.load_existing_json(newest)
+        except FMError:
+            record = None
+        if isinstance(record, dict):
+            result["last"] = record
+    return result
 
 
 def read_connection(env: "fwl.Env") -> Optional[Dict[str, Any]]:
@@ -526,6 +833,330 @@ def handoff_event(env: "fwl.Env", event: Dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Fast path: instant acknowledgement, Jev gate, record-backed answer
+# ---------------------------------------------------------------------------
+
+def _bounded_command(
+    cmd: List[str],
+    *,
+    timeout: float,
+    env_extra: Optional[Dict[str, str]] = None,
+    stdin_text: Optional[str] = None,
+) -> Optional[str]:
+    """Run one bounded read-only child; any failure or timeout is an absent answer."""
+    environ = dict(os.environ)
+    if env_extra:
+        environ.update(env_extra)
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=stdin_text,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            env=environ,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def known_task_ids(env: "fwl.Env") -> set:
+    """Every task id currently visible in durable records, for the answer builder."""
+    ids = set()
+    try:
+        for meta in env.state.glob("*.meta"):
+            name = meta.name[: -len(".meta")]
+            if name:
+                ids.add(name)
+    except OSError:
+        pass
+    backlog = env.data / "backlog.md"
+    try:
+        if backlog.is_file() and not backlog.is_symlink():
+            for line in backlog.read_text(encoding="utf-8", errors="replace").splitlines():
+                match = FAST_PATH_BACKLOG_LINE_RE.match(line)
+                if match:
+                    ids.add(match.group(1))
+    except OSError:
+        pass
+    return ids
+
+
+def extract_task_id(env: "fwl.Env", content: str) -> Optional[str]:
+    ids = known_task_ids(env)
+    for token in FAST_PATH_TASK_TOKEN_RE.findall(content or ""):
+        if token in ids:
+            return token
+    return None
+
+
+def plain_state(state_line: Optional[str]) -> Optional[str]:
+    match = re.match(r"state:\s+([A-Za-z-]+)", state_line or "")
+    if not match:
+        return None
+    state = match.group(1)
+    return FAST_PATH_STATE_WORDS.get(state, state)
+
+
+def backlog_title(env: "fwl.Env", task_id: str) -> str:
+    """The captain-authored backlog title for one task, or an empty string."""
+    backlog = env.data / "backlog.md"
+    try:
+        if not backlog.is_file() or backlog.is_symlink():
+            return ""
+        for line in backlog.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = FAST_PATH_BACKLOG_LINE_RE.match(line)
+            if not match or match.group(1) != task_id:
+                continue
+            parts = line.split(" - ", 1)
+            if len(parts) < 2:
+                return ""
+            title = re.split(r"\s+\((?:repo|kind|priority|since|hold)[:=]", parts[1], maxsplit=1)[0]
+            return title.strip()
+    except OSError:
+        return ""
+    return ""
+
+
+def in_flight_backlog_ids(env: "fwl.Env") -> List[str]:
+    backlog = env.data / "backlog.md"
+    ids: List[str] = []
+    try:
+        if not backlog.is_file() or backlog.is_symlink():
+            return ids
+        in_flight = False
+        for line in backlog.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("## "):
+                in_flight = line.strip().lower() == "## in flight"
+                continue
+            if not in_flight:
+                continue
+            match = FAST_PATH_BACKLOG_LINE_RE.match(line)
+            if match:
+                ids.append(match.group(1))
+    except OSError:
+        return []
+    return ids
+
+
+def task_plain_state(env: "fwl.Env", task_id: str) -> Optional[str]:
+    """The reconciled state of one task in plain captain words, read read-only."""
+    state_cmd = os.environ.get("FM_CONSOLE_CREW_STATE_CMD") or str(env.script_dir / "fm-crew-state.sh")
+    state_line = _bounded_command(
+        [state_cmd, task_id],
+        timeout=FAST_PATH_READ_TIMEOUT_SECONDS,
+        env_extra={"FM_HOME": str(env.home), "FM_CREW_STATE_NO_FORGE": "1"},
+    )
+    return plain_state(state_line)
+
+
+def build_fast_answer(env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any]) -> Optional[str]:
+    """A deterministic answer from durable records, or None to fall back to a full turn.
+
+    The builder is deliberately conservative: it answers a named task's
+    reconciled current state plus its backlog title, or a plain fleet-wide
+    in-flight or blocked list, and returns None for anything it cannot state
+    from the records alone. It never guesses and never changes any state.
+    """
+    content = str(event.get("content") or "").strip()
+    if not content:
+        return None
+    task_id = extract_task_id(env, content)
+    if task_id:
+        word = task_plain_state(env, task_id)
+        if not word:
+            return None
+        lines = [f"{task_id} is {word}."]
+        title = backlog_title(env, task_id)
+        if title:
+            lines.append(title)
+        return "\n".join(lines)[: cfg.fast_path_max_answer_chars]
+    lowered = content.lower()
+    if not any(hint in lowered for hint in FAST_PATH_QUESTION_HINTS):
+        return None
+    in_flight = in_flight_backlog_ids(env)
+    if not in_flight:
+        return None
+    if any(hint in lowered for hint in FAST_PATH_BLOCKED_HINTS):
+        blocked = [listed for listed in in_flight[:8] if task_plain_state(env, listed) == "blocked"]
+        if not blocked:
+            return "Nothing is blocked right now."
+        lines = ["Blocked right now:"] + [f"- {listed}" for listed in blocked]
+        return "\n".join(lines)[: cfg.fast_path_max_answer_chars]
+    lines = ["In flight right now:"]
+    for listed in in_flight[:8]:
+        lines.append(f"- {listed}")
+    if len(in_flight) > 8:
+        lines.append(f"and {len(in_flight) - 8} more.")
+    return "\n".join(lines)[: cfg.fast_path_max_answer_chars]
+
+
+def classify_console_route(env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Ask Jev whether this message is a record-backed fast answer; None means full turn."""
+    if not cfg.fast_path_classifier.is_file():
+        return None
+    payload = json.dumps(
+        {
+            "message": str(event.get("content") or "")[:4000],
+            "label": str(event.get("label") or ""),
+        }
+    )
+    timeout_text = str(round(cfg.fast_path_timeout, 3))
+    output = _bounded_command(
+        [str(cfg.fast_path_classifier), "-"],
+        timeout=cfg.fast_path_timeout + 5.0,
+        env_extra={"FM_HOME": str(env.home), CLASSIFIER_ENV_TIMEOUT: timeout_text},
+        stdin_text=payload,
+    )
+    if output is None:
+        return None
+    line = output.strip().splitlines()[-1] if output.strip() else ""
+    if not line:
+        return None
+    try:
+        verdict = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(verdict, dict):
+        return None
+    if verdict.get("verdict") != "fast_answer" or verdict.get("flag") != "answer_from_records":
+        return None
+    return verdict
+
+
+def _safe_fast_path_text(text: str, max_chars: int) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    for marker in REFUSED_MARKERS:
+        if marker in text:
+            return ""
+    if len(text) > max_chars:
+        text = text[: max_chars - 1].rstrip() + "\u2026"
+    return text
+
+
+def post_fast_path_message(env: "fwl.Env", client: "ConsoleClient", channel_id: str, text: str, nonce: str) -> str:
+    """Post one idempotent fast-path message; a replay returns the first message id."""
+    path = fwl.receipt_path(env, nonce)
+    try:
+        existing = fwl.load_existing_json(path)
+    except FMError:
+        existing = None
+    if isinstance(existing, dict) and existing.get("discord_message_id"):
+        return str(existing["discord_message_id"])
+    message_id = client.post_message(channel_id, text)
+    receipt = fwl.base_receipt("fast-path", ADAPTER, {"channel_id": channel_id}, fwl.sha256_text(text))
+    fwl.record_receipt(env, nonce, receipt, message_id)
+    return message_id
+
+
+def ensure_fast_path_ack(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any]) -> str:
+    """Post the deterministic acknowledgement once per request, or return the recorded id."""
+    request_id = str(event.get("request_id") or "")
+    existing = load_fast_path_record(env, "acks", request_id)
+    if isinstance(existing, dict) and existing.get("discord_message_id"):
+        return str(existing["discord_message_id"])
+    message_id = client.post_message(str(event.get("channel_id") or ""), cfg.fast_path_ack_text)
+    store_fast_path_record(env, "acks", request_id, {"discord_message_id": message_id})
+    return message_id
+
+
+def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any]) -> str:
+    """Acknowledge, gate with Jev, then answer from records or capture for a full turn.
+
+    Fail-closed: any missing classifier, error, timeout, malformed verdict,
+    unbuildable answer, or failed post routes the message to the full firstmate
+    turn through the same durable external-id capture as before. The
+    acknowledgement is deterministic and idempotent by request id, and the
+    classification verdict and chosen path are recorded as a durable audit
+    record beside the message id.
+    """
+    request_id = str(event.get("request_id") or "")
+    if not (cfg.fast_path_enabled and cfg.live_posting_enabled) or not request_id:
+        handoff_event(env, event)
+        return "captured"
+    ack_message_id = ""
+    try:
+        ack_message_id = ensure_fast_path_ack(env, cfg, client, event)
+    except FMError:
+        ack_message_id = ""
+    decision = load_fast_path_record(env, "decisions", request_id)
+    new_decision = decision is None
+    if decision is None:
+        verdict = classify_console_route(env, cfg, event)
+        answer_text = ""
+        if verdict is not None and cfg.fast_path_answers_enabled:
+            answer_text = build_fast_answer(env, cfg, event) or ""
+        if verdict is not None and answer_text:
+            decision = {
+                "path": "fast_answer",
+                "answer_text": answer_text,
+                "verdict": {
+                    "verdict": "fast_answer",
+                    "confidence": verdict.get("confidence"),
+                    "reason": verdict.get("reason"),
+                },
+            }
+        else:
+            decision = {
+                "path": "full_turn",
+                "answer_text": "",
+                "verdict": {
+                    "verdict": "full_turn",
+                    "confidence": verdict.get("confidence") if isinstance(verdict, dict) else None,
+                    "reason": (verdict.get("reason") if isinstance(verdict, dict) else "classifier unavailable or refused")
+                    or "classifier unavailable or refused",
+                },
+            }
+        store_fast_path_record(env, "decisions", request_id, decision)
+    path = str(decision.get("path") or "full_turn")
+    answer_text = _safe_fast_path_text(str(decision.get("answer_text") or ""), cfg.fast_path_max_answer_chars)
+    answer_message_id = ""
+    if path == "fast_answer" and answer_text:
+        try:
+            answer_message_id = post_fast_path_message(
+                env, client, str(event.get("channel_id") or ""), answer_text, f"fast-answer:{request_id}"
+            )
+        except FMError:
+            # A failed fast answer is a full turn, and the decision is rewritten
+            # so a replay never posts the answer after the capture.
+            path = "full_turn"
+            answer_message_id = ""
+            if new_decision:
+                decision["path"] = "full_turn"
+                decision["answer_text"] = ""
+                store_fast_path_record(env, "decisions", request_id, decision)
+    if path != "fast_answer" or not answer_text:
+        path = "full_turn"
+        handoff_event(env, event)
+        if new_decision and cfg.fast_path_typing_enabled:
+            try:
+                ensure_typing(env, cfg, client, event)
+            except FMError:
+                pass
+    verdict_record = decision.get("verdict") if isinstance(decision.get("verdict"), dict) else {}
+    store_fast_path_record(
+        env,
+        "audits",
+        request_id,
+        {
+            "path": path,
+            "verdict": verdict_record,
+            "channel_id": str(event.get("channel_id") or ""),
+            "message_id": str(event.get("message_id") or ""),
+            "ack_message_id": ack_message_id,
+            "answer_message_id": answer_message_id,
+        },
+    )
+    return "captured"
+
+
+# ---------------------------------------------------------------------------
 # Discord HTTP helpers
 # ---------------------------------------------------------------------------
 
@@ -568,6 +1199,10 @@ class ConsoleClient:
         if not message_id.isdigit():
             raise FMError("Discord did not return a usable message id for the reply")
         return message_id
+
+    def typing(self, channel_id: str) -> None:
+        """Emit the Discord typing indicator in one channel (best effort)."""
+        self.client.request("POST", f"/channels/{channel_id}/typing")
 
     def channel(self, channel_id: str) -> Dict[str, Any]:
         info = self.client.request("GET", f"/channels/{channel_id}")
@@ -616,6 +1251,7 @@ def append_ignored(env: "fwl.Env", records: List[Dict[str, Any]], max_ignored: i
 def ingest_message(
     env: "fwl.Env",
     cfg: "ConsoleConfig",
+    client: "ConsoleClient",
     channel: ConsoleChannel,
     channel_id: str,
     parent_id: str,
@@ -624,7 +1260,7 @@ def ingest_message(
     """Capture or record one message through the shared path, whichever transport saw it."""
     event = normalize_message(cfg, channel, channel_id, parent_id, message)
     if event.get("kind") == "text":
-        handoff_event(env, event)
+        route_text_event(env, cfg, client, event)
         return "captured"
     append_ignored(env, [ignored_record(event, channel, channel_id)], cfg.max_ignored)
     return "ignored"
@@ -659,7 +1295,7 @@ def process_target(
         event = normalize_message(cfg, channel, target_id, parent_id, message)
         message_id = str(event.get("message_id") or "")
         if event.get("kind") == "text":
-            handoff_event(env, event)
+            route_text_event(env, cfg, client, event)
             captured += 1
         else:
             ignored += 1
@@ -1000,7 +1636,7 @@ def handle_gateway_message(
     if resolved is None:
         return
     parent_id, channel = resolved
-    ingest_message(env, cfg, channel, channel_id, parent_id, data)
+    ingest_message(env, cfg, client, channel, channel_id, parent_id, data)
 
 
 def gateway_connect(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", state: Dict[str, Any]) -> bool:
@@ -1178,6 +1814,12 @@ def cmd_config_check(args: argparse.Namespace, env: "fwl.Env") -> int:
     print(f"live polling: {'on' if cfg.live_polling_enabled else 'off'}")
     print(f"live posting: {'on' if cfg.live_posting_enabled else 'off'}")
     print(f"live gateway: {'on' if cfg.live_gateway_enabled else 'off'}")
+    print(f"fast path: {'on' if cfg.fast_path_enabled else 'off'}")
+    if cfg.fast_path_enabled:
+        print(f"fast-path answers: {'on' if cfg.fast_path_answers_enabled else 'off'}")
+        print(f"fast-path typing: {'on' if cfg.fast_path_typing_enabled else 'off'}")
+        print(f"fast-path classifier: {cfg.fast_path_classifier}")
+        print(f"fast-path classifier timeout: {round(cfg.fast_path_timeout, 3)}s")
     print(f"gateway url: {gateway_host_label(cfg.gateway_url)}")
     return 0
 
@@ -1272,6 +1914,7 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         comparable.pop("recorded_at", None)
         if comparable != fwl.receipt_record(nonce, receipt, str(existing.get("discord_message_id") or "")):
             raise FMError("refusing to overwrite a different Discord receipt for the same nonce")
+        stop_typing(env, channel_id)
         print(f"receipt exists for nonce {nonce}; no second delivery")
         return 0
     client = ConsoleClient(cfg, env)
@@ -1280,9 +1923,66 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
     except FMError as exc:
         print(f"fm-discord-conversation-console: {client.redact(str(exc))}", file=sys.stderr)
         return 1
+    # The answer ends the turn, so the typing keeper for this conversation stops.
+    stop_typing(env, channel_id)
     print(fwl.record_receipt(env, nonce, receipt, discord_message_id))
     print(f"replied in conversation {channel_id}")
     return 0
+
+
+def cmd_typing(args: argparse.Namespace, env: "fwl.Env") -> int:
+    """Hold (or stop) the bounded typing indicator for one conversation.
+
+    With ``--stop`` it only removes the marker and makes no network call. Without
+    it, the keeper emits the typing indicator immediately and then every
+    interval until the marker is removed or its hard deadline passes, so the
+    loop is always bounded.
+    """
+    cfg = ConsoleConfig.load(env, args.config)
+    channel_id = str(args.channel or "")
+    if not channel_id.isdigit():
+        raise FMError("typing requires a numeric --channel Discord channel id")
+    if args.stop:
+        removed = stop_typing(env, channel_id)
+        print(f"typing {'stopped' if removed else 'already stopped'} for {channel_id}")
+        return 0
+    if not cfg.live_posting_enabled or not cfg.fast_path_typing_enabled:
+        return 0
+    interval = args.interval if args.interval is not None else cfg.fast_path_typing_interval
+    max_seconds = args.max_seconds if args.max_seconds is not None else cfg.fast_path_typing_max_seconds
+    interval = max(MIN_TYPING_INTERVAL_SECONDS, min(float(interval), MAX_TYPING_INTERVAL_SECONDS))
+    max_seconds = max(MIN_TYPING_MAX_SECONDS, min(float(max_seconds), MAX_TYPING_MAX_SECONDS))
+    client = ConsoleClient(cfg, env)
+    own_pid = os.getpid()
+    deadline = time.monotonic() + max_seconds
+    while True:
+        record = read_typing_record(env, channel_id)
+        if record is None:
+            return 0
+        pid = record.get("pid")
+        if isinstance(pid, int) and pid not in (0, own_pid):
+            # Another keeper already owns this channel; never duplicate it.
+            return 0
+        expires_at = record.get("expires_at")
+        if isinstance(expires_at, (int, float)) and time.time() >= expires_at:
+            stop_typing(env, channel_id)
+            return 0
+        record["schema"] = TYPING_SCHEMA
+        record["pid"] = own_pid
+        record["updated_at"] = fwl.utc_now()
+        try:
+            with fwl.state_transaction(env):
+                fwl.atomic_json(typing_path(env, channel_id), record)
+        except FMError:
+            return 0
+        try:
+            client.typing(channel_id)
+        except FMError:
+            pass
+        if time.monotonic() >= deadline:
+            stop_typing(env, channel_id)
+            return 0
+        time.sleep(interval)
 
 
 def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
@@ -1342,6 +2042,22 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
     print(f"live polling: {'on' if cfg.live_polling_enabled else 'off'}")
     print(f"live posting: {'on' if cfg.live_posting_enabled else 'off'}")
     print(f"live gateway: {'on' if cfg.live_gateway_enabled else 'off'}")
+    print(f"fast path: {'on' if cfg.fast_path_enabled else 'off'}")
+    fast_counts = fast_path_counts(env)
+    print(f"fast-path acks: {fast_counts['acks']}")
+    print(f"fast-path audited messages: {fast_counts['audits']}")
+    typing_dir = console_state_path(env, "typing")
+    typing_count = sum(1 for _ in typing_dir.glob("*.json")) if typing_dir.is_dir() else 0
+    print(f"typing keepers active: {typing_count}")
+    last_audit = fast_counts.get("last") or {}
+    if isinstance(last_audit, dict) and last_audit.get("path"):
+        verdict = last_audit.get("verdict") if isinstance(last_audit.get("verdict"), dict) else {}
+        print(
+            "fast-path last route: %s (verdict %s, confidence %s)"
+            % (last_audit.get("path"), verdict.get("verdict") or "?", verdict.get("confidence"))
+        )
+    else:
+        print("fast-path last route: none")
     print(f"listener registered: {'yes' if (gateway_registered if cfg.live_gateway_enabled else polling_registered) else 'no'}")
     if cfg.live_gateway_enabled:
         if isinstance(connection, dict) and connection.get("mode"):
@@ -1533,6 +2249,13 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p.add_argument("--nonce")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_reply)
+    p = sub.add_parser("typing")
+    add_config_argument(p)
+    p.add_argument("--channel", required=True)
+    p.add_argument("--stop", action="store_true")
+    p.add_argument("--interval", type=float)
+    p.add_argument("--max-seconds", type=float)
+    p.set_defaults(func=cmd_typing)
     p = sub.add_parser("status")
     add_config_argument(p)
     p.set_defaults(func=cmd_status)
