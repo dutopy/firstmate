@@ -40,6 +40,12 @@ It names:
   `guild_id`, and the `#firstmate` `channel_id`.
 - `live.polling` and `live.posting`: the two independent switches that permit the
   inbound read and the outbound write; both default to off.
+- `live.gateway`: prefer the permanent Discord gateway connection over the
+  bounded REST polling pass; defaults to off.
+- `gateway`: the gateway `url`, the `intents` bitfield, the reconnect
+  `backoff_base_seconds` and `backoff_max_seconds`, and the
+  `fallback_poll_seconds` and `fallback_after_attempts` that bound the polling
+  fallback.
 - `bounds`: the per-pass message, thread, and retained ignored-record caps.
 
 The config stores only secret file paths and key names, never a token.
@@ -64,6 +70,30 @@ Every other message `#firstmate` receives is ignored and recorded as ignored wit
 its reason, so a message is never silently dropped; repeated replays do not
 duplicate an ignored record.
 Cursors advance only after a message's handoff succeeds.
+
+## Permanent connection
+
+With `live.gateway` enabled, the console holds one long-lived Discord gateway
+websocket instead of polling.
+The bot appears online because the connection identifies with an `online`
+presence, and each captain `MESSAGE_CREATE` dispatch is fed into the same
+durable capture path the polling pass uses, idempotent by message id, so the
+answer returns to the originating thread exactly as it does in polling mode.
+A dispatch is accepted only from a configured `#firstmate` channel or a thread
+whose parent is one; an unknown channel is resolved once through the REST API
+and remembered, and any other guild, channel, author, or bot message is never
+accepted.
+
+The connection reconnects on its own with bounded exponential backoff and
+resumes its gateway session, so a dropped or killed connection is recovered
+without a duplicate capture.
+If the connection cannot be established or re-established after
+`fallback_after_attempts` consecutive failures, the console falls back to the
+existing bounded polling pass at `fallback_poll_seconds`, still retrying the
+gateway, so it never goes silent; the fallback ends as soon as a connection is
+established.
+The transport is a supervised process, never an LLM agent, and consumes no model
+quota.
 
 ## Outbound
 
@@ -93,10 +123,12 @@ bin/fm-discord-conversation-console.sh status --config <json>
 `status` reads local records only.
 It never contacts Discord and changes no durable state, so it is safe to run in a
 loop.
-It reports a health verdict (`healthy`, `stopped`, `polling-disabled`,
-`secret-missing`, `config-invalid`, or `state-malformed`), each configured
-channel and its last cursor, the live switches, whether the listener is
-registered, and the last pass counts.
+It reports a health verdict (`healthy`, `starting`, `stopped`, `polling-disabled`,
+`polling-fallback`, `secret-missing`, `config-invalid`, or `state-malformed`),
+each configured channel and its last cursor, the live switches, whether the
+listener is registered, the connection mode and state, and the last pass counts.
+When the permanent connection is unavailable, the connection mode reads
+`polling-fallback` so the fallback is visible.
 
 ## Run model
 
@@ -108,13 +140,21 @@ bin/fm-discord-conversation-console.sh start --config <json> [--dry-run]
 bin/fm-discord-conversation-console.sh stop  --config <json>
 ```
 
-`start` registers `bin/fm-procevent-discord-conversation-console.sh source` under
-the source id `discord-conversation-console` and refuses while `live.polling` is
-disabled.
-`stop` retires it.
-The watcher reconciles and supervises the registered source, so each pass is
-bounded and no agent is left running.
-An operator can also run one pass by hand with `listen --config <json>`.
+`start` registers the permanent-connection source
+`discord-conversation-console-gateway`
+(`bin/fm-procevent-discord-conversation-console.sh gateway`) when `live.gateway`
+is enabled, and the bounded REST source `discord-conversation-console`
+(`bin/fm-procevent-discord-conversation-console.sh source`) otherwise, retiring
+the other transport so polling and the permanent connection never both collect
+the same message.
+It refuses while `live.polling` is disabled.
+`stop` retires both source ids.
+The watcher reconciles and supervises the registered source: a crashed
+connection daemon is launched again on the next cycle, and a dropped gateway
+connection is re-established in process.
+An operator can also run one polling pass by hand with `listen --config <json>`,
+or hold the permanent connection in the foreground with
+`connect --config <json>` (bounded for testing by `--once` or `--max-seconds`).
 
 ## Bot permissions
 
@@ -130,8 +170,12 @@ Optional: Embed Links and Attach Files for answers that contain links or small
 files.
 That is the shared steady-state thread permission integer used elsewhere in this
 integration (`274878024704`).
-The listener polls the REST API, so no privileged Message Content intent is
-required, and it needs no Manage Channels, Manage Threads, or Create Threads
+The bounded polling pass reads the REST API, so no privileged Message Content
+intent is required for it.
+The permanent connection does require the privileged Message Content intent on
+the Firstmate application, because a gateway `MESSAGE_CREATE` dispatch carries
+the message text directly.
+Neither transport needs Manage Channels, Manage Threads, or Create Threads
 permission: the captain creates threads, and the bot only reads and answers.
 It never requires any Discord administration permission.
 
@@ -148,8 +192,12 @@ no-mistakes daemon is never touched.
 ## Verification
 
 `tests/fm-discord-conversation-console.test.sh` drives the public interface
-against a fake local Discord server: a captain message is captured exactly once
-across a restart, a non-captain message is ignored and recorded, an answer lands
-in the originating thread with two threads kept separate, a channel conversation
-is answered in its channel, `status` changes no durable state, and `start` and
-`stop` register and retire the bounded listener.
+against a fake local Discord server and a fake local gateway websocket: a
+captain message is captured exactly once across a restart, a non-captain message
+is ignored and recorded, an answer lands in the originating thread with two
+threads kept separate, a channel conversation is answered in its channel,
+`status` changes no durable state, `start` and `stop` register and retire the
+selected transport, the permanent connection identifies with an online presence
+and re-delivers a message after a forced disconnect without a second capture, an
+unreachable connection falls back to polling without a duplicate capture, and a
+crashed connection daemon is launched again by the next supervision cycle.

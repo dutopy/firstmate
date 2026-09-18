@@ -81,7 +81,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-procevent.sh`        | Register, supervise, capture, classify, acknowledge, and safely retire built-in or explicitly bound process-event sources |
 | `fm-procevent-remote-reply.sh` | Relay the remote-secondmate status stream through non-destructive process-event deltas |
 | `fm-procevent-discord-workspace.sh` | Built-in offline process-event adapter for private Discord workspace intake |
-| `fm-procevent-discord-conversation-console.sh` | Built-in process-event adapter for the Discord conversation console: one bounded #firstmate inbound pass per invocation |
+| `fm-procevent-discord-conversation-console.sh` | Built-in process-event adapter for the Discord conversation console: one bounded #firstmate inbound pass, or the long-lived gateway connection with polling fallback |
 | `fm-procevent-quota.sh`  | Wake Firstmate when tracked quota drops below a threshold, is exhausted, or cannot be polled |
 | `fm-procevent-when.sh`   | Fire a trust-bound deterministic action at most once when its registered condition holds, then wake with the outcome |
 | `fm-gate-refuse-lib.sh`  | Shared no-mistakes gate-context refusal for fleet lifecycle entrypoints               |

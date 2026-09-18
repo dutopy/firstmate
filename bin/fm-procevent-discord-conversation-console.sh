@@ -4,6 +4,7 @@
 #
 # Usage:
 #   fm-procevent-discord-conversation-console.sh source [--config <json>]
+#   fm-procevent-discord-conversation-console.sh gateway [--config <json>] [--once] [--max-seconds <n>]
 #   fm-procevent-discord-conversation-console.sh classify <result-file>
 #   fm-procevent-discord-conversation-console.sh silent <result-file>
 #   fm-procevent-discord-conversation-console.sh terminal <result-file>
@@ -19,6 +20,13 @@
 # armed; a genuine failure prints one bounded redacted actionable line as a
 # captured result. The adapter declares self-announcing, because accepted
 # messages already produce the ordinary captain-inbox notification.
+#
+# `gateway` runs the permanent Discord gateway connection to completion (until
+# it is stopped): it feeds the same capture path from MESSAGE_CREATE dispatches,
+# reconnects with bounded exponential backoff, and falls back to a bounded
+# polling pass when the connection cannot be established. `--once` and
+# `--max-seconds` bound it for tests and manual inspection. It too prints
+# nothing on the normal path and redacts every failure line.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

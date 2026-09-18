@@ -28,7 +28,12 @@ dc() { FM_HOME="$H" "$ROOT/bin/fm-discord-conversation-console.sh" "$@"; }
 
 cleanup_console() {
   kill %1 2>/dev/null || true
-  [ -n "${H:-}" ] && FM_HOME="$H" "$ROOT/bin/fm-procevent.sh" sweep-home >/dev/null 2>&1 || true
+  [ -n "${GW_PID:-}" ] && kill "$GW_PID" 2>/dev/null || true
+  [ -n "${GW_CLIENT_PID:-}" ] && kill "$GW_CLIENT_PID" 2>/dev/null || true
+  local home
+  for home in "${H:-}" "${H2:-}" "${H3:-}"; do
+    [ -n "$home" ] && FM_HOME="$home" "$ROOT/bin/fm-procevent.sh" sweep-home >/dev/null 2>&1 || true
+  done
   fm_test_cleanup
 }
 trap cleanup_console EXIT
@@ -83,6 +88,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"threads": world.get("threads", {}).get(parts[1], [])})
         elif len(parts) == 5 and parts[0] == "channels" and parts[2:4] == ["threads", "archived"] and parts[4] == "public":
             self._send(200, {"threads": world.get("archived", {}).get(parts[1], [])})
+        elif len(parts) == 2 and parts[0] == "channels":
+            channel = world.get("channels", {}).get(parts[1])
+            if channel is None:
+                self._send(404, {"message": "not found"})
+            else:
+                self._send(200, channel)
         elif len(parts) == 3 and parts[2] == "messages":
             after = int(query.get("after", ["0"])[0])
             limit = int(query.get("limit", ["100"])[0])
@@ -307,3 +318,326 @@ out=$(dc listen --config "$CFG" 2>&1) && fail "listen accepted a rejected token"
 printf '%s' "$out" | grep -q "$FAKE_TOKEN" && fail "the token leaked into failure output: $out"
 world_set '{"token":null}'
 pass "the bot token is redacted from listener failure output"
+
+# --- 8. the permanent gateway connection ------------------------------------
+# A fake Discord gateway websocket stands in for the real one. It records the
+# IDENTIFY payload (so the test can prove an online presence), then forces a
+# disconnect and re-delivers the same message on the resumed connection, so the
+# test proves both automatic reconnection and exactly-once capture.
+GW_PORT_FILE="$TMP_ROOT/gw-port"
+cat > "$TMP_ROOT/fake-gateway.py" <<'PY'
+import base64, hashlib, json, os, socket, struct, sys, threading, time
+WORLD, PORT_FILE, GUILD, BOT, CH = sys.argv[1:6]
+GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+def load():
+    with open(WORLD, encoding="utf-8") as f:
+        return json.load(f)
+
+def save_atomic(world):
+    tmp = WORLD + ".gw.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(world, f)
+    os.replace(tmp, WORLD)
+
+def recv_exact(conn, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = conn.recv(n - len(buf))
+        if not chunk:
+            raise ConnectionError("closed")
+        buf += chunk
+    return buf
+
+def read_frame(conn):
+    b1, b2 = recv_exact(conn, 2)
+    opcode = b1 & 0x0F
+    masked = b2 & 0x80
+    length = b2 & 0x7F
+    if length == 126:
+        length = struct.unpack(">H", recv_exact(conn, 2))[0]
+    elif length == 127:
+        length = struct.unpack(">Q", recv_exact(conn, 8))[0]
+    mask = recv_exact(conn, 4) if masked else b""
+    payload = recv_exact(conn, length) if length else b""
+    if mask:
+        payload = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))
+    return opcode, payload
+
+def send_frame(conn, opcode, payload):
+    header = bytearray([0x80 | opcode])
+    n = len(payload)
+    if n < 126:
+        header.append(n)
+    elif n < 65536:
+        header.append(126)
+        header += struct.pack(">H", n)
+    else:
+        header.append(127)
+        header += struct.pack(">Q", n)
+    conn.sendall(bytes(header) + payload)
+
+def send_json(conn, obj):
+    send_frame(conn, 1, json.dumps(obj).encode())
+
+def handshake(conn):
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = conn.recv(4096)
+        if not chunk:
+            raise ConnectionError("closed during handshake")
+        data += chunk
+    head = data.split(b"\r\n\r\n", 1)[0].decode("latin-1")
+    headers = {}
+    for line in head.split("\r\n")[1:]:
+        key, _, value = line.partition(":")
+        headers[key.strip().lower()] = value.strip()
+    accept = base64.b64encode(hashlib.sha1((headers["sec-websocket-key"] + GUID).encode()).digest()).decode()
+    conn.sendall((
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+    ).encode())
+
+def record(key, value):
+    world = load()
+    world[key] = value
+    world["connections"] = int(world.get("connections", 0)) + 1
+    save_atomic(world)
+
+def handle(conn, port):
+    try:
+        handshake(conn)
+        send_json(conn, {"op": 10, "d": {"heartbeat_interval": 45000}})
+        while True:
+            opcode, payload = read_frame(conn)
+            if opcode == 8:
+                return
+            if opcode == 9:
+                send_frame(conn, 10, payload)
+                continue
+            if opcode != 1:
+                continue
+            message = json.loads(payload)
+            if message.get("op") == 2:
+                record("identify", message)
+                send_json(conn, {"op": 0, "t": "READY", "s": 1, "d": {"session_id": "sess1", "resume_gateway_url": f"ws://127.0.0.1:{port}/gateway", "user": {"id": BOT}}})
+                break
+            if message.get("op") == 6:
+                record("resume", message)
+                send_json(conn, {"op": 0, "t": "RESUMED", "s": 2, "d": {}})
+                break
+        for dispatch in load().get("dispatch", []):
+            send_json(conn, {"op": 0, "t": "MESSAGE_CREATE", "s": 3, "d": dispatch})
+        time.sleep(float(load().get("hold_seconds", 0.2)))
+        try:
+            send_frame(conn, 8, struct.pack(">H", 1000))
+        except OSError:
+            pass
+    except (ConnectionError, OSError, ValueError):
+        pass
+    finally:
+        conn.close()
+
+def main():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(8)
+    port = server.getsockname()[1]
+    with open(PORT_FILE, "w", encoding="utf-8") as f:
+        f.write(str(port))
+    while True:
+        conn, _ = server.accept()
+        threading.Thread(target=handle, args=(conn, port), daemon=True).start()
+
+main()
+PY
+setsid python3 "$TMP_ROOT/fake-gateway.py" "$WORLD" "$GW_PORT_FILE" "$GUILD" "$BOT" "$CH" > "$TMP_ROOT/fake-gateway.log" 2>&1 &
+GW_PID=$!
+for _ in $(seq 1 50); do
+  [ -s "$GW_PORT_FILE" ] && break
+  sleep 0.1
+done
+[ -s "$GW_PORT_FILE" ] || fail "fake gateway did not start"
+GW_PORT=$(cat "$GW_PORT_FILE")
+python3 - "$WORLD" "$GUILD" "$CH" "$T1" "$T2" "$CAPTAIN" "$STRANGER" <<'PY'
+import json, sys
+world_path, guild, ch, t1, t2, captain, stranger = sys.argv[1:8]
+world = json.load(open(world_path))
+world["channels"] = {
+    ch: {"id": ch, "type": 0, "guild_id": guild},
+    t1: {"id": t1, "type": 11, "parent_id": ch, "guild_id": guild},
+}
+world["dispatch"] = [
+    {"id": "666000000000000100", "content": "Hello from the captain", "author": {"id": captain}, "channel_id": ch, "guild_id": guild, "timestamp": "2026-09-18T00:00:00Z"},
+    {"id": "666000000000000101", "content": "Not the captain", "author": {"id": stranger}, "channel_id": ch, "guild_id": guild},
+    {"id": "666000000000000200", "content": "First conversation", "author": {"id": captain}, "channel_id": t1, "guild_id": guild},
+]
+world["hold_seconds"] = 0.2
+world["connections"] = 0
+json.dump(world, open(world_path, "w"))
+PY
+export FM_DISCORD_LIVE_GATEWAY_URL="ws://127.0.0.1:$GW_PORT/gateway"
+H2="$TMP_ROOT/h2"
+mkdir -p "$H2/state" "$H2/data" "$H2/config"
+chmod 700 "$H2/state"
+FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" sample-config > "$H2/config/discord-conversation-console.json"
+python3 - "$H2/config/discord-conversation-console.json" "$GUILD" "$BOT" "$CAPTAIN" "$CH" <<'PY'
+import json, sys
+path, guild, bot, captain, ch = sys.argv[1:6]
+data = json.load(open(path))
+data["bot"]["user_id"] = bot
+data["captain_user_ids"] = [captain]
+data["channels"] = [{"label": "Internal", "guild_id": guild, "channel_id": ch}]
+data["live"]["polling"] = True
+data["live"]["posting"] = True
+data["live"]["gateway"] = True
+data["gateway"]["fallback_after_attempts"] = 1
+data["gateway"]["backoff_base_seconds"] = 0.1
+data["gateway"]["backoff_max_seconds"] = 0.2
+data["gateway"]["fallback_poll_seconds"] = 0.2
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+PY
+printf 'FIRSTMATE_DISCORD_BOT_TOKEN: %s\n' "$FAKE_TOKEN" > "$H2/config/discord-workspace.secrets.sops.yaml"
+CFG2="$H2/config/discord-conversation-console.json"
+FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" connect --config "$CFG2" --max-seconds 4 > "$TMP_ROOT/h2-connect.log" 2>&1 &
+GW_CLIENT_PID=$!
+for _ in $(seq 1 150); do
+  conns=$(python3 -c "import json;print(json.load(open('$WORLD')).get('connections',0))")
+  notes=$(note_count "$H2")
+  [ "$conns" -ge 2 ] && [ "$notes" -ge 2 ] && break
+  sleep 0.1
+done
+kill "$GW_CLIENT_PID" 2>/dev/null || true
+wait "$GW_CLIENT_PID" 2>/dev/null || true
+GW_OK=$(python3 - "$WORLD" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+identify = world.get("identify") or {}
+params = identify.get("d") or {}
+presence = params.get("presence") or {}
+resume = world.get("resume") or {}
+ok = (
+    presence.get("status") == "online"
+    and params.get("intents") == 33281
+    and isinstance(resume.get("d"), dict)
+    and int(world.get("connections", 0)) >= 2
+)
+print("ok" if ok else f"bad:{json.dumps({'presence': presence.get('status'), 'intents': params.get('intents'), 'resume': bool(resume), 'connections': world.get('connections')})}")
+PY
+)
+assert_equals "ok" "$GW_OK" "the connection identifies with an online presence and resumes after a forced disconnect"
+assert_equals "2" "$(note_count "$H2")" "re-delivery after reconnect appends no second note"
+GW_IGNORED=$(python3 - "$H2" <<'PY'
+import json, sys
+data = json.load(open(f"{sys.argv[1]}/state/discord-workspace/conversation-console/ignored.json"))
+records = [r for r in data["records"] if r["message_id"] == "666000000000000101"]
+print("ok" if len(records) == 1 and records[0]["reason"] == "unknown-author" else f"bad:{records}")
+PY
+)
+assert_equals "ok" "$GW_IGNORED" "a non-captain message is ignored once in connection mode"
+CONN_MODE=$(python3 - "$H2" <<'PY'
+import json, sys
+record = json.load(open(f"{sys.argv[1]}/state/discord-workspace/conversation-console/connection.json"))
+print(record.get("mode"))
+PY
+)
+assert_equals "gateway" "$CONN_MODE" "status records the settled gateway mode"
+printf 'Answer to the gateway message\n' > "$TMP_ROOT/gw-answer.txt"
+out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" reply --config "$CFG2" --request-id "discord:$GUILD:$T1:666000000000000200" --text-file "$TMP_ROOT/gw-answer.txt" 2>&1) \
+  || fail "gateway thread reply failed: $out"
+assert_contains "$out" "replied in conversation $T1" "a connection-captured thread message is answered in its thread"
+GW_STATUS=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" status --config "$CFG2" 2>&1)
+assert_contains "$GW_STATUS" "connection mode: gateway" "status reports the permanent connection mode"
+assert_contains "$GW_STATUS" "connection state: connected" "status reports the connection as connected"
+printf '%s' "$(cat "$TMP_ROOT/h2-connect.log")" | grep -q "$FAKE_TOKEN" && fail "the token leaked into the connection log"
+pass "the permanent connection appears online, reconnects, and captures exactly once"
+
+# --- 9. polling is preserved as the fallback ---------------------------------
+# The gateway is unreachable here, so the console must keep answering through
+# the existing polling pass rather than going silent.
+world_set '{"token":null}'
+H3="$TMP_ROOT/h3"
+mkdir -p "$H3/state" "$H3/data" "$H3/config"
+chmod 700 "$H3/state"
+FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" sample-config > "$H3/config/discord-conversation-console.json"
+python3 - "$H3/config/discord-conversation-console.json" "$GUILD" "$BOT" "$CAPTAIN" "$CH" <<'PY'
+import json, sys
+path, guild, bot, captain, ch = sys.argv[1:6]
+data = json.load(open(path))
+data["bot"]["user_id"] = bot
+data["captain_user_ids"] = [captain]
+data["channels"] = [{"label": "Internal", "guild_id": guild, "channel_id": ch}]
+data["live"]["polling"] = True
+data["live"]["posting"] = True
+data["live"]["gateway"] = True
+data["gateway"]["url"] = "ws://127.0.0.1:1/gateway"
+data["gateway"]["fallback_after_attempts"] = 1
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+PY
+printf 'FIRSTMATE_DISCORD_BOT_TOKEN: %s\n' "$FAKE_TOKEN" > "$H3/config/discord-workspace.secrets.sops.yaml"
+CFG3="$H3/config/discord-conversation-console.json"
+out=$(env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" connect --config "$CFG3" --once 2>&1) \
+  || fail "gateway fallback failed: $out"
+assert_equals "3" "$(note_count "$H3")" "the unreachable connection falls back to polling and captures the captain messages"
+FB_MODE=$(python3 - "$H3" <<'PY'
+import json, sys
+record = json.load(open(f"{sys.argv[1]}/state/discord-workspace/conversation-console/connection.json"))
+print(record.get("mode"))
+PY
+)
+assert_equals "polling-fallback" "$FB_MODE" "the connection record names the polling fallback"
+FB_STATUS=$(env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" status --config "$CFG3" 2>&1)
+assert_contains "$FB_STATUS" "connection mode: polling-fallback" "status says it fell back to polling"
+# A subsequent polling pass on the same home must not append a second note for a
+# message the fallback already captured.
+out=$(FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" listen --config "$CFG3" 2>&1) \
+  || fail "fallback polling replay failed: $out"
+assert_equals "3" "$(note_count "$H3")" "polling and the connection converge on one capture per message"
+pass "an unreachable connection falls back to polling with no duplicate capture"
+
+# --- 10. start and stop select exactly one transport -------------------------
+out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" start --config "$CFG2" 2>&1) \
+  || fail "gateway start failed: $out"
+assert_present "$H2/state/procevent/discord-conversation-console-gateway.source" "start registers the permanent connection source"
+assert_absent "$H2/state/procevent/discord-conversation-console.source" "start does not also register the polling source"
+out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" status --config "$CFG2" 2>&1)
+assert_contains "$out" "health: healthy" "status reports a live registered connection as healthy"
+out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" stop --config "$CFG2" 2>&1) \
+  || fail "gateway stop failed: $out"
+assert_absent "$H2/state/procevent/discord-conversation-console-gateway.source" "stop retires the permanent connection source"
+pass "start and stop select one transport through the process-event service pattern"
+
+# --- 11. the service pattern launches and relaunches the connection daemon ----
+# The watcher's process-event reconcile owns supervision: it launches the
+# registered connection daemon and, after that daemon crashes, launches a fresh
+# one rather than leaving the console unmonitored.
+out=$(env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" start --config "$CFG3" 2>&1) \
+  || fail "service-pattern start failed: $out"
+env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-procevent.sh" reconcile >/dev/null 2>&1 || true
+for _ in $(seq 1 100); do
+  env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-procevent.sh" list 2>/dev/null | grep -q '^discord-conversation-console-gateway .* live' && break
+  sleep 0.1
+done
+LIST_BEFORE=$(env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-procevent.sh" list 2>&1)
+assert_contains "$LIST_BEFORE" "live" "the registered connection is supervised and live"
+GW_DAEMON_PID=''
+for _ in $(seq 1 100); do
+  GW_DAEMON_PID=$(pgrep -f "fm_discord_conversation_console_lib.py procevent .* gateway --config $CFG3" | head -1)
+  [ -n "$GW_DAEMON_PID" ] && break
+  sleep 0.1
+done
+[ -n "$GW_DAEMON_PID" ] || fail "could not find the supervised connection daemon"
+kill -9 "$GW_DAEMON_PID" 2>/dev/null || true
+for _ in $(seq 1 100); do
+  env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-procevent.sh" list 2>/dev/null | grep -q '^discord-conversation-console-gateway .* live' || break
+  sleep 0.1
+done
+RECONCILE_OUT=$(env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-procevent.sh" reconcile 2>&1) \
+  || fail "post-crash reconcile failed: $RECONCILE_OUT"
+assert_contains "$RECONCILE_OUT" "started=1" "a crashed connection daemon is launched again"
+out=$(FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" stop --config "$CFG3" 2>&1) \
+  || fail "service-pattern stop failed: $out"
+pass "the service pattern launches the connection daemon and relaunches it after a crash"

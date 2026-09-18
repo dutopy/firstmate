@@ -11,6 +11,7 @@
 #   fm-discord-conversation-console.sh sample-config
 #   fm-discord-conversation-console.sh config-check [--config <json>]
 #   fm-discord-conversation-console.sh listen [--config <json>]
+#   fm-discord-conversation-console.sh connect [--config <json>] [--once] [--max-seconds <n>]
 #   fm-discord-conversation-console.sh reply [--config <json>] --text-file <f>
 #       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
 #       [--nonce <n>] [--dry-run]
@@ -25,9 +26,11 @@
 # process memory only through the shared owner in bin/fm_discord_live.py, and no
 # token is printed, logged, or written to disk.
 #
-# start registers the bounded listener as the repository's built-in process-event
-# source `discord-conversation-console` and stop retires it; the watcher
-# reconciles and supervises it, so no permanently running agent is created.
+# start registers the permanent-connection source
+# `discord-conversation-console-gateway` when live.gateway is enabled, and the
+# bounded REST source `discord-conversation-console` otherwise; stop retires
+# both. The watcher reconciles and supervises the registered source, so no
+# permanently running agent is created.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
