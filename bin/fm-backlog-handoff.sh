@@ -117,6 +117,21 @@ sha256_file() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi
 }
 
+usage() {
+  cat <<'EOF'
+Usage: fm-backlog-handoff.sh <secondmate-id> <item-key>...
+       fm-backlog-handoff.sh --resume-pending
+       fm-backlog-handoff.sh --help
+EOF
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+esac
+
 RESUME_PENDING=0
 if [ "${1:-}" = --resume-pending ]; then
   [ "$#" -eq 1 ] || {

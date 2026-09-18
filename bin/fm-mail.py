@@ -10,9 +10,10 @@
 #                          persists the retry-scan position and cap-1 turn flag.
 #   seen <cursor>          Print a cursor file (used by `status`).
 #
-# All configuration arrives through the environment, never through arguments,
-# so credentials never appear in argv or logs. read/poll use BODY.PEEK so mail
-# is never marked seen before firstmate answers it.
+# Configuration arrives through the environment, never through arguments, so
+# credentials never appear in argv or logs. It is resolved lazily by
+# load_config, so `--help` and a usage error never require it. read/poll use
+# BODY.PEEK so mail is never marked seen before firstmate answers it.
 import imaplib
 import os
 import re
@@ -25,13 +26,47 @@ from email.header import decode_header, make_header
 from email.message import EmailMessage
 from email.utils import formatdate
 
-USER = os.environ['FM_MAIL_USER']
-PW = os.environ['FM_MAIL_PASS']
-IMH = os.environ['FM_IMAP_HOST']
-IMP = int(os.environ['FM_IMAP_PORT'])
-STH = os.environ['FM_SMTP_HOST']
-STP = int(os.environ['FM_SMTP_PORT'])
 CTX = ssl.create_default_context()
+
+USAGE = """\
+fm-mail.py read
+fm-mail.py send <to> <subject> <body | ->
+fm-mail.py poll_list
+fm-mail.py seen <cursor>
+"""
+
+# Resolved from the environment by load_config; empty until a mail command runs.
+USER = ''
+PW = ''
+IMH = ''
+IMP = 0
+STH = ''
+STP = 0
+MAIL_TIMEOUT = 20.0
+
+
+def usage(stream=None):
+    print(USAGE, file=stream if stream is not None else sys.stdout, end='')
+
+
+def required_env(name):
+    value = os.environ.get(name, '')
+    if not value:
+        raise SystemExit(
+            f'fm-mail.py: {name} is not set; add it to <FM_HOME>/.env (see bin/fm-mail.sh deployment notes)'
+        )
+    return value
+
+
+def required_port(name):
+    raw = required_env(name)
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise SystemExit(f'fm-mail.py: {name} must be a positive integer, got: {raw}')
+    return value
 
 
 def mail_timeout():
@@ -46,8 +81,21 @@ def mail_timeout():
     return value
 
 
-MAIL_TIMEOUT = mail_timeout()
-socket.setdefaulttimeout(MAIL_TIMEOUT)
+def load_config():
+    """Resolve the mail configuration from the environment into module globals.
+
+    Only commands that reach the network call this, so --help and a usage error
+    work with no configuration at all.
+    """
+    global USER, PW, IMH, IMP, STH, STP, MAIL_TIMEOUT
+    USER = required_env('FM_MAIL_USER')
+    PW = required_env('FM_MAIL_PASS')
+    IMH = required_env('FM_IMAP_HOST')
+    IMP = required_port('FM_IMAP_PORT')
+    STH = required_env('FM_SMTP_HOST')
+    STP = required_port('FM_SMTP_PORT')
+    MAIL_TIMEOUT = mail_timeout()
+    socket.setdefaulttimeout(MAIL_TIMEOUT)
 
 MAX_PREVIEW = 200
 READ_LIMIT = 20
@@ -102,6 +150,7 @@ def body_preview(msg):
 
 
 def cmd_read():
+    load_config()
     try:
         m = connect_mailbox()
         m.select('INBOX')
@@ -144,6 +193,7 @@ def cmd_read():
 
 
 def cmd_send(to, subj, body):
+    load_config()
     try:
         if body == '-':
             body = sys.stdin.read().rstrip('\n')
@@ -265,6 +315,7 @@ def save_turn(path, turn):
 
 
 def cmd_poll_list():
+    load_config()
     # Bound the expensive header fetches: only uids not already recorded in the
     # cursor are considered as new, then previously unfetchable retry-set uids
     # (already in the cursor) are fetched again so a transient IMAP failure
@@ -473,18 +524,24 @@ def cmd_poll_list():
 
 
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else ''
+    args = sys.argv[1:]
+    if args and args[0] in ('-h', '--help'):
+        usage(sys.stdout)
+        return 0
+    if not args or args[0] not in ('read', 'send', 'seen', 'poll_list'):
+        usage(sys.stderr)
+        return 2
+    cmd = args[0]
     if cmd == 'read':
         return cmd_read()
     if cmd == 'send':
-        if len(sys.argv) < 5:
-            return 1
-        return cmd_send(sys.argv[2], sys.argv[3], sys.argv[4])
+        if len(args) < 4:
+            usage(sys.stderr)
+            return 2
+        return cmd_send(args[1], args[2], args[3])
     if cmd == 'seen':
-        return cmd_seen(sys.argv[2] if len(sys.argv) > 2 else '')
-    if cmd == 'poll_list':
-        return cmd_poll_list()
-    raise SystemExit('unknown command')
+        return cmd_seen(args[1] if len(args) > 1 else '')
+    return cmd_poll_list()
 
 
 if __name__ == '__main__':

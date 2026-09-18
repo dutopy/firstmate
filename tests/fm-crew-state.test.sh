@@ -2515,6 +2515,10 @@ test_usage_error() {
   local rc
   "$CREW_STATE" >/dev/null 2>&1; rc=$?
   expect_code 2 "$rc" "no-arg usage error exits 2"
+  # A leading dash is never a task id: a typo'd flag must be refused, not
+  # silently read as an unknown task.
+  "$CREW_STATE" --not-a-flag >/dev/null 2>&1; rc=$?
+  expect_code 2 "$rc" "an unknown flag exits 2"
   pass "usage error exits 2"
 }
 

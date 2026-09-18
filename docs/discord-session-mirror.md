@@ -53,7 +53,9 @@ It owns, and the code never hard-codes:
   `artifact_forum_id` with an optional `artifact_tags` map, an optional
   `tag_ids` map, and the absolute `paths` of that project's clones. A task is
   matched to a project by the `project=` path in its `state/<id>.meta`, longest
-  matching path first.
+  matching path first. Each `artifact_tags` entry maps an artifact kind to that
+  forum's tag, as a name or a numeric tag id; the accepted kinds are `report`,
+  `patch`, `pr`, `livrable`, `rapport`, `lien`, and `test`.
 - `session_tag` and `worktree_tag`: the two always-applied forum tags.
 - `state_tags`: the reconciled-state-to-tag table. The default maps `working` to
   `actif`, `parked` and `paused` to `en-attente`, `blocked` and `failed` to
@@ -182,7 +184,7 @@ When a task produces a durable deliverable, file it in the project's artifacts
 forum:
 
 ```sh
-bin/fm-discord-session-mirror.sh artifact --task <id> --kind report|patch|pr \
+bin/fm-discord-session-mirror.sh artifact --task <id> --kind report|patch|pr|livrable|rapport|lien|test \
   --title "<title>" --body-file <bounded file>
 ```
 

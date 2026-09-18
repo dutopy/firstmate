@@ -125,7 +125,12 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
 ID=${1:-}
-[ -n "$ID" ] || { echo "usage: fm-crew-state.sh <id>" >&2; exit 2; }
+case "$ID" in
+  '' | -*)
+    echo "usage: fm-crew-state.sh <id>" >&2
+    exit 2
+    ;;
+esac
 
 # Fleet snapshot composition supplies its captured metadata path here so every
 # state read resolves the same task generation selected by that snapshot.

@@ -14,7 +14,7 @@
 #   fm-discord-session-mirror.sh config-check [--config <json>]
 #   fm-discord-session-mirror.sh report [--config <json>] [--task <id>]...
 #   fm-discord-session-mirror.sh sync [--config <json>] [--task <id>]... [--dry-run]
-#   fm-discord-session-mirror.sh artifact [--config <json>] --task <id> --kind <report|patch|pr> --title <t> --body-file <f> [--dry-run]
+#   fm-discord-session-mirror.sh artifact [--config <json>] --task <id> --kind <report|patch|pr|livrable|rapport|lien|test> --title <t> --body-file <f> [--dry-run]
 #   fm-discord-session-mirror.sh request [--config <json>] --thread <id> [--text-file <f>] [--dry-run]
 #   fm-discord-session-mirror.sh bind [--config <json>] --thread <id> --task <id> [--dry-run]
 #

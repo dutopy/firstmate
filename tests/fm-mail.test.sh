@@ -83,10 +83,69 @@ test_unknown_subcommand_prints_usage() {
     FM_IMAP_HOST="imap.test.invalid" FM_SMTP_HOST="smtp.test.invalid" \
     FM_HOME="$HOME_DIR" "$MAIL" bogus 2>&1)
   rc=$?
-  expect_code 1 "$rc" "unknown subcommand must exit 1"
+  expect_code 2 "$rc" "unknown subcommand must exit 2"
   assert_contains "$out" "read" "unknown subcommand prints usage"
   assert_contains "$out" "status" "unknown subcommand prints usage"
-  pass "fm-mail: unknown subcommand prints usage and exits non-zero"
+  pass "fm-mail: unknown subcommand prints usage and exits 2"
+}
+
+# --help and every usage error must answer with no configuration at all, so an
+# agent can discover the CLI before the mail plane is set up, and an invalid
+# flag is never mistaken for a configuration failure.
+test_help_and_usage_need_no_configuration() {
+  local out rc no_config_home="$TMP_ROOT/no-config-home"
+  out=$(env -u FM_MAIL_USER -u FM_MAIL_PASS -u FM_IMAP_HOST -u FM_SMTP_HOST \
+    FM_HOME="$no_config_home" "$MAIL" --help 2>&1)
+  rc=$?
+  expect_code 0 "$rc" "--help must exit 0 without configuration"
+  assert_contains "$out" "read" "--help lists read with no configuration"
+  assert_contains "$out" "status" "--help lists status with no configuration"
+
+  out=$(env -u FM_MAIL_USER -u FM_MAIL_PASS -u FM_IMAP_HOST -u FM_SMTP_HOST \
+    FM_HOME="$no_config_home" "$MAIL" frobnicate 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "an unknown subcommand without configuration exits 2"
+  assert_contains "$out" "read" "the unknown subcommand prints usage"
+
+  out=$(env -u FM_MAIL_USER -u FM_MAIL_PASS -u FM_IMAP_HOST -u FM_SMTP_HOST \
+    FM_HOME="$no_config_home" "$MAIL" 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "no subcommand without configuration exits 2"
+
+  out=$(env -u FM_MAIL_USER -u FM_MAIL_PASS -u FM_IMAP_HOST -u FM_SMTP_HOST \
+    FM_HOME="$no_config_home" "$MAIL" send 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "send without arguments without configuration exits 2"
+  assert_contains "$out" "read" "send without arguments prints usage"
+  pass "fm-mail: --help and usage errors answer with no configuration"
+}
+
+# The Python engine reads the environment lazily, so its own --help and usage
+# errors never raise, and a missing value is a bounded line rather than a
+# KeyError traceback.
+test_python_help_and_usage_never_raise() {
+  local out rc
+  out=$(env -u FM_MAIL_USER -u FM_MAIL_PASS -u FM_IMAP_HOST -u FM_SMTP_HOST \
+    -u FM_IMAP_PORT -u FM_SMTP_PORT python3 "$ROOT/bin/fm-mail.py" --help 2>&1)
+  rc=$?
+  expect_code 0 "$rc" "fm-mail.py --help must exit 0 without configuration"
+  assert_contains "$out" "poll_list" "fm-mail.py --help lists poll_list"
+  printf '%s' "$out" | grep -q 'Traceback' && fail "fm-mail.py --help raised: $out"
+
+  out=$(env -u FM_MAIL_USER -u FM_MAIL_PASS -u FM_IMAP_HOST -u FM_SMTP_HOST \
+    -u FM_IMAP_PORT -u FM_SMTP_PORT python3 "$ROOT/bin/fm-mail.py" frobnicate 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "an unknown fm-mail.py command must exit 2"
+  assert_contains "$out" "poll_list" "an unknown fm-mail.py command prints usage"
+  printf '%s' "$out" | grep -q 'Traceback' && fail "an unknown fm-mail.py command raised: $out"
+
+  out=$(env -u FM_MAIL_USER -u FM_MAIL_PASS -u FM_IMAP_HOST -u FM_SMTP_HOST \
+    -u FM_IMAP_PORT -u FM_SMTP_PORT python3 "$ROOT/bin/fm-mail.py" read 2>&1)
+  rc=$?
+  expect_code 1 "$rc" "a mail command without configuration exits 1"
+  assert_contains "$out" "FM_MAIL_USER is not set" "the missing value is named"
+  printf '%s' "$out" | grep -q 'Traceback' && fail "a missing environment raised: $out"
+  pass "fm-mail.py: --help and usage errors never raise and a missing value is bounded"
 }
 
 test_no_secret_leaked_to_status() {
@@ -2605,6 +2664,8 @@ test_env_overrides_env_file
 test_status_without_network
 test_help_plumbing
 test_unknown_subcommand_prints_usage
+test_help_and_usage_need_no_configuration
+test_python_help_and_usage_never_raise
 test_no_secret_leaked_to_status
 test_send_passes_body
 test_poll_error_propagates

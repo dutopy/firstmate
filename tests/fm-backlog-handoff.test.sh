@@ -1344,6 +1344,20 @@ EOF
   pass "registry entry without (home: ...) fails cleanly with has no home"
 }
 
+# --help is informational, not a usage error: it must print usage and exit 0
+# without touching the registry or a backlog.
+test_help_is_inert() {
+  local out rc=0
+  out=$(FM_HOME="$TMP_ROOT/help-inert" "$ROOT/bin/fm-backlog-handoff.sh" --help 2>&1) || rc=$?
+  expect_code 0 "$rc" "--help exits 0"
+  assert_contains "$out" "Usage: fm-backlog-handoff.sh" "--help prints usage"
+  assert_contains "$out" "--resume-pending" "--help names the resume action"
+
+  out=$(FM_HOME="$TMP_ROOT/help-inert" "$ROOT/bin/fm-backlog-handoff.sh" -h 2>&1) || rc=$?
+  expect_code 0 "$rc" "-h exits 0"
+  pass "fm-backlog-handoff: --help is inert"
+}
+
 test_handoff_wakes_live_local_receiver
 test_failed_wake_retries_when_the_item_is_already_present
 test_known_receiver_failure_remains_retryable_after_grace
@@ -1366,6 +1380,7 @@ test_noncanonical_indented_continuations_refuse_without_changes
 test_indented_heading_is_not_section_boundary
 test_registry_home_with_pre_home_parentheses
 test_registry_home_missing_field_fails_cleanly
+test_help_is_inert
 test_handoff_warns_when_a_moved_item_still_owes_a_public_reply
 test_handoff_is_silent_about_public_commitments_without_the_relay
 

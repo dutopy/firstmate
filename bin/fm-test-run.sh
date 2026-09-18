@@ -777,6 +777,7 @@ tests/fm-secondmate-reconcile.test.sh 62726
 tests/fm-secondmate-restart.test.sh 119085
 tests/fm-secondmate-safety.test.sh 57689
 tests/fm-secondmate-sync.test.sh 17183
+tests/fm-secondmates.test.sh 900
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 22
 tests/fm-send-inbox.test.sh 38956
 tests/fm-send-remote-delivery.test.sh 27686

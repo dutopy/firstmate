@@ -895,4 +895,78 @@ out=$(mirror sync --config "$TMP_ROOT/no-webhook-bot.json" --task m-force2 2>&1)
 assert_contains "$out" "the webhook file has no matching entry" "transport=webhook refuses without a matching webhook"
 pass "the transport can be forced per pass, a recorded creator keeps the card, and a required webhook is never silently substituted"
 
+# --- 18. the captain's French artifact vocabulary validates and is used ------
+# The live config names artifact kinds livrable / rapport / lien / test with
+# their Discord tag ids directly; the code now accepts that vocabulary and a
+# configured id, while an unknown kind still fails loudly.
+new_world
+new_home c18
+add_task m-fr "$TMP_ROOT/project"
+set_state m-fr working
+# The artifact forum advertises the captain's numeric tag ids, exactly as the
+# live Discord forum does for the configured vocabulary.
+python3 - "$WORLD" "$FORUM_A_ART" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+for channel in world["channels"]:
+    if channel["id"] == sys.argv[2]:
+        channel["available_tags"] = [
+            {"id": "1550444494925860868", "name": "livrable"},
+            {"id": "1550444494925860869", "name": "rapport"},
+            {"id": "1550444494925860870", "name": "lien"},
+            {"id": "1550444494925860871", "name": "test"},
+        ]
+json.dump(world, open(sys.argv[1], "w"))
+PY
+python3 - "$H/config/discord-session-mirror.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["projects"]["atelier"]["artifact_tags"] = {
+    "livrable": "1550444494925860868",
+    "rapport": "1550444494925860869",
+    "lien": "1550444494925860870",
+    "test": "1550444494925860871",
+}
+json.dump(data, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
+out=$(mirror config-check --config "$H/config/discord-session-mirror.json" 2>&1) \
+  || fail "the captain's artifact vocabulary was rejected: $out"
+pass "the captain's French artifact vocabulary validates"
+
+mirror sync --config "$H/config/discord-session-mirror.json" >/dev/null 2>&1 || fail "French-vocabulary sync failed"
+printf 'Un livrable publiable.\n' > "$TMP_ROOT/livrable.md"
+out=$(mirror artifact --config "$H/config/discord-session-mirror.json" --task m-fr --kind livrable \
+  --title "Livrable" --body-file "$TMP_ROOT/livrable.md" 2>&1) || fail "livrable artifact failed: $out"
+python3 - "$WORLD" "$FORUM_A_ART" <<'PY' || fail "the configured numeric tag id was not applied"
+import json, sys
+world = json.load(open(sys.argv[1]))
+artifact = next(t for t in world["threads"] if t["parent_id"] == sys.argv[2])
+assert artifact["applied_tags"] == ["1550444494925860868"], artifact
+PY
+pass "a configured numeric artifact tag id is applied directly"
+
+python3 - "$H/config/discord-session-mirror.json" "$TMP_ROOT/bad-fr.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["projects"]["atelier"]["artifact_tags"]["bogus"] = "1550444494925860868"
+json.dump(data, open(sys.argv[2], "w"))
+PY
+out=$(mirror config-check --config "$TMP_ROOT/bad-fr.json" 2>&1) && fail "an unknown artifact kind was accepted" || true
+assert_contains "$out" "unsupported kind: bogus" "an unknown artifact kind still fails"
+assert_contains "$out" "allowed: report, patch, pr, livrable, rapport, lien, test" "the allowed vocabulary is named"
+pass "an unknown artifact kind still fails loudly with the allowed vocabulary"
+
+# --- 19. a missing decryption tool is one bounded line, never a traceback ---
+new_world
+new_home c19
+add_task m-sops "$TMP_ROOT/project"
+set_state m-sops working
+SOPS_RC=0
+SOPS_OUT=$(FM_DISCORD_LIVE_SOPS=/nonexistent-sops mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || SOPS_RC=$?
+[ "$SOPS_RC" = "1" ] || fail "a missing decryption tool did not exit 1 (rc=$SOPS_RC)"
+assert_contains "$SOPS_OUT" "cannot run the secret decryption tool" "the missing tool is named"
+assert_contains "$SOPS_OUT" "FM_DISCORD_LIVE_SOPS" "the next step is named"
+printf '%s' "$SOPS_OUT" | grep -q 'Traceback' && fail "a missing decryption tool printed a traceback: $SOPS_OUT"
+pass "a missing decryption tool is one bounded, actionable line"
+
 echo "fm-discord-session-mirror tests passed"

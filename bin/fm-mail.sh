@@ -100,6 +100,37 @@ if [ -f "$ENV_FILE" ]; then
   done < "$ENV_FILE"
 fi
 
+# Usage, help, and dispatch shape are resolved before any credential is
+# required, so `--help` and a usage error never look like a configuration
+# failure. Usage errors exit 2; a missing configuration stays a config error.
+usage() {
+  cat <<'EOF'
+fm-mail.sh read
+fm-mail.sh send <to> <subject> <body | ->
+fm-mail.sh poll
+fm-mail.sh status
+EOF
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  read | status | poll)
+    ;;
+  send)
+    if [ -z "${2:-}" ] || [ -z "${3:-}" ]; then
+      usage >&2
+      exit 2
+    fi
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
 for r in FM_MAIL_USER FM_MAIL_PASS FM_IMAP_HOST FM_SMTP_HOST; do
   if [ -z "${!r:-}" ]; then
     echo "fm-mail: missing required \$FM_HOME/.env value: $r" >&2
@@ -624,10 +655,6 @@ case "${1:-}" in
     to="${2:-}"
     subj="${3:-}"
     body="${4:--}"
-    if [ -z "$to" ] || [ -z "$subj" ]; then
-      usage
-      exit 1
-    fi
     if [ "$body" = "-" ]; then
       body="$(cat)"
     fi
@@ -641,11 +668,8 @@ case "${1:-}" in
   poll)
     mail_poll
     ;;
-  -h|--help)
-    usage
-    ;;
   *)
-    usage
-    exit 1
+    usage >&2
+    exit 2
     ;;
 esac

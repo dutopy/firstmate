@@ -60,6 +60,15 @@ def redact(text: str, token: str) -> str:
     return text.replace(token, "[REDACTED]")
 
 
+def bounded_cause(stderr: str) -> str:
+    """The last non-empty, length-bounded stderr line, for one actionable reason line."""
+    for line in reversed((stderr or "").splitlines()):
+        line = line.strip()
+        if line:
+            return line if len(line) <= 300 else line[:299] + "\u2026"
+    return ""
+
+
 def decrypt_token_from(env: "fwl.Env", secret_ref: str, key: str = TOKEN_KEY) -> str:
     """Decrypt only one named token into process memory from a secret file.
 
@@ -68,21 +77,37 @@ def decrypt_token_from(env: "fwl.Env", secret_ref: str, key: str = TOKEN_KEY) ->
     to disk; every caller is responsible for redacting failure text with
     `redact`. This is the single owner of Firstmate's Discord token handling,
     shared by the workspace live layer and the session mirror.
+
+    Every failure raises FMError with one bounded line naming what failed and
+    the next step, so a missing or unusable secret file, a decryption-tool
+    problem, or an absent key never escapes as a Python traceback.
     """
     path = Path(secret_ref).expanduser()
     if not path.is_absolute():
         path = env.home / path
     if not path.is_file():
-        raise FMError(f"secret file is missing: {path}")
+        raise FMError(
+            f"secret file is missing: {path}; create it or point secret_file in the Discord config at an existing file"
+        )
     sops = os.environ.get("FM_DISCORD_LIVE_SOPS", "sops")
-    proc = subprocess.run(
-        [sops, "-d", str(path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            [sops, "-d", str(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        detail = exc.strerror or str(exc)
+        raise FMError(
+            f"cannot run the secret decryption tool {sops!r} ({detail}); install it or set FM_DISCORD_LIVE_SOPS to its path"
+        ) from exc
     if proc.returncode != 0:
-        raise FMError("secret decryption failed; the secret file was not modified")
+        cause = bounded_cause(proc.stderr)
+        detail = f" ({cause})" if cause else ""
+        raise FMError(
+            f"secret decryption failed{detail}; check that {sops!r} and the age key can read {path} (the secret file was not modified)"
+        )
     token = ""
     for line in proc.stdout.splitlines():
         match = re.fullmatch(rf"{re.escape(key)}:\s*(\S+)\s*", line)
@@ -582,4 +607,9 @@ if __name__ == "__main__":
         sys.exit(main(sys.argv))
     except FMError as exc:
         print(f"fm-discord-live: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        # Defense in depth: a filesystem or process error that escaped a
+        # command handler is still one bounded line, never a traceback.
+        print(f"fm-discord-live: system error: {exc}", file=sys.stderr)
         sys.exit(1)

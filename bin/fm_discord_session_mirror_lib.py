@@ -28,7 +28,7 @@ Usage (via bin/fm-discord-session-mirror.sh):
     config-check [--config <json>]
     report [--config <json>] [--task <id>]...
     sync [--config <json>] [--task <id>]... [--dry-run]
-    artifact [--config <json>] --task <id> --kind <report|patch|pr> --title <t> --body-file <f> [--dry-run]
+    artifact [--config <json>] --task <id> --kind <report|patch|pr|livrable|rapport|lien|test> --title <t> --body-file <f> [--dry-run]
     request [--config <json>] --thread <id> [--text-file <f>] [--dry-run]
     bind [--config <json>] --thread <id> --task <id> [--dry-run]
 
@@ -69,8 +69,9 @@ fdl = _load_module("fdl", "fm_discord_live.py")
 FMError = fwl.FMError
 # The live layer loads its own copy of the workspace library, so its error
 # class object is not identical to this module's even though both mean the same
-# thing. Catch both so a live refusal prints one bounded line, never a traceback.
-ERRTYPES = (FMError, fdl.FMError)
+# thing. Catch both, plus OSError, so a live or filesystem refusal prints one
+# bounded line, never a traceback.
+ERRTYPES = (FMError, fdl.FMError, OSError)
 Env = fwl.Env
 die = fwl.die
 
@@ -97,7 +98,10 @@ DEFAULT_STATE_TAGS = {
 REQUIRED_STATE_KEYS = tuple(DEFAULT_STATE_TAGS)
 DEFAULT_SESSION_TAG = "session"
 DEFAULT_WORKTREE_TAG = "worktree"
-ARTIFACT_KINDS = ("report", "patch", "pr")
+# The configured artifact vocabulary is the captain's, not the code's: the
+# English kind names stay accepted for existing configs, and the French
+# livrable / rapport / lien / test names are accepted alongside them.
+ARTIFACT_KINDS = ("report", "patch", "pr", "livrable", "rapport", "lien", "test")
 DEFAULT_WEBHOOK_FILE = "config/discord-webhooks.json"
 TRANSPORT_CHOICES = ("auto", "webhook", "bot")
 WEBHOOK_KINDS = ("sessions", "artifacts", "emails")
@@ -149,6 +153,17 @@ def validate_tag_name(value: Any, field: str) -> str:
     if not isinstance(value, str) or not fwl.TAG_RE.fullmatch(value):
         raise FMError(f"{field} must be a Discord forum tag name")
     return value
+
+
+def validate_artifact_tag(value: Any, field: str) -> str:
+    """A configured artifact tag is either a forum tag name or its numeric id.
+
+    A webhook cannot read a forum's tag vocabulary, so the captain may put the
+    tag id directly in artifact_tags; a member-bot config may keep the name.
+    """
+    if isinstance(value, str) and (fwl.TAG_RE.fullmatch(value) or fwl.ID_RE.fullmatch(value)):
+        return value
+    raise FMError(f"{field} must be a Discord forum tag name or numeric tag id")
 
 
 def validate_state_tag_map(raw: Any) -> Dict[str, str]:
@@ -232,9 +247,11 @@ class MirrorProject:
                 raise FMError(f"{prefix}.artifact_tags must be a JSON object")
             for kind in raw_tags:
                 if kind not in ARTIFACT_KINDS:
-                    raise FMError(f"{prefix}.artifact_tags has an unsupported kind: {kind}")
+                    raise FMError(
+                        f"{prefix}.artifact_tags has an unsupported kind: {kind} (allowed: {', '.join(ARTIFACT_KINDS)})"
+                    )
             for kind, tag in raw_tags.items():
-                self.artifact_tags[kind] = validate_tag_name(tag, f"{prefix}.artifact_tags.{kind}")
+                self.artifact_tags[kind] = validate_artifact_tag(tag, f"{prefix}.artifact_tags.{kind}")
         raw_paths = raw.get("paths")
         if not isinstance(raw_paths, list) or not raw_paths:
             raise FMError(f"{prefix}.paths must be a non-empty list of absolute project paths")
@@ -814,7 +831,12 @@ class Transport:
             ids: List[str] = []
             missing: List[str] = []
             for name in wanted:
-                tag_id = self.project.tag_ids.get(name)
+                # A configured numeric tag id needs no name-to-id lookup; a
+                # webhook cannot read the forum's vocabulary anyway.
+                if fwl.ID_RE.fullmatch(name):
+                    tag_id = name
+                else:
+                    tag_id = self.project.tag_ids.get(name)
                 if tag_id:
                     if tag_id not in ids:
                         ids.append(tag_id)
@@ -826,9 +848,10 @@ class Transport:
         ids = []
         missing = []
         for name in wanted:
-            if name in by_name:
-                if by_name[name] not in ids:
-                    ids.append(by_name[name])
+            tag_id = name if fwl.ID_RE.fullmatch(name) else by_name.get(name)
+            if tag_id:
+                if tag_id not in ids:
+                    ids.append(tag_id)
             else:
                 missing.append(name)
         return ids, missing
@@ -1769,15 +1792,17 @@ def main(argv: List[str]) -> int:
     if len(argv) < 3:
         print("usage: fm_discord_session_mirror_lib.py <script-dir> <command> ...", file=sys.stderr)
         return 2
-    env = Env(argv[1])
     parser = build_parser()
     args = parser.parse_args(argv[2:])
     try:
+        env = Env(argv[1])
         return int(args.func(args, env))
+    except BrokenPipeError:
+        # Before ERRTYPES: BrokenPipeError is an OSError, and a closed reader
+        # must stay silent rather than print a spurious failure line.
+        return 1
     except ERRTYPES as exc:
         print(f"fm-discord-session-mirror: {exc}", file=sys.stderr)
-        return 1
-    except BrokenPipeError:
         return 1
 
 
