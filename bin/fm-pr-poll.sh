@@ -6,6 +6,16 @@
 # interpolated into this source: these bytes are identical for every task.
 # Each provider is read through its own standard CLI, gh for GitHub and glab
 # for GitLab, so an upstream checkout needs no extra tooling to follow either.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -u
 LC_ALL=C
 export LC_ALL
@@ -62,6 +72,12 @@ case "$provider" in
       .|..|*[!A-Za-z0-9._-]*) exit 0 ;;
     esac
     [ "$url" = "https://github.com/$owner/$repo/pull/$number" ] || exit 0
+    # Raw gh remainder: the merge poll is a byte-static registered check whose
+    # every byte is bound at registration, and it deliberately reads through the
+    # same forge CLI the rest of the GitHub path already requires. gh-axi's REST
+    # pull representation carries the same answer (state plus the merged flag),
+    # so this is a documented candidate for its own reviewed change rather than
+    # an irreducible remainder like the --match-head-commit merge below.
     state=$(gh pr view "$url" --json state -q .state 2>/dev/null) || exit 0
     [ "$state" = MERGED ] && printf '%s\n' merged
     ;;

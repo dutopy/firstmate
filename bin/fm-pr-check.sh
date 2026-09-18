@@ -6,6 +6,16 @@
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -62,10 +72,11 @@ fi
 
 "$FM_ROOT/bin/fm-guard.sh" || true
 
-# pr_head is recorded only when the forge's CLI can supply it. gh exposes the
-# head commit as a selectable field; plain glab exposes it only inside its JSON
-# output, which would need a JSON processor firstmate does not require, so a
-# GitLab task records no pr_head. Both consumers already treat it as optional:
+# pr_head is recorded only when the forge's CLI can supply it. gh-axi's REST
+# pull representation exposes the head commit as head.sha; plain glab exposes
+# it only inside its JSON output, which would need a JSON processor firstmate
+# does not require, so a GitLab task records no pr_head. Both consumers already
+# treat it as optional:
 # bin/fm-teardown.sh reads the head from the forge at teardown rather than from
 # metadata and falls back to its provider-agnostic content check, and
 # bin/fm-review-diff.sh resolves the head from the remote when none is recorded.
@@ -73,8 +84,8 @@ fi
 # and treats a recorded value that disagrees as stale rather than authoritative.
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
-if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/dev/null 2>&1; then
-  if REMOTE_HEAD=$(cd "$WT" && gh pr view "$URL" --json headRefOid -q .headRefOid 2>/dev/null) \
+if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh-axi >/dev/null 2>&1; then
+  if REMOTE_HEAD=$(gh-axi api "/repos/$FM_PR_OWNER/$FM_PR_REPO/pulls/$NUMBER" --jq '.head.sha | @json' 2>/dev/null) \
     && fm_pr_head_valid "$REMOTE_HEAD"; then
     PR_HEAD=$REMOTE_HEAD
   fi

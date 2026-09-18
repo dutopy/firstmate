@@ -54,12 +54,13 @@ CANONICAL_SOURCE_ID=
 PROVIDER=
 
 usage() {
+  local rc=${1:-2}
   awk '
     NR == 1 { next }
     /^#/ { sub(/^# ?/, ""); print; next }
     { exit }
   ' "${BASH_SOURCE[0]}"
-  exit 2
+  exit "$rc"
 }
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 
@@ -285,6 +286,7 @@ case "${1-}" in
   terminal)  shift; cmd_terminal "$@" ;;
   source-id) shift; cmd_source_id "${1-}" ;;
   retire)    shift; cmd_retire "$@" ;;
-  ''|-h|--help|help) usage ;;
+  '')                       usage ;;
+  -h|--help|help)           usage 0 ;;
   *) die "unknown command: $1" ;;
 esac

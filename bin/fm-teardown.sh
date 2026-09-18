@@ -260,6 +260,16 @@
 #     root still exists, so the account's healthy LaunchAgent worker and every
 #     live remote secondmate worker are out of scope. Best effort: a sweep
 #     failure never blocks this teardown.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1385,6 +1395,12 @@ pr_is_merged() {
     target=$(pr_number_from_branch "$branch") || return 1
   fi
   [ -n "$target" ] || return 1
+  # Raw gh remainder: this reads from inside the task worktree so the pull
+  # request resolves the way the task's own branch does. gh-axi can read the
+  # same state, head and url through /repos/{owner}/{repo}/pulls/{number}, but
+  # only once the worktree's remote is resolved to an owner/repository first;
+  # this landed-work test is safety-critical, so that rewrite belongs with its
+  # own review rather than bundled here.
   view=$(cd "$WT" && gh pr view "$target" --json state,headRefOid,url -q '.state + "\t" + .headRefOid + "\t" + .url' 2>/dev/null) || return 1
   state=${view%%$'\t'*}
   remainder=${view#*$'\t'}

@@ -54,6 +54,12 @@ PATH_PART=$FM_PR_PATH
 NUMBER=$FM_PR_NUMBER
 ENDPOINT="/repos/$PATH_PART/pulls/$NUMBER"
 
+# Raw gh remainder: this diagnostic reads reviewDecision, mergedAt and
+# author.login, which gh-axi's own pull-request view does not expose; the REST
+# representation would need a GraphQL request just to rebuild the same view, and
+# the required-checks read below stays on gh unconditionally because gh-axi's
+# `pr checks` accepts no --required or --json. Keeping the pair on one CLI is
+# what makes reading this command's output mean one thing.
 CORE=$(gh pr view "$URL" \
   --json state,mergedAt,isDraft,headRefOid,author,mergeable,reviewDecision --jq '
   "state=\(.state | ascii_downcase)",
@@ -128,6 +134,11 @@ fi
 
 if [ "$REVIEW_DECISION" = CHANGES_REQUESTED ]; then
   printf 'REVIEW DECISION: CHANGES_REQUESTED\n'
+  # Raw gh remainder: gh-axi carries this reviews endpoint too, but it renders
+  # structured output as TOON, so this paginated multi-row --jq program would
+  # need the base64 envelope and its own test. It only decorates the
+  # diagnostic output above, whose required-checks read stays on gh because
+  # gh-axi's `pr checks` accepts no --required or --json.
   REVIEWS=$(gh api "$ENDPOINT/reviews?per_page=100" --paginate --jq '
     .[]
     | select(.user.login != null and .commit_id != null and .submitted_at != null)

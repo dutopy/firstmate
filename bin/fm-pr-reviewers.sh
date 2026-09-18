@@ -45,6 +45,12 @@ fi
 PATH_PART=$FM_PR_PATH
 NUMBER=$FM_PR_NUMBER
 ENDPOINT="/repos/$PATH_PART/pulls/$NUMBER"
+# Raw gh remainder: gh-axi carries the same REST endpoint, but it renders
+# structured output as TOON, so a multi-line --jq program (this one, the file
+# list, and the commit rows below) has to travel as one base64-encoded value
+# and be decoded per call. Each of these three reads is therefore its own
+# transport change with its own test, not a one-line substitution, and this
+# command only reads: it gates nothing. Recorded as a named follow-up.
 CORE=$(gh api "$ENDPOINT" --jq '"author=\(.user.login)", "base=\(.base.sha)"') \
   || die "could not read $URL"
 AUTHOR=

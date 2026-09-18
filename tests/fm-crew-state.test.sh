@@ -132,7 +132,15 @@ case "${1:-} ${2:-}" in
   "pr view")
     [ -z "${FM_FAKE_PR_READ_LOG:-}" ] || printf 'gh-axi\n' >> "$FM_FAKE_PR_READ_LOG"
     [ "${FM_FAKE_PR_READ_FAIL:-0}" = 1 ] && exit 1
-    printf 'pull_request:\n  number: %s\n  state: %s\n' "${3:-1}" "${FM_FAKE_PR_STATE_AXI:-merged}"
+    # gh-axi replaced the raw gh read for pull-request state, so this fake must
+    # answer the same fixture the gh fake does. FM_FAKE_PR_STATE_AXI stays an
+    # explicit override for a test that must tell the two transports apart.
+    number=${3:-1}
+    state=${FM_FAKE_PR_STATE_AXI:-${FM_FAKE_PR_STATE:-MERGED}}
+    eval "per_number=\${FM_FAKE_PR_${number}_STATE_AXI:-}"
+    [ -n "$per_number" ] || eval "per_number=\${FM_FAKE_PR_${number}_STATE:-}"
+    [ -z "$per_number" ] || state=$per_number
+    printf 'pull_request:\n  number: %s\n  state: %s\n' "$number" "$state"
     exit 0 ;;
 esac
 exit 1
@@ -287,7 +295,7 @@ reset_fakes() {
   FM_FAKE_PR_MERGED=true
   FM_FAKE_PR_READ_FAIL=0
   FM_FAKE_PR_READ_LOG=
-  FM_FAKE_PR_STATE_AXI=merged
+  FM_FAKE_PR_STATE_AXI=
   FM_FAKE_GLAB_STATE=merged
   FM_FAKE_GLAB_READ_FAIL=0
   FM_FAKE_GLAB_READ_LOG=

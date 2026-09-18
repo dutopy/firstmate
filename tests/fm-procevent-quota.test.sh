@@ -104,9 +104,15 @@ chmod +x "$FAKEBIN/quota-axi"
 fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
 ok() { printf 'ok - %s\n' "$1"; }
 
-if help=$("$BIN/fm-procevent-quota.sh" --help 2>&1); then
-  fail "help unexpectedly exited zero"
-fi
+# --help is the help path: it prints usage and exits 0 without doing work.
+help_rc=0
+help=$("$BIN/fm-procevent-quota.sh" --help 2>&1) || help_rc=$?
+[ "$help_rc" -eq 0 ] || fail "help must exit 0, not $help_rc"
+# An unusable invocation is still a refusal, so the two paths stay distinct.
+bad_rc=0
+FM_HOME="$LAB/bad-home" FM_STATE_OVERRIDE="$LAB/bad-state" \
+  "$BIN/fm-procevent-quota.sh" --definitely-not-a-flag >/dev/null 2>&1 || bad_rc=$?
+[ "$bad_rc" -ne 0 ] || fail "an unknown flag must still refuse"
 printf '%s\n' "$help" | grep -Fq 'fm-procevent-quota.sh retire [--provider <provider>]' \
   || fail "help omitted the retire usage"
 if printf '%s\n' "$help" | grep -Fq 'set -u'; then

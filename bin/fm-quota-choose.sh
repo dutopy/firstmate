@@ -56,12 +56,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 usage() {
+  local rc=${1:-2}
   awk '
     NR == 1 { next }
     /^#/ { sub(/^# ?/, ""); print; next }
     { exit }
   ' "${BASH_SOURCE[0]}"
-  exit 2
+  exit "$rc"
 }
 
 CANDIDATES=()
@@ -79,7 +80,7 @@ while [ "$#" -gt 0 ]; do
       CANDIDATES+=("$2")
       shift 2
       ;;
-    -h|--help|help) usage ;;
+    -h|--help|help) usage 0 ;;
     --) shift; break ;;
     -*) die "unknown option: $1" ;;
     *) CANDIDATES+=("$1") ; shift ;;

@@ -67,7 +67,7 @@ usage() {
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  usage
+  usage 2>&1
   exit 0
 fi
 [ $# -le 1 ] || { usage; exit 1; }

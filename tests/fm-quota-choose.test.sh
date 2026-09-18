@@ -176,9 +176,14 @@ ok() {
   printf 'ok - %s\n' "$1"
 }
 
-if help=$("$BIN/fm-quota-choose.sh" --help 2>&1); then
-  fail "help unexpectedly exited zero"
-fi
+# --help is the help path: it prints usage and exits 0 without doing work.
+help_rc=0
+help=$("$BIN/fm-quota-choose.sh" --help 2>&1) || help_rc=$?
+[ "$help_rc" -eq 0 ] || fail "help must exit 0, not $help_rc"
+# An unusable invocation is still a refusal, so the two paths stay distinct.
+bad_rc=0
+"$BIN/fm-quota-choose.sh" --definitely-not-a-flag >/dev/null 2>&1 || bad_rc=$?
+[ "$bad_rc" -ne 0 ] || fail "an unknown flag must still refuse"
 printf '%s\n' "$help" | grep -Fq \
   "candidate order and every candidate's provider is the harness's primary family." \
   || fail "help omitted the multi-provider usage restriction"

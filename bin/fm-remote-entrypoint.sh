@@ -28,10 +28,20 @@
 # sshd exiting and reparenting this process - also cancels the job. The worker
 # then skips or stops the cancelled job instead of running it to completion for
 # nobody.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -eu
 
 PROTOCOL=1
-DOCTOR_SHA256=78efccd6cb7a0123400e49fa323292a64c8e3c7ebd3717151be69f87735302fb
+DOCTOR_SHA256=a82d94462c2e156cffe3e421205583d5c9434558a4b6b8b80ef40836c719436d
 REAL_SOURCE=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}" 2>/dev/null) ||
   REAL_SOURCE=$(realpath "${BASH_SOURCE[0]}" 2>/dev/null) ||
   REAL_SOURCE=${BASH_SOURCE[0]}

@@ -852,42 +852,44 @@ fm_pr_poll_retirement_receipt_valid() {
   FM_PR_RETIRE_RECEIPT_IDENTITY=$(fm_pr_file_identity "$receipt") || return 1
 }
 
-fm_pr_github_read_record_with_gh() {  # <owner> <repo> <number>
-  local owner=$1 repo=$2 number=$3 fields line total=0 named=0
-  local state='' merged=''
-  FM_PR_RECORD_STATE=
-  FM_PR_RECORD_MERGED=
+# Portable base64 decode of $1, the transport gh-axi uses for a JSON payload.
+# GNU base64 spells decode -d/--decode; BSD spells it -D. Tries each spelling
+# without losing the input to a first attempt that wrote nothing.
+fm_pr_base64_decode() {  # <base64-text>
+  local text=${1-}
+  [ -n "$text" ] || return 1
+  command -v base64 >/dev/null 2>&1 || return 1
+  printf '%s' "$text" | base64 -d 2>/dev/null && return 0
+  printf '%s' "$text" | base64 -D 2>/dev/null
+}
 
+# One GitHub GraphQL read through gh-axi, the agent-first forge interface.
+# gh-axi renders structured output as TOON, so a JSON payload rides as base64
+# inside a JSON string literal gh-axi passes through verbatim: <selector> runs
+# on the GraphQL response, `tojson | @base64 | @json` makes the selected object
+# a single safe token, and this function decodes it back to JSON for the
+# existing jq consumers. Prints the selected JSON value and fails when gh-axi
+# or base64 is absent, the request fails, or the response carries no data.
+# The query is the single definition of the pull-request fields every GitHub
+# read in this repository needs; each caller selects its own subset.
+fm_pr_gh_axi_graphql() {  # <owner> <repo> <number> <jq-selector>
+  local owner=${1-} repo=${2-} number=${3-} selector=${4-} query body encoded decoded
+  [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$number" ] && [ -n "$selector" ] || return 1
+  command -v gh-axi >/dev/null 2>&1 || return 1
   # shellcheck disable=SC2016  # GraphQL variables are literal query syntax.
-  if ! fields=$(gh api graphql \
-    -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged}}}' \
-    -F "owner=$owner" -F "repo=$repo" -F "number=$number" \
-    --jq '.data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring)' \
-    2>/dev/null) || [ -z "$fields" ]; then
-    return 1
-  fi
-  while IFS= read -r line; do
-    total=$((total + 1))
-    case "$line" in
-      state=*) state=${line#state=} ;;
-      merged=*) merged=${line#merged=} ;;
-      *) continue ;;
-    esac
-    named=$((named + 1))
-  done <<FIELDS
-$fields
-FIELDS
-  if [ "$named" -ne 2 ] || [ "$total" -ne 2 ] || [ -z "$state" ] \
-    || { [ "$merged" != true ] && [ "$merged" != false ]; }; then
-    return 1
-  fi
-
-  # Consumed by bin/fm-crew-state.sh passed_pr_detail.
-  # shellcheck disable=SC2034
-  FM_PR_RECORD_STATE=$state
-  # Consumed by bin/fm-crew-state.sh passed_pr_detail.
-  # shellcheck disable=SC2034
-  FM_PR_RECORD_MERGED=$merged
+  # Every field any GitHub read in this repository selects must appear here:
+  # a GraphQL selection set answers only what it asks for, so a field the
+  # caller selects but this query omits comes back null and the caller reads a
+  # real "merged" as unreadable. `merged` is the one the merge-outcome read
+  # depends on to distinguish a landed pull request from a queued or open one.
+  query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isDraft mergeable mergeStateStatus headRefOid baseRefName isInMergeQueue statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion startedAt} ... on StatusContext{context state}}}}}}}'
+  body="{\"query\":\"$query\",\"variables\":{\"owner\":\"$owner\",\"repo\":\"$repo\",\"number\":$number}}"
+  encoded=$(printf '%s' "$body" | gh-axi api POST /graphql --input - \
+    --jq "($selector) | tojson | @base64 | @json" 2>/dev/null) || return 1
+  [ -n "$encoded" ] || return 1
+  decoded=$(fm_pr_base64_decode "$encoded") || return 1
+  [ -n "$decoded" ] && [ "$decoded" != null ] || return 1
+  printf '%s' "$decoded"
 }
 
 fm_pr_github_read_record_with_gh_axi() {  # <owner> <repo> <number>
@@ -935,9 +937,6 @@ fm_pr_github_read_record_with_gh_axi() {  # <owner> <repo> <number>
 }
 
 fm_pr_github_read_record() {  # <owner> <repo> <number>
-  if command -v gh >/dev/null 2>&1 && fm_pr_github_read_record_with_gh "$@"; then
-    return 0
-  fi
   command -v gh-axi >/dev/null 2>&1 || return 1
   fm_pr_github_read_record_with_gh_axi "$@"
 }

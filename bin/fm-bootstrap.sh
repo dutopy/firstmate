@@ -154,6 +154,16 @@
 #        fm-bootstrap.sh lavish-compatible
 #          Exit 0 when lavish-axi meets LAVISH_AXI_MIN, 1 otherwise, printing
 #          nothing; bin/fm-brief.sh uses it to gate scout Lavish hosting.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -u
 
 TYPESAFE_API_KEY_PRIVATE=${TYPESAFE_API_KEY:-}
@@ -1624,6 +1634,9 @@ detect_home_summary_publication() {
 local_phase && detect_local_tools
 if network_phase; then
   __fm_timing_stamp=$(fm_timing_now_ms)
+  # Raw gh remainder: this is an authentication probe, not a forge read; gh-axi
+  # exposes no equivalent "who am I authed as" check (its `setup` subcommand
+  # wires hooks rather than reporting session state).
   gh auth status >/dev/null 2>&1 || echo "NEEDS_GH_AUTH"
   fm_timing_record phase gh-auth "$__fm_timing_stamp"
 fi

@@ -189,10 +189,55 @@ SH
   cat > "$fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
+jq_expr=''
+prev=''
+for arg in "$@"; do
+  [ "$prev" != --jq ] || jq_expr=$arg
+  prev=$arg
+done
+# Emulate gh-axi's transport: gh prints jq -r output, gh-axi JSON-parses it and
+# prints a resulting string verbatim. The script's selectors end in @json, so
+# the gh output is a JSON string literal and the final `jq -r .` is the parse.
+emit() {
+  local gh_out
+  gh_out=$(printf '%s' "$1" | jq -r "$jq_expr") || return 1
+  printf '%s' "$gh_out" | jq -r '.'
+}
 case "${1:-} ${2:-}" in
   "pr view")
     [ "$#" -eq 5 ] && [ "${4:-}" = --repo ] || exit 2
     printf 'pull_request:\n  number: %s\n  state: %s\n' "$3" "${FM_TEST_GH_MERGE_STATE:-merged}"
+    ;;
+  "api POST")
+    body=$(cat)
+    # A GraphQL selection set answers only the fields it names, so the query must
+    # name every field the callers select. Pin that set here so a query that
+    # drops one fails loudly instead of returning null.
+    for field in state merged isDraft mergeable mergeStateStatus headRefOid baseRefName isInMergeQueue statusCheckRollup; do
+      case "$body" in
+        *"$field"*) ;;
+        *)
+          printf 'fake gh-axi: GraphQL query omits %s\n' "$field" >&2
+          exit 3
+          ;;
+      esac
+    done
+    case "$jq_expr" in
+      *statusCheckRollup*)
+        response=$(jq -cn --arg head "${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}" \
+          '{data:{repository:{pullRequest:{state:"OPEN",isDraft:false,mergeable:"MERGEABLE",mergeStateStatus:"CLEAN",headRefOid:$head,baseRefName:"main",statusCheckRollup:{contexts:{nodes:[{__typename:"CheckRun",name:"ci",status:"COMPLETED",conclusion:"SUCCESS"}]}}}}}}') || exit 1
+        ;;
+      *)
+        state=${FM_TEST_GH_GRAPHQL_STATE:-MERGED}
+        if [ "$state" = MERGED ]; then merged=true; else merged=false; fi
+        response=$(jq -cn --arg s "$state" --argjson m "$merged" --argjson q "${FM_TEST_GH_GRAPHQL_QUEUED:-false}" \
+          '{data:{repository:{pullRequest:{state:$s,merged:$m,isInMergeQueue:$q,baseRefName:"main"}}}}') || exit 1
+        ;;
+    esac
+    emit "$response"
+    ;;
+  "api /repos"*)
+    emit "{\"head\":{\"sha\":\"${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}\"}}"
     ;;
 esac
 exit "${FM_TEST_GH_AXI_RC:-0}"

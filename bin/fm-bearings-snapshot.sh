@@ -257,7 +257,11 @@ repo_slug() {  # <url>
 }
 
 # Bounded gh call; prints stdout, non-zero on timeout/failure. gh only.
-# bin/fm-timeout-lib.sh owns the bound itself.
+# Raw gh remainder: this is the opt-in --include-prs enrichment, whose whole
+# point is to keep every forge coupling in one place (see the header). Its
+# reads are PR lists per repository, which gh-axi can serve, but gh-axi renders
+# structured output as TOON, so each would need the base64 envelope and a test
+# of its own. bin/fm-timeout-lib.sh owns the bound itself.
 gh_bounded() {  # <args...>
   fm_run_timed "$FM_BEARINGS_PR_TIMEOUT" \
     env GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh "$@"

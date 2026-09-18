@@ -317,7 +317,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     -h|--help)
-      usage
+      usage 2>&1
       exit 0
       ;;
     -*)

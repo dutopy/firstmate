@@ -171,10 +171,11 @@ unset CDPATH \
   GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CONFIG GIT_CONFIG_GLOBAL \
   GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_CONFIG_COUNT
 
-usage() {
+usage() {  # [exit-code]
+  local rc=${1:-2}
   echo "usage: fm-claude-trust.sh <worktree> <project>" >&2
   echo "       fm-claude-trust.sh --secondmate-home <home> <id>" >&2
-  exit 2
+  exit "$rc"
 }
 
 # MODE selects which structural scope test decides the argument, and SCOPE_NOUN
@@ -189,8 +190,12 @@ case "${1:-}" in
     PROJ_ARG=
     SCOPE_NOUN="secondmate home"
     ;;
-  '' | -h | --help)
+  '')
     usage
+    ;;
+  -h | --help)
+    # Help is inert: it prints usage and exits 0 without touching either store.
+    usage 0 2>&1
     ;;
   *)
     [ "$#" -eq 2 ] || usage

@@ -24,11 +24,10 @@
 # refused while the away-posture record exists, and it never
 # applies on GitLab, where a merge already requires the head pipeline to have
 # succeeded. After gh returns success, GitHub's live state is read back and
-# accepted only when the pull request is merged or in the merge queue. gh's
-# GraphQL API supplies that queue-aware read; when that read fails, gh-axi's
-# own view still proves a landed merge, and every outcome it cannot prove
-# refuses, reporting the failed gh read and naming both failed reads when the
-# gh-axi view could not prove the outcome either.
+# accepted only when the pull request is merged or in the merge queue. GitHub's
+# GraphQL API through gh-axi supplies that queue-aware read; when it fails,
+# gh-axi's own view still proves a landed merge, and every outcome neither read
+# can prove refuses, reporting the failed queue-aware read.
 # If the pull request remains open and the base branch has an effective
 # merge_queue rule, an attended refusal names the queue's configured merge
 # method and exact --attended-override -- --auto --<method> retry flags. While
@@ -107,6 +106,16 @@
 # destination, normal-case deduplication, and at-least-once recovery.
 # A landed merge whose outcome cannot be written is reported loudly rather than
 # misreported as a failed merge.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -365,6 +374,7 @@ fi
 GITHUB_MISSING=
 if [ "$PROVIDER" = github ]; then
   command -v gh >/dev/null 2>&1 || GITHUB_MISSING="gh"
+  command -v gh-axi >/dev/null 2>&1 || GITHUB_MISSING="${GITHUB_MISSING:+$GITHUB_MISSING and }gh-axi"
   if ! command -v jq >/dev/null 2>&1; then
     GITHUB_MISSING="${GITHUB_MISSING:+$GITHUB_MISSING and }jq"
   fi
@@ -571,8 +581,11 @@ github_verify_mergeable() {
   local total=0 named=0 refusals=''
   local state='' draft='' mergeable='' merge_state='' live_head='' base=''
 
-  if ! json=$(gh pr view "$URL" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup 2>/dev/null) \
-    || [ -z "$json" ]; then
+  if ! json=$(fm_pr_gh_axi_graphql "$PR_OWNER" "$PR_REPO" "$PR_NUMBER" '
+      .data.repository.pullRequest
+      | {state, isDraft, mergeable, mergeStateStatus, headRefOid, baseRefName,
+         statusCheckRollup: ((.statusCheckRollup.contexts.nodes) // [])}
+    ') || [ -z "$json" ]; then
     echo "error: could not read the GitHub pull request state before merging" >&2
     return 1
   fi
@@ -668,25 +681,30 @@ EOF
 
 # Read one live GitHub pull request view after gh returns. The selected
 # fields distinguish a landed pull request from a merge-queue entry and retain
-# the concrete state needed for a refusal. gh supplies the complete queue-aware
-# view; if that post-merge read becomes unavailable, gh-axi is the degradation
-# path that can prove only a landed merge. gh remains a pre-merge prerequisite.
+# the concrete state needed for a refusal. The queue-aware read is GitHub's
+# GraphQL API through gh-axi; when that read fails, gh-axi's own view is the
+# degradation path that can prove only a landed merge. gh remains a pre-merge
+# prerequisite for the merge command itself.
 FM_PR_GITHUB_STATE=
 FM_PR_GITHUB_MERGED=
 FM_PR_GITHUB_QUEUED=
 FM_PR_GITHUB_BASE=
 FM_PR_GITHUB_QUEUE_OBSERVED=false
-github_read_outcome_with_gh() {
-  local fields line
+github_read_outcome_with_gh_axi_graphql() {
+  local json fields line
   local total=0 named=0
   local state='' merged='' queued='' base=''
 
-  # shellcheck disable=SC2016  # GraphQL variables are literal query syntax.
-  if ! fields=$(gh api graphql \
-    -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}}' \
-    -F "owner=$PR_OWNER" -F "repo=$PR_REPO" -F "number=$PR_NUMBER" \
-    --jq '.data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")' \
-    2>/dev/null) || [ -z "$fields" ]; then
+  if ! json=$(fm_pr_gh_axi_graphql "$PR_OWNER" "$PR_REPO" "$PR_NUMBER" \
+      '.data.repository.pullRequest | {state, merged, isInMergeQueue, baseRefName}') \
+    || [ -z "$json" ]; then
+    return 1
+  fi
+  if ! fields=$(printf '%s' "$json" | jq -r '
+      "state=" + (.state // ""),
+      "merged=" + (.merged | tostring),
+      "queued=" + (.isInMergeQueue | tostring),
+      "base=" + (.baseRefName // "")' 2>/dev/null); then
     return 1
   fi
   while IFS= read -r line; do
@@ -716,7 +734,10 @@ FIELDS
   FM_PR_GITHUB_QUEUE_OBSERVED=true
 }
 
-github_read_outcome_with_gh_axi() {
+# Degradation path: gh-axi's own pull-request view proves a landed merge when
+# the queue-aware GraphQL read fails. It cannot observe the merge queue, so it
+# only ever turns a failed primary read into a proved merge or a refusal.
+github_read_outcome_with_gh_axi_view() {
   local output state
   if ! output=$(gh-axi pr view "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" 2>/dev/null); then
     return 1
@@ -744,22 +765,14 @@ github_read_outcome_with_gh_axi() {
 }
 
 github_read_outcome() {
-  if ! command -v gh >/dev/null 2>&1; then
-    if github_read_outcome_with_gh_axi && [ "$FM_PR_GITHUB_MERGED" = true ]; then
-      return 0
-    fi
-    echo "error: could not read the GitHub pull request outcome after the merge attempt; PR metadata and merge poll remain recorded" >&2
-    return 1
-  fi
-  # Only a failed gh read falls back. A gh read that completes and reports the
-  # pull request as neither merged nor queued is a concrete outcome, not a
-  # missing one, so it keeps its own refusal. The gh-axi view cannot observe the
-  # merge queue, so it can only turn this into a proved merge or into a refusal.
-  github_read_outcome_with_gh && return 0
-  if github_read_outcome_with_gh_axi && [ "$FM_PR_GITHUB_MERGED" = true ]; then
+  github_read_outcome_with_gh_axi_graphql && return 0
+  # Only a failed queue-aware read falls back. A read that completes and
+  # reports the pull request as neither merged nor queued is a concrete
+  # outcome, not a missing one, so it keeps its own refusal.
+  if github_read_outcome_with_gh_axi_view && [ "$FM_PR_GITHUB_MERGED" = true ]; then
     return 0
   fi
-  echo "error: could not read the GitHub pull request outcome after the merge attempt: the gh read failed and the gh-axi view could not prove the outcome either; PR metadata and merge poll remain recorded" >&2
+  echo "error: could not read the GitHub pull request outcome after the merge attempt: the queue-aware read failed and the gh-axi view could not prove a landed merge either; PR metadata and merge poll remain recorded" >&2
   return 1
 }
 
@@ -799,6 +812,10 @@ github_read_queue_method() {
   [ -n "$FM_PR_GITHUB_BASE" ] || return 0
   branch_path=$(github_urlencode_path_segment "$FM_PR_GITHUB_BASE")
   api_err=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-queue-rules.XXXXXX") || return 0
+  # Raw gh remainder: gh-axi carries this rules endpoint too, but it renders
+  # structured output as TOON, so this paginated --jq read would need the same
+  # base64 envelope the pull-request reads below use, plus its own test. The
+  # failure text on stderr is also read verbatim for the plan-gated 403 below.
   if ! methods=$(gh api \
     --paginate "repos/$PR_OWNER/$PR_REPO/rules/branches/$branch_path" \
     --jq '.[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")' \
@@ -1152,6 +1169,12 @@ case "$PROVIDER" in
     [ "$away_status" -eq 0 ] || exit "$away_status"
     refuse_github_queue_while_away || exit 2
     merge_status=0
+    # Raw gh remainder: gh-axi's `pr merge` offers --method/--auto/--delete-branch
+    # but no --match-head-commit, the head pin that stops a push landing between
+    # the verified read and the merge from being merged unverified. gh-axi also
+    # cannot pass an arbitrary caller flag through, which --attended-override and
+    # the auto-merge flags rely on. The merge action therefore stays on gh; every
+    # read around it runs through gh-axi.
     merge_output=$(gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" \
       --match-head-commit "$FM_PR_MERGE_HEAD" \
       "${merge_args[@]+"${merge_args[@]}"}" "$@" 2>&1) || merge_status=$?
