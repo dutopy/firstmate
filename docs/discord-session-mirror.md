@@ -65,6 +65,10 @@ It owns, and the code never hard-codes:
 - `captain_user_ids`: the Discord accounts allowed to start a session request.
 - `live.posting`: the only switch that permits a Discord write. It is off by
   default, and every write command is a printed plan while it is off.
+- `transport`: `auto` (default) prefers a configured webhook for the target
+  forum, `webhook` requires one, and `bot` forces the member-bot transport. A
+  project may override the global value with its own `transport` key, and
+  `sync --transport auto|webhook|bot` overrides it for one pass.
 - `allow_untagged`: with it off, an unconfigured `tag_ids` entry blocks the post
   and says so; with it on, the session thread is published without tags and the
   exact missing names are printed on every creation.
@@ -87,12 +91,27 @@ Each session posts under a readable per-session identity,
 while the exact worktree name stays in the thread title and in the card.
 
 A webhook is bounded by design: it can create a forum post, edit the message it
-created, and post a link message into a thread of its own forum. It cannot read
-a channel, so thread recognition still needs the member-bot transport; and it
-cannot change an existing thread's tags, so with the webhook transport the state
-tag is applied when the thread is created and later state changes are carried by
-the live card. `sync` says exactly that when it happens instead of silently
-pretending the tags moved.
+created, and post a link message into a thread of its own forum. Two
+consequences follow, and the mirror states each one instead of hiding it:
+
+- it cannot read a channel, so the forum tag vocabulary comes from the config's
+  `tag_ids` map and thread recognition still needs the member-bot transport;
+- it cannot change an existing thread's tags, so once a session thread exists
+  the member-bot transport is what moves its tags, and the member-bot transport
+  cannot edit a card a webhook authored (Discord only lets the author edit its
+  own message).
+
+Each session thread therefore has one **card owner** - the transport that posted
+its card - recorded in the session record and never reassigned, so every later
+state change edits that same card in place. Tag updates are independent: the
+mirror applies them through the member-bot transport whenever a tag has to
+change, whichever transport owns the card. Both behaviours are configuration or
+membership questions, never silent fallbacks.
+
+The six tags a sessions forum must carry are `session`, `worktree`, and the four
+state tags. With the default `state_tags` those are `actif`, `en-attente`,
+`bloque`, and `termine`; the state table may rename them, and `tag_ids` maps
+whichever names the config uses to the forum's ids.
 
 ## Session card and triggers
 

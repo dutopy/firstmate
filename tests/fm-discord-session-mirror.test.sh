@@ -856,4 +856,43 @@ assert world["posts"][0]["applied_tags"] == [], world["posts"][0]
 PY
 pass "a missing tag id is reported exactly, blocks the post, and only an explicit opt-in publishes untagged"
 
+# --- 17. the transport can be forced, so an existing thread can be re-tagged ---
+new_world
+new_home c17
+start_webhook_server
+write_webhook_file
+add_task m-force "$TMP_ROOT/project"
+set_state m-force working
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" --transport bot 2>&1) || fail "forced bot sync failed: $out"
+assert_contains "$out" "via the bot transport" "--transport bot forces the member-bot transport"
+[ "$(world_get thread_creates)" = "1" ] || fail "the forced bot transport did not use the bot path"
+python3 - "$WEBHOOK_WORLD" <<'PY' || fail "the forced bot transport still used the webhook"
+import json, sys
+assert json.load(open(sys.argv[1]))["posts"] == [], "webhook was used under --transport bot"
+PY
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" --transport webhook 2>&1) || fail "forced webhook sync failed: $out"
+[ "$(world_get thread_creates)" = "1" ] || fail "the forced webhook pass created a second thread"
+python3 - "$WEBHOOK_WORLD" <<'PY' || fail "the forced webhook pass re-posted the session"
+import json, sys
+assert json.load(open(sys.argv[1]))["posts"] == [], "webhook re-posted an already mirrored session"
+PY
+python3 - "$H/state/discord-workspace/session-mirror/sessions/m-force.json" <<'PY' || fail "the card owner moved to a transport that cannot edit it"
+import json, sys
+record = json.load(open(sys.argv[1]))
+assert record["transport"] == "bot", record
+PY
+python3 - "$H/config/discord-session-mirror.json" "$TMP_ROOT/no-webhook-bot.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["transport"] = "webhook"
+data["webhook_file"] = "config/discord-no-webhooks.json"
+json.dump(data, open(sys.argv[2], "w"), indent=2, sort_keys=True)
+json.dump({"webhooks": []}, open(sys.argv[1].rsplit("/", 1)[0] + "/discord-no-webhooks.json", "w"))
+PY
+add_task m-force2 "$TMP_ROOT/project"
+set_state m-force2 working
+out=$(mirror sync --config "$TMP_ROOT/no-webhook-bot.json" --task m-force2 2>&1) && fail "a required webhook was silently replaced by the bot" || true
+assert_contains "$out" "the webhook file has no matching entry" "transport=webhook refuses without a matching webhook"
+pass "the transport can be forced per pass, a recorded creator keeps the card, and a required webhook is never silently substituted"
+
 echo "fm-discord-session-mirror tests passed"

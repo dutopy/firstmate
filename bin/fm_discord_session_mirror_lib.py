@@ -99,6 +99,7 @@ DEFAULT_SESSION_TAG = "session"
 DEFAULT_WORKTREE_TAG = "worktree"
 ARTIFACT_KINDS = ("report", "patch", "pr")
 DEFAULT_WEBHOOK_FILE = "config/discord-webhooks.json"
+TRANSPORT_CHOICES = ("auto", "webhook", "bot")
 WEBHOOK_KINDS = ("sessions", "artifacts", "emails")
 WEBHOOK_URL_RE = re.compile(
     r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/(?:v[0-9]+/)?webhooks/([0-9]{5,32})/([A-Za-z0-9_.\-]{20,200})$"
@@ -174,6 +175,15 @@ def validate_positive_int(value: Any, field: str, maximum: int) -> int:
     return value
 
 
+def validate_transport(value: Any, field: str) -> str:
+    """auto prefers a configured webhook, webhook requires one, bot forces membership."""
+    if value is None:
+        return "auto"
+    if not isinstance(value, str) or value not in TRANSPORT_CHOICES:
+        raise FMError(f"{field} must be one of {', '.join(TRANSPORT_CHOICES)}")
+    return value
+
+
 def validate_config_file_reference(value: Any, field: str, home: Path) -> str:
     """A non-secret JSON config reference under the home's config directory."""
     if not isinstance(value, str):
@@ -237,6 +247,7 @@ class MirrorProject:
             if not expanded.is_absolute() or any(part in (".", "..") for part in expanded.parts):
                 raise FMError(f"{label} must be an absolute path without dot components")
             self.paths.append(os.path.realpath(str(expanded)))
+        self.transport = validate_transport(raw.get("transport"), f"{prefix}.transport")
         raw_tag_ids = raw.get("tag_ids")
         self.tag_ids: Dict[str, str] = {}
         if raw_tag_ids is not None:
@@ -284,6 +295,10 @@ class MirrorConfig:
         # when they are unconfigured, and says so, instead of leaving the session
         # invisible; without it an unconfigured tag vocabulary blocks the post.
         self.allow_untagged = fwl.bool_from_path(raw, ["allow_untagged"], False)
+        # auto prefers a configured webhook for the target forum, webhook
+        # requires one, and bot forces the member-bot transport - the only one
+        # that can read a channel or change an existing thread's tags.
+        self.transport = validate_transport(raw.get("transport"), "transport")
         self.state_tags = validate_state_tag_map(raw.get("state_tags"))
         self.session_tag = validate_tag_name(raw.get("session_tag", DEFAULT_SESSION_TAG), "session_tag")
         self.worktree_tag = validate_tag_name(raw.get("worktree_tag", DEFAULT_WORKTREE_TAG), "worktree_tag")
@@ -350,6 +365,7 @@ def sample_config() -> Dict[str, Any]:
         "captain_user_ids": ["000000000000000001"],
         "live": {"posting": False},
         "allow_untagged": False,
+        "transport": "auto",
         "webhook_file": DEFAULT_WEBHOOK_FILE,
         "session_tag": DEFAULT_SESSION_TAG,
         "worktree_tag": DEFAULT_WORKTREE_TAG,
@@ -362,6 +378,7 @@ def sample_config() -> Dict[str, Any]:
                 "sessions_forum_id": "000000000000000002",
                 "artifact_forum_id": "000000000000000003",
                 "artifact_tags": {"report": "rapport", "patch": "patch", "pr": "pr"},
+                "transport": "auto",
                 "tag_ids": {
                     "session": "000000000000000010",
                     "worktree": "000000000000000011",
@@ -752,12 +769,21 @@ class Transport:
         project: MirrorProject,
         kind: str,
         forum_id: str,
+        forced: str = "auto",
     ) -> None:
         self.passing = passing
         self.project = project
         self.kind = kind
         self.forum_id = forum_id
-        self.webhook = passing.webhooks.for_channel(kind, forum_id)
+        self.forced = forced if forced != "auto" else (project.transport if project.transport != "auto" else passing.cfg.transport)
+        entry = passing.webhooks.for_channel(kind, forum_id)
+        if self.forced == "bot":
+            entry = None
+        elif self.forced == "webhook" and entry is None:
+            raise FMError(
+                f"transport=webhook is configured for {kind} forum {forum_id} but the webhook file has no matching entry"
+            )
+        self.webhook = entry
         self.webhook_client: Optional[WebhookClient] = WebhookClient(self.webhook) if self.webhook is not None else None
         self._bot: Optional[MirrorClient] = None
 
@@ -1037,8 +1063,8 @@ class Pass:
             text = self.client.redact(text)
         return text
 
-    def transport(self, project: MirrorProject, kind: str, forum_id: str) -> Transport:
-        transport = Transport(self, project, kind, forum_id)
+    def transport(self, project: MirrorProject, kind: str, forum_id: str, forced: str = "auto") -> Transport:
+        transport = Transport(self, project, kind, forum_id, forced)
         if transport.name not in self.transport_names:
             self.transport_names.append(transport.name)
         self._transports.append(transport)
@@ -1102,7 +1128,7 @@ def cmd_sync(args: argparse.Namespace, env: Env) -> int:
         passing.note(f"deferred {len(deferred)} task(s) beyond bounds.max_tasks_per_pass: " + ", ".join(row["task"] for row in deferred))
     for task in tasks:
         try:
-            sync_task(passing, cfg, env, state, task)
+            sync_task(passing, cfg, env, state, task, args.transport)
         except ERRTYPES as exc:
             # One task's failure never hides the rest of the pass, and it never
             # looks like success: the reasons are printed and the pass exits 1.
@@ -1117,7 +1143,7 @@ def cmd_sync(args: argparse.Namespace, env: Env) -> int:
     return 1 if passing.failures else 0
 
 
-def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, task: Dict[str, str]) -> None:
+def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, task: Dict[str, str], forced_transport: str = "auto") -> None:
     task_id = task["task"]
     project = cfg.project_for_path(task["project"])
     if project is None:
@@ -1128,7 +1154,18 @@ def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, ta
     state_tag = cfg.state_tags[state_name]
     record = state.session_record(task_id)
     title = render_thread_title(project.label, task_id, worktree)
-    transport = passing.transport(project, "sessions", project.sessions_forum_id)
+    # The transport that created the card message owns every later card edit,
+    # because Discord only lets the author edit its own message. Tag updates are
+    # separate: only a member bot can change an existing thread's tags, so a
+    # webhook-authored thread still gets its tags from the member-bot transport.
+    created_with = record.get("transport") if record is not None else ""
+    forced = forced_transport if forced_transport in ("webhook", "bot") else ""
+    card_mode = created_with if created_with in ("webhook", "bot") else (forced or "auto")
+    if forced and created_with in ("webhook", "bot") and forced != created_with:
+        # Discord only lets the message author edit it, so the recorded creator
+        # keeps the card; the requested transport is honored for tag updates.
+        passing.note(f"{task_id}: the card was posted by the {created_with} transport, so its edits stay there ({forced} requested)")
+    transport = passing.transport(project, "sessions", project.sessions_forum_id, card_mode)
     if record is not None and record.get("project") != project.key:
         passing.note(f"{task_id}: skipped, recorded thread belongs to project {record.get('project')} but the task now reports {project.key}")
         return
@@ -1208,25 +1245,40 @@ def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, ta
         passing.note(f"{task_id}: would reconcile state={state_name} tag={state_tag} (thread {record.get('thread_id') or 'none'})")
         return
     worktree = record.get("worktree") or worktree
-    tag_ids, missing = transport.resolve_tag_ids(env, [cfg.session_tag, cfg.worktree_tag, state_tag])
+    tagger = transport if transport.reads_channels() else passing.transport(project, "sessions", project.sessions_forum_id, "bot")
+    # Tag id resolution stays with the card transport: a webhook takes them from
+    # the config, a member bot reads the live vocabulary. The member-bot tagger is
+    # only exercised when a tag actually has to change on an existing thread.
+    tag_source = transport
+    tag_ids, missing = tag_source.resolve_tag_ids(env, [cfg.session_tag, cfg.worktree_tag, state_tag])
     if missing:
         if transport.webhook is not None and cfg.allow_untagged:
             # Already reported when the thread was created; the card carries the
             # state and no webhook can re-tag an existing thread.
             pass
         else:
-            missing_label = "has no configured tag id for" if transport.webhook is not None else "lacks tag(s):"
+            missing_label = "has no configured tag id for" if tag_source.webhook is not None else "lacks tag(s):"
             passing.note(f"{task_id}: state tag not reconciled, forum {project.sessions_forum_id} {missing_label} {', '.join(missing)}")
     elif sorted(str(x) for x in (record.get("applied_tag_ids") or [])) != sorted(tag_ids):
-        if transport.set_thread_tags(env, record["thread_id"], tag_ids):
-            record["applied_tag_ids"] = tag_ids
-            passing.note(f"{task_id}: tags now {cfg.session_tag}, {cfg.worktree_tag}, {state_tag}")
-        else:
+        if not tagger.reads_channels():
             record["applied_tag_ids"] = tag_ids
             passing.note(
                 f"{task_id}: state {state_name} is in the card; a webhook cannot re-tag an existing thread, "
-                f"so tags stay {cfg.session_tag}, {cfg.worktree_tag} until a member bot is available"
+                f"so the tags stay {cfg.session_tag}, {cfg.worktree_tag} until a member bot is available"
             )
+        else:
+            try:
+                tagger.set_thread_tags(env, record["thread_id"], tag_ids)
+            except ERRTYPES as exc:
+                limit = (
+                    "; a webhook cannot re-tag an existing thread, so the card carries the state"
+                    if transport.webhook is not None
+                    else ""
+                )
+                passing.note(f"{task_id}: could not update the thread tags: {tagger.redact(str(exc))}{limit}")
+            else:
+                record["applied_tag_ids"] = tag_ids
+                passing.note(f"{task_id}: tags now {cfg.session_tag}, {cfg.worktree_tag}, {state_tag}")
     card = render_card(project, task_id, worktree, worktree_branch(task["worktree"]), state_name)
     card_digest = fwl.sha256_text(card)
     card_message_id = str(record.get("card_message_id") or "")
@@ -1239,7 +1291,10 @@ def sync_task(passing: Pass, cfg: MirrorConfig, env: Env, state: MirrorState, ta
         record["card_sha256"] = card_digest
         passing.note(f"{task_id}: session card updated in place in {record['thread_id']}")
     record["schema"] = SESSION_SCHEMA
-    record["transport"] = transport.name
+    # The card owner is fixed when the card is first posted: Discord only lets
+    # that identity edit it, so a later pass through another transport must not
+    # move it.
+    record.setdefault("transport", transport.name)
     record["state"] = state_name
     record["state_tag"] = state_tag
     record["worktree"] = worktree
@@ -1622,7 +1677,7 @@ def cmd_bind(args: argparse.Namespace, env: Env) -> int:
                 transport.set_thread_tags(env, thread_id, tag_ids)
         elif not record.get("thread_created_with_tags"):
             print("warning: a webhook cannot re-tag an existing thread; the bound card carries the state")
-    record["transport"] = transport.name
+    record.setdefault("transport", transport.name)
     state.save_session(task["task"], record)
     if request is not None:
         request["task"] = task["task"]
@@ -1684,6 +1739,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sync")
     add_config_argument(p)
     p.add_argument("--task", action="append")
+    p.add_argument("--transport", choices=TRANSPORT_CHOICES, default="auto")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_sync)
     p = sub.add_parser("artifact")
