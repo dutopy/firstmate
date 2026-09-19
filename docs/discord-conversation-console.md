@@ -280,6 +280,15 @@ The card is then edited to show the recorded answer and its buttons are disabled
 a failed intake leaves the buttons enabled and says so, so the captain can retry.
 The interaction id is recorded durably under `cards/interactions/`, so a repeated
 delivery edits the card again without recording a second answer.
+A validated press also appends exactly one durable wake through the same
+captain-inbox seam a typed message uses
+(`bin/fm-inbox.sh note --source discord-card --external-id <interaction id>`), so
+firstmate's ordinary supervision picks the recorded answer up without the captain
+saying anything in chat.
+The interaction id is the inbox external id, so a repeated delivery appends no
+second wake, and a refused or failed press appends none.
+The wake body names the task and the recorded option
+(`card answer <task-id>: <label>`).
 `chat` records nothing and posts one private follow-up line asking for a chat
 answer.
 

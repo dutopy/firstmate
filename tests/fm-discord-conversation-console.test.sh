@@ -872,6 +872,18 @@ PY
   FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" connect --config "$CFG2" --once > "$TMP_ROOT/h2-cards.log" 2>&1 \
     || fail "card interaction run failed: $(cat "$TMP_ROOT/h2-cards.log")"
 
+  # A validated press appends exactly one durable wake through the captain-inbox
+  # seam; the repeated interaction id above appends none, and no refused press
+  # appends any. The wake names the task and the recorded option.
+  CARD_WAKE_QUEUE="$H2/state/.wake-queue"
+  assert_equals "1" "$(grep -cF 'card answer card-decision-test: Oui' "$CARD_WAKE_QUEUE" || true)" \
+    "a validated card press appends exactly one wake"
+  assert_equals "1" "$(grep -cF 'card chat card-decision-test: En chat' "$CARD_WAKE_QUEUE" || true)" \
+    "the free-form chat selection appends its own wake"
+  assert_equals "2" "$(grep -cF 'card ' "$CARD_WAKE_QUEUE" || true)" \
+    "a refused press appends no wake"
+  pass "a validated press wakes firstmate and a refused or repeated press does not"
+
   assert_grep "Resolution recorded by fm-captain-hold." "$H2/data/backlog.md" "a press records a resolution through the keyed-answer intake"
   assert_grep "Oui, vas-y." "$H2/data/backlog.md" "the recorded answer is the option's exact value"
   RESOLUTIONS=$(grep -cF 'Resolution recorded by fm-captain-hold.' "$H2/data/backlog.md" || true)
@@ -1041,6 +1053,53 @@ try:
     assert order[0] == "ack", order
     assert order.index("load") > 0 and order.index("run") > order.index("load"), order
 
+    # 3b. A recorded press appends exactly one durable wake through the
+    #     captain-inbox seam, and a repeated delivery of the same interaction id
+    #     appends none.
+    wake_path = home / "state" / ".wake-queue"
+    def wake_lines():
+        if not wake_path.exists():
+            return []
+        return [line for line in wake_path.read_text().splitlines() if line.strip()]
+    answer_wakes = [line for line in wake_lines() if "card answer focused-task: Oui" in line]
+    assert len(answer_wakes) == 1, wake_lines()
+    assert "captain inbox note" in answer_wakes[0], answer_wakes
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000012", "tok", CAPTAIN,
+        f"fmcard:{CARD}:0", GUILD, CH, MSG,
+    )
+    assert len([line for line in wake_lines() if "card answer focused-task: Oui" in line]) == 1, wake_lines()
+
+    # 3c. The free-form "chat" selection also appends exactly one wake.
+    fmc.load_card = lambda env, card_id: (order.append("load") or {
+        "schema": fmc.CARD_SCHEMA, "card_id": card_id, "task_id": "focused-task",
+        "guild_id": GUILD, "channel_id": CH, "message_id": MSG, "body": "b",
+        "options": [{"label": "En chat", "action": "chat", "style": 2}],
+        "status": "open",
+    })
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000013", "tok", CAPTAIN,
+        f"fmcard:{CARD}:0", GUILD, CH, MSG,
+    )
+    assert any("card chat focused-task: En chat" in line for line in wake_lines()), wake_lines()
+
+    # 3d. A failed intake appends no wake.
+    fmc.load_card = lambda env, card_id: (order.append("load") or {
+        "schema": fmc.CARD_SCHEMA, "card_id": card_id, "task_id": "focused-task",
+        "guild_id": GUILD, "channel_id": CH, "message_id": MSG, "body": "b",
+        "options": [{"label": "Oui", "action": "answer", "value": "v", "style": 1}],
+        "status": "open",
+    })
+    fmc.run_card_option = lambda env, task_id, option: (order.append("run"), (1, "intake refused"))[1]
+    wakes_before_failure = len(wake_lines())
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000016", "tok", CAPTAIN,
+        f"fmcard:{CARD}:0", GUILD, CH, MSG,
+    )
+    assert record_for("999000000000000016")["status"] == "failed", record_for("999000000000000016")
+    assert len(wake_lines()) == wakes_before_failure, wake_lines()
+    wakes_before_refusals = len(wake_lines())
+
     # 4. An unidentified press is distinct and never gets the captain-only line.
     order = []
     client = FakeClient(order)
@@ -1061,6 +1120,9 @@ try:
     failed = record_for("999000000000000014")
     assert failed["status"] == "refused" and failed["reason"] == "unknown-custom-id", failed
     assert "ack_error" in failed and failed["ack_error"], failed
+
+    # 5b. A refused press appends no wake.
+    assert len(wake_lines()) == wakes_before_refusals, wake_lines()
 finally:
     fmc.load_card = real_load_card
     fmc.store_card = real_store_card
@@ -1132,6 +1194,8 @@ json.dump(world, open(world_path, "w"))
 PY
   FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" connect --config "$CFG2" --once > "$TMP_ROOT/h2-later.log" 2>&1 \
     || fail "later card interaction run failed: $(cat "$TMP_ROOT/h2-later.log")"
+  assert_equals "1" "$(grep -cF 'card later card-later-test: Plus tard' "$H2/state/.wake-queue" || true)" \
+    "a deferral appends exactly one wake naming the task and option"
   assert_grep "hold-until: 2026-10-01" "$H2/data/backlog.md" "the later option records a dated captain deferral"
   pass "a later option defers the task through the shared intake"
 

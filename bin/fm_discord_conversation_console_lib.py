@@ -37,8 +37,13 @@ with up to five labelled option buttons; a press arrives as a gateway
 ``INTERACTION_CREATE`` dispatch, is answered through Discord's interaction
 callback, and records the captain's choice through the same keyed-answer intake a
 typed reply uses (``bin/fm-captain-hold.sh answer``, or ``hold --until`` for a
-"later" option). A card is only posted while the permanent connection is
-registered, because a bounded poll cannot receive an interaction.
+"later" option). A validated press also appends exactly one durable wake through
+the same captain-inbox seam a typed message uses (``bin/fm-inbox.sh note``), so
+firstmate's ordinary supervision picks the recorded answer up without the
+captain saying anything in chat; the interaction id is the inbox external id, so
+a repeated delivery appends no second wake. A card is only posted while the
+permanent connection is registered, because a bounded poll cannot receive an
+interaction.
 
 Every captured request also gets one bounded latency-journal record that the
 read-only ``latency`` subcommand and ``status`` report. The five measured stages
@@ -248,6 +253,13 @@ CARD_CALLBACK_TIMEOUT_SECONDS = 20.0
 # later edit or follow-up uses the general callback bound.
 CARD_ACK_TIMEOUT_SECONDS = 2.5
 CARD_ANSWER_TIMEOUT_SECONDS = 120.0
+# A validated press appends exactly one durable wake through the same
+# captain-inbox seam a typed message uses, so firstmate's ordinary supervision
+# picks the recorded answer up without the captain saying anything in chat. The
+# interaction id is the inbox external id, which is what makes a repeated
+# delivery append no second wake.
+CARD_WAKE_SOURCE = "discord-card"
+CARD_WAKE_TIMEOUT_SECONDS = 30.0
 MAX_CARD_INTERACTION_RECORDS = 5000
 
 # The latency journal. One bounded record per captured captain request records
@@ -2367,6 +2379,69 @@ def run_card_option(env: "fwl.Env", task_id: str, option: Dict[str, Any]) -> Tup
                 pass
 
 
+def card_wake_body(task_id: str, option: Dict[str, Any]) -> str:
+    """The single durable wake line a validated card press appends.
+
+    It names the task, the recorded option, and that a card was validated, so
+    firstmate can act on the recorded answer without guessing.
+    """
+    action = str(option.get("action") or "answer")
+    label = str(option.get("label") or "")
+    return f"card {action} {task_id}: {label}".strip()
+
+
+def announce_card_answer(env: "fwl.Env", task_id: str, option: Dict[str, Any], interaction_id: str) -> str:
+    """Append exactly one durable wake for a validated card press.
+
+    It rides the same captain-inbox seam a typed message uses
+    (``bin/fm-inbox.sh note``), so firstmate's ordinary supervision picks it up
+    and the wake stays durable. The interaction id is the inbox external id, so
+    a repeated delivery of the same press returns the first note and appends no
+    second wake. A refused or failed press never reaches here. Returns "" on
+    success, or a redacted reason on failure.
+    """
+    command = [
+        str(env.script_dir / "fm-inbox.sh"),
+        "note",
+        "--source",
+        CARD_WAKE_SOURCE,
+        "--external-id",
+        interaction_id,
+        "-",
+    ]
+    child_env = dict(os.environ)
+    child_env["FM_HOME"] = str(env.home)
+    child_env["FM_STATE_OVERRIDE"] = str(env.state)
+    child_env["FM_DATA_OVERRIDE"] = str(env.data)
+    child_env["FM_CONFIG_OVERRIDE"] = str(env.config)
+    timeout = CARD_WAKE_TIMEOUT_SECONDS
+    override = os.environ.get("FM_CONSOLE_CARD_WAKE_TIMEOUT")
+    if override:
+        try:
+            parsed = float(override)
+            if parsed > 0:
+                timeout = parsed
+        except ValueError:
+            pass
+    try:
+        proc = subprocess.run(
+            command,
+            env=child_env,
+            input=card_wake_body(task_id, option),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return "the card wake did not finish in time"
+    except OSError as exc:
+        return f"the card wake could not start: {exc}"
+    if proc.returncode != 0:
+        return ((proc.stdout + proc.stderr).strip() or "the card wake was refused")[:500]
+    return ""
+
+
 def card_ephemeral(client: "ConsoleClient", token: str, text: str) -> None:
     """Send one private follow-up message through the interaction webhook.
 
@@ -2417,6 +2492,9 @@ def handle_card_interaction(
     recorded option, a private follow-up for a refusal or the free-form "answer
     in chat" option - because Discord rejects a second callback. The interaction
     id is recorded durably, so a repeated delivery records no second answer.
+    A recorded option, a deferral, and the free-form chat choice each also append
+    exactly one durable wake through the captain-inbox seam, idempotent by
+    interaction id.
     """
     ack_error = ""
 
@@ -2499,11 +2577,17 @@ def handle_card_interaction(
         return
     if str(option.get("action") or "") == "chat":
         # No answer is recorded: the captain will answer in the conversation.
-        record("chat", option_index=index)
+        # The wake still fires, so firstmate knows to expect a chat answer.
+        wake_error = announce_card_answer(env, str(card.get("task_id") or ""), option, interaction_id)
+        chat_fields: Dict[str, Any] = {"option_index": index}
+        if wake_error:
+            chat_fields["wake_error"] = client.redact(wake_error)[:500]
+        record("chat", **chat_fields)
         followup(CARD_CHAT_CONFIRMATION)
         return
     record("pending", option_index=index)
-    code, output = run_card_option(env, str(card.get("task_id") or ""), option)
+    task_id = str(card.get("task_id") or "")
+    code, output = run_card_option(env, task_id, option)
     if code != 0:
         record("failed", option_index=index, reason=client.redact(output)[:500])
         try:
@@ -2522,7 +2606,14 @@ def handle_card_interaction(
         "answered_at": fwl.utc_now(),
     }
     store_card(env, card)
-    record("recorded", option_index=index, action=str(option.get("action") or ""))
+    # Announce the recorded answer through the captain-inbox seam before the
+    # "recorded" marker, so an interrupted press cannot lose the wake; the
+    # interaction id keeps a redelivery from appending a second one.
+    wake_error = announce_card_answer(env, task_id, option, interaction_id)
+    recorded_fields: Dict[str, Any] = {"option_index": index, "action": str(option.get("action") or "")}
+    if wake_error:
+        recorded_fields["wake_error"] = client.redact(wake_error)[:500]
+    record("recorded", **recorded_fields)
     try:
         card_edit_original(client, token, card, suffix=card_answer_suffix(option), disabled=True)
     except FMError:
