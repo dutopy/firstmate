@@ -15,10 +15,12 @@
 #   B) Inheritance. The primary pushes a declared, extensible set of LOCAL
 #      (gitignored) config items - config/crew-dispatch.json, config/crew-harness,
 #      config/backlog-backend, config/backend, config/herdr-presentation-spaces,
-#      config/startup-memory-budget, and config/trace-context -
+#      config/startup-memory-budget, config/trace-context, and
+#      config/discord-session-mirror.json -
 #      down into each secondmate home's config/, so the secondmate's OWN crewmates,
 #      dispatch profiles, backlog backend, runtime-backend default, Herdr
-#      presentation choice, startup-memory budget, and trace context inherit the
+#      presentation choice, startup-memory budget, trace context, and Discord
+#      session-mirror config inherit the
 #      primary's settings. For config/herdr-presentation-spaces, an absent
 #      primary file and an absent destination file both mean the same
 #      unconfigured default, so the generic absence mirror converges that item
@@ -306,6 +308,7 @@ test_propagate_lib() {
   printf 'tmux\n' > "$src/backend"
   : > "$src/herdr-presentation-spaces"
   : > "$src/trace-context"
+  printf '{"threads":["proapplis"]}\n' > "$src/discord-session-mirror.json"
   stdout="$d/clean-copy.out"
   stderr="$d/clean-copy.err"
   propagate_inheritable_config "$src" "$dest" >"$stdout" 2>"$stderr" || fail "propagate returned non-zero"
@@ -316,6 +319,7 @@ test_propagate_lib() {
   [ "$(cat "$dest/backlog-backend")" = manual ] || fail "backlog-backend not propagated"
   [ "$(cat "$dest/backend")" = tmux ] || fail "backend not propagated"
   [ -f "$dest/herdr-presentation-spaces" ] || fail "herdr-presentation-spaces not propagated"
+  [ "$(cat "$dest/discord-session-mirror.json")" = '{"threads":["proapplis"]}' ] || fail "discord-session-mirror.json not propagated"
   printf 'herdr\n' > "$dest/backend"
   propagate_inheritable_config "$src" "$dest"
   [ "$(cat "$dest/backend")" = tmux ] || fail "primary backend did not overwrite a divergent destination"
@@ -337,11 +341,13 @@ test_propagate_lib() {
   printf 'claude\n' > "$src/crew-harness"
   printf 'tasks-axi\n' > "$src/backlog-backend"
   printf 'zellij\n' > "$src/backend"
+  printf '{"threads":["pa-folium"]}\n' > "$src/discord-session-mirror.json"
   propagate_inheritable_config "$src" "$dest"
   [ "$(cat "$dest/crew-dispatch.json")" = '{"default":{"harness":"claude"}}' ] || fail "changed dispatch profile did not converge"
   [ "$(cat "$dest/crew-harness")" = claude ] || fail "changed value did not converge"
   [ "$(cat "$dest/backlog-backend")" = tasks-axi ] || fail "changed backlog backend did not converge"
   [ "$(cat "$dest/backend")" = zellij ] || fail "changed backend did not converge"
+  [ "$(cat "$dest/discord-session-mirror.json")" = '{"threads":["pa-folium"]}' ] || fail "changed mirror config did not converge"
 
   outside="$d/outside-target"
   rm -f "$dest/crew-harness" "$outside"
@@ -356,7 +362,8 @@ test_propagate_lib() {
   # 4. removing the source mirrors absence downstream (primary-authoritative)
   printf 'herdr\n' > "$dest/backend"
   rm -f "$src/crew-dispatch.json" "$src/crew-harness" "$src/backlog-backend" \
-    "$src/backend" "$src/herdr-presentation-spaces" "$src/trace-context"
+    "$src/backend" "$src/herdr-presentation-spaces" "$src/trace-context" \
+    "$src/discord-session-mirror.json"
   propagate_inheritable_config "$src" "$dest"
   [ -e "$dest/crew-dispatch.json" ] && fail "dispatch profile absence not mirrored downstream"
   [ -e "$dest/crew-harness" ] && fail "absence not mirrored downstream"
@@ -364,6 +371,7 @@ test_propagate_lib() {
   [ -e "$dest/backend" ] && fail "backend absence not mirrored downstream"
   [ -e "$dest/herdr-presentation-spaces" ] && fail "herdr-presentation-spaces absence not mirrored downstream"
   [ -e "$dest/trace-context" ] && fail "trace-context absence not mirrored downstream"
+  [ -e "$dest/discord-session-mirror.json" ] && fail "discord-session-mirror.json absence not mirrored downstream"
 
   rm -f "$dest/crew-harness"
   ln -s "$d/missing-target" "$dest/crew-harness"
