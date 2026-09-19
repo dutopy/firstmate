@@ -1955,6 +1955,34 @@ fm_wake_append_locked() {
   return "$status"
 }
 
+# fm_wake_nudge_watcher: best-effort local kick to a waiting watcher so a row
+# just appended to the durable queue is re-scanned at once instead of after the
+# poll interval. The queue stays the sole authority and the poll stays the
+# fallback: with no watcher, a stale lock, a mismatched pid identity, or a
+# signal that cannot be delivered this is a silent no-op, and the next cycle
+# still sees the row. The lock's `pid-identity` is what makes signaling a pid
+# safe, because it rules out PID reuse aiming the signal at an unrelated
+# process; the watcher installs the USR1 handler that consumes it.
+# FM_WAKE_NUDGE_DISABLE=1 is a measurement/test seam that turns the kick off
+# while leaving the durable append untouched.
+# shellcheck disable=SC2034 # FM_WAKE_NUDGE is read by the watcher's USR1 trap.
+fm_wake_nudge_watcher() {
+  [ "${FM_WAKE_NUDGE_DISABLE:-0}" = "1" ] && return 0
+  local lockdir="$STATE/.watch.lock" pid recorded current
+  # The lock is a symlink to its owner directory (fm_lock_claim), so require a
+  # directory through the link exactly as bin/fm-watch.sh reads it.
+  [ -d "$lockdir" ] || return 0
+  pid=$(cat "$lockdir/pid" 2>/dev/null || true)
+  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$pid" != "${BASHPID:-$$}" ] || return 0
+  recorded=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
+  [ -n "$recorded" ] || return 0
+  current=$(fm_pid_identity "$pid" 2>/dev/null || true)
+  [ -n "$current" ] && [ "$current" = "$recorded" ] || return 0
+  kill -USR1 "$pid" 2>/dev/null || return 0
+  return 0
+}
+
 # fm_wake_queued_keys <kind>
 # Print the distinct keys currently queued for <kind>, oldest first. Read under
 # the append lock so a concurrent append is never observed half-written. The

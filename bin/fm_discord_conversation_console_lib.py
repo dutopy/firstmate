@@ -31,6 +31,16 @@ original bounded REST polling pass. The gateway connection is a supervised
 process-event source with an internal bounded-exponential reconnect and a
 polling fallback, so it is a transport, never an LLM agent.
 
+Every captured request also gets one bounded latency-journal record that the
+read-only ``latency`` subcommand and ``status`` report. The five measured stages
+are: stage 1 Discord creation to console ingest, stage 2 console handling, stage
+3 the wake reaching the watcher (the ``.seen-inbox`` marker), stage 4 the
+session's acknowledgement (the ``fm-inbox.sh drain --ack`` marker), and stage 5
+the turn itself up to the reply. Stages 3 and 4 are read back from the durable
+markers the capture path already produces rather than re-timed here; a message
+captured through polling while ``live.gateway`` is enabled is recorded in a
+bounded delivery-gap journal so the fallback is visible instead of silent.
+
 Usage (via bin/fm-discord-conversation-console.sh):
     fm-discord-conversation-console.sh sample-config
     fm-discord-conversation-console.sh config-check [--config <json>]
@@ -42,6 +52,7 @@ Usage (via bin/fm-discord-conversation-console.sh):
     fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
         [--interval <n>] [--max-seconds <n>] [--stop]
     fm-discord-conversation-console.sh status [--config <json>]
+    fm-discord-conversation-console.sh latency [--config <json>] [--limit <n>] [--json]
     fm-discord-conversation-console.sh start [--config <json>] [--dry-run]
     fm-discord-conversation-console.sh stop [--config <json>]
 
@@ -61,6 +72,7 @@ Neither changes what is redacted.
 
 import argparse
 import base64
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -103,6 +115,8 @@ THREAD_SCHEMA = "fm-discord-conversation-console.thread.v1"
 LAST_PASS_SCHEMA = "fm-discord-conversation-console.last-pass.v1"
 CONNECTION_SCHEMA = "fm-discord-conversation-console.connection.v1"
 FAST_PATH_SCHEMA = "fm-discord-conversation-console.fast-path.v1"
+LATENCY_SCHEMA = "fm-discord-conversation-console.latency.v1"
+DELIVERY_GAP_SCHEMA = "fm-discord-conversation-console.delivery-gaps.v1"
 TYPING_SCHEMA = "fm-discord-conversation-console.typing.v1"
 TRANSCRIPT_SCHEMA = "fm-discord-conversation-console.transcript.v1"
 SOURCE_ID = "discord-conversation-console"
@@ -166,6 +180,17 @@ FAST_PATH_QUESTION_HINTS = (
 FAST_PATH_BLOCKED_HINTS = ("blocked", "bloqu\u00e9", "bloque")
 # Per-record-kind retention, so the per-message fast-path records stay bounded.
 FAST_PATH_MAX_RECORDS = 5000
+
+# The latency journal. One bounded record per captured captain request records
+# the five measured stages, so bin/fm-discord-conversation-console.sh status and
+# the `latency` subcommand can report them without contacting Discord. The
+# Discord-creation, ingest, capture and answer timestamps are written here by
+# the console; the wake-delivery and session-activation timestamps are read from
+# the durable watcher/inbox markers the console's own capture path produces.
+LATENCY_MAX_RECORDS = 5000
+DEFAULT_LATENCY_REPORT_ROWS = 20
+# Bounded delivery-gap journal: a silent fall back to polling must stay visible.
+DELIVERY_GAP_MAX_RECORDS = 200
 
 # The typing indicator. Discord expires a typing state after about ten seconds,
 # so a full-turn message needs a bounded keeper that re-emits it while firstmate
@@ -575,6 +600,35 @@ def typing_path(env: "fwl.Env", channel_id: str) -> Path:
     return console_state_path(env, "typing", f"{channel_id}.json")
 
 
+def latency_path(env: "fwl.Env", request_id: str) -> Path:
+    """One durable latency journal record, keyed by the captain request."""
+    return console_state_path(env, "latency", f"{fwl.sha256_text(request_id)}.json")
+
+
+def delivery_gaps_path(env: "fwl.Env") -> Path:
+    return console_state_path(env, "delivery-gaps.json")
+
+
+def inbox_marker_path(env: "fwl.Env", name: str) -> Path:
+    """The watcher's per-note surfaced marker, named exactly as inbox_surfaced_marker."""
+    key = f"inbox:{name}"
+    return env.state / (".seen-inbox-" + key.encode("utf-8").hex())
+
+
+def inbox_ack_path(env: "fwl.Env", note_id: str) -> Path:
+    """The acknowledgement marker bin/fm-inbox.sh drain --ack writes."""
+    return env.state / "inbox" / "handled" / f"{note_id}.acked"
+
+
+def file_mtime_epoch(path: Path) -> Optional[float]:
+    try:
+        if not path.is_file() or path.is_symlink():
+            return None
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
 def read_typing_record(env: "fwl.Env", channel_id: str) -> Optional[Dict[str, Any]]:
     try:
         record = fwl.load_existing_json(typing_path(env, channel_id))
@@ -803,6 +857,221 @@ def fast_path_counts(env: "fwl.Env") -> Dict[str, Any]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Latency journal
+#
+# One durable record per captured captain request. The console writes the
+# timestamps it owns (Discord creation, transport ingest, capture, answer); the
+# wake-delivery and session-activation timestamps are read back from the
+# durable markers the watcher and the inbox acknowledgement already write, so
+# the journal never invents a stage it cannot observe.
+# ---------------------------------------------------------------------------
+
+def parse_discord_epoch(message_id: Any, timestamp: Any) -> Optional[float]:
+    """The Discord creation time in epoch seconds, from the payload or snowflake."""
+    if isinstance(timestamp, str) and timestamp.strip():
+        text = timestamp.strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.datetime.fromisoformat(text)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+            return parsed.timestamp()
+        except ValueError:
+            pass
+    text = str(message_id or "")
+    if text.isdigit():
+        return ((int(text) >> 22) + 1420070400000) / 1000.0
+    return None
+
+
+def _epoch_float(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def read_latency_record(env: "fwl.Env", request_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        record = fwl.load_existing_json(latency_path(env, request_id))
+    except FMError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def update_latency(env: "fwl.Env", request_id: str, **fields: Any) -> None:
+    """Merge one stage into this request's durable latency record.
+
+    A missing request id is a no-op (an event with no stable identity is never
+    tracked), and a failed write never fails the capture it is describing.
+    """
+    if not request_id:
+        return
+    path = latency_path(env, request_id)
+    try:
+        with fwl.state_transaction(env):
+            record: Dict[str, Any] = {}
+            if path.exists():
+                loaded = fwl.load_existing_json(path)
+                if isinstance(loaded, dict):
+                    record = loaded
+            record.update(fields)
+            record.update({"schema": LATENCY_SCHEMA, "request_id": request_id, "updated_at": fwl.utc_now()})
+            fwl.atomic_json(path, record)
+            prune_latency_records(path.parent)
+    except FMError:
+        return
+
+
+def prune_latency_records(directory: Path) -> None:
+    try:
+        records = sorted(directory.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    for stale in records[LATENCY_MAX_RECORDS:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def latency_rows(env: "fwl.Env", limit: int = DEFAULT_LATENCY_REPORT_ROWS) -> List[Dict[str, Any]]:
+    """Read-only per-request stage report, newest first, combining every marker."""
+    directory = console_state_path(env, "latency")
+    records: List[Dict[str, Any]] = []
+    try:
+        if directory.is_dir():
+            for path in directory.glob("*.json"):
+                try:
+                    loaded = fwl.load_existing_json(path)
+                except FMError:
+                    continue
+                if isinstance(loaded, dict) and loaded.get("request_id"):
+                    records.append(loaded)
+    except OSError:
+        records = []
+    records.sort(key=lambda record: _epoch_float(record.get("ingested_at")) or _epoch_float(record.get("captured_at")) or 0.0, reverse=True)
+    rows: List[Dict[str, Any]] = []
+    for record in records[:limit]:
+        note_id = str(record.get("note_id") or "")
+        discord_at = parse_discord_epoch(record.get("message_id"), record.get("discord_timestamp"))
+        ingested_at = _epoch_float(record.get("ingested_at"))
+        captured_at = _epoch_float(record.get("captured_at"))
+        delivered_at = file_mtime_epoch(inbox_marker_path(env, note_id)) if note_id else None
+        activated_at = file_mtime_epoch(inbox_ack_path(env, note_id)) if note_id else None
+        answered_at = _epoch_float(record.get("answered_at"))
+
+        def delta(start: Optional[float], end: Optional[float]) -> Optional[float]:
+            if start is None or end is None:
+                return None
+            return round(end - start, 3)
+
+        rows.append(
+            {
+                "request_id": str(record.get("request_id") or ""),
+                "message_id": str(record.get("message_id") or ""),
+                "label": str(record.get("label") or ""),
+                "channel_id": str(record.get("channel_id") or ""),
+                "transport": str(record.get("transport") or ""),
+                "path": str(record.get("path") or ""),
+                "note_id": note_id,
+                "discord_at": discord_at,
+                "ingested_at": ingested_at,
+                "captured_at": captured_at,
+                "delivered_at": delivered_at,
+                "activated_at": activated_at,
+                "answered_at": answered_at,
+                "stage1_discord_to_console": delta(discord_at, ingested_at),
+                "stage2_console_handling": delta(ingested_at, captured_at),
+                "stage3_wake": delta(captured_at, delivered_at),
+                "stage4_session_activation": delta(delivered_at, activated_at),
+                "stage5_turn": delta(activated_at, answered_at),
+                "total": delta(discord_at, answered_at),
+            }
+        )
+    return rows
+
+
+def _median(values: List[float]) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return round(ordered[middle], 3)
+    return round((ordered[middle - 1] + ordered[middle]) / 2.0, 3)
+
+
+def latency_medians(rows: List[Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    keys = (
+        "stage1_discord_to_console", "stage2_console_handling", "stage3_wake",
+        "stage4_session_activation", "stage5_turn", "total",
+    )
+    result: Dict[str, Optional[float]] = {}
+    for key in keys:
+        values = [float(row[key]) for row in rows if isinstance(row.get(key), (int, float)) and not isinstance(row.get(key), bool)]
+        result[key] = _median(values)
+    return result
+
+
+def latency_transport_counts(env: "fwl.Env") -> Dict[str, int]:
+    """Read-only transport tally over every journal record, for the gateway proof."""
+    counts: Dict[str, int] = {}
+    directory = console_state_path(env, "latency")
+    try:
+        if not directory.is_dir():
+            return counts
+        for path in directory.glob("*.json"):
+            try:
+                loaded = fwl.load_existing_json(path)
+            except FMError:
+                continue
+            if not isinstance(loaded, dict):
+                continue
+            transport = str(loaded.get("transport") or "unknown")
+            counts[transport] = counts.get(transport, 0) + 1
+    except OSError:
+        return counts
+    return counts
+
+
+# ---------------------------------------------------------------------------
+# Delivery gaps
+# ---------------------------------------------------------------------------
+
+def read_delivery_gaps(env: "fwl.Env") -> List[Dict[str, Any]]:
+    try:
+        loaded = fwl.load_existing_json(delivery_gaps_path(env))
+    except FMError:
+        return []
+    if isinstance(loaded, dict) and isinstance(loaded.get("gaps"), list):
+        return [gap for gap in loaded["gaps"] if isinstance(gap, dict)]
+    return []
+
+
+def record_delivery_gap(env: "fwl.Env", kind: str, detail: str) -> None:
+    """Record a visible delivery gap instead of letting the fallback stay silent."""
+    try:
+        with fwl.state_transaction(env):
+            gaps = read_delivery_gaps(env)
+            gaps.append({"at": fwl.utc_now(), "epoch": time.time(), "kind": kind, "detail": detail[:500]})
+            fwl.atomic_json(
+                delivery_gaps_path(env),
+                {"schema": DELIVERY_GAP_SCHEMA, "updated_at": fwl.utc_now(), "gaps": gaps[-DELIVERY_GAP_MAX_RECORDS:]},
+            )
+    except FMError:
+        return
+
+
+def delivery_gap_counts(env: "fwl.Env") -> Dict[str, Any]:
+    gaps = read_delivery_gaps(env)
+    result: Dict[str, Any] = {"count": len(gaps), "last": gaps[-1] if gaps else {}}
+    for kind in ("polling-capture", "gateway-fallback"):
+        result[kind] = sum(1 for gap in gaps if gap.get("kind") == kind)
+    return result
+
+
 def read_connection(env: "fwl.Env") -> Optional[Dict[str, Any]]:
     try:
         record = fwl.load_existing_json(connection_path(env))
@@ -891,6 +1160,7 @@ def normalize_message(
     channel_id: str,
     parent_id: str,
     message: Dict[str, Any],
+    transport: str = "",
 ) -> Dict[str, Any]:
     """Classify one Discord message into an accepted text, audio, or ignored event."""
     guild_id = channel.guild_id
@@ -912,6 +1182,7 @@ def normalize_message(
         "request_id": request_id_for(guild_id, channel_id, message_id) if message_id.isdigit() else "",
         "jump_url": f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}",
         "timestamp": str(message.get("timestamp") or ""),
+        "transport": transport,
     }
     if not fwl.ID_RE.fullmatch(message_id):
         return ignored_event(base, "invalid-message-id")
@@ -980,6 +1251,7 @@ def event_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
         "schema", "source", "kind", "label", "guild_id", "channel_id", "parent_id",
         "thread_id", "message_id", "author_id", "external_id", "request_id", "jump_url", "timestamp",
         "transcript",
+        "transport",
     ]
     return {key: event[key] for key in allowed if key in event}
 
@@ -1006,8 +1278,12 @@ def note_body(event: Dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def handoff_event(env: "fwl.Env", event: Dict[str, Any]) -> None:
-    """Feed one accepted event through the existing external-id inbox seam."""
+def handoff_event(env: "fwl.Env", event: Dict[str, Any]) -> str:
+    """Feed one accepted event through the existing external-id inbox seam.
+
+    Returns the durable note id (empty when the capture output cannot be read),
+    which the latency journal keys its wake and activation markers by.
+    """
     body = note_body(event)
     metadata_dir = console_state_path(env, "metadata-staging")
     metadata_dir.mkdir(parents=True, exist_ok=True)
@@ -1035,6 +1311,13 @@ def handoff_event(env: "fwl.Env", event: Dict[str, Any]) -> None:
             if proc.stderr:
                 print(proc.stderr, end="", file=sys.stderr)
             raise FMError(f"captain inbox capture failed for {event.get('external_id')}")
+        note_id = ""
+        for line in (proc.stdout or "").splitlines():
+            fields = line.strip().split()
+            if len(fields) >= 2 and fields[0] == "queued":
+                note_id = fields[1]
+                break
+        return note_id
     finally:
         try:
             os.unlink(meta_tmp)
@@ -1287,12 +1570,33 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
     record beside the message id.
     """
     request_id = str(event.get("request_id") or "")
+    ingested_at = time.time()
+    if request_id:
+        update_latency(
+            env,
+            request_id,
+            transport=str(event.get("transport") or ""),
+            message_id=str(event.get("message_id") or ""),
+            channel_id=str(event.get("channel_id") or ""),
+            label=str(event.get("label") or ""),
+            guild_id=str(event.get("guild_id") or ""),
+            discord_timestamp=str(event.get("timestamp") or ""),
+            ingested_at=ingested_at,
+        )
+        if str(event.get("transport") or "") == "polling" and cfg.live_gateway_enabled:
+            # The permanent connection was enabled but this message only reached
+            # the console through the bounded poll; make the fallback visible.
+            record_delivery_gap(env, "polling-capture", f"message {event.get('message_id')} captured by polling while the gateway was enabled")
     if not (cfg.fast_path_enabled and cfg.live_posting_enabled) or not request_id:
-        handoff_event(env, event)
+        note_id = handoff_event(env, event)
+        if request_id:
+            update_latency(env, request_id, captured_at=time.time(), note_id=note_id, path="full_turn")
         return "captured"
     ack_message_id = ""
+    ack_at: Optional[float] = None
     try:
         ack_message_id = ensure_fast_path_ack(env, cfg, client, event)
+        ack_at = time.time()
     except FMError:
         ack_message_id = ""
     decision = load_fast_path_record(env, "decisions", request_id)
@@ -1327,11 +1631,13 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
     path = str(decision.get("path") or "full_turn")
     answer_text = _safe_fast_path_text(str(decision.get("answer_text") or ""), cfg.fast_path_max_answer_chars)
     answer_message_id = ""
+    answer_at: Optional[float] = None
     if path == "fast_answer" and answer_text:
         try:
             answer_message_id = post_fast_path_message(
                 env, client, str(event.get("channel_id") or ""), answer_text, f"fast-answer:{request_id}"
             )
+            answer_at = time.time()
         except FMError:
             # A failed fast answer is a full turn, and the decision is rewritten
             # so a replay never posts the answer after the capture.
@@ -1341,14 +1647,28 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
                 decision["path"] = "full_turn"
                 decision["answer_text"] = ""
                 store_fast_path_record(env, "decisions", request_id, decision)
+    note_id = ""
     if path != "fast_answer" or not answer_text:
         path = "full_turn"
-        handoff_event(env, event)
+        note_id = handoff_event(env, event)
         if new_decision and cfg.fast_path_typing_enabled:
             try:
                 ensure_typing(env, cfg, client, event)
             except FMError:
                 pass
+    if request_id:
+        latency_fields: Dict[str, Any] = {"path": path, "captured_at": answer_at or time.time()}
+        if ack_at is not None:
+            latency_fields["ack_at"] = ack_at
+        if ack_message_id:
+            latency_fields["ack_message_id"] = ack_message_id
+        if note_id:
+            latency_fields["note_id"] = note_id
+        if answer_at is not None:
+            latency_fields["answered_at"] = answer_at
+        if answer_message_id:
+            latency_fields["answer_message_id"] = answer_message_id
+        update_latency(env, request_id, **latency_fields)
     verdict_record = decision.get("verdict") if isinstance(decision.get("verdict"), dict) else {}
     store_fast_path_record(
         env,
@@ -1683,9 +2003,10 @@ def ingest_message(
     channel_id: str,
     parent_id: str,
     message: Dict[str, Any],
+    transport: str = "",
 ) -> str:
     """Capture or record one message through the shared path, whichever transport saw it."""
-    event = normalize_message(cfg, channel, channel_id, parent_id, message)
+    event = normalize_message(cfg, channel, channel_id, parent_id, message, transport)
     if route_inbound_event(env, cfg, client, event):
         return "captured"
     append_ignored(env, [ignored_record(event, channel, channel_id)], cfg.max_ignored)
@@ -1718,7 +2039,7 @@ def process_target(
     captured = 0
     ignored = 0
     for message in messages:
-        event = normalize_message(cfg, channel, target_id, parent_id, message)
+        event = normalize_message(cfg, channel, target_id, parent_id, message, "polling")
         message_id = str(event.get("message_id") or "")
         if route_inbound_event(env, cfg, client, event):
             captured += 1
@@ -2061,7 +2382,7 @@ def handle_gateway_message(
     if resolved is None:
         return
     parent_id, channel = resolved
-    ingest_message(env, cfg, client, channel, channel_id, parent_id, data)
+    ingest_message(env, cfg, client, channel, channel_id, parent_id, data, "gateway")
 
 
 def gateway_connect(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", state: Dict[str, Any]) -> bool:
@@ -2186,6 +2507,7 @@ def run_gateway_daemon(
     backoff = cfg.gateway_backoff_base
     failures = 0
     last_error = ""
+    fallback_noted = False
     started = time.monotonic()
     while True:
         try:
@@ -2194,6 +2516,9 @@ def run_gateway_daemon(
                 raise GatewaySocketError("gateway connection ended before it was established")
             failures = 0
             backoff = cfg.gateway_backoff_base
+            # A live connection ends the fallback episode, so a later drop is a
+            # new visible gap rather than a repeat of the silenced one.
+            fallback_noted = False
             record_connection_state(
                 env, "gateway", "reconnecting", error="connection closed; reconnecting", url=gateway_host_label(cfg.gateway_url)
             )
@@ -2202,6 +2527,16 @@ def run_gateway_daemon(
             last_error = client.redact(str(exc))
             if failures >= cfg.gateway_fallback_after_attempts:
                 mode, state_name = "polling-fallback", "polling"
+                if not fallback_noted:
+                    # One gap record per fallback episode, not one per bounded
+                    # poll, so the permanent connection going silent stays
+                    # visible without spamming the journal.
+                    record_delivery_gap(
+                        env,
+                        "gateway-fallback",
+                        f"permanent connection fell back to polling after {failures} failed attempt(s): {last_error[:300]}",
+                    )
+                    fallback_noted = True
             else:
                 mode, state_name = "gateway", "reconnecting"
             record_connection_state(
@@ -2346,6 +2681,8 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         if comparable != fwl.receipt_record(nonce, receipt, str(existing.get("discord_message_id") or "")):
             raise FMError("refusing to overwrite a different Discord receipt for the same nonce")
         stop_typing(env, channel_id)
+        if args.request_id:
+            update_latency(env, args.request_id, answered_at=time.time(), answer_message_id=str(existing.get("discord_message_id") or ""))
         print(f"receipt exists for nonce {nonce}; no second delivery")
         return 0
     client = ConsoleClient(cfg, env)
@@ -2356,6 +2693,8 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         return 1
     # The answer ends the turn, so the typing keeper for this conversation stops.
     stop_typing(env, channel_id)
+    if args.request_id:
+        update_latency(env, args.request_id, answered_at=time.time(), answer_message_id=discord_message_id)
     print(fwl.record_receipt(env, nonce, receipt, discord_message_id))
     print(f"replied in conversation {channel_id}")
     return 0
@@ -2512,6 +2851,65 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"last pass: {last_pass.get('at')} scanned={last_pass.get('scanned')} captured={last_pass.get('captured')} ignored={last_pass.get('ignored')}")
     else:
         print("last pass: none")
+    transports = latency_transport_counts(env)
+    recent_rows = latency_rows(env, DEFAULT_LATENCY_REPORT_ROWS)
+    medians = latency_medians(recent_rows)
+    gaps = delivery_gap_counts(env)
+    print(f"latency tracked: {sum(transports.values())}")
+    print("latency medians: " + " ".join(f"{key}={_stage_text(medians[key])}" for key in sorted(medians)))
+    if recent_rows:
+        last = recent_rows[0]
+        print(
+            f"latency last: {last['message_id'] or last['request_id']} transport={last['transport'] or '?'} "
+            f"stage3(wake)={_stage_text(last['stage3_wake'])} total={_stage_text(last['total'])}"
+        )
+    else:
+        print("latency last: none")
+    print(f"deliveries by transport: {json.dumps(transports, sort_keys=True)}")
+    print(
+        f"delivery gaps: {gaps['count']} (polling-capture={gaps['polling-capture']} "
+        f"gateway-fallback={gaps['gateway-fallback']})"
+    )
+    if gaps.get("last"):
+        print(f"delivery gap last: {gaps['last'].get('at')} {gaps['last'].get('kind')} {gaps['last'].get('detail')}")
+    if cfg.live_gateway_enabled and not transports.get("gateway"):
+        print("gateway proof: no gateway-tagged capture is recorded yet")
+    return 0
+
+
+def _stage_text(value: Any) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "-"
+    return f"{float(value):.3f}s"
+
+
+def cmd_latency(args: argparse.Namespace, env: "fwl.Env") -> int:
+    """Side-effect-free per-stage latency report, safe to run in a loop."""
+    rows = latency_rows(env, args.limit)
+    medians = latency_medians(rows)
+    gaps = delivery_gap_counts(env)
+    if args.json:
+        print(json.dumps({"rows": rows, "medians": medians, "delivery_gaps": gaps}, indent=2, sort_keys=True))
+        return 0
+    print("discord conversation console latency")
+    print("stage1=discord->console stage2=console stage3=wake stage4=session-activation stage5=turn")
+    if not rows:
+        print("no tracked captain messages yet")
+    for row in rows:
+        print(
+            f"{row['request_id'] or row['message_id']}: transport={row['transport'] or '?'} path={row['path'] or '?'} "
+            f"s1={_stage_text(row['stage1_discord_to_console'])} s2={_stage_text(row['stage2_console_handling'])} "
+            f"s3={_stage_text(row['stage3_wake'])} s4={_stage_text(row['stage4_session_activation'])} "
+            f"s5={_stage_text(row['stage5_turn'])} total={_stage_text(row['total'])}"
+        )
+    print("medians: " + " ".join(f"{key}={_stage_text(medians[key])}" for key in sorted(medians)))
+    print(f"transports: {json.dumps(latency_transport_counts(env), sort_keys=True)}")
+    print(
+        f"delivery gaps: {gaps['count']} (polling-capture={gaps['polling-capture']} "
+        f"gateway-fallback={gaps['gateway-fallback']})"
+    )
+    if gaps.get("last"):
+        print(f"delivery gap last: {gaps['last'].get('at')} {gaps['last'].get('kind')} {gaps['last'].get('detail')}")
     return 0
 
 
@@ -2695,6 +3093,11 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status")
     add_config_argument(p)
     p.set_defaults(func=cmd_status)
+    p = sub.add_parser("latency")
+    add_config_argument(p)
+    p.add_argument("--limit", type=int, default=DEFAULT_LATENCY_REPORT_ROWS)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_latency)
     p = sub.add_parser("start")
     add_config_argument(p)
     p.add_argument("--dry-run", action="store_true")

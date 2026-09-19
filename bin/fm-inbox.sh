@@ -178,7 +178,13 @@ wake_for() {
     printf 'fm-inbox: note saved but NOT announced (missing %s)\n' "$lib" >&2
     return 1
   fi
-  fm_wake_append check "inbox:$id" "check: captain inbox note $id - $summary"
+  if fm_wake_append check "inbox:$id" "check: captain inbox note $id - $summary"; then
+    # Best-effort local kick so a waiting watcher re-scans at once instead of
+    # after its poll interval; the durable row and the poll remain the fallback.
+    fm_wake_nudge_watcher || true
+    return 0
+  fi
+  return 1
 }
 
 validate_note_source() {
@@ -551,6 +557,10 @@ cmd_drain() {
     for id in "$@"; do
       if [ -f "$INBOX/$id.note" ]; then
         mv "$INBOX/$id.note" "$INBOX/handled/$id.note"
+        # Durable acknowledgement time for the latency journal: the move keeps
+        # the note's creation mtime, so a sibling marker records when the turn
+        # actually picked the note up.
+        [ -e "$INBOX/handled/$id.acked" ] || : > "$INBOX/handled/$id.acked"
         printf 'acked %s\n' "$id"
       else
         printf 'already-acked %s\n' "$id"

@@ -232,6 +232,23 @@ PY
 assert_equals "ok" "$IGNORED_OK" "non-captain and bot messages are recorded as ignored"
 pass "captain messages are captured and non-captain messages ignored"
 
+# --- 1b. the latency journal records every stage it can observe ----------------
+LATENCY_JSON=$(dc latency --config "$CFG" --json 2>&1) || fail "latency failed: $LATENCY_JSON"
+LATENCY_OK=$(printf '%s' "$LATENCY_JSON" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+rows = data["rows"]
+ok = (
+    len(rows) >= 3
+    and all(r["transport"] == "polling" for r in rows)
+    and all(r["stage1_discord_to_console"] is not None for r in rows)
+    and all(r["stage2_console_handling"] is not None for r in rows)
+)
+print("ok" if ok else "bad:" + json.dumps(rows))
+')
+assert_equals "ok" "$LATENCY_OK" "the latency journal records transport and the console stages"
+pass "the latency journal records per-stage timings"
+
 # --- 2. exactly once across a restart, even with lost cursors ----------------
 NOTES_BEFORE=$(note_count "$H")
 rm -rf "$H/state/discord-workspace/conversation-console/cursors"
@@ -545,6 +562,17 @@ print(record.get("mode"))
 PY
 )
 assert_equals "gateway" "$CONN_MODE" "status records the settled gateway mode"
+GW_LATENCY=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" latency --config "$CFG2" --json 2>&1) \
+  || fail "gateway latency failed: $GW_LATENCY"
+GW_TRANSPORT_OK=$(printf '%s' "$GW_LATENCY" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+rows = data["rows"]
+gateway_rows = [r for r in rows if r["transport"] == "gateway"]
+ok = len(gateway_rows) >= 2 and all(r["stage1_discord_to_console"] is not None for r in gateway_rows)
+print("ok" if ok else "bad:" + json.dumps(rows))
+')
+assert_equals "ok" "$GW_TRANSPORT_OK" "the journal proves the gateway delivered the captures"
 printf 'Answer to the gateway message\n' > "$TMP_ROOT/gw-answer.txt"
 out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" reply --config "$CFG2" --request-id "discord:$GUILD:$T1:666000000000000200" --text-file "$TMP_ROOT/gw-answer.txt" 2>&1) \
   || fail "gateway thread reply failed: $out"
@@ -589,6 +617,14 @@ print(record.get("mode"))
 PY
 )
 assert_equals "polling-fallback" "$FB_MODE" "the connection record names the polling fallback"
+FB_GAPS=$(python3 - "$H3" <<'PY'
+import json, sys
+record = json.load(open(f"{sys.argv[1]}/state/discord-workspace/conversation-console/delivery-gaps.json"))
+gaps = record.get("gaps", [])
+print("ok" if any(g.get("kind") == "gateway-fallback" for g in gaps) else f"bad:{gaps}")
+PY
+)
+assert_equals "ok" "$FB_GAPS" "the fallback to polling is recorded as a visible delivery gap"
 FB_STATUS=$(env -u FM_DISCORD_LIVE_GATEWAY_URL FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" status --config "$CFG3" 2>&1)
 assert_contains "$FB_STATUS" "connection mode: polling-fallback" "status says it fell back to polling"
 # A subsequent polling pass on the same home must not append a second note for a

@@ -18,6 +18,7 @@
 #   fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
 #       [--interval <n>] [--max-seconds <n>] [--stop]
 #   fm-discord-conversation-console.sh status [--config <json>]
+#   fm-discord-conversation-console.sh latency [--config <json>] [--limit <n>] [--json]
 #   fm-discord-conversation-console.sh start [--config <json>] [--dry-run]
 #   fm-discord-conversation-console.sh stop [--config <json>]
 #

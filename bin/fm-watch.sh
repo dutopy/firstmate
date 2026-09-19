@@ -1860,20 +1860,53 @@ heartbeat_scan_finds_actionable() {
   return "$found"
 }
 
+# wake_wait_poll: the blind-fallback terminal wait. Sleep the poll budget in
+# one-second slices, returning early when the durable wake queue gains a row or
+# a producer nudged this watcher (fm_wake_nudge_watcher's USR1), so a local
+# wake append is re-scanned promptly without a push-capable backend. A quiet
+# queue still sleeps the whole budget, byte-for-byte the old `sleep POLL`.
+wake_wait_poll() {  # <budget-seconds>
+  local budget=$1 waited=0 before after
+  case "$budget" in ''|*[!0-9]*) budget=$POLL ;; esac
+  [ "$budget" -ge 1 ] || budget=1
+  before=$(cat "$STATE/.wake-queue.seq" 2>/dev/null || echo 0)
+  while [ "$waited" -lt "$budget" ]; do
+    sleep 1
+    waited=$((waited + 1))
+    if [ "${FM_WAKE_NUDGE:-0}" = 1 ]; then FM_WAKE_NUDGE=0; return 0; fi
+    if [ "${FM_WAKE_QUEUE_POLL_DISABLE:-0}" != 1 ]; then
+      after=$(cat "$STATE/.wake-queue.seq" 2>/dev/null || echo 0)
+      [ "$after" = "$before" ] || return 0
+    fi
+  done
+  return 0
+}
+
 # event_wait_or_sleep: the terminal wait of each supervision cycle. For a home
 # with push-capable windows (herdr), it replaces the blind `sleep POLL` with a
 # bounded wait on the backend's native transition stream, so a crew going
 # `blocked` wakes the supervisor sub-second instead of after the stale-pane
 # wedge timer. For every other home - no push-capable window, backend not
-# capable, or the event path proven unreliable this process - it sleeps POLL,
-# byte-for-byte today's behavior. The poll loop above still runs every cycle, so
-# this only ever SHORTENS latency; it can never drop an escalation (the poll
-# loop is the permanent fail-closed backstop). This preserves the single live
-# supervision cycle: the reader is a short-lived subprocess of THIS watcher, not
-# a second watcher, so every guard/beacon/arm/turn-end mechanism is unchanged.
+# capable, or the event path proven unreliable this process - it polls the
+# durable wake queue on the short slices above. The poll loop still runs every
+# cycle, so this only ever SHORTENS latency; it can never drop an escalation
+# (the poll loop is the permanent fail-closed backstop). This preserves the
+# single live supervision cycle: the reader is a short-lived subprocess of THIS
+# watcher, not a second watcher, so every guard/beacon/arm/turn-end mechanism is
+# unchanged.
+#
+# A local wake append also kicks this watcher with USR1 (fm_wake_nudge_watcher)
+# so the durable row is re-scanned immediately rather than after the poll
+# budget, including while the push-capable stream is blocked.
 event_wait_or_sleep() {
   local w b session first_backend="" first_session="" rec rc
   local windows=()
+  # A nudge that arrived while this cycle was working is already a reason to
+  # re-scan; consume it before waiting again instead of sleeping a full budget.
+  if [ "${FM_WAKE_NUDGE:-0}" = 1 ]; then
+    FM_WAKE_NUDGE=0
+    return 0
+  fi
   while IFS= read -r w; do
     b=$(window_backend "$w")
     fm_backend_has_push "$b" || continue
@@ -1894,7 +1927,7 @@ event_wait_or_sleep() {
   done < <(recorded_windows)
 
   if [ "${#windows[@]}" -eq 0 ]; then
-    sleep "$POLL"
+    wake_wait_poll "$POLL"
     return
   fi
 
@@ -1910,12 +1943,18 @@ event_wait_or_sleep() {
     _event_cap_fails=0
   fi
   if [ "$_event_cap_ok" != 1 ]; then
-    sleep "$POLL"
+    wake_wait_poll "$POLL"
     return
   fi
 
   rec=$(FM_BACKEND_EVENTS_CAPABILITY_CONFIRMED=1 fm_backend_wait_transition "$first_backend" "$first_session" "$POLL" "$STATE" "${windows[@]}")
   rc=$?
+  # A nudge interrupts the blocked stream read (or is already pending); it is a
+  # request to re-scan, never a backend-capability failure.
+  if [ "${FM_WAKE_NUDGE:-0}" = 1 ]; then
+    FM_WAKE_NUDGE=0
+    return 0
+  fi
   case "$rc" in
     0)
       _event_cap_fails=0
@@ -2102,6 +2141,14 @@ printf '%s\n' "$WATCH_PATH" > "$WATCH_LOCK/watcher-path" || true
 # shellcheck disable=SC2034 # Consumed by wake() in the separately linted transition owner.
 FM_WATCH_DELIVERY_PID=$WATCHER_PID
 FM_WATCH_DELIVERY_IDENTITY=$(fm_pid_identity "$WATCHER_PID" 2>/dev/null || true)
+# A local wake producer (fm_wake_nudge_watcher) kicks this watcher with USR1
+# after a durable append so the terminal wait returns at once and the next
+# cycle re-scans the queue. The trap only raises a flag; the durable queue and
+# the poll remain the fallback, so a lost signal costs nothing. Install it the
+# moment the lock identity is published, because that is the first instant a
+# producer can address this process and an untrapped USR1 would terminate it.
+FM_WAKE_NUDGE=0
+trap 'FM_WAKE_NUDGE=1' USR1
 printf '%s\n' "$FM_WATCH_DELIVERY_IDENTITY" > "$WATCH_LOCK/pid-identity" 2>/dev/null || true
 
 [ -e "$STATE/.last-heartbeat" ] || touch "$STATE/.last-heartbeat"

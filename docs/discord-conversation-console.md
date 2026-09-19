@@ -235,6 +235,20 @@ listener is registered, the connection mode and state, and the last pass counts.
 When the permanent connection is unavailable, the connection mode reads
 `polling-fallback` so the fallback is visible.
 
+A second read-only report,
+`bin/fm-discord-conversation-console.sh latency --config <json> [--limit <n>] [--json]`,
+prints the five measured stages per captured request and their medians: Discord
+creation to console ingest, console handling, the wake reaching the session (the
+watcher `.seen-inbox` marker), the session's acknowledgement (the
+`fm-inbox.sh drain --ack` marker), and the turn up to the reply.
+It also reports each capture's `transport` and the delivery gaps recorded when a
+message reached the console through polling while `live.gateway` was enabled, or
+when the permanent connection itself fell back.
+The stages and the measured numbers are recorded in
+[`verification/discord-console-latency.md`](verification/discord-console-latency.md).
+A local captain-inbox note also kicks the waiting watcher so the note no longer
+waits for a poll cycle; the durable queue and the poll remain the fallback.
+
 ## Run model
 
 The continuous listener is the repository's process-event source pattern, not a
@@ -318,6 +332,14 @@ turn and stops with the answer.
 a fake System One server, covering both routes and every fail-safe path.
 The measured live latencies and the observed full-turn baseline are recorded in
 [`verification/discord-console-fast-path.md`](verification/discord-console-fast-path.md).
+
+`tests/fm-discord-console-latency.test.sh` pins the wake-stage fix and the
+latency report: with the local wake kick enabled a queued note is surfaced
+inside the short bound, with it disabled the note waits for the poll, and the
+`latency --json` report folds the durable watcher and inbox markers into the five
+stages.
+The before and after numbers are recorded in
+[`verification/discord-console-latency.md`](verification/discord-console-latency.md).
 
 `tests/fm-discord-conversation-console-audio.test.sh` drives transcription
 against a fake local Discord CDN and a fake local Groq API: a captain voice
