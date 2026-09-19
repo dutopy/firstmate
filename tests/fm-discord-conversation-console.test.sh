@@ -961,6 +961,63 @@ PY
   assert_contains "$out" "card interactions recorded: 6" "status reports the recorded interactions"
   pass "every press is answered, deduped, and audited"
 
+  # Focused regression: the card command only posts while its task is still an
+  # open captain call, so every button on a posted card can validate. The
+  # authoritative hold state is checked, not the card's prose: an unheld queued
+  # task and an already-closed task both refuse, and a held task still posts.
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-tasks-axi.sh" add card-unheld-test "Unheld card target" --kind ship 2>&1) \
+    || fail "creating the unheld card task failed: $out"
+  cat > "$TMP_ROOT/card-unheld.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "card-unheld-test",
+  "body": "Cette carte ne doit pas partir.",
+  "options": [
+    {"label": "Oui", "action": "answer", "value": "oui"}
+  ]
+}
+JSON
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card-unheld.json" --nonce card-unheld 2>&1) \
+    && fail "the console posted a card for an unheld queued task" || true
+  assert_contains "$out" "task card-unheld-test is not held for the captain" \
+    "an unheld queued task is refused with the hold error"
+  pass "the console refuses to post a card for an unheld queued task"
+
+  # The card's task was answered earlier in this block and is now closed.
+  cat > "$TMP_ROOT/card-closed.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "card-decision-test",
+  "body": "Cette carte ne doit pas partir non plus.",
+  "options": [
+    {"label": "Oui", "action": "answer", "value": "oui"}
+  ]
+}
+JSON
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card-closed.json" --nonce card-closed 2>&1) \
+    && fail "the console posted a card for an already-closed task" || true
+  assert_contains "$out" "task card-decision-test is not held for the captain" \
+    "an already-closed task is refused with the hold error"
+  pass "the console refuses to post a card for an already-closed task"
+
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-captain-hold.sh" hold card-held-test --title "Held card target" --reason "Choose the card option" --repo firstmate 2>&1) \
+    || fail "holding the card-held task failed: $out"
+  cat > "$TMP_ROOT/card-held.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "card-held-test",
+  "body": "Cette carte part parce que la tache est tenue.",
+  "options": [
+    {"label": "Oui", "action": "answer", "value": "oui"}
+  ]
+}
+JSON
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card-held.json" --nonce card-held 2>&1) \
+    || fail "a legitimately held task could not post its card: $out"
+  assert_contains "$out" "card posted in conversation $CH" \
+    "a legitimately held task still posts its card"
+  pass "the console posts a card for a legitimately held task"
+
   # Focused unit checks over fake interaction payloads: the guild/direct identity
   # fallback, the acknowledgement leaving before any validation, the short
   # non-retried acknowledgement, and the recorded acknowledgement failure.
@@ -1090,13 +1147,18 @@ try:
         "options": [{"label": "Oui", "action": "answer", "value": "v", "style": 1}],
         "status": "open",
     })
-    fmc.run_card_option = lambda env, task_id, option: (order.append("run"), (1, "intake refused"))[1]
+    fmc.run_card_option = lambda env, task_id, option: (order.append("run"), (1, "task focused-task is not held for the captain; hold it first or name the right task"))[1]
     wakes_before_failure = len(wake_lines())
     fmc.handle_card_interaction(
         env, cfg(), FakeClient([]), "999000000000000016", "tok", CAPTAIN,
         f"fmcard:{CARD}:0", GUILD, CH, MSG,
     )
-    assert record_for("999000000000000016")["status"] == "failed", record_for("999000000000000016")
+    failed_record = record_for("999000000000000016")
+    assert failed_record["status"] == "failed", failed_record
+    # The press-time refusal is the second line of defence and keeps the intake's
+    # own hold reason, distinct from an unidentified presser.
+    assert failed_record["reason"] == "task focused-task is not held for the captain; hold it first or name the right task", failed_record
+    assert failed_record["reason"] != "missing-user-id", failed_record
     assert len(wake_lines()) == wakes_before_failure, wake_lines()
     wakes_before_refusals = len(wake_lines())
 

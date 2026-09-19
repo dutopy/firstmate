@@ -245,6 +245,11 @@ Posting needs `live.posting` and `live.gateway`, and refuses while the permanent
 connection source is not registered, because a bounded poll cannot receive an
 interaction and a card posted without one would render with buttons that could
 never be answered.
+Posting also refuses unless the card's task is still an open captain call,
+checked against the authoritative hold state (`bin/fm-captain-hold.sh open`) and
+never the card's prose: an unheld queued task and an already-closed task both
+refuse with an error naming the task and the reason, so every button on a posted
+card can validate.
 Only one card may be open for a task at a time, so the open card must be answered
 before a new one is posted for the same task.
 The posted card's task id, option set, body, and message id are stored durably
@@ -278,6 +283,10 @@ A recorded option feeds the same keyed-answer intake a typed reply uses:
 --until <date>` for `later`.
 The card is then edited to show the recorded answer and its buttons are disabled;
 a failed intake leaves the buttons enabled and says so, so the captain can retry.
+The press-time intake is the second line of defence behind the posting hold
+check, and its recorded failure reason is the intake's own clear hold message
+(for example `task <id> is not held for the captain`), distinct from an
+unidentified presser.
 The interaction id is recorded durably under `cards/interactions/`, so a repeated
 delivery edits the card again without recording a second answer.
 A validated press also appends exactly one durable wake through the same

@@ -27,6 +27,9 @@ The action-card section of that suite prints:
 ok - the console posts an action card with labelled option buttons
 ok - a press records the chosen option through the shared keyed-answer intake
 ok - every press is answered, deduped, and audited
+ok - the console refuses to post a card for an unheld queued task
+ok - the console refuses to post a card for an already-closed task
+ok - the console posts a card for a legitimately held task
 ok - focused interaction checks pass
 ok - a guild payload and the acknowledgement ordering are covered by focused checks
 ok - a later option defers the task through the shared intake
@@ -73,6 +76,12 @@ On the same fake server and gateway:
   recorded with its reason rather than swallowed.
 - A `later` option records the dated deferral: the fixture backlog reads
   `hold-until: 2026-10-01` for the task.
+- `card` only posts while its task is still an open captain call, checked against
+  the authoritative hold state (`bin/fm-captain-hold.sh open`) rather than the
+  card's prose: an unheld queued task and an already-closed task each refuse with
+  an error naming the task and the reason, while a legitimately held task posts.
+  The press-time intake remains the second line of defence and records the
+  intake's own clear hold reason, distinct from an unidentified presser.
 - `card` refuses while the permanent connection source is not registered, and its
   `--dry-run` prints the plan with no network call.
 
@@ -92,6 +101,17 @@ lands and the console restarts, so a card posted now would be exactly the
 unanswerable button the contract forbids.
 And the press itself is the captain's own action in Discord, not something this
 suite can mint.
+
+The posting hold guard was checked live against a throwaway home with a real
+markdown backlog and a registered gateway source, with no network call reached:
+
+```sh
+bin/fm-tasks-axi.sh add card-live-unheld "Live unheld card target" --kind ship
+bin/fm-discord-conversation-console.sh card --config <config> \
+    --channel <firstmate channel id> --card-file <card json> --nonce live-unheld
+# fm-discord-workspace: task card-live-unheld is not held for the captain
+```
+
 Until a real card is pressed against the restarted console, the following remain
 to confirm live: the real gateway delivering `INTERACTION_CREATE` to the fixed
 handler, the real callback and the

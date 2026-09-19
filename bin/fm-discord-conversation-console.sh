@@ -37,7 +37,8 @@
 # interaction callback, and records the captain's choice through the same
 # keyed-answer intake a typed reply uses (bin/fm-captain-hold.sh). The card path
 # refuses unless the permanent connection is registered, because polling cannot
-# receive an interaction.
+# receive an interaction, and unless the card's task is still an open captain
+# call, so every button on a posted card can validate.
 #
 # start registers the permanent-connection source
 # `discord-conversation-console-gateway` when live.gateway is enabled, and the

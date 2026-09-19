@@ -43,7 +43,8 @@ firstmate's ordinary supervision picks the recorded answer up without the
 captain saying anything in chat; the interaction id is the inbox external id, so
 a repeated delivery appends no second wake. A card is only posted while the
 permanent connection is registered, because a bounded poll cannot receive an
-interaction.
+interaction, and while its task is still an open captain call, so a posted card
+is one whose every button can validate.
 
 Every captured request also gets one bounded latency-journal record that the
 read-only ``latency`` subcommand and ``status`` report. The five measured stages
@@ -220,10 +221,12 @@ REPLY_URL_RE = re.compile(r"https?://[^\s<>()]+")
 # ``INTERACTION_CREATE`` dispatch, which is answered through the interaction
 # callback - a deferred update followed by an edit of the card message - so a
 # press never shows "interaction failed". The caller supplies the option labels
-# and values; the card path never invents an option from prose. A press records
-# the captain's answer through the same keyed-answer intake a typed reply uses
-# (bin/fm-captain-hold.sh answer, or hold --until for "later"), and the card is
-# edited to show the recorded answer with its buttons disabled.
+# and values; the card path never invents an option from prose. A card is only
+# posted while its task is still an open captain call - the authoritative hold
+# state, not the card's prose - so every button on a posted card can validate. A
+# press records the captain's answer through the same keyed-answer intake a typed
+# reply uses (bin/fm-captain-hold.sh answer, or hold --until for "later"), and
+# the card is edited to show the recorded answer with its buttons disabled.
 CARD_SCHEMA = "fm-discord-conversation-console.card.v1"
 CARD_INTERACTION_SCHEMA = "fm-discord-conversation-console.card-interaction.v1"
 CARD_CUSTOM_ID_PREFIX = "fmcard"
@@ -2379,6 +2382,38 @@ def run_card_option(env: "fwl.Env", task_id: str, option: Dict[str, Any]) -> Tup
                 pass
 
 
+def card_hold_refusal(task_id: str, code: int, detail: str) -> str:
+    """One clear refusal naming the task and why a card may not be posted.
+
+    The hold predicate (``fm-captain-hold.sh open``) is the authoritative state,
+    not the card's prose: exit 1 means the task is not an open captain call
+    (unheld queued work or an already-closed task), and exit 3 means this home's
+    backlog carries no such task at all. Exit 2 is "cannot establish", which is
+    never read as permission to post a card whose presses could never validate.
+    """
+    reason = (detail or "").strip()
+    if code == 1:
+        return f"task {task_id} is not held for the captain"
+    if code == 3:
+        return f"task {task_id} is not held for the captain: this home's backlog has no such task"
+    if code == 2:
+        return f"task {task_id} is not held for the captain: its hold state could not be read" + (
+            f" ({reason})" if reason else ""
+        )
+    return f"task {task_id} is not held for the captain"
+
+
+def require_captain_held(env: "fwl.Env", task_id: str) -> None:
+    """Refuse to post a card for a task that is not currently captain-held.
+
+    The press-time intake stays the second line of defence; this is the first,
+    so a posted card is one whose every button can still validate.
+    """
+    code, output = run_captain_hold(env, ["open", task_id, "--distinguish-absent"])
+    if code != 0:
+        raise FMError(card_hold_refusal(task_id, code, output))
+
+
 def card_wake_body(task_id: str, option: Dict[str, Any]) -> str:
     """The single durable wake line a validated card press appends.
 
@@ -3653,6 +3688,10 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
         raise FMError(
             "the permanent connection is not registered, so a posted card could never receive a press; run start first"
         )
+    # First line of defence: a card is only posted while its task is still an
+    # open captain call, so the recorded hold state - not the card's prose -
+    # decides whether a press could ever validate.
+    require_captain_held(env, spec["task_id"])
     client = ConsoleClient(cfg, env)
     try:
         message_id = client.post_message(channel_id, content, components)
