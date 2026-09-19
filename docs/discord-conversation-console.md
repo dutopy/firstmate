@@ -203,18 +203,75 @@ never through a URL, so the reply stays short by construction rather than by
 trusting the prose.
 The same bound applies to a record-backed fast answer.
 
-## Action buttons
+## Action cards
 
-Discord posts buttons as a `components` array on the message body, and
-`ConsoleClient.post_message` already carries that array; its `components`
-argument is the seam a later pass extends.
-The reply path posts no components because the interaction callback is not
-implemented: a click arrives as a gateway `INTERACTION_CREATE` dispatch and must
-be answered through the interaction-response REST endpoint, while the console's
-gateway daemon processes only `MESSAGE_CREATE` and its intents include no
-interaction handling.
-A button posted today would render but every click would go unanswered, so this
-pass records the gap, leaves the seam, and posts none.
+A card is one captain-facing message - a decision, a blocker, or a clarification -
+carrying up to five labelled option buttons, so answering is one press instead of a
+typed sentence.
+Post one with:
+
+```sh
+bin/fm-discord-conversation-console.sh card [--config <json>] --card-file <json>
+    (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
+    [--nonce <n>] [--dry-run]
+```
+
+The card file is local JSON owned by the caller:
+
+```json
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "the-held-task",
+  "body": "The body the captain reads.",
+  "fallback_hint": "Or answer directly in the conversation.",
+  "options": [
+    {"label": "Oui", "action": "answer", "value": "the captain's exact words"},
+    {"label": "Non", "action": "answer", "value": "another exact answer"},
+    {"label": "Plus tard", "action": "later", "until": "2026-10-01"},
+    {"label": "Je reponds en chat", "action": "chat"}
+  ]
+}
+```
+
+The caller supplies every word; the card path never invents an option from prose.
+`body` and `fallback_hint` together stay inside `bounds.reply_max_chars`, `options`
+carries one to five entries, each `label` is unique, an `answer` or `release`
+option requires its exact `value`, and a `later` option requires an `until` date.
+An optional `style` picks the button colour (1 primary, 2 secondary, 3 success, 4
+danger), defaulting to primary for an answer, success for a release, and secondary
+otherwise.
+
+Posting needs `live.posting` and `live.gateway`, and refuses while the permanent
+connection source is not registered, because a bounded poll cannot receive an
+interaction and a card posted without one would render with buttons that could
+never be answered.
+Only one card may be open for a task at a time, so the open card must be answered
+before a new one is posted for the same task.
+The posted card's task id, option set, body, and message id are stored durably
+under `cards/` in the console state, keyed by a card id derived from the nonce, so
+a replay with the same nonce posts no second card.
+
+A press arrives as a gateway `INTERACTION_CREATE` dispatch of type
+`MESSAGE_COMPONENT`.
+The console accepts it only from a configured captain user id and only for a
+button of a card it posted in that same channel and message; anything else is
+refused with an ephemeral line and recorded as refused.
+Every received press is answered through Discord's interaction callback, so a
+press never shows "interaction failed": a recorded option defers the answer with a
+type-6 callback and then edits the card message, while a refusal or the free-form
+"answer in chat" option replies with a type-4 ephemeral message.
+The interaction token in the callback path is its credential, so the bot token is
+never sent on that path.
+
+A recorded option feeds the same keyed-answer intake a typed reply uses:
+`bin/fm-captain-hold.sh answer <task-id> --decision-file <file>` for `answer` (with
+`--release` for `release`), and `bin/fm-captain-hold.sh hold <task-id> --reason ...
+--until <date>` for `later`.
+The card is then edited to show the recorded answer and its buttons are disabled;
+a failed intake leaves the buttons enabled and says so, so the captain can retry.
+The interaction id is recorded durably under `cards/interactions/`, so a repeated
+delivery answers the callback again without recording a second answer.
+`chat` records nothing and posts one ephemeral line asking for a chat answer.
 
 ## Typing indicator
 
@@ -307,7 +364,8 @@ loop.
 It reports a health verdict (`healthy`, `starting`, `stopped`, `polling-disabled`,
 `polling-fallback`, `secret-missing`, `config-invalid`, or `state-malformed`),
 each configured channel and its last cursor, the live switches, whether the
-listener is registered, the connection mode and state, and the last pass counts.
+listener is registered, the connection mode and state, the last pass counts, and
+the posted, open, and recorded-interaction card counts.
 When the permanent connection is unavailable, the connection mode reads
 `polling-fallback` so the fallback is visible.
 
@@ -370,6 +428,9 @@ intent is required for it.
 The permanent connection does require the privileged Message Content intent on
 the Firstmate application, because a gateway `MESSAGE_CREATE` dispatch carries
 the message text directly.
+An action-card press needs no additional permission or privileged intent:
+Discord delivers `INTERACTION_CREATE` over the same connection, and the reply is
+sent through the interaction token in its own callback path.
 Neither transport needs Manage Channels, Manage Threads, or Create Threads
 permission: the captain creates threads, and the bot only reads and answers.
 It never requires any Discord administration permission.
@@ -397,6 +458,13 @@ transport, the permanent connection identifies with an online presence and
 re-delivers a message after a forced disconnect without a second capture, an
 unreachable connection falls back to polling without a duplicate capture, and a
 crashed connection daemon is launched again by the next supervision cycle.
+
+That suite also drives action cards through the same fake server and gateway: a
+posted card carries its option buttons and a durable card record, a captain press
+records the option's exact value through the real keyed-answer intake and disables
+the buttons, a repeated interaction id records nothing a second time, a
+non-captain or unknown button is refused and audited, and the interaction
+callbacks are answered so no press is left unanswered.
 
 `tests/fm-discord-console-fast-path.test.sh` drives the fast path against the
 same fakes: the acknowledgement and the record-backed answer are posted in the

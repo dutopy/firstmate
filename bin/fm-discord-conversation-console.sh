@@ -15,6 +15,9 @@
 #   fm-discord-conversation-console.sh reply [--config <json>] --text-file <f>
 #       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
 #       [--nonce <n>] [--dry-run]
+#   fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
+#       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
+#       [--nonce <n>] [--dry-run]
 #   fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
 #       [--interval <n>] [--max-seconds <n>] [--stop]
 #   fm-discord-conversation-console.sh status [--config <json>]
@@ -28,6 +31,13 @@
 # posting switches. It never stores a token: the bot token is decrypted into
 # process memory only through the shared owner in bin/fm_discord_live.py, and no
 # token is printed, logged, or written to disk.
+#
+# `card` posts one captain-facing card with up to five labelled option buttons.
+# Each press arrives as a gateway interaction, is answered through Discord's
+# interaction callback, and records the captain's choice through the same
+# keyed-answer intake a typed reply uses (bin/fm-captain-hold.sh). The card path
+# refuses unless the permanent connection is registered, because polling cannot
+# receive an interaction.
 #
 # start registers the permanent-connection source
 # `discord-conversation-console-gateway` when live.gateway is enabled, and the

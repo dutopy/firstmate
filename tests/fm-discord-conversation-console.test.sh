@@ -113,6 +113,11 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             body = {}
         world = load()
+        if len(parts) >= 2 and parts[0] == "interactions":
+            world.setdefault("interaction_callbacks", []).append({"path": url.path, "body": body})
+            save(world)
+            self._send(200, {})
+            return
         if not self._authorized(world):
             self._send(401, {"message": "Unauthorized"})
             return
@@ -122,12 +127,30 @@ class Handler(BaseHTTPRequestHandler):
                 return
             world["counter"] = int(world.get("counter", 900000000000000000)) + 1
             message = {"id": str(world["counter"]), "content": body.get("content"),
+                       "components": body.get("components"),
                        "author": {"id": BOT, "bot": True}, "channel_id": parts[1]}
             world.setdefault("posts", {}).setdefault(parts[1], []).append(message)
             save(world)
             self._send(200, message)
         else:
             self._send(404, {"message": "not found"})
+
+    def do_PATCH(self):
+        url = urlparse(self.path)
+        parts = [p for p in url.path.split("/") if p]
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {}
+        if len(parts) == 5 and parts[0] == "webhooks" and parts[3] == "messages":
+            world = load()
+            world.setdefault("interaction_edits", []).append({"path": url.path, "body": body})
+            save(world)
+            self._send(200, {"id": "0", "content": body.get("content")})
+            return
+        self._send(404, {"message": "not found"})
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 with open(PORT_FILE, "w", encoding="utf-8") as f:
@@ -504,6 +527,8 @@ def handle(conn, port):
                 break
         for dispatch in load().get("dispatch", []):
             send_json(conn, {"op": 0, "t": "MESSAGE_CREATE", "s": 3, "d": dispatch})
+        for interaction in load().get("interactions", []):
+            send_json(conn, {"op": 0, "t": "INTERACTION_CREATE", "s": 4, "d": interaction})
         time.sleep(float(load().get("hold_seconds", 0.2)))
         try:
             send_frame(conn, 8, struct.pack(">H", 1000))
@@ -734,3 +759,208 @@ assert_contains "$RECONCILE_OUT" "started=1" "a crashed connection daemon is lau
 out=$(FM_HOME="$H3" "$ROOT/bin/fm-discord-conversation-console.sh" stop --config "$CFG3" 2>&1) \
   || fail "service-pattern stop failed: $out"
 pass "the service pattern launches the connection daemon and relaunches it after a crash"
+
+# --- 12. action cards post buttons and record a press -----------------------
+# A card is one message carrying a components array; each press arrives as a
+# gateway INTERACTION_CREATE dispatch, is answered through Discord's interaction
+# callback, and records the option's exact value through the real keyed-answer
+# intake. This drives the whole path against the loopback fakes.
+if ! command -v tasks-axi >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+  echo "skip: tasks-axi and jq are required to exercise the action-card intake"
+else
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" start --config "$CFG2" 2>&1) \
+    || fail "card gateway start failed: $out"
+
+  # The card's task is a real task held for the captain in this home's backlog.
+  cp "$ROOT/.tasks.toml" "$H2/.tasks.toml"
+  cat > "$H2/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+  CARD_TASK=card-decision-test
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-captain-hold.sh" hold "$CARD_TASK" --title "Discord card test" --reason "Choose the card option" --repo firstmate 2>&1) \
+    || fail "holding the card task failed: $out"
+
+  cat > "$TMP_ROOT/card.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "card-decision-test",
+  "body": "Le correctif est pret. On merge ?",
+  "fallback_hint": "Ou reponds directement dans la conversation.",
+  "options": [
+    {"label": "Oui", "action": "answer", "value": "Oui, vas-y."},
+    {"label": "Non", "action": "answer", "value": "Non, pas encore."},
+    {"label": "Plus tard", "action": "later", "until": "2026-10-01"},
+    {"label": "En chat", "action": "chat"}
+  ]
+}
+JSON
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card.json" --nonce card-test 2>&1) \
+    || fail "card post failed: $out"
+  assert_contains "$out" "card posted in conversation $CH" "the card reports its conversation"
+  assert_contains "$out" "card url: https://discord.com/channels/$GUILD/$CH/" "the card reports its real message URL"
+
+  CARD_ID=$(python3 - "$H2" <<'PY'
+import glob, json, sys
+print(json.load(open(glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/*.json")[0]))["card_id"])
+PY
+)
+  CARD_MSG=$(python3 - "$H2" <<'PY'
+import glob, json, sys
+print(json.load(open(glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/*.json")[0]))["message_id"])
+PY
+)
+  POSTED_OK=$(python3 - "$WORLD" "$CH" "$CARD_MSG" <<'PY'
+import json, sys
+world, ch, message_id = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+posted = [m for m in world.get("posts", {}).get(ch, []) if m["id"] == message_id]
+rows = posted[0].get("components") if posted else None
+buttons = rows[0].get("components") if rows and rows[0].get("type") == 1 else []
+labels = [b.get("label") for b in buttons or []]
+custom_ids = [str(b.get("custom_id")) for b in buttons or []]
+ok = labels == ["Oui", "Non", "Plus tard", "En chat"] and all(c.startswith("fmcard:") for c in custom_ids)
+print("ok" if ok else "bad:" + json.dumps(posted))
+PY
+)
+  assert_equals "ok" "$POSTED_OK" "the card posts one row of labelled option buttons"
+  pass "the console posts an action card with labelled option buttons"
+
+  # Six presses: the free-form option, one decisive answer, that same press
+  # delivered twice, a non-captain, an unknown card, and an unknown button.
+  python3 - "$WORLD" "$GUILD" "$CH" "$CAPTAIN" "$STRANGER" "$BOT" "$CARD_ID" "$CARD_MSG" <<'PY'
+import json, sys
+world_path, guild, ch, captain, stranger, bot, card_id, message_id = sys.argv[1:9]
+
+def press(iid, user, custom_id, token):
+    return {
+        "id": iid, "application_id": bot, "type": 3, "token": token,
+        "guild_id": guild, "channel_id": ch, "user": {"id": user},
+        "data": {"custom_id": custom_id, "component_type": 2},
+        "message": {"id": message_id, "channel_id": ch},
+    }
+
+world = json.load(open(world_path))
+world["dispatch"] = []
+world["interactions"] = [
+    press("999000000000000005", captain, f"fmcard:{card_id}:3", "tok-chat"),
+    press("999000000000000001", captain, f"fmcard:{card_id}:0", "tok-answer"),
+    press("999000000000000001", captain, f"fmcard:{card_id}:0", "tok-answer"),
+    press("999000000000000002", stranger, f"fmcard:{card_id}:1", "tok-stranger"),
+    press("999000000000000003", captain, "fmcard:00000000000000ff:0", "tok-unknown-card"),
+    press("999000000000000004", captain, "fmcard:nothex:0", "tok-unknown-custom"),
+]
+json.dump(world, open(world_path, "w"))
+PY
+  FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" connect --config "$CFG2" --once > "$TMP_ROOT/h2-cards.log" 2>&1 \
+    || fail "card interaction run failed: $(cat "$TMP_ROOT/h2-cards.log")"
+
+  assert_grep "Resolution recorded by fm-captain-hold." "$H2/data/backlog.md" "a press records a resolution through the keyed-answer intake"
+  assert_grep "Oui, vas-y." "$H2/data/backlog.md" "the recorded answer is the option's exact value"
+  RESOLUTIONS=$(grep -cF 'Resolution recorded by fm-captain-hold.' "$H2/data/backlog.md" || true)
+  assert_equals "1" "$RESOLUTIONS" "a repeated interaction id records no second answer"
+  CARD_STATE=$(python3 - "$H2" <<'PY'
+import glob, json, sys
+record = json.load(open(glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/*.json")[0]))
+print(f"{record.get('status')}:{(record.get('answer') or {}).get('label')}")
+PY
+)
+  assert_equals "answered:Oui" "$CARD_STATE" "the card stores the recorded answer"
+  pass "a press records the chosen option through the shared keyed-answer intake"
+
+  CALLBACKS_OK=$(python3 - "$WORLD" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+callbacks = world.get("interaction_callbacks", [])
+per_id = {}
+for callback in callbacks:
+    interaction_id = callback["path"].split("/")[2]
+    per_id[interaction_id] = per_id.get(interaction_id, 0) + 1
+deferred = sum(1 for c in callbacks if c["body"].get("type") == 6)
+ephemeral = sum(1 for c in callbacks if c["body"].get("type") == 4)
+disabled = False
+for edit in world.get("interaction_edits", []):
+    for row in edit["body"].get("components") or []:
+        buttons = row.get("components") or []
+        if buttons and all(b.get("disabled") for b in buttons):
+            disabled = True
+ok = deferred == 2 and ephemeral == 4 and per_id.get("999000000000000001") == 2 and disabled
+print("ok" if ok else "bad:" + json.dumps({"deferred": deferred, "ephemeral": ephemeral, "per_id": per_id, "disabled": disabled}))
+PY
+)
+  assert_equals "ok" "$CALLBACKS_OK" "every press is answered through the callback and the answered card disables its buttons"
+  REFUSED_OK=$(python3 - "$H2" <<'PY'
+import json, sys
+base = f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/interactions"
+want = {
+    "999000000000000002": "non-captain",
+    "999000000000000003": "unknown-card",
+    "999000000000000004": "unknown-custom-id",
+}
+got = {}
+for interaction_id, reason in want.items():
+    try:
+        got[interaction_id] = json.load(open(f"{base}/{interaction_id}.json")).get("reason")
+    except FileNotFoundError:
+        got[interaction_id] = None
+print("ok" if got == want else "bad:" + json.dumps(got))
+PY
+)
+  assert_equals "ok" "$REFUSED_OK" "non-captain and unknown buttons are refused and audited"
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" status --config "$CFG2" 2>&1)
+  assert_contains "$out" "cards posted: 1" "status reports the posted card"
+  assert_contains "$out" "cards open: 0" "status reports the answered card as closed"
+  assert_contains "$out" "card interactions recorded: 5" "status reports the recorded interactions"
+  pass "every press is answered, deduped, and audited"
+
+  # The "later" option records a dated deferral through the same intake.
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-captain-hold.sh" hold card-later-test --title "Discord later test" --reason "Pick later" --repo firstmate 2>&1) \
+    || fail "holding the later card task failed: $out"
+  cat > "$TMP_ROOT/card-later.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "card-later-test",
+  "body": "On en reparle plus tard ?",
+  "options": [
+    {"label": "Plus tard", "action": "later", "until": "2026-10-01"}
+  ]
+}
+JSON
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card-later.json" --nonce card-later 2>&1) \
+    || fail "later card post failed: $out"
+  python3 - "$WORLD" "$H2" "$GUILD" "$CH" "$CAPTAIN" "$BOT" card-later-test <<'PY'
+import glob, json, sys
+world_path, home, guild, ch, captain, bot, task_id = sys.argv[1:8]
+records = [json.load(open(p)) for p in glob.glob(f"{home}/state/discord-workspace/conversation-console/cards/*.json")]
+card = [record for record in records if record["task_id"] == task_id][0]
+world = json.load(open(world_path))
+world["dispatch"] = []
+world["interactions"] = [{
+    "id": "999000000000000009", "application_id": bot, "type": 3, "token": "tok-later",
+    "guild_id": guild, "channel_id": ch, "user": {"id": captain},
+    "data": {"custom_id": f"fmcard:{card['card_id']}:0", "component_type": 2},
+    "message": {"id": card["message_id"], "channel_id": ch},
+}]
+json.dump(world, open(world_path, "w"))
+PY
+  FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" connect --config "$CFG2" --once > "$TMP_ROOT/h2-later.log" 2>&1 \
+    || fail "later card interaction run failed: $(cat "$TMP_ROOT/h2-later.log")"
+  assert_grep "hold-until: 2026-10-01" "$H2/data/backlog.md" "the later option records a dated captain deferral"
+  pass "a later option defers the task through the shared intake"
+
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card.json" --nonce card-test 2>&1) \
+    || fail "card replay failed: $out"
+  assert_contains "$out" "no second delivery" "a card replay with the same nonce posts nothing"
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" stop --config "$CFG2" 2>&1) \
+    || fail "card gateway stop failed: $out"
+  printf '%s\n' '{"schema":"fm-discord-conversation-console.card.v1","task_id":"card-decision-test","body":"Again?","options":[{"label":"Oui","action":"answer","value":"oui"}]}' > "$TMP_ROOT/card2.json"
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card2.json" --nonce card-test-2 2>&1) \
+    && fail "the console posted a card with no registered interaction path" || true
+  assert_contains "$out" "permanent connection is not registered" "a card needs the permanent connection registered"
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card2.json" --nonce card-test-3 --dry-run 2>&1) \
+    || fail "the card dry run failed: $out"
+  assert_contains "$out" "dry-run only" "the card dry run makes no network call"
+  pass "a card is refused on any path that cannot receive an interaction"
+fi

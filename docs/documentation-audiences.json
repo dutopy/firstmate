@@ -469,6 +469,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/verification/discord-console-cards.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/discord-console-fast-path.md",
       "audience": "maintainer-verification"
     },

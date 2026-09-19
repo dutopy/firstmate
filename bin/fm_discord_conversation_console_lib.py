@@ -31,6 +31,15 @@ original bounded REST polling pass. The gateway connection is a supervised
 process-event source with an internal bounded-exponential reconnect and a
 polling fallback, so it is a transport, never an LLM agent.
 
+The same permanent connection carries the captain's button presses. The ``card``
+command posts one captain-facing decision, blocker, or clarification message
+with up to five labelled option buttons; a press arrives as a gateway
+``INTERACTION_CREATE`` dispatch, is answered through Discord's interaction
+callback, and records the captain's choice through the same keyed-answer intake a
+typed reply uses (``bin/fm-captain-hold.sh answer``, or ``hold --until`` for a
+"later" option). A card is only posted while the permanent connection is
+registered, because a bounded poll cannot receive an interaction.
+
 Every captured request also gets one bounded latency-journal record that the
 read-only ``latency`` subcommand and ``status`` report. The five measured stages
 are: stage 1 Discord creation to console ingest, stage 2 console handling, stage
@@ -47,6 +56,9 @@ Usage (via bin/fm-discord-conversation-console.sh):
     fm-discord-conversation-console.sh listen [--config <json>]
     fm-discord-conversation-console.sh connect [--config <json>] [--once] [--max-seconds <n>]
     fm-discord-conversation-console.sh reply [--config <json>] --text-file <f>
+        (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
+        [--nonce <n>] [--dry-run]
+    fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
         (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
         [--nonce <n>] [--dry-run]
     fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
@@ -197,9 +209,41 @@ MAX_REPLY_RAW_CHARS = 20000
 MAX_REPLY_RAW_BYTES = 80000
 REPLY_BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+(.*)$")
 REPLY_URL_RE = re.compile(r"https?://[^\s<>()]+")
-# Action buttons/components are not posted yet: see the seam on post_message and
-# "Action buttons" in docs/discord-conversation-console.md for the concrete gap.
-REPLY_COMPONENTS_SUPPORTED = False
+# Action cards. A captain-facing decision, blocker, or clarification card is one
+# Discord message carrying up to five labelled option buttons. Discord posts
+# buttons as a ``components`` array and delivers every press as a gateway
+# ``INTERACTION_CREATE`` dispatch, which is answered through the interaction
+# callback - a deferred update followed by an edit of the card message - so a
+# press never shows "interaction failed". The caller supplies the option labels
+# and values; the card path never invents an option from prose. A press records
+# the captain's answer through the same keyed-answer intake a typed reply uses
+# (bin/fm-captain-hold.sh answer, or hold --until for "later"), and the card is
+# edited to show the recorded answer with its buttons disabled.
+CARD_SCHEMA = "fm-discord-conversation-console.card.v1"
+CARD_INTERACTION_SCHEMA = "fm-discord-conversation-console.card-interaction.v1"
+CARD_CUSTOM_ID_PREFIX = "fmcard"
+CARD_ID_HEX_CHARS = 16
+MAX_CARD_OPTIONS = 5
+MAX_CARD_BODY_CHARS = 1700
+MAX_CARD_HINT_CHARS = 200
+MAX_CARD_LABEL_CHARS = 80
+MAX_CARD_VALUE_CHARS = 1000
+CARD_ACTIONS = ("answer", "release", "later", "chat")
+# Discord button styles: 1 primary, 2 secondary, 3 success, 4 danger.
+CARD_STYLE_BY_ACTION = {"answer": 1, "release": 3, "later": 2, "chat": 2}
+CARD_BUTTON_STYLES = (1, 2, 3, 4)
+CARD_ID_RE = re.compile(r"^[0-9a-f]{%d}$" % CARD_ID_HEX_CHARS)
+CARD_CUSTOM_ID_RE = re.compile(r"^" + CARD_CUSTOM_ID_PREFIX + r":([0-9a-f]{%d}):([0-%d])$" % (CARD_ID_HEX_CHARS, MAX_CARD_OPTIONS - 1))
+# Discord component-interaction plumbing. A press is answered through the
+# interaction callback: type 6 defers the card edit, type 4 sends an immediate
+# ephemeral reply, and flag 64 keeps any message private to the presser.
+CARD_INTERACTION_COMPONENT = 3
+CARD_CALLBACK_MESSAGE = 4
+CARD_CALLBACK_DEFERRED_UPDATE = 6
+CARD_EPHEMERAL_FLAG = 64
+CARD_CALLBACK_TIMEOUT_SECONDS = 20.0
+CARD_ANSWER_TIMEOUT_SECONDS = 120.0
+MAX_CARD_INTERACTION_RECORDS = 5000
 
 # The latency journal. One bounded record per captured captain request records
 # the five measured stages, so bin/fm-discord-conversation-console.sh status and
@@ -635,6 +679,26 @@ def fast_path_record_path(env: "fwl.Env", kind: str, request_id: str) -> Path:
 
 def typing_path(env: "fwl.Env", channel_id: str) -> Path:
     return console_state_path(env, "typing", f"{channel_id}.json")
+
+
+def cards_dir(env: "fwl.Env") -> Path:
+    return console_state_path(env, "cards")
+
+
+def card_path(env: "fwl.Env", card_id: str) -> Path:
+    if not CARD_ID_RE.fullmatch(card_id):
+        raise FMError("card id must be %d lowercase hex characters" % CARD_ID_HEX_CHARS)
+    return console_state_path(env, "cards", f"{card_id}.json")
+
+
+def card_interaction_path(env: "fwl.Env", interaction_id: str) -> Path:
+    if not fwl.ID_RE.fullmatch(interaction_id):
+        raise FMError("interaction id must be a decimal Discord id")
+    return console_state_path(env, "cards", "interactions", f"{interaction_id}.json")
+
+
+def card_custom_id(card_id: str, index: int) -> str:
+    return f"{CARD_CUSTOM_ID_PREFIX}:{card_id}:{index}"
 
 
 def latency_path(env: "fwl.Env", request_id: str) -> Path:
@@ -1989,11 +2053,438 @@ def _post_honest_failure(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleC
 
 
 # ---------------------------------------------------------------------------
+# Action cards
+# ---------------------------------------------------------------------------
+
+CARD_REFUSAL_TEXTS = {
+    "non-captain": "Seul le capitaine peut r\u00e9pondre \u00e0 cette carte.",
+    "unknown-custom-id": "Ce bouton n'est pas une carte Firstmate.",
+    "unknown-card": "Cette carte n'est plus disponible.",
+    "unreadable-card": "Cette carte n'est pas lisible, je ne peux pas enregistrer la r\u00e9ponse.",
+    "card-mismatch": "Ce bouton ne correspond pas \u00e0 cette carte.",
+    "unknown-option": "Cette option n'existe plus sur la carte.",
+}
+CARD_CHAT_CONFIRMATION = "R\u00e9ponds directement dans la conversation, je m'en occupe."
+CARD_FAILURE_SUFFIX = "Je n'ai pas pu enregistrer ta r\u00e9ponse. R\u00e9essaie."
+CARD_ERROR_TEXT = "Je n'ai pas pu traiter ce bouton."
+
+
+def card_id_for(nonce: str) -> str:
+    return fwl.sha256_text(nonce)[:CARD_ID_HEX_CHARS]
+
+
+def _card_text(value: Any, field: str, max_chars: int, required: bool = True) -> str:
+    if value is None and not required:
+        return ""
+    if not isinstance(value, str):
+        raise FMError(f"{field} must be a string")
+    text = value.strip()
+    if not text:
+        if required:
+            raise FMError(f"{field} must not be empty")
+        return ""
+    if "\x00" in text:
+        raise FMError(f"{field} must not contain a NUL byte")
+    if len(text) > max_chars:
+        raise FMError(f"{field} must be {max_chars} characters or fewer")
+    return text
+
+
+def parse_card_spec(raw: Dict[str, Any], max_chars: int = DEFAULT_REPLY_MAX_CHARS) -> Dict[str, Any]:
+    """Validate one caller-supplied card definition under the reply length bound.
+
+    The caller owns every captain-facing word: the body, the option labels, and
+    each decisive option's value. Nothing here derives an option from prose.
+    """
+    if not isinstance(raw, dict):
+        raise FMError("the card file must be a JSON object")
+    schema = raw.get("schema", CARD_SCHEMA)
+    if schema != CARD_SCHEMA:
+        raise FMError(f"unsupported card schema: {schema}")
+    task_id = _card_text(raw.get("task_id"), "card.task_id", 120)
+    if not fwl.TASK_ID_RE.fullmatch(task_id):
+        raise FMError("card.task_id must be a privacy-safe task id")
+    body = _card_text(raw.get("body"), "card.body", MAX_CARD_BODY_CHARS)
+    for marker in REFUSED_MARKERS:
+        if marker in body:
+            raise FMError("card.body must not contain operational text")
+    hint = _card_text(raw.get("fallback_hint"), "card.fallback_hint", MAX_CARD_HINT_CHARS, required=False)
+    raw_options = raw.get("options")
+    if not isinstance(raw_options, list) or not raw_options:
+        raise FMError("card.options must be a non-empty list")
+    if len(raw_options) > MAX_CARD_OPTIONS:
+        raise FMError(f"card.options may carry at most {MAX_CARD_OPTIONS} options")
+    options: List[Dict[str, Any]] = []
+    labels: set = set()
+    for index, item in enumerate(raw_options):
+        if not isinstance(item, dict):
+            raise FMError(f"card.options[{index}] must be a JSON object")
+        label = _card_text(item.get("label"), f"card.options[{index}].label", MAX_CARD_LABEL_CHARS)
+        if label.lower() in labels:
+            raise FMError(f"card.options[{index}].label duplicates an earlier label")
+        labels.add(label.lower())
+        action = item.get("action")
+        if action not in CARD_ACTIONS:
+            raise FMError(f"card.options[{index}].action must be one of: {', '.join(CARD_ACTIONS)}")
+        option: Dict[str, Any] = {"label": label, "action": action}
+        style = item.get("style", CARD_STYLE_BY_ACTION[action])
+        if isinstance(style, bool) or not isinstance(style, int) or style not in CARD_BUTTON_STYLES:
+            raise FMError(f"card.options[{index}].style must be one of {', '.join(str(s) for s in CARD_BUTTON_STYLES)}")
+        option["style"] = style
+        if action in ("answer", "release"):
+            option["value"] = _card_text(item.get("value"), f"card.options[{index}].value", MAX_CARD_VALUE_CHARS)
+        elif action == "later":
+            until = _card_text(item.get("until"), f"card.options[{index}].until", 10)
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", until):
+                raise FMError(f"card.options[{index}].until must be a YYYY-MM-DD date")
+            option["until"] = until
+        options.append(option)
+    content = body if not hint else f"{body}\n\n{hint}"
+    if len(content) > max_chars:
+        raise FMError(f"the rendered card is longer than the {max_chars} character reply bound")
+    return {"task_id": task_id, "body": body, "fallback_hint": hint, "options": options}
+
+
+def render_card_content(spec: Dict[str, Any], suffix: str = "") -> str:
+    content = str(spec.get("body") or "")
+    hint = str(spec.get("fallback_hint") or "")
+    if hint:
+        content = f"{content}\n\n{hint}"
+    if suffix:
+        content = f"{content}\n\n{suffix}"
+    return content
+
+
+def card_components(spec: Dict[str, Any], card_id: str, disabled: bool = False) -> List[Dict[str, Any]]:
+    """One action row of up to five custom-id buttons, optionally disabled."""
+    buttons: List[Dict[str, Any]] = []
+    options = spec.get("options") if isinstance(spec.get("options"), list) else []
+    for index, option in enumerate(options):
+        style = option.get("style")
+        if isinstance(style, bool) or not isinstance(style, int) or style not in CARD_BUTTON_STYLES:
+            style = CARD_STYLE_BY_ACTION.get(str(option.get("action")), 2)
+        button: Dict[str, Any] = {
+            "type": 2,
+            "style": style,
+            "label": str(option.get("label") or ""),
+            "custom_id": card_custom_id(card_id, index),
+        }
+        if disabled:
+            button["disabled"] = True
+        buttons.append(button)
+    return [{"type": 1, "components": buttons}]
+
+
+def load_card(env: "fwl.Env", card_id: str) -> Optional[Dict[str, Any]]:
+    return fwl.load_existing_json(card_path(env, card_id))
+
+
+def load_cards(env: "fwl.Env") -> List[Dict[str, Any]]:
+    directory = cards_dir(env)
+    cards: List[Dict[str, Any]] = []
+    if not directory.is_dir():
+        return cards
+    for path in sorted(directory.glob("*.json")):
+        record = fwl.load_existing_json(path)
+        if isinstance(record, dict):
+            cards.append(record)
+    return cards
+
+
+def open_card_for_task(env: "fwl.Env", task_id: str) -> Optional[Dict[str, Any]]:
+    for record in load_cards(env):
+        if str(record.get("task_id") or "") == task_id and str(record.get("status") or "open") == "open":
+            return record
+    return None
+
+
+def store_card(env: "fwl.Env", card: Dict[str, Any]) -> None:
+    stored = dict(card)
+    stored["updated_at"] = fwl.utc_now()
+    with fwl.state_transaction(env):
+        fwl.atomic_json(card_path(env, str(card.get("card_id") or "")), stored)
+
+
+def load_card_interaction(env: "fwl.Env", interaction_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        return fwl.load_existing_json(card_interaction_path(env, interaction_id))
+    except FMError:
+        return None
+
+
+def store_card_interaction(env: "fwl.Env", interaction_id: str, record: Dict[str, Any]) -> None:
+    stored = dict(record)
+    stored.update({"schema": CARD_INTERACTION_SCHEMA, "interaction_id": interaction_id, "recorded_at": fwl.utc_now()})
+    path = card_interaction_path(env, interaction_id)
+    with fwl.state_transaction(env):
+        fwl.atomic_json(path, stored)
+        prune_card_interactions(path.parent)
+
+
+def prune_card_interactions(directory: Path) -> None:
+    try:
+        records = sorted(directory.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    for stale in records[MAX_CARD_INTERACTION_RECORDS:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def card_answer_suffix(option: Dict[str, Any]) -> str:
+    label = str(option.get("label") or "")
+    if str(option.get("action") or "") == "later":
+        return "**Report\u00e9 au %s : %s**" % (str(option.get("until") or ""), label)
+    return "**R\u00e9pondu : %s**" % label
+
+
+def card_settled_suffix(card: Dict[str, Any]) -> str:
+    answer = card.get("answer") if isinstance(card.get("answer"), dict) else {}
+    label = str(answer.get("label") or "")
+    if not label:
+        return ""
+    if str(answer.get("action") or "") == "later":
+        return "**Report\u00e9 au %s : %s**" % (str(answer.get("until") or ""), label)
+    return "**R\u00e9pondu : %s**" % label
+
+
+def card_later_reason(option: Dict[str, Any]) -> str:
+    label = re.sub(r"[()]", " ", str(option.get("label") or ""))
+    label = re.sub(r"\s+", " ", label).strip()
+    reason = f"Report\u00e9 par carte Discord : {label}".strip()
+    return reason[:200] or "Report\u00e9 par carte Discord"
+
+
+def write_card_decision_file(value: str) -> str:
+    fd, path = tempfile.mkstemp(prefix="fm-card-decision-", suffix=".txt")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(value)
+        os.chmod(path, 0o600)
+    except Exception:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+    return path
+
+
+def run_captain_hold(env: "fwl.Env", argv: List[str]) -> Tuple[int, str]:
+    """Feed one card option into the same keyed-answer intake a typed reply uses."""
+    command = [str(env.script_dir / "fm-captain-hold.sh")] + argv
+    child_env = dict(os.environ)
+    child_env["FM_HOME"] = str(env.home)
+    child_env["FM_STATE_OVERRIDE"] = str(env.state)
+    child_env["FM_DATA_OVERRIDE"] = str(env.data)
+    child_env["FM_CONFIG_OVERRIDE"] = str(env.config)
+    timeout = CARD_ANSWER_TIMEOUT_SECONDS
+    override = os.environ.get("FM_CONSOLE_CARD_TIMEOUT")
+    if override:
+        try:
+            parsed = float(override)
+            if parsed > 0:
+                timeout = parsed
+        except ValueError:
+            pass
+    try:
+        proc = subprocess.run(
+            command, env=child_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        return 1, "the answer intake did not finish in time"
+    except OSError as exc:
+        return 1, f"the answer intake could not start: {exc}"
+    return proc.returncode, (proc.stdout + proc.stderr).strip()
+
+
+def run_card_option(env: "fwl.Env", task_id: str, option: Dict[str, Any]) -> Tuple[int, str]:
+    action = str(option.get("action") or "")
+    decision_path = ""
+    try:
+        if action in ("answer", "release"):
+            decision_path = write_card_decision_file(str(option.get("value") or ""))
+        if action == "later":
+            argv = ["hold", task_id, "--reason", card_later_reason(option), "--until", str(option.get("until") or "")]
+        elif action == "release":
+            argv = ["answer", task_id, "--decision-file", decision_path, "--release"]
+        else:
+            argv = ["answer", task_id, "--decision-file", decision_path]
+        return run_captain_hold(env, argv)
+    finally:
+        if decision_path:
+            try:
+                os.unlink(decision_path)
+            except OSError:
+                pass
+
+
+def card_defer(client: "ConsoleClient", interaction_id: str, token: str) -> None:
+    client.interaction_callback(interaction_id, token, {"type": CARD_CALLBACK_DEFERRED_UPDATE})
+
+
+def card_ephemeral(client: "ConsoleClient", interaction_id: str, token: str, text: str) -> None:
+    client.interaction_callback(
+        interaction_id,
+        token,
+        {
+            "type": CARD_CALLBACK_MESSAGE,
+            "data": {"content": text, "flags": CARD_EPHEMERAL_FLAG, "allowed_mentions": {"parse": []}},
+        },
+    )
+
+
+def card_edit_original(client: "ConsoleClient", token: str, card: Dict[str, Any], suffix: str = "", disabled: bool = False) -> None:
+    spec = {
+        "body": str(card.get("body") or ""),
+        "fallback_hint": str(card.get("fallback_hint") or ""),
+        "options": card.get("options") if isinstance(card.get("options"), list) else [],
+    }
+    client.interaction_edit_original(
+        token,
+        {
+            "content": render_card_content(spec, suffix),
+            "components": card_components(spec, str(card.get("card_id") or ""), disabled=disabled),
+            "allowed_mentions": {"parse": []},
+        },
+    )
+
+
+def handle_card_interaction(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    client: "ConsoleClient",
+    interaction_id: str,
+    token: str,
+    user_id: str,
+    custom_id: str,
+    guild_id: str,
+    channel_id: str,
+    message_id: str,
+) -> None:
+    """Validate one component press, record it, and answer its interaction callback.
+
+    Every received press is answered through the interaction callback - a
+    deferred card edit for a recorded option, an ephemeral line for a refusal or
+    the free-form "answer in chat" option - so Discord never shows "interaction
+    failed". The interaction id is recorded durably, so a repeated delivery
+    answers the callback again without recording a second answer.
+    """
+
+    def record(status: str, **fields: Any) -> None:
+        store_card_interaction(
+            env,
+            interaction_id,
+            {
+                "status": status,
+                "user_id": user_id,
+                "custom_id": custom_id,
+                "guild_id": guild_id,
+                "channel_id": channel_id,
+                "message_id": message_id,
+                **fields,
+            },
+        )
+
+    def refuse(reason: str) -> None:
+        record("refused", reason=reason)
+        card_ephemeral(client, interaction_id, token, CARD_REFUSAL_TEXTS.get(reason, CARD_ERROR_TEXT))
+
+    if user_id not in cfg.captain_user_ids:
+        refuse("non-captain")
+        return
+    match = CARD_CUSTOM_ID_RE.fullmatch(custom_id)
+    if match is None:
+        refuse("unknown-custom-id")
+        return
+    card_id, index = match.group(1), int(match.group(2))
+    try:
+        card = load_card(env, card_id)
+    except FMError:
+        refuse("unreadable-card")
+        return
+    if not isinstance(card, dict):
+        refuse("unknown-card")
+        return
+    if (
+        str(card.get("guild_id") or "") != guild_id
+        or str(card.get("channel_id") or "") != channel_id
+        or str(card.get("message_id") or "") != message_id
+    ):
+        refuse("card-mismatch")
+        return
+    options = card.get("options") if isinstance(card.get("options"), list) else []
+    if index >= len(options) or not isinstance(options[index], dict):
+        refuse("unknown-option")
+        return
+    option = options[index]
+    prior = load_card_interaction(env, interaction_id)
+    prior_status = str(prior.get("status") or "") if isinstance(prior, dict) else ""
+    # A repeated delivery never records twice; it replays the first answer.
+    if prior_status in ("recorded", "settled") or str(card.get("status") or "open") != "open":
+        if prior_status not in ("recorded", "settled"):
+            record("settled", option_index=index)
+        try:
+            card_defer(client, interaction_id, token)
+            card_edit_original(client, token, card, suffix=card_settled_suffix(card), disabled=True)
+        except FMError:
+            pass
+        return
+    if prior_status == "chat":
+        try:
+            card_ephemeral(client, interaction_id, token, CARD_CHAT_CONFIRMATION)
+        except FMError:
+            pass
+        return
+    if str(option.get("action") or "") == "chat":
+        # No answer is recorded: the captain will answer in the conversation.
+        record("chat", option_index=index)
+        try:
+            card_ephemeral(client, interaction_id, token, CARD_CHAT_CONFIRMATION)
+        except FMError:
+            pass
+        return
+    try:
+        card_defer(client, interaction_id, token)
+    except FMError:
+        return
+    record("pending", option_index=index)
+    code, output = run_card_option(env, str(card.get("task_id") or ""), option)
+    if code != 0:
+        record("failed", option_index=index, reason=client.redact(output)[:500])
+        try:
+            card_edit_original(client, token, card, suffix=CARD_FAILURE_SUFFIX, disabled=False)
+        except FMError:
+            pass
+        return
+    card["status"] = "answered"
+    card["answer"] = {
+        "option_index": index,
+        "label": str(option.get("label") or ""),
+        "action": str(option.get("action") or ""),
+        "value": str(option.get("value") or ""),
+        "until": str(option.get("until") or ""),
+        "user_id": user_id,
+        "answered_at": fwl.utc_now(),
+    }
+    store_card(env, card)
+    record("recorded", option_index=index, action=str(option.get("action") or ""))
+    try:
+        card_edit_original(client, token, card, suffix=card_answer_suffix(option), disabled=True)
+    except FMError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Discord HTTP helpers
 # ---------------------------------------------------------------------------
 
+
 class ConsoleClient:
     def __init__(self, cfg: "ConsoleConfig", env: "fwl.Env"):
+        self.cfg = cfg
         self.token = live.decrypt_token_from(env, cfg.secret_file, cfg.token_key)
         self.client = live.DiscordClient(self.token)
 
@@ -2022,14 +2513,12 @@ class ConsoleClient:
         return [m for m in listing if isinstance(m, dict)] if isinstance(listing, list) else []
 
     def post_message(self, channel_id: str, text: str, components: Optional[List[Dict[str, Any]]] = None) -> str:
-        """Post one message; ``components`` is the Discord components seam.
+        """Post one message; ``components`` carries an action card's buttons.
 
         Discord-native action buttons are posted as a ``components`` array on the
-        message body, which this REST transport can already carry. The reply path
-        deliberately passes none: an interaction callback is not implemented yet
-        (see ``REPLY_COMPONENTS_SUPPORTED`` and "Action buttons" in
-        docs/discord-conversation-console.md), so a posted button would render
-        but every click would go unanswered.
+        message body. The reply path passes none; the ``card`` command passes one
+        action row, and refuses unless the permanent connection is registered,
+        because a button can only be answered through a gateway interaction.
         """
         body: Dict[str, Any] = {"content": text, "allowed_mentions": {"parse": []}}
         if components:
@@ -2093,6 +2582,54 @@ class ConsoleClient:
     def channel(self, channel_id: str) -> Dict[str, Any]:
         info = self.client.request("GET", f"/channels/{channel_id}")
         return info if isinstance(info, dict) else {}
+
+    def interaction_callback(self, interaction_id: str, interaction_token: str, payload: Dict[str, Any]) -> None:
+        """Answer one interaction through its callback endpoint.
+
+        The interaction token in the path is the credential, so this path sends
+        no Authorization header and the bot token never rides it.
+        """
+        self._interaction_request(
+            "POST", f"/interactions/{interaction_id}/{interaction_token}/callback", payload
+        )
+
+    def interaction_edit_original(self, interaction_token: str, payload: Dict[str, Any]) -> None:
+        """Edit the card message a deferred component interaction refers to."""
+        self._interaction_request(
+            "PATCH",
+            f"/webhooks/{self.cfg.bot_user_id}/{interaction_token}/messages/@original",
+            payload,
+        )
+
+    def _interaction_request(self, method: str, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        data = json.dumps(body).encode("utf-8")
+        headers = {
+            "User-Agent": live.USER_AGENT,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        url = f"{self.client.base}{path}"
+        last_error = ""
+        for attempt in range(2):
+            request = urllib.request.Request(url, data=data, headers=headers, method=method)
+            try:
+                with urllib.request.urlopen(request, timeout=CARD_CALLBACK_TIMEOUT_SECONDS) as response:
+                    payload = response.read().decode("utf-8")
+                    return json.loads(payload) if payload else {}
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", "replace")
+                last_error = live.redact(f"Discord interaction {method} failed with HTTP {exc.code}: {detail}", self.token)
+                if attempt == 0 and (exc.code == 429 or 500 <= exc.code < 600):
+                    time.sleep(self.client._retry_after(detail, exc.headers))
+                    continue
+                raise FMError(last_error) from exc
+            except urllib.error.URLError as exc:
+                last_error = live.redact(f"Discord interaction {method} transport failure: {exc.reason}", self.token)
+                if attempt == 0:
+                    time.sleep(float(os.environ.get("FM_DISCORD_LIVE_RETRY_SLEEP", "1")))
+                    continue
+                raise FMError(last_error) from exc
+        raise FMError(last_error or f"Discord interaction {method} failed")
 
 
 # ---------------------------------------------------------------------------
@@ -2524,6 +3061,43 @@ def handle_gateway_message(
     ingest_message(env, cfg, client, channel, channel_id, parent_id, data, "gateway")
 
 
+def handle_gateway_interaction(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", data: Dict[str, Any]) -> None:
+    """Answer one component-interaction dispatch; a card path never drops the socket."""
+    if not isinstance(data, dict) or data.get("type") != CARD_INTERACTION_COMPONENT:
+        return
+    interaction_id = str(data.get("id") or "")
+    token = str(data.get("token") or "")
+    if not interaction_id or not token:
+        return
+    user = data.get("user") if isinstance(data.get("user"), dict) else {}
+    payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+    message = data.get("message") if isinstance(data.get("message"), dict) else {}
+    try:
+        handle_card_interaction(
+            env,
+            cfg,
+            client,
+            interaction_id,
+            token,
+            str(user.get("id") or ""),
+            str(payload.get("custom_id") or ""),
+            str(data.get("guild_id") or ""),
+            str(data.get("channel_id") or ""),
+            str(message.get("id") or ""),
+        )
+    except FMError as exc:
+        try:
+            store_card_interaction(
+                env, interaction_id, {"status": "error", "reason": client.redact(str(exc))[:500]}
+            )
+        except FMError:
+            pass
+        try:
+            card_ephemeral(client, interaction_id, token, CARD_ERROR_TEXT)
+        except FMError:
+            pass
+
+
 def gateway_connect(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", state: Dict[str, Any]) -> bool:
     """Run one gateway session to completion; return whether it reached READY."""
     url = str(state.get("resume_url") or cfg.gateway_url)
@@ -2582,6 +3156,8 @@ def gateway_connect(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient
                     record_connection_state(env, "gateway", "connected", url=gateway_host_label(url))
                 elif event_type == "MESSAGE_CREATE":
                     handle_gateway_message(env, cfg, client, data, cache)
+                elif event_type == "INTERACTION_CREATE":
+                    handle_gateway_interaction(env, cfg, client, data)
             elif op == 1:
                 transport.send_json({"op": 1, "d": state.get("sequence")})
             elif op == 7:
@@ -2847,6 +3423,85 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
     return 0
 
 
+def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
+    """Post one captain-facing card with labelled option buttons.
+
+    The caller supplies the body and every option; the card path never invents an
+    option from prose. The posted card's task id, option set, and message id are
+    stored durably so a later press can be resolved and shown on that message.
+    """
+    cfg = ConsoleConfig.load(env, args.config)
+    guild_id, channel_id, _message_id = resolve_target(cfg, env, args.request_id, args.thread, args.channel)
+    card_file = Path(args.card_file).expanduser()
+    if not card_file.is_absolute():
+        card_file = (Path.cwd() / card_file).resolve()
+    spec = parse_card_spec(fwl.read_json(card_file), cfg.reply_max_chars)
+    nonce = args.nonce or (
+        "card:%s:%s" % (spec["task_id"], fwl.sha256_text(json.dumps(spec, sort_keys=True))[:CARD_ID_HEX_CHARS])
+    )
+    card_id = card_id_for(nonce)
+    content = render_card_content(spec)
+    components = card_components(spec, card_id)
+    existing = load_card(env, card_id)
+    if isinstance(existing, dict) and existing.get("message_id"):
+        print(f"card exists for nonce {nonce}; no second delivery")
+        return 0
+    open_card = open_card_for_task(env, spec["task_id"])
+    if isinstance(open_card, dict) and str(open_card.get("card_id") or "") != card_id:
+        raise FMError(
+            "an open card already exists for task %s (card %s); that card must be answered before a new one"
+            % (spec["task_id"], open_card.get("card_id"))
+        )
+    if args.dry_run:
+        print("Discord action card plan (no network).")
+        print(f"destination conversation: {channel_id}")
+        print(f"card id: {card_id}")
+        print(f"task: {spec['task_id']}")
+        print(f"nonce: {nonce}")
+        print(f"live posting: {'on' if cfg.live_posting_enabled else 'off'}")
+        print(f"permanent connection: {'on' if cfg.live_gateway_enabled else 'off'}")
+        print(f"options: {len(spec['options'])}")
+        for index, option in enumerate(spec["options"]):
+            detail = option.get("value") or option.get("until") or ""
+            print(f"  [{index}] {option['label']} -> {option['action']}" + (f" ({detail})" if detail else ""))
+        print(f"rendered card ({len(content)} chars):")
+        print(content)
+        print("dry-run only; no Discord post was made.")
+        return 0
+    if not cfg.live_posting_enabled:
+        raise FMError("live posting is disabled; enable live.posting in the conversation console config")
+    if not cfg.live_gateway_enabled:
+        raise FMError("action cards need the permanent connection; enable live.gateway in the conversation console config")
+    if not (env.state / "procevent" / f"{GATEWAY_SOURCE_ID}.source").is_file():
+        raise FMError(
+            "the permanent connection is not registered, so a posted card could never receive a press; run start first"
+        )
+    client = ConsoleClient(cfg, env)
+    try:
+        message_id = client.post_message(channel_id, content, components)
+    except FMError as exc:
+        print(f"fm-discord-conversation-console: {client.redact(str(exc))}", file=sys.stderr)
+        return 1
+    card = {
+        "schema": CARD_SCHEMA,
+        "card_id": card_id,
+        "nonce": nonce,
+        "task_id": spec["task_id"],
+        "guild_id": guild_id,
+        "channel_id": channel_id,
+        "message_id": message_id,
+        "body": spec["body"],
+        "fallback_hint": spec["fallback_hint"],
+        "options": spec["options"],
+        "status": "open",
+        "created_at": fwl.utc_now(),
+    }
+    store_card(env, card)
+    print(f"card posted in conversation {channel_id}: {card_id}")
+    print(f"card url: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}")
+    return 0
+
+
 def cmd_typing(args: argparse.Namespace, env: "fwl.Env") -> int:
     """Hold (or stop) the bounded typing indicator for one conversation.
 
@@ -2974,6 +3629,17 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
     typing_dir = console_state_path(env, "typing")
     typing_count = sum(1 for _ in typing_dir.glob("*.json")) if typing_dir.is_dir() else 0
     print(f"typing keepers active: {typing_count}")
+    cards: List[Dict[str, Any]] = []
+    try:
+        cards = load_cards(env)
+    except FMError:
+        health = "state-malformed"
+    open_cards = [record for record in cards if str(record.get("status") or "open") == "open"]
+    interaction_dir = console_state_path(env, "cards", "interactions")
+    interaction_count = sum(1 for _ in interaction_dir.glob("*.json")) if interaction_dir.is_dir() else 0
+    print(f"cards posted: {len(cards)}")
+    print(f"cards open: {len(open_cards)}")
+    print(f"card interactions recorded: {interaction_count}")
     last_audit = fast_counts.get("last") or {}
     if isinstance(last_audit, dict) and last_audit.get("path"):
         verdict = last_audit.get("verdict") if isinstance(last_audit.get("verdict"), dict) else {}
@@ -3233,6 +3899,16 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p.add_argument("--nonce")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_reply)
+    p = sub.add_parser("card")
+    add_config_argument(p)
+    target = p.add_mutually_exclusive_group(required=True)
+    target.add_argument("--request-id")
+    target.add_argument("--thread")
+    target.add_argument("--channel")
+    p.add_argument("--card-file", required=True)
+    p.add_argument("--nonce")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_card)
     p = sub.add_parser("typing")
     add_config_argument(p)
     p.add_argument("--channel", required=True)
