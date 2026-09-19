@@ -307,6 +307,62 @@ PY
 assert_equals "ok" "$ROOT_POST_OK" "a message without a thread is answered in its channel, a replay posts nothing"
 pass "a channel conversation is answered in its channel"
 
+# --- 4b. the reply path renders the presentation shape and enforces the bound --
+cat > "$TMP_ROOT/shape.txt" <<'TXT'
+Fix landed
+- Merged https://github.com/example/repo/pull/1
+- Checks green
+
+Next
+Waiting on your review.
+TXT
+out=$(dc reply --config "$CFG" --channel "$CH" --text-file "$TMP_ROOT/shape.txt" --nonce shape-test 2>&1) \
+  || fail "shape reply failed: $out"
+SHAPE_OK=$(python3 - "$WORLD" "$CH" <<'PY'
+import json, sys
+world, ch = json.load(open(sys.argv[1])), sys.argv[2]
+content = world.get("posts", {}).get(ch, [])[-1]["content"]
+expected = (
+    "**Fix landed**\n- Merged https://github.com/example/repo/pull/1\n- Checks green\n\n"
+    "**Next**\nWaiting on your review."
+)
+print("ok" if content == expected else f"bad:{content!r}")
+PY
+)
+assert_equals "ok" "$SHAPE_OK" "the reply renders a bold label, bullets, a section blank line, and an intact URL"
+
+# A single plain sentence is not bolded, so ordinary answers stay unchanged.
+printf 'Answer for the first conversation\n' > "$TMP_ROOT/shape-plain.txt"
+out=$(dc reply --config "$CFG" --channel "$CH" --text-file "$TMP_ROOT/shape-plain.txt" --nonce shape-plain 2>&1) \
+  || fail "plain shape reply failed: $out"
+PLAIN_OK=$(python3 - "$WORLD" "$CH" <<'PY'
+import json, sys
+content = json.load(open(sys.argv[1])).get("posts", {}).get(sys.argv[2], [])[-1]["content"]
+print("ok" if content == "Answer for the first conversation" else f"bad:{content!r}")
+PY
+)
+assert_equals "ok" "$PLAIN_OK" "a plain one-line answer is not bolded"
+
+# A reply longer than the configured bound is cut to the bound with an ellipsis.
+python3 - "$TMP_ROOT/shape-long.txt" <<'PY'
+import sys
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    f.write("Long answer\n")
+    for i in range(60):
+        f.write(f"- item {i} with a lot of words to push the answer past the bound\n")
+PY
+out=$(dc reply --config "$CFG" --channel "$CH" --text-file "$TMP_ROOT/shape-long.txt" --nonce shape-long 2>&1) \
+  || fail "long shape reply failed: $out"
+LONG_OK=$(python3 - "$WORLD" "$CH" <<'PY'
+import json, sys
+content = json.load(open(sys.argv[1])).get("posts", {}).get(sys.argv[2], [])[-1]["content"]
+ok = len(content) <= 1900 and content.endswith("\u2026")
+print("ok" if ok else f"bad:len={len(content)} end={content[-12:]!r}")
+PY
+)
+assert_equals "ok" "$LONG_OK" "a reply past the bound is cut to 1900 characters with an ellipsis"
+pass "the reply path renders the presentation shape and enforces the bound"
+
 # --- 5. status is side-effect-free and reports health ------------------------
 out=$(dc status --config "$CFG" 2>&1) || fail "status failed: $out"
 assert_contains "$out" "health: stopped" "status reports an unregistered listener"

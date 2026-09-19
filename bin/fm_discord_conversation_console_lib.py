@@ -181,6 +181,26 @@ FAST_PATH_BLOCKED_HINTS = ("blocked", "bloqu\u00e9", "bloque")
 # Per-record-kind retention, so the per-message fast-path records stay bounded.
 FAST_PATH_MAX_RECORDS = 5000
 
+# Captain-facing reply presentation. Discord chat is read on a phone, so the
+# reply path renders one deterministic shape - a short bold label per section,
+# "- " bullet lines, a blank line between sections, and a URL left intact - and
+# enforces a hard character bound instead of trusting the prose to stay short.
+# Discord rejects a message body above 2000 characters, so the bound can never
+# exceed that; it is deliberately smaller than the hard limit.
+DEFAULT_REPLY_MAX_CHARS = 1900
+MAX_REPLY_CHARS = 2000
+MIN_REPLY_MAX_CHARS = 100
+REPLY_LABEL_MAX_CHARS = 80
+# The raw answer file may be longer than one Discord message because the reply
+# path renders and trims it; this only bounds a pathologically large file.
+MAX_REPLY_RAW_CHARS = 20000
+MAX_REPLY_RAW_BYTES = 80000
+REPLY_BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+(.*)$")
+REPLY_URL_RE = re.compile(r"https?://[^\s<>()]+")
+# Action buttons/components are not posted yet: see the seam on post_message and
+# "Action buttons" in docs/discord-conversation-console.md for the concrete gap.
+REPLY_COMPONENTS_SUPPORTED = False
+
 # The latency journal. One bounded record per captured captain request records
 # the five measured stages, so bin/fm-discord-conversation-console.sh status and
 # the `latency` subcommand can report them without contacting Discord. The
@@ -327,6 +347,13 @@ class ConsoleConfig:
             "bounds.max_ignored_records",
             5000,
         )
+        self.reply_max_chars = fwl.validate_positive_json_integer(
+            bounds.get("reply_max_chars", DEFAULT_REPLY_MAX_CHARS),
+            "bounds.reply_max_chars",
+            MAX_REPLY_CHARS,
+        )
+        if self.reply_max_chars < MIN_REPLY_MAX_CHARS:
+            raise FMError("bounds.reply_max_chars must be at least %d" % MIN_REPLY_MAX_CHARS)
         self.live_polling_enabled = fwl.bool_from_path(raw, ["live.polling", "approvals.live_polling", "live_polling"], False)
         self.live_posting_enabled = fwl.bool_from_path(raw, ["live.posting", "approvals.live_posting", "live_posting"], False)
         self.live_gateway_enabled = fwl.bool_from_path(raw, ["live.gateway", "approvals.live_gateway", "live_gateway"], False)
@@ -566,6 +593,7 @@ def sample_config() -> Dict[str, Any]:
             "max_messages_per_channel": DEFAULT_MAX_MESSAGES,
             "max_threads_per_pass": DEFAULT_MAX_THREADS,
             "max_ignored_records": DEFAULT_MAX_IGNORED,
+            "reply_max_chars": DEFAULT_REPLY_MAX_CHARS,
         },
     }
 
@@ -1288,6 +1316,10 @@ def note_body(event: Dict[str, Any]) -> str:
     # sentences of outcome, not a report. This constrains length rather than
     # forcing it, and the reply command above is still the only reply path.
     lines.append("keep the answer short: a few sentences of outcome, no preamble and no restated question")
+    lines.append(
+        "format for a phone: a short first line as the title, one '- ' bullet per item, "
+        "a blank line between sections, and any link as a full https URL"
+    )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -1546,6 +1578,86 @@ def _safe_fast_path_text(text: str, max_chars: int) -> str:
     return text
 
 
+def _is_reply_label(line: str) -> bool:
+    """True when one short line is a heading rather than a sentence.
+
+    Only a short line with no sentence-ending punctuation and no bullet marker
+    can be a heading, so ordinary prose is never bolded by accident. A trailing
+    colon marks a lead-in label; it is kept inside the bold so the line still
+    reads the same.
+    """
+    stripped = line.strip()
+    if not stripped or len(stripped) > REPLY_LABEL_MAX_CHARS:
+        return False
+    if stripped.startswith("#") or REPLY_BULLET_RE.match(stripped):
+        return False
+    if REPLY_URL_RE.fullmatch(stripped):
+        return False
+    if stripped.endswith((".", "!", "?")) and not stripped.endswith(":"):
+        return False
+    return any(ch.isalnum() for ch in stripped)
+
+
+def _bound_reply_text(text: str, max_chars: int) -> str:
+    """Cut a rendered reply to the bound without splitting a word or a URL.
+
+    The bound is the contract, so it always wins. The cut backs off to the
+    nearest whitespace, and a URL left incomplete at the cut is dropped whole,
+    so the posted message never contains a half-clickable link.
+    """
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    budget = max_chars - 1  # room for the ellipsis
+    cut = budget
+    while cut > 0 and not text[cut].isspace():
+        cut -= 1
+    kept = text[:cut].rstrip().rstrip("-*\u2022").rstrip()
+    # A URL that straddles the cut is removed whole rather than left split.
+    partial = REPLY_URL_RE.search(kept)
+    if partial and partial.end() == len(kept):
+        kept = kept[: partial.start()].rstrip().rstrip("-*\u2022").rstrip()
+    if not kept:
+        return "\u2026"
+    return kept + "\u2026"
+
+
+def render_captain_reply(text: str, max_chars: int = DEFAULT_REPLY_MAX_CHARS) -> str:
+    """Render one captain-facing answer as a short, scannable Discord message.
+
+    Deterministic and model-free: blank lines split sections, the first line of
+    a multi-line section (or a colon lead-in) becomes a bold label, list lines
+    are normalized to "- " bullets, and the whole reply is cut to ``max_chars``.
+    A blank line separates every section so the message reads on a phone.
+    """
+    if not isinstance(text, str):
+        return ""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return ""
+    sections: List[str] = []
+    for raw_section in re.split(r"\n\s*\n", normalized):
+        lines = [ln.strip() for ln in raw_section.split("\n") if ln.strip()]
+        if not lines:
+            continue
+        rendered: List[str] = []
+        for index, line in enumerate(lines):
+            bullet = REPLY_BULLET_RE.match(line)
+            if bullet:
+                rendered.append("- " + bullet.group(1).strip())
+                continue
+            is_first = index == 0
+            has_body = len(lines) > 1
+            if is_first and _is_reply_label(line) and (has_body or line.endswith(":")):
+                rendered.append("**" + line + "**")
+                continue
+            rendered.append(line)
+        sections.append("\n".join(rendered))
+    rendered_text = "\n\n".join(section for section in sections if section)
+    return _bound_reply_text(rendered_text, max_chars)
+
+
 def post_fast_path_message(env: "fwl.Env", client: "ConsoleClient", channel_id: str, text: str, nonce: str) -> str:
     """Post one idempotent fast-path message; a replay returns the first message id."""
     path = fwl.receipt_path(env, nonce)
@@ -1643,7 +1755,8 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
             }
         store_fast_path_record(env, "decisions", request_id, decision)
     path = str(decision.get("path") or "full_turn")
-    answer_text = _safe_fast_path_text(str(decision.get("answer_text") or ""), cfg.fast_path_max_answer_chars)
+    answer_text = render_captain_reply(str(decision.get("answer_text") or ""), cfg.reply_max_chars)
+    answer_text = _safe_fast_path_text(answer_text, cfg.fast_path_max_answer_chars)
     answer_message_id = ""
     answer_at: Optional[float] = None
     if path == "fast_answer" and answer_text:
@@ -1908,11 +2021,23 @@ class ConsoleClient:
         listing = self.client.request("GET", f"/channels/{channel_id}/messages", params=params)
         return [m for m in listing if isinstance(m, dict)] if isinstance(listing, list) else []
 
-    def post_message(self, channel_id: str, text: str) -> str:
+    def post_message(self, channel_id: str, text: str, components: Optional[List[Dict[str, Any]]] = None) -> str:
+        """Post one message; ``components`` is the Discord components seam.
+
+        Discord-native action buttons are posted as a ``components`` array on the
+        message body, which this REST transport can already carry. The reply path
+        deliberately passes none: an interaction callback is not implemented yet
+        (see ``REPLY_COMPONENTS_SUPPORTED`` and "Action buttons" in
+        docs/discord-conversation-console.md), so a posted button would render
+        but every click would go unanswered.
+        """
+        body: Dict[str, Any] = {"content": text, "allowed_mentions": {"parse": []}}
+        if components:
+            body["components"] = components
         sent = self.client.request(
             "POST",
             f"/channels/{channel_id}/messages",
-            {"content": text, "allowed_mentions": {"parse": []}},
+            body,
         )
         message_id = str(sent.get("id") or "") if isinstance(sent, dict) else ""
         if not message_id.isdigit():
@@ -2668,10 +2793,15 @@ def resolve_target(
 def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
     cfg = ConsoleConfig.load(env, args.config)
     guild_id, channel_id, message_id = resolve_target(cfg, env, args.request_id, args.thread, args.channel)
-    text = fwl.read_text_file(args.text_file).strip()
+    text = fwl.read_text_file(args.text_file, max_bytes=MAX_REPLY_RAW_BYTES, max_chars=MAX_REPLY_RAW_CHARS).strip()
     for marker in REFUSED_MARKERS:
         if marker in text:
             raise FMError("refusing to post operational text to a conversation channel")
+    # The reply path owns the presentation: a short bold label per section,
+    # bullet lines, blank lines between sections, and a hard length bound.
+    text = render_captain_reply(text, cfg.reply_max_chars)
+    if not text:
+        raise FMError("the answer is empty after rendering")
     digest = fwl.sha256_text(text)
     anchor = args.request_id or f"discord:{guild_id}:{channel_id}:{message_id or '0'}"
     nonce = args.nonce or f"reply:{anchor}:{digest}"
@@ -2685,6 +2815,8 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"reply-to request: {anchor}")
         print(f"allowed_mentions: {json.dumps({'parse': []}, sort_keys=True)}")
         print(f"nonce: {nonce}")
+        print(f"rendered reply ({len(text)} chars, bound {cfg.reply_max_chars}):")
+        print(text)
         print("dry-run only; no Discord post was made.")
         return 0
     if not cfg.live_posting_enabled:

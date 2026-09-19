@@ -863,7 +863,7 @@ def descriptor_unchanged(before: os.stat_result, after: os.stat_result, bytes_re
     )
 
 
-def read_text_file(path_text: str, max_bytes: int = 4000) -> str:
+def read_text_file(path_text: str, max_bytes: int = 4000, max_chars: int = 2000) -> str:
     supplied = Path(path_text).expanduser()
     path = supplied if supplied.is_absolute() else Path.cwd() / supplied
     for component in (path, *path.parents):
@@ -894,8 +894,8 @@ def read_text_file(path_text: str, max_bytes: int = 4000) -> str:
         raise FMError("text file contains a NUL byte")
     if not text.strip():
         raise FMError("text file is empty")
-    if len(text) > 2000:
-        raise FMError("Discord message text exceeds the 2000 character phase-1 limit")
+    if len(text) > max_chars:
+        raise FMError(f"Discord message text exceeds the {max_chars} character phase-1 limit")
     return text
 
 

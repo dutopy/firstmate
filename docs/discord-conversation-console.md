@@ -54,7 +54,9 @@ It names:
 - `transcription`: the Groq Whisper switch, the API key reference, the model, the
   language, the vocabulary prompt, and the transcript display choice; on by
   default.
-- `bounds`: the per-pass message, thread, and retained ignored-record caps.
+- `bounds`: the per-pass message, thread, and retained ignored-record caps, and
+  `bounds.reply_max_chars`, the hard character bound the reply path renders and
+  trims every captain-facing answer to.
 
 The config stores only secret file paths and key names, never a token or an API
 key value. The Groq key itself is resolved from the environment first and then
@@ -183,8 +185,36 @@ win than the delivery-mode change.
 Captain chat is read on a phone, so the reply text itself is short: a few
 sentences of outcome, not a report.
 The captain-inbox note body carries that instruction next to the exact reply
-command, so the requirement travels with the request without forcing any
-particular length on a substantive answer.
+command, so the requirement travels with the request.
+
+## Reply presentation
+
+The reply command renders one deterministic shape; the reply path never sends the
+raw answer file.
+A blank line splits the answer into sections, the first line of a multi-line
+section (or a short line ending in `:`) becomes a bold label, list lines are
+normalized to `- ` bullets, and a URL is left intact so Discord auto-links it.
+A plain one-line sentence is not bolded, so an ordinary answer reads unchanged.
+The renderer is model-free and takes no extra call.
+
+The whole rendered reply is then cut to `bounds.reply_max_chars` (default 1900,
+never above Discord's 2000-character body limit), on a whitespace boundary and
+never through a URL, so the reply stays short by construction rather than by
+trusting the prose.
+The same bound applies to a record-backed fast answer.
+
+## Action buttons
+
+Discord posts buttons as a `components` array on the message body, and
+`ConsoleClient.post_message` already carries that array; its `components`
+argument is the seam a later pass extends.
+The reply path posts no components because the interaction callback is not
+implemented: a click arrives as a gateway `INTERACTION_CREATE` dispatch and must
+be answered through the interaction-response REST endpoint, while the console's
+gateway daemon processes only `MESSAGE_CREATE` and its intents include no
+interaction handling.
+A button posted today would render but every click would go unanswered, so this
+pass records the gap, leaves the seam, and posts none.
 
 ## Typing indicator
 
@@ -255,12 +285,15 @@ A message that had no thread is answered in the channel itself.
 Every write is refused unless the config enables `live.posting`, posts with
 `allowed_mentions: {"parse": []}`, and reuses the shared nonce-keyed receipt so a
 retry with the same text never posts twice.
-`--dry-run` prints the plan with no network call.
+`--dry-run` prints the plan and the rendered reply with no network call.
 The bot token is decrypted into process memory only and is redacted from every
 failure path; operational supervision text is refused before any publish.
 The note body asks for a short answer; see `Short captain-facing answers` above.
-The full reply path is unchanged - no model call is added and no answer is
-guessed.
+The reply path renders the presentation shape owned by `Reply presentation`
+before posting, and the fast path renders its record-backed answer through the
+same function.
+The full reply path is unchanged otherwise - no model call is added and no answer
+is guessed.
 
 ## Status
 
@@ -357,10 +390,11 @@ no-mistakes daemon is never touched.
 against a fake local Discord server and a fake local gateway websocket: a
 captain message is captured exactly once across a restart, a non-captain message
 is ignored and recorded, an answer lands in the originating thread with two
-threads kept separate, a channel conversation is answered in its channel,
-`status` changes no durable state, `start` and `stop` register and retire the
-selected transport, the permanent connection identifies with an online presence
-and re-delivers a message after a forced disconnect without a second capture, an
+threads kept separate, a channel conversation is answered in its channel, the
+reply renders the presentation shape and is cut to the configured bound, `status`
+changes no durable state, `start` and `stop` register and retire the selected
+transport, the permanent connection identifies with an online presence and
+re-delivers a message after a forced disconnect without a second capture, an
 unreachable connection falls back to polling without a duplicate capture, and a
 crashed connection daemon is launched again by the next supervision cycle.
 
