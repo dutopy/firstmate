@@ -253,15 +253,24 @@ a replay with the same nonce posts no second card.
 
 A press arrives as a gateway `INTERACTION_CREATE` dispatch of type
 `MESSAGE_COMPONENT`.
+The presser is resolved through the same fallback the message path uses for an
+author: the top-level `user` for a direct payload, else `member.user` for a guild
+payload.
 The console accepts it only from a configured captain user id and only for a
-button of a card it posted in that same channel and message; anything else is
-refused with an ephemeral line and recorded as refused.
-Every received press is answered through Discord's interaction callback, so a
-press never shows "interaction failed": a recorded option defers the answer with a
-type-6 callback and then edits the card message, while a refusal or the free-form
-"answer in chat" option replies with a type-4 ephemeral message.
-The interaction token in the callback path is its credential, so the bot token is
-never sent on that path.
+button of a card it posted in that same channel and message.
+An identified non-captain or any other mismatch is refused with a private
+follow-up and recorded; a payload carrying no usable identity is recorded
+distinctly as unidentified and is never told that only the captain may answer.
+Every received press is acknowledged first, before any validation or state read,
+with a type-6 deferred update, so it reaches Discord inside its 3-second window; a
+failed acknowledgement is recorded with its reason instead of being swallowed.
+That short-bounded acknowledgement is never retried.
+Because the first callback consumes the interaction response, every later answer
+travels the interaction webhook: a recorded option edits the card message, while a
+refusal or the free-form "answer in chat" option posts a private follow-up
+message.
+The interaction token in the path is its credential, so the bot token is never
+sent on that path.
 
 A recorded option feeds the same keyed-answer intake a typed reply uses:
 `bin/fm-captain-hold.sh answer <task-id> --decision-file <file>` for `answer` (with
@@ -270,8 +279,9 @@ A recorded option feeds the same keyed-answer intake a typed reply uses:
 The card is then edited to show the recorded answer and its buttons are disabled;
 a failed intake leaves the buttons enabled and says so, so the captain can retry.
 The interaction id is recorded durably under `cards/interactions/`, so a repeated
-delivery answers the callback again without recording a second answer.
-`chat` records nothing and posts one ephemeral line asking for a chat answer.
+delivery edits the card again without recording a second answer.
+`chat` records nothing and posts one private follow-up line asking for a chat
+answer.
 
 ## Typing indicator
 

@@ -27,6 +27,8 @@ The action-card section of that suite prints:
 ok - the console posts an action card with labelled option buttons
 ok - a press records the chosen option through the shared keyed-answer intake
 ok - every press is answered, deduped, and audited
+ok - focused interaction checks pass
+ok - a guild payload and the acknowledgement ordering are covered by focused checks
 ok - a later option defers the task through the shared intake
 ok - a card is refused on any path that cannot receive an interaction
 ```
@@ -41,41 +43,61 @@ On the same fake server and gateway:
   buttons with `fmcard:<card-id>:<index>` custom ids, and stores the card's task
   id, option set, body, and message id under `cards/` in the console state.
 - A press arrives as a gateway `INTERACTION_CREATE` dispatch of type
-  `MESSAGE_COMPONENT`.
+  `MESSAGE_COMPONENT`, shaped like a real guild payload: the presser is carried
+  under `member.user` with no top-level `user` field.
   The captain's press on the decisive option records its exact value through the
   real keyed-answer intake: the fixture home's `data/backlog.md` gains one
   `Resolution recorded by fm-captain-hold.` block carrying `Oui, vas-y.`, and the
   card record reads `status: answered` with `answer.label: Oui`.
+- A guild-shaped `MESSAGE_CREATE` with no `author` object but a
+  `member.user` id is captured as the captain rather than ignored as
+  `missing-author`.
 - A second delivery of the same interaction id records no second resolution
-  block, and its callback is answered again.
-- Every press is answered through Discord's interaction callback: two type-6
-  deferred updates for the recorded press and its duplicate, and four type-4
-  ephemeral replies for the free-form option and the three refusals.
+  block, and its card edit is replayed.
+- Every press is acknowledged first: seven type-6 deferred updates for the seven
+  delivered payloads and no other callback type, so the acknowledgement is
+  proven to leave before any validation or state read.
+  Five later answers travel the interaction webhook as private follow-ups (the
+  free-form option, the non-captain refusal, the unknown card, the malformed
+  custom id, and the unidentified payload).
 - The deferred update is followed by a `PATCH` of the card message whose buttons
   all carry `disabled: true`.
 - A non-captain press, a custom id naming no card, and a malformed custom id are
   each refused and audited under `cards/interactions/<interaction-id>.json` with
   the reason `non-captain`, `unknown-card`, and `unknown-custom-id`.
+  A payload carrying no identity is audited as `status: unidentified` /
+  `reason: missing-user-id`, and its follow-up is not the captain-only line.
+- Focused checks over fake payloads prove the acknowledgement ordering (the
+  acknowledgement precedes the card read and the intake), that a timed-out
+  interaction request is never retried, and that a failed acknowledgement is
+  recorded with its reason rather than swallowed.
 - A `later` option records the dated deferral: the fixture backlog reads
   `hold-until: 2026-10-01` for the task.
 - `card` refuses while the permanent connection source is not registered, and its
   `--dry-run` prints the plan with no network call.
 
-## What remains to confirm live
+## Live evidence and what remains
 
-A real Discord round trip was **not** performed from this worktree.
-Two facts put that step past this branch rather than inside it.
-A posted button can only be answered by the running console, whose registered
-gateway source still executes the pre-change code, so a card posted now would be
-exactly the unanswerable button the contract forbids.
+The first real press against the pre-fix console failed in production: a guild
+interaction carries the presser under `member.user`, the handler read only a
+top-level `user`, and the empty id was refused as `non-captain` while the
+acknowledgement left too late for Discord's 3-second window.
+This branch resolves the guild identity, acknowledges first inside that window
+with a short bound that is never retried, records an acknowledgement failure, and
+answers refusals and the free-form option as webhook follow-ups.
+
+A real card was **not** minted from this worktree.
+The registered gateway source still runs the pre-change code until the branch
+lands and the console restarts, so a card posted now would be exactly the
+unanswerable button the contract forbids.
 And the press itself is the captain's own action in Discord, not something this
 suite can mint.
 Until a real card is pressed against the restarted console, the following remain
-to confirm live: the real gateway delivering `INTERACTION_CREATE` on the permanent
-connection, the real callback and
-`PATCH /webhooks/<app>/<token>/messages/@original` endpoints accepting the
-type-6-then-edit sequence, and the live card rendering its buttons for the
-captain.
+to confirm live: the real gateway delivering `INTERACTION_CREATE` to the fixed
+handler, the real callback and the
+`PATCH /webhooks/<app>/<token>/messages/@original` and
+`POST /webhooks/<app>/<token>` endpoints accepting the acknowledge-first
+sequence, and the live card rendering its buttons for the captain.
 
 The post-merge live check is one card and one press:
 

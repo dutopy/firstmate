@@ -118,6 +118,13 @@ class Handler(BaseHTTPRequestHandler):
             save(world)
             self._send(200, {})
             return
+        if len(parts) >= 2 and parts[0] == "webhooks":
+            # A refusal or the free-form option answers as a follow-up message
+            # through the interaction webhook, never as a second callback.
+            world.setdefault("interaction_followups", []).append({"path": url.path, "body": body})
+            save(world)
+            self._send(200, {})
+            return
         if not self._authorized(world):
             self._send(401, {"message": "Unauthorized"})
             return
@@ -572,6 +579,7 @@ world["channels"] = {
 world["dispatch"] = [
     {"id": "666000000000000100", "content": "Hello from the captain", "author": {"id": captain}, "channel_id": ch, "guild_id": guild, "timestamp": "2026-09-18T00:00:00Z"},
     {"id": "666000000000000101", "content": "Not the captain", "author": {"id": stranger}, "channel_id": ch, "guild_id": guild},
+    {"id": "666000000000000102", "content": "Guild-shaped captain message", "member": {"user": {"id": captain}}, "channel_id": ch, "guild_id": guild},
     {"id": "666000000000000200", "content": "First conversation", "author": {"id": captain}, "channel_id": t1, "guild_id": guild},
 ]
 world["hold_seconds"] = 0.2
@@ -606,7 +614,7 @@ GW_CLIENT_PID=$!
 for _ in $(seq 1 150); do
   conns=$(python3 -c "import json;print(json.load(open('$WORLD')).get('connections',0))")
   notes=$(note_count "$H2")
-  [ "$conns" -ge 2 ] && [ "$notes" -ge 2 ] && break
+  [ "$conns" -ge 2 ] && [ "$notes" -ge 3 ] && break
   sleep 0.1
 done
 kill "$GW_CLIENT_PID" 2>/dev/null || true
@@ -628,7 +636,7 @@ print("ok" if ok else f"bad:{json.dumps({'presence': presence.get('status'), 'in
 PY
 )
 assert_equals "ok" "$GW_OK" "the connection identifies with an online presence and resumes after a forced disconnect"
-assert_equals "2" "$(note_count "$H2")" "re-delivery after reconnect appends no second note"
+assert_equals "3" "$(note_count "$H2")" "re-delivery after reconnect appends no second note and a guild-shaped message is captured"
 GW_IGNORED=$(python3 - "$H2" <<'PY'
 import json, sys
 data = json.load(open(f"{sys.argv[1]}/state/discord-workspace/conversation-console/ignored.json"))
@@ -828,19 +836,25 @@ PY
   assert_equals "ok" "$POSTED_OK" "the card posts one row of labelled option buttons"
   pass "the console posts an action card with labelled option buttons"
 
-  # Six presses: the free-form option, one decisive answer, that same press
-  # delivered twice, a non-captain, an unknown card, and an unknown button.
+  # Six presses plus an unidentified one: the free-form option, one decisive
+  # answer, that same press delivered twice, a non-captain, an unknown card, an
+  # unknown button, and a payload carrying no identity at all. Every payload is
+  # guild-shaped (member.user, no top-level user), which is the real shape that
+  # broke the captain's first press.
   python3 - "$WORLD" "$GUILD" "$CH" "$CAPTAIN" "$STRANGER" "$BOT" "$CARD_ID" "$CARD_MSG" <<'PY'
 import json, sys
 world_path, guild, ch, captain, stranger, bot, card_id, message_id = sys.argv[1:9]
 
 def press(iid, user, custom_id, token):
-    return {
+    payload = {
         "id": iid, "application_id": bot, "type": 3, "token": token,
-        "guild_id": guild, "channel_id": ch, "user": {"id": user},
+        "guild_id": guild, "channel_id": ch,
         "data": {"custom_id": custom_id, "component_type": 2},
         "message": {"id": message_id, "channel_id": ch},
     }
+    if user is not None:
+        payload["member"] = {"user": {"id": user}}
+    return payload
 
 world = json.load(open(world_path))
 world["dispatch"] = []
@@ -851,6 +865,7 @@ world["interactions"] = [
     press("999000000000000002", stranger, f"fmcard:{card_id}:1", "tok-stranger"),
     press("999000000000000003", captain, "fmcard:00000000000000ff:0", "tok-unknown-card"),
     press("999000000000000004", captain, "fmcard:nothex:0", "tok-unknown-custom"),
+    press("999000000000000007", None, f"fmcard:{card_id}:1", "tok-unidentified"),
 ]
 json.dump(world, open(world_path, "w"))
 PY
@@ -879,41 +894,211 @@ for callback in callbacks:
     interaction_id = callback["path"].split("/")[2]
     per_id[interaction_id] = per_id.get(interaction_id, 0) + 1
 deferred = sum(1 for c in callbacks if c["body"].get("type") == 6)
-ephemeral = sum(1 for c in callbacks if c["body"].get("type") == 4)
+other_callbacks = sum(1 for c in callbacks if c["body"].get("type") != 6)
+followups = len(world.get("interaction_followups", []))
 disabled = False
 for edit in world.get("interaction_edits", []):
     for row in edit["body"].get("components") or []:
         buttons = row.get("components") or []
         if buttons and all(b.get("disabled") for b in buttons):
             disabled = True
-ok = deferred == 2 and ephemeral == 4 and per_id.get("999000000000000001") == 2 and disabled
-print("ok" if ok else "bad:" + json.dumps({"deferred": deferred, "ephemeral": ephemeral, "per_id": per_id, "disabled": disabled}))
+ok = (
+    deferred == 7 and other_callbacks == 0 and followups == 5
+    and per_id.get("999000000000000001") == 2 and disabled
+)
+print("ok" if ok else "bad:" + json.dumps({"deferred": deferred, "other": other_callbacks, "followups": followups, "per_id": per_id, "disabled": disabled}))
 PY
 )
-  assert_equals "ok" "$CALLBACKS_OK" "every press is answered through the callback and the answered card disables its buttons"
-  REFUSED_OK=$(python3 - "$H2" <<'PY'
+  assert_equals "ok" "$CALLBACKS_OK" "every press defers first through the callback, follow-ups answer the rest, and the answered card disables its buttons"
+  REFUSED_OK=$(python3 - "$H2" "$WORLD" <<'PY'
 import json, sys
 base = f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/interactions"
 want = {
-    "999000000000000002": "non-captain",
-    "999000000000000003": "unknown-card",
-    "999000000000000004": "unknown-custom-id",
+    "999000000000000002": ("refused", "non-captain"),
+    "999000000000000003": ("refused", "unknown-card"),
+    "999000000000000004": ("refused", "unknown-custom-id"),
+    "999000000000000007": ("unidentified", "missing-user-id"),
 }
 got = {}
-for interaction_id, reason in want.items():
+for interaction_id, expected in want.items():
     try:
-        got[interaction_id] = json.load(open(f"{base}/{interaction_id}.json")).get("reason")
+        record = json.load(open(f"{base}/{interaction_id}.json"))
+        got[interaction_id] = (record.get("status"), record.get("reason"))
     except FileNotFoundError:
         got[interaction_id] = None
-print("ok" if got == want else "bad:" + json.dumps(got))
+world = json.load(open(sys.argv[2]))
+unidentified_text = [
+    (f.get("body") or {}).get("content") or ""
+    for f in world.get("interaction_followups", [])
+    if f["path"].endswith("/tok-unidentified")
+]
+refused_status = got.get("999000000000000002")
+looks_right = (
+    got == want
+    and refused_status == ("refused", "non-captain")
+    and unidentified_text
+    and "Seul le capitaine" not in unidentified_text[0]
+)
+print("ok" if looks_right else "bad:" + json.dumps({"got": got, "unidentified_text": unidentified_text}))
 PY
 )
-  assert_equals "ok" "$REFUSED_OK" "non-captain and unknown buttons are refused and audited"
+  assert_equals "ok" "$REFUSED_OK" "non-captain and unknown buttons are refused and audited, and a missing identity is distinct"
   out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" status --config "$CFG2" 2>&1)
   assert_contains "$out" "cards posted: 1" "status reports the posted card"
   assert_contains "$out" "cards open: 0" "status reports the answered card as closed"
-  assert_contains "$out" "card interactions recorded: 5" "status reports the recorded interactions"
+  assert_contains "$out" "card interactions recorded: 6" "status reports the recorded interactions"
   pass "every press is answered, deduped, and audited"
+
+  # Focused unit checks over fake interaction payloads: the guild/direct identity
+  # fallback, the acknowledgement leaving before any validation, the short
+  # non-retried acknowledgement, and the recorded acknowledgement failure.
+  # These are the pieces a loopback gateway round trip cannot observe directly.
+  python3 - "$ROOT" "$TMP_ROOT" <<'PY' || fail "focused interaction checks failed"
+import importlib.util, json, os, socket, sys, urllib.request
+from pathlib import Path
+
+root, tmp = sys.argv[1], sys.argv[2]
+home = Path(tmp) / "focused-home"
+(home / "state").mkdir(parents=True, exist_ok=True)
+os.environ["FM_HOME"] = str(home)
+os.environ["FM_STATE_OVERRIDE"] = str(home / "state")
+os.environ["FM_DATA_OVERRIDE"] = str(home / "data")
+os.environ["FM_CONFIG_OVERRIDE"] = str(home / "config")
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+fmc = load("fmc_focused", str(Path(root) / "bin" / "fm_discord_conversation_console_lib.py"))
+fwl = fmc.fwl
+
+CAPTAIN = "444444444444444444"
+BOT = "333333333333333333"
+CARD = "a" * 16
+GUILD = "111111111111111111"
+CH = "666000000000000001"
+MSG = "777000000000000001"
+
+class FakeClient:
+    def __init__(self, order, fail_ack=False):
+        self.order = order
+        self.fail_ack = fail_ack
+        self.cfg = type("Cfg", (), {"bot_user_id": BOT})()
+    def redact(self, text):
+        return text
+    def interaction_ack(self, interaction_id, token):
+        self.order.append("ack")
+        if self.fail_ack:
+            raise fwl.FMError("ack transport timed out")
+    def interaction_followup(self, token, payload):
+        self.order.append("followup")
+    def interaction_edit_original(self, token, payload):
+        self.order.append("edit")
+
+def cfg():
+    return type("Cfg", (), {"captain_user_ids": [CAPTAIN], "bot_user_id": BOT})()
+
+env = fwl.Env(str(Path(root) / "bin"))
+
+# 1. Identity fallback: guild payload, direct payload, and none.
+assert fmc.payload_user_id({"member": {"user": {"id": CAPTAIN}}}) == CAPTAIN
+assert fmc.payload_user_id({"user": {"id": CAPTAIN}}) == CAPTAIN
+assert fmc.payload_user_id({"guild_id": GUILD}) == ""
+
+# 2. A guild-shaped MESSAGE_CREATE resolves member.user instead of ignoring it.
+channel = fmc.ConsoleChannel({"label": "x", "guild_id": GUILD, "channel_id": CH}, 0)
+event = fmc.normalize_message(
+    cfg(), channel, CH, "",
+    {"id": MSG, "content": "hi", "member": {"user": {"id": CAPTAIN}}}, "gateway",
+)
+assert event["kind"] == "text" and event["author_id"] == CAPTAIN, event
+
+interactions_dir = home / "state" / "discord-workspace" / "conversation-console" / "cards" / "interactions"
+def record_for(interaction_id):
+    return json.loads((interactions_dir / f"{interaction_id}.json").read_text())
+
+real_load_card = fmc.load_card
+real_store_card = fmc.store_card
+real_run_option = fmc.run_card_option
+
+try:
+    # 3. The acknowledgement leaves before any validation, file read, or intake.
+    order = []
+    fmc.load_card = lambda env, card_id: (order.append("load") or {
+        "schema": fmc.CARD_SCHEMA, "card_id": card_id, "task_id": "focused-task",
+        "guild_id": GUILD, "channel_id": CH, "message_id": MSG, "body": "b",
+        "options": [{"label": "Oui", "action": "answer", "value": "v", "style": 1}],
+        "status": "open",
+    })
+    fmc.store_card = lambda env, card: order.append("store")
+    fmc.run_card_option = lambda env, task_id, option: (order.append("run"), (0, ""))[1]
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient(order), "999000000000000012", "tok", CAPTAIN,
+        f"fmcard:{CARD}:0", GUILD, CH, MSG,
+    )
+    assert order[0] == "ack", order
+    assert order.index("load") > 0 and order.index("run") > order.index("load"), order
+
+    # 4. An unidentified press is distinct and never gets the captain-only line.
+    order = []
+    client = FakeClient(order)
+    fmc.handle_card_interaction(
+        env, cfg(), client, "999000000000000011", "tok", "",
+        f"fmcard:{CARD}:0", GUILD, CH, MSG,
+    )
+    assert record_for("999000000000000011")["status"] == "unidentified"
+    assert record_for("999000000000000011")["reason"] == "missing-user-id"
+    assert order[0] == "ack" and "followup" in order, order
+
+    # 5. A failed acknowledgement is recorded with its reason.
+    order = []
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient(order, fail_ack=True), "999000000000000014", "tok",
+        CAPTAIN, "fmcard:nothex:0", GUILD, CH, MSG,
+    )
+    failed = record_for("999000000000000014")
+    assert failed["status"] == "refused" and failed["reason"] == "unknown-custom-id", failed
+    assert "ack_error" in failed and failed["ack_error"], failed
+finally:
+    fmc.load_card = real_load_card
+    fmc.store_card = real_store_card
+    fmc.run_card_option = real_run_option
+
+# 6. A timed-out interaction request is never retried, and the acknowledgement
+#    uses the short acknowledgement bound.
+attempts = []
+real_urlopen = urllib.request.urlopen
+def fake_urlopen(request, timeout=None):
+    attempts.append(timeout)
+    raise socket.timeout("handshake timed out")
+client = object.__new__(fmc.ConsoleClient)
+client.token = "tok"
+client.cfg = type("Cfg", (), {"bot_user_id": BOT})()
+client.client = type("Client", (), {"base": "http://127.0.0.1:1"})()
+urllib.request.urlopen = fake_urlopen
+try:
+    try:
+        client.interaction_ack("999000000000000015", "tok")
+        raise AssertionError("a timed-out acknowledgement must fail")
+    except fwl.FMError:
+        pass
+    assert len(attempts) == 1, attempts
+    assert attempts[0] is not None and attempts[0] <= fmc.CARD_ACK_TIMEOUT_SECONDS, attempts
+    attempts.clear()
+    try:
+        client._interaction_request("PATCH", "/x", {}, timeout=0.5, retry=True)
+        raise AssertionError("a timed-out request must fail")
+    except fwl.FMError:
+        pass
+    assert len(attempts) == 1, attempts
+finally:
+    urllib.request.urlopen = real_urlopen
+
+print("ok - focused interaction checks pass")
+PY
+  pass "a guild payload and the acknowledgement ordering are covered by focused checks"
 
   # The "later" option records a dated deferral through the same intake.
   out=$(FM_HOME="$H2" "$ROOT/bin/fm-captain-hold.sh" hold card-later-test --title "Discord later test" --reason "Pick later" --repo firstmate 2>&1) \

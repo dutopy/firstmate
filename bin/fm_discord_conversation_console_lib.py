@@ -234,14 +234,19 @@ CARD_STYLE_BY_ACTION = {"answer": 1, "release": 3, "later": 2, "chat": 2}
 CARD_BUTTON_STYLES = (1, 2, 3, 4)
 CARD_ID_RE = re.compile(r"^[0-9a-f]{%d}$" % CARD_ID_HEX_CHARS)
 CARD_CUSTOM_ID_RE = re.compile(r"^" + CARD_CUSTOM_ID_PREFIX + r":([0-9a-f]{%d}):([0-%d])$" % (CARD_ID_HEX_CHARS, MAX_CARD_OPTIONS - 1))
-# Discord component-interaction plumbing. A press is answered through the
-# interaction callback: type 6 defers the card edit, type 4 sends an immediate
-# ephemeral reply, and flag 64 keeps any message private to the presser.
+# Discord component-interaction plumbing. A press is acknowledged through the
+# interaction callback with type 6, which defers the card edit; no other callback
+# is sent, because Discord answers a callback only once. Every later message
+# travels the interaction webhook, and flag 64 keeps a follow-up private to the
+# presser.
 CARD_INTERACTION_COMPONENT = 3
-CARD_CALLBACK_MESSAGE = 4
 CARD_CALLBACK_DEFERRED_UPDATE = 6
 CARD_EPHEMERAL_FLAG = 64
 CARD_CALLBACK_TIMEOUT_SECONDS = 20.0
+# The first acknowledgement must reach Discord before its 3-second interaction
+# window closes, so it gets its own short bound and is never retried; every
+# later edit or follow-up uses the general callback bound.
+CARD_ACK_TIMEOUT_SECONDS = 2.5
 CARD_ANSWER_TIMEOUT_SECONDS = 120.0
 MAX_CARD_INTERACTION_RECORDS = 5000
 
@@ -1255,6 +1260,25 @@ def load_thread_record(env: "fwl.Env", thread_id: str) -> Optional[Dict[str, Any
 # Message normalization and inbox handoff
 # ---------------------------------------------------------------------------
 
+def payload_user_id(payload: Dict[str, Any]) -> str:
+    """Resolve a guild or direct payload's user id.
+
+    Discord sends a direct payload's user at the top level and a guild payload's
+    user under ``member.user``, so both are consulted; an empty result means the
+    payload carried no usable identity and the caller must not treat it as an
+    identified non-captain.
+    """
+    user = payload.get("user")
+    if isinstance(user, dict) and str(user.get("id") or ""):
+        return str(user["id"])
+    member = payload.get("member")
+    if isinstance(member, dict):
+        member_user = member.get("user")
+        if isinstance(member_user, dict) and str(member_user.get("id") or ""):
+            return str(member_user["id"])
+    return ""
+
+
 def normalize_message(
     cfg: "ConsoleConfig",
     channel: ConsoleChannel,
@@ -1268,6 +1292,11 @@ def normalize_message(
     message_id = str(message.get("id") or "")
     author = message.get("author") if isinstance(message.get("author"), dict) else {}
     author_id = str(author.get("id") or message.get("author_id") or "")
+    if not author_id:
+        # A guild payload may carry the author only under member.user; resolve it
+        # before the missing-author branch so a real guild message is never
+        # ignored as one from an unknown author.
+        author_id = payload_user_id(message)
     is_bot = bool(author.get("bot") or message.get("author_is_bot"))
     base = {
         "schema": EVENT_SCHEMA,
@@ -2069,6 +2098,23 @@ CARD_FAILURE_SUFFIX = "Je n'ai pas pu enregistrer ta r\u00e9ponse. R\u00e9essaie
 CARD_ERROR_TEXT = "Je n'ai pas pu traiter ce bouton."
 
 
+def card_ack_timeout_seconds() -> float:
+    """The interaction acknowledgement bound, with an env test seam.
+
+    The first callback must reach Discord inside its 3-second window, so this is
+    deliberately short rather than sharing the general callback timeout.
+    """
+    override = os.environ.get("FM_DISCORD_CARD_ACK_TIMEOUT")
+    if override:
+        try:
+            parsed = float(override)
+        except ValueError:
+            parsed = 0.0
+        if parsed > 0:
+            return parsed
+    return CARD_ACK_TIMEOUT_SECONDS
+
+
 def card_id_for(nonce: str) -> str:
     return fwl.sha256_text(nonce)[:CARD_ID_HEX_CHARS]
 
@@ -2321,18 +2367,16 @@ def run_card_option(env: "fwl.Env", task_id: str, option: Dict[str, Any]) -> Tup
                 pass
 
 
-def card_defer(client: "ConsoleClient", interaction_id: str, token: str) -> None:
-    client.interaction_callback(interaction_id, token, {"type": CARD_CALLBACK_DEFERRED_UPDATE})
+def card_ephemeral(client: "ConsoleClient", token: str, text: str) -> None:
+    """Send one private follow-up message through the interaction webhook.
 
-
-def card_ephemeral(client: "ConsoleClient", interaction_id: str, token: str, text: str) -> None:
-    client.interaction_callback(
-        interaction_id,
+    The deferred acknowledgement already consumed the interaction callback, so a
+    refusal or the free-form option answers as a follow-up instead of a second
+    callback, which Discord rejects.
+    """
+    client.interaction_followup(
         token,
-        {
-            "type": CARD_CALLBACK_MESSAGE,
-            "data": {"content": text, "flags": CARD_EPHEMERAL_FLAG, "allowed_mentions": {"parse": []}},
-        },
+        {"content": text, "flags": CARD_EPHEMERAL_FLAG, "allowed_mentions": {"parse": []}},
     )
 
 
@@ -2364,60 +2408,79 @@ def handle_card_interaction(
     channel_id: str,
     message_id: str,
 ) -> None:
-    """Validate one component press, record it, and answer its interaction callback.
+    """Validate one component press, record it, and answer its interaction.
 
-    Every received press is answered through the interaction callback - a
-    deferred card edit for a recorded option, an ephemeral line for a refusal or
-    the free-form "answer in chat" option - so Discord never shows "interaction
-    failed". The interaction id is recorded durably, so a repeated delivery
-    answers the callback again without recording a second answer.
+    The deferred acknowledgement is the first thing this handler does, before
+    any validation or state read, so it reaches Discord inside its 3-second
+    window; a failed acknowledgement is recorded instead of being swallowed.
+    Every later answer travels the interaction webhook - a card edit for a
+    recorded option, a private follow-up for a refusal or the free-form "answer
+    in chat" option - because Discord rejects a second callback. The interaction
+    id is recorded durably, so a repeated delivery records no second answer.
     """
+    ack_error = ""
 
     def record(status: str, **fields: Any) -> None:
-        store_card_interaction(
-            env,
-            interaction_id,
-            {
-                "status": status,
-                "user_id": user_id,
-                "custom_id": custom_id,
-                "guild_id": guild_id,
-                "channel_id": channel_id,
-                "message_id": message_id,
-                **fields,
-            },
-        )
+        payload = {
+            "status": status,
+            "user_id": user_id,
+            "custom_id": custom_id,
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "message_id": message_id,
+            **fields,
+        }
+        if ack_error:
+            payload["ack_error"] = ack_error
+        store_card_interaction(env, interaction_id, payload)
 
-    def refuse(reason: str) -> None:
-        record("refused", reason=reason)
-        card_ephemeral(client, interaction_id, token, CARD_REFUSAL_TEXTS.get(reason, CARD_ERROR_TEXT))
+    def followup(text: str) -> None:
+        try:
+            card_ephemeral(client, token, text)
+        except FMError:
+            pass
 
+    def refuse(status: str, reason: str) -> None:
+        record(status, reason=reason)
+        followup(CARD_REFUSAL_TEXTS.get(reason, CARD_ERROR_TEXT))
+
+    try:
+        client.interaction_ack(interaction_id, token)
+    except FMError as exc:
+        ack_error = client.redact(str(exc))[:500]
+        record("ack-failed", reason=ack_error)
+
+    if not user_id:
+        # No usable identity is not the same as a known non-captain, so this must
+        # not tell the presser that only the captain may answer.
+        refuse("unidentified", "missing-user-id")
+        return
     if user_id not in cfg.captain_user_ids:
-        refuse("non-captain")
+        refuse("refused", "non-captain")
         return
     match = CARD_CUSTOM_ID_RE.fullmatch(custom_id)
     if match is None:
-        refuse("unknown-custom-id")
+        refuse("refused", "unknown-custom-id")
         return
     card_id, index = match.group(1), int(match.group(2))
     try:
         card = load_card(env, card_id)
     except FMError:
-        refuse("unreadable-card")
+        refuse("refused", "unreadable-card")
         return
     if not isinstance(card, dict):
-        refuse("unknown-card")
+        refuse("refused", "unknown-card")
         return
     if (
         str(card.get("guild_id") or "") != guild_id
         or str(card.get("channel_id") or "") != channel_id
         or str(card.get("message_id") or "") != message_id
     ):
-        refuse("card-mismatch")
+        refuse("refused", "card-mismatch")
         return
     options = card.get("options") if isinstance(card.get("options"), list) else []
     if index >= len(options) or not isinstance(options[index], dict):
-        refuse("unknown-option")
+        refuse("refused", "unknown-option")
         return
     option = options[index]
     prior = load_card_interaction(env, interaction_id)
@@ -2427,28 +2490,17 @@ def handle_card_interaction(
         if prior_status not in ("recorded", "settled"):
             record("settled", option_index=index)
         try:
-            card_defer(client, interaction_id, token)
             card_edit_original(client, token, card, suffix=card_settled_suffix(card), disabled=True)
         except FMError:
             pass
         return
     if prior_status == "chat":
-        try:
-            card_ephemeral(client, interaction_id, token, CARD_CHAT_CONFIRMATION)
-        except FMError:
-            pass
+        followup(CARD_CHAT_CONFIRMATION)
         return
     if str(option.get("action") or "") == "chat":
         # No answer is recorded: the captain will answer in the conversation.
         record("chat", option_index=index)
-        try:
-            card_ephemeral(client, interaction_id, token, CARD_CHAT_CONFIRMATION)
-        except FMError:
-            pass
-        return
-    try:
-        card_defer(client, interaction_id, token)
-    except FMError:
+        followup(CARD_CHAT_CONFIRMATION)
         return
     record("pending", option_index=index)
     code, output = run_card_option(env, str(card.get("task_id") or ""), option)
@@ -2583,14 +2635,32 @@ class ConsoleClient:
         info = self.client.request("GET", f"/channels/{channel_id}")
         return info if isinstance(info, dict) else {}
 
-    def interaction_callback(self, interaction_id: str, interaction_token: str, payload: Dict[str, Any]) -> None:
-        """Answer one interaction through its callback endpoint.
+    def interaction_ack(self, interaction_id: str, interaction_token: str) -> None:
+        """Defer the card update as the first acknowledgement of a press.
 
-        The interaction token in the path is the credential, so this path sends
-        no Authorization header and the bot token never rides it.
+        This must reach Discord before its 3-second interaction window closes, so
+        it uses a short timeout and is never retried: a retried acknowledgement
+        would arrive after Discord already reported the interaction as failed.
+        The interaction token in the path is the credential, so no Authorization
+        header rides this path.
         """
         self._interaction_request(
-            "POST", f"/interactions/{interaction_id}/{interaction_token}/callback", payload
+            "POST",
+            f"/interactions/{interaction_id}/{interaction_token}/callback",
+            {"type": CARD_CALLBACK_DEFERRED_UPDATE},
+            timeout=card_ack_timeout_seconds(),
+            retry=False,
+        )
+
+    def interaction_followup(self, interaction_token: str, payload: Dict[str, Any]) -> None:
+        """Send one follow-up message through the interaction webhook.
+
+        After the first deferred acknowledgement, a refusal or the free-form
+        option answers here rather than through a second callback, which Discord
+        would reject.
+        """
+        self._interaction_request(
+            "POST", f"/webhooks/{self.cfg.bot_user_id}/{interaction_token}", payload
         )
 
     def interaction_edit_original(self, interaction_token: str, payload: Dict[str, Any]) -> None:
@@ -2601,7 +2671,14 @@ class ConsoleClient:
             payload,
         )
 
-    def _interaction_request(self, method: str, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    def _interaction_request(
+        self,
+        method: str,
+        path: str,
+        body: Dict[str, Any],
+        timeout: Optional[float] = None,
+        retry: bool = True,
+    ) -> Dict[str, Any]:
         data = json.dumps(body).encode("utf-8")
         headers = {
             "User-Agent": live.USER_AGENT,
@@ -2609,23 +2686,28 @@ class ConsoleClient:
             "Accept": "application/json",
         }
         url = f"{self.client.base}{path}"
+        request_timeout = CARD_CALLBACK_TIMEOUT_SECONDS if timeout is None else timeout
         last_error = ""
-        for attempt in range(2):
+        for attempt in range(2 if retry else 1):
             request = urllib.request.Request(url, data=data, headers=headers, method=method)
             try:
-                with urllib.request.urlopen(request, timeout=CARD_CALLBACK_TIMEOUT_SECONDS) as response:
+                with urllib.request.urlopen(request, timeout=request_timeout) as response:
                     payload = response.read().decode("utf-8")
                     return json.loads(payload) if payload else {}
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", "replace")
                 last_error = live.redact(f"Discord interaction {method} failed with HTTP {exc.code}: {detail}", self.token)
-                if attempt == 0 and (exc.code == 429 or 500 <= exc.code < 600):
+                if retry and attempt == 0 and (exc.code == 429 or 500 <= exc.code < 600):
                     time.sleep(self.client._retry_after(detail, exc.headers))
                     continue
                 raise FMError(last_error) from exc
-            except urllib.error.URLError as exc:
-                last_error = live.redact(f"Discord interaction {method} transport failure: {exc.reason}", self.token)
-                if attempt == 0:
+            except (urllib.error.URLError, OSError) as exc:
+                reason = getattr(exc, "reason", exc)
+                last_error = live.redact(f"Discord interaction {method} transport failure: {reason}", self.token)
+                # A timed-out request is never retried: the interaction window is
+                # already closing, and a late retry could double-answer the press.
+                timed_out = isinstance(reason, (socket.timeout, TimeoutError))
+                if retry and attempt == 0 and not timed_out:
                     time.sleep(float(os.environ.get("FM_DISCORD_LIVE_RETRY_SLEEP", "1")))
                     continue
                 raise FMError(last_error) from exc
@@ -3062,14 +3144,18 @@ def handle_gateway_message(
 
 
 def handle_gateway_interaction(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", data: Dict[str, Any]) -> None:
-    """Answer one component-interaction dispatch; a card path never drops the socket."""
+    """Answer one component-interaction dispatch; a card path never drops the socket.
+
+    The presser is resolved through the shared guild/direct identity fallback
+    before any validation, and the interaction is acknowledged as the first
+    statement of the card handler so it fits Discord's 3-second window.
+    """
     if not isinstance(data, dict) or data.get("type") != CARD_INTERACTION_COMPONENT:
         return
     interaction_id = str(data.get("id") or "")
     token = str(data.get("token") or "")
     if not interaction_id or not token:
         return
-    user = data.get("user") if isinstance(data.get("user"), dict) else {}
     payload = data.get("data") if isinstance(data.get("data"), dict) else {}
     message = data.get("message") if isinstance(data.get("message"), dict) else {}
     try:
@@ -3079,7 +3165,7 @@ def handle_gateway_interaction(env: "fwl.Env", cfg: "ConsoleConfig", client: "Co
             client,
             interaction_id,
             token,
-            str(user.get("id") or ""),
+            payload_user_id(data),
             str(payload.get("custom_id") or ""),
             str(data.get("guild_id") or ""),
             str(data.get("channel_id") or ""),
@@ -3093,7 +3179,7 @@ def handle_gateway_interaction(env: "fwl.Env", cfg: "ConsoleConfig", client: "Co
         except FMError:
             pass
         try:
-            card_ephemeral(client, interaction_id, token, CARD_ERROR_TEXT)
+            card_ephemeral(client, token, CARD_ERROR_TEXT)
         except FMError:
             pass
 
