@@ -268,7 +268,7 @@ run_finding "$API_KEY" "$HOME_DIR" 20 "$FINDING_PAYLOAD" -
 reap_fake
 assert_typed_output "malformed response"
 assert_equals '"important"' "$(json_get "$TOOL_OUT" severity)" "a malformed success response keeps the default severity"
-assert_contains "$(json_get "$TOOL_OUT" reason)" 'core_error' "the reason names the core failure"
+assert_contains_any "$(json_get "$TOOL_OUT" reason)" "the reason names the core failure" 'core_error' 'defect'
 pass "malformed success response: fail-safe, exit 0"
 
 # --- an unexpected severity fails safe ---------------------------------------

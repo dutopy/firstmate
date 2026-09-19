@@ -609,6 +609,21 @@ assert_not_contains() {
   esac
 }
 
+# assert_contains_any <haystack> <msg> <needle>...: at least one needle must
+# appear in <haystack>. Used where a fail-safe reason may carry the older
+# core_error path or the unified heart's named-defect reason, and the guarantee
+# under test is that the reason names the failure, not which layer named it.
+assert_contains_any() {
+  local haystack=$1 msg=$2 needle
+  shift 2
+  for needle in "$@"; do
+    case "$haystack" in
+      *"$needle"*) return 0 ;;
+    esac
+  done
+  fail "$msg (missing any of: $*)"$'\n'"--- output ---"$'\n'"$haystack"
+}
+
 # expect_code <expected> <actual> <label>
 expect_code() {
   local expected=$1 actual=$2 label=$3

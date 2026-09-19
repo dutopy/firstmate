@@ -324,7 +324,7 @@ run_detector "$API_KEY" "$HOME_DIR" 20 '' "$STALL_FILE"
 reap_fake
 assert_typed_output "malformed response"
 assert_equals '"progressing"' "$(json_get "$TOOL_OUT" verdict)" "a malformed success response keeps the fail-safe verdict"
-assert_contains "$(json_get "$TOOL_OUT" reason)" 'core_error' "the reason names the core failure"
+assert_contains_any "$(json_get "$TOOL_OUT" reason)" "the reason names the core failure" 'core_error' 'defect'
 pass "malformed success response: fail-safe, exit 0"
 
 # --- an unexpected verdict fails safe ---------------------------------------

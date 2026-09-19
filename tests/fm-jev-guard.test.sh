@@ -198,7 +198,7 @@ run_guard "$API_KEY" "$HOME_DIR" 20 "$MERGE_PAYLOAD" --rubric merge -
 reap_fake
 assert_typed_output "malformed response"
 assert_equals '"ask_human"' "$(json_get "$GUARD_OUT" verdict)" "a malformed success response asks the human"
-assert_contains "$(json_get "$GUARD_OUT" reason)" 'core_error' "the reason names the core failure"
+assert_contains_any "$(json_get "$GUARD_OUT" reason)" "the reason names the core failure" 'core_error' 'defect'
 pass "malformed success response: ask_human, exit 0"
 
 # --- the wall-clock bound fails safe and fast ---------------------------------
