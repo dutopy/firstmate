@@ -12,9 +12,10 @@
 // Stale callbacks from a prior generation are no-ops against the active replacement.
 //
 // Delivery versus consumption (stated once here):
-// A main follow-up is delivered once Pi accepts it (sendUserMessage resolves).
-// The successor pipeline never waits for the model to read it: a follow-up
-// queued while main is streaming joins the running run without ever raising
+// A main wake is delivered once Pi accepts it (sendUserMessage resolves), and
+// its delivery mode is owned by wakeDeliveryMode below.
+// The successor pipeline never waits for the model to read it: a wake queued
+// while main is streaming joins the running run without ever raising
 // before_agent_start, so waiting on that event stalls every later close.
 // Consumption is tracked only so a replacement can replay a follow-up Pi had
 // not consumed. An idle main consumes at before_agent_start; a streaming main
@@ -262,6 +263,19 @@ function userMessageText(content: unknown): string {
     }
   }
   return parts.join("\n");
+}
+
+// A captain-inbox note is the one wake whose whole purpose is a prompt answer to
+// the captain. Delivered as a follow-up it waits for main's entire running turn
+// to finish, which the Discord console latency journal measured at hundreds of
+// seconds on a busy fleet. Delivered as steering input, Pi hands it to the
+// running run at the next LLM boundary instead, so the note is drained and
+// answered without waiting the turn out. Every other main wake keeps the
+// follow-up delivery the continuity and replacement-handoff contract was built
+// on. `check: captain inbox notes waiting:` is the watcher's fallback wording
+// when it could not read the queued payload, so both spellings must match.
+function wakeDeliveryMode(message: string): "steer" | "followUp" {
+  return /captain inbox note/.test(message) ? "steer" : "followUp";
 }
 
 function nodeErrorCode(error: unknown): string {
@@ -524,14 +538,14 @@ export default function (pi: ExtensionAPI) {
     );
     if (pending) owner.unconsumedWakes.set(pending.token, { content, pending });
     try {
-      await pi.sendUserMessage(content, { deliverAs: "followUp" });
+      await pi.sendUserMessage(content, { deliverAs: wakeDeliveryMode(message) });
     } catch (error) {
       if (pending) owner.unconsumedWakes.delete(pending.token);
       throw error;
     }
     // Accepted by Pi. A generation replaced while Pi was accepting it may
-    // have lost the follow-up with the old session, so report it undelivered
-    // and let the replacement replay the still-pending record.
+    // have lost the wake with the old session, so report it undelivered and
+    // let the replacement replay the still-pending record.
     return generationIsLive(owner);
   }
 

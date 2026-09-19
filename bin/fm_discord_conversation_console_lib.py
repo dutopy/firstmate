@@ -1284,6 +1284,10 @@ def note_body(event: Dict[str, Any]) -> str:
         "answer with: bin/fm-discord-conversation-console.sh reply --request-id "
         f"{event.get('request_id')} --text-file <answer-file>"
     )
+    # Captain chat is read on a phone, so the answer itself must be short: a few
+    # sentences of outcome, not a report. This constrains length rather than
+    # forcing it, and the reply command above is still the only reply path.
+    lines.append("keep the answer short: a few sentences of outcome, no preamble and no restated question")
     return "\n".join(lines).rstrip() + "\n"
 
 

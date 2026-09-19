@@ -811,6 +811,103 @@ CLASSES
   pass "every main-only check class still reaches main, never the supervision branch"
 }
 
+# The captain-message fast lane: a captain-inbox note is delivered as steering
+# input so a busy main run reaches it at its next LLM boundary, while every
+# other main wake keeps the follow-up delivery the continuity and
+# replacement-handoff contract was built on. Both classes are driven through
+# the real extension in one run so the choice is proven to be the message and
+# not the arm's position in the sequence.
+test_pi_captain_inbox_note_is_delivered_as_steering_input() {
+  local repo home plugin log stop out status
+  repo="$TMP_ROOT/pi-captain-note-steer-root"
+  home="$TMP_ROOT/pi-captain-note-steer-home"
+  log="$TMP_ROOT/pi-captain-note-steer.log"
+  stop="$TMP_ROOT/pi-captain-note-steer.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf '%s\n' "${FM_TEST_CAPTAIN_NOTE:?}"
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+  printf '%s\n' "${FM_TEST_OTHER_WAKE:?}"
+  exit 0
+fi
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+trap 'exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" \
+    FM_TEST_CAPTAIN_NOTE="check: captain inbox note 1700000000-loop - is the acknowledgement gone?" \
+    FM_TEST_OTHER_WAKE="check: gh auth check failed; re-authenticate before dispatch" \
+    node --input-type=module 2>&1 <<'EOF'
+import { writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const prompts = [];
+let tool = null;
+const handlers = new Map();
+const pi = {
+  on(event, handler) {
+    handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+  },
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  events: { on() {}, emit() {} },
+  // Idle main: Pi accepts the wake, raises before_agent_start with the exact
+  // text, and then the user message_start that consumes it. The delivery mode
+  // recorded here is the whole contract under test.
+  sendUserMessage: async (message, options) => {
+    prompts.push({ message, options: options ?? {} });
+    for (const handler of handlers.get("before_agent_start") ?? []) {
+      await handler({ prompt: message }, {});
+    }
+    for (const handler of handlers.get("message_start") ?? []) {
+      await handler({ message: { role: "user", content: [{ type: "text", text: message }] } }, {});
+    }
+  },
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+const armed = await tool.execute("tool-call-captain-note-steer", {}, undefined, undefined, {});
+if (!armed.details?.ok) throw new Error(`watcher did not arm: ${JSON.stringify(armed.details)}`);
+for (let i = 0; i < 500 && prompts.length < 2; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (prompts.length !== 2) {
+  throw new Error(`expected both main wakes to be delivered: ${JSON.stringify(prompts.map((p) => p.message))}`);
+}
+const note = prompts.find((p) => p.message.includes("captain inbox note"));
+const other = prompts.find((p) => p.message.includes("gh auth check failed"));
+if (!note || !other) throw new Error(`missing one of the two wakes: ${JSON.stringify(prompts.map((p) => p.message))}`);
+if (note.options.deliverAs !== "steer") {
+  throw new Error(`a captain inbox note must be steering input, got ${JSON.stringify(note.options)}`);
+}
+if (other.options.deliverAs !== "followUp") {
+  throw new Error(`a non-captain main wake must stay a follow-up, got ${JSON.stringify(other.options)}`);
+}
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+process.exit(0);
+EOF
+  )
+  status=$?
+  expect_code 0 "$status" "a captain inbox note must reach a busy main as steering input: $out"
+  [ -z "$out" ] || fail "Pi captain-note steering test printed output: $out"
+  pass "a captain inbox note is delivered as steering input while other wakes stay follow-ups"
+}
+
 # A surfaced captain-held signal uses the existing decision-owned payload, so a
 # co-present routine row cannot take the signal close away from main.
 test_pi_captain_held_signal_stays_on_main() {
@@ -3983,6 +4080,7 @@ test_pi_branch_offer_owns_actionable_wake
 test_pi_branch_offer_flags_heartbeat
 test_pi_heartbeat_is_not_ridden_into_main_by_a_co_present_check
 test_pi_main_only_check_classes_stay_on_main
+test_pi_captain_inbox_note_is_delivered_as_steering_input
 test_pi_captain_held_signal_stays_on_main
 test_pi_unread_pending_reply_forces_later_stale_alias_to_main
 test_pi_distinct_files_mixed_batch_routes_whole_batch_to_main

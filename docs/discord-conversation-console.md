@@ -150,6 +150,42 @@ The config keys are `fast_path.enabled`, `fast_path.answers`,
 `fast_path.typing`, `fast_path.classifier_command`,
 `fast_path.classifier_timeout_seconds`, and `fast_path.max_answer_chars`.
 
+## Captain-message fast lane
+
+The capture path is instant, but a captain note still has to reach Firstmate's
+session.
+On the Pi primary harness the session is often mid-turn on fleet work, and a
+wake queued as a follow-up waits for that whole turn to finish - the live
+latency journal measured stage 4 at 250-565 s on such a busy session.
+`fast_path.acknowledgement_enabled` does not change this: the acknowledgement
+is posted by the console, not by the session.
+
+A captain-inbox note wake (`check: captain inbox note ...`) is therefore
+delivered as Pi **steering input** rather than as a follow-up.
+Pi hands steering input to the running run at the next LLM boundary, so the note
+is drained and answered without waiting the turn out, while every other main
+wake keeps the follow-up delivery the continuity and replacement-handoff
+contract was built on.
+The wake itself, the durable captain-inbox note, and the durable wake queue are
+unchanged: only the moment Pi surfaces the already-durable wake moves, so a
+session replacement still replays an unconsumed wake and the poll and queue
+remain the fallback.
+This is a Pi-only behavior; another primary harness keeps its existing delivery
+until its own wake path is converted.
+Shortening the wake path itself was the rejected alternative: the watcher cycle
+that surfaces the note is the durable, fail-closed scanner, and its busy period
+is legitimate work, so cutting it would need a second delivery path or a new
+scheduling rule and would put the durable queue guarantee at risk for a smaller
+win than the delivery-mode change.
+
+## Short captain-facing answers
+
+Captain chat is read on a phone, so the reply text itself is short: a few
+sentences of outcome, not a report.
+The captain-inbox note body carries that instruction next to the exact reply
+command, so the requirement travels with the request without forcing any
+particular length on a substantive answer.
+
 ## Typing indicator
 
 A full turn can take a minute or more, so the captain should see that firstmate is
@@ -222,6 +258,9 @@ retry with the same text never posts twice.
 `--dry-run` prints the plan with no network call.
 The bot token is decrypted into process memory only and is redacted from every
 failure path; operational supervision text is refused before any publish.
+The note body asks for a short answer; see `Short captain-facing answers` above.
+The full reply path is unchanged - no model call is added and no answer is
+guessed.
 
 ## Status
 
@@ -345,6 +384,12 @@ latency report: with the local wake kick enabled a queued note is surfaced
 inside the short bound, with it disabled the note waits for the poll, and the
 `latency --json` report folds the durable watcher and inbox markers into the five
 stages.
+`tests/fm-pi-watch-extension.test.sh` pins the fast lane: a captain-inbox note
+is delivered to main as steering input while every other main wake stays a
+follow-up.
+`tests/fm-pi-fast-lane-live-e2e.test.sh` measures the busy-session delivery
+against the real installed Pi: a captain note reaches a mid-turn run at the next
+tool boundary, well before the follow-up control.
 The before and after numbers are recorded in
 [`verification/discord-console-latency.md`](verification/discord-console-latency.md).
 

@@ -222,6 +222,7 @@ assert_equals "3" "$(note_count "$H")" "one durable note per accepted captain me
 NOTES=$(cat "$H"/state/inbox/*.note)
 assert_contains "$NOTES" "Hello from the captain" "a note preserves the captain message"
 assert_contains "$NOTES" "answer with: bin/fm-discord-conversation-console.sh reply --request-id discord:$GUILD:" "a note names the exact reply command"
+assert_contains "$NOTES" "keep the answer short:" "a note asks for a short captain-facing answer"
 IGNORED_OK=$(python3 - "$H" <<'PY'
 import json, sys
 data = json.load(open(f"{sys.argv[1]}/state/discord-workspace/conversation-console/ignored.json"))

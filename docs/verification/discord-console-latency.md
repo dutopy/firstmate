@@ -73,8 +73,58 @@ back of the permanent connection itself, are recorded in a bounded
 `tests/fm-discord-conversation-console.test.sh` asserts a gateway-tagged capture
 and a recorded `gateway-fallback` gap.
 
+## The busy-session fast lane
+
+The 2026-09-18 numbers above were taken while the session happened to be idle.
+On a busy session the wake cannot reach the running turn at all while every wake
+was a follow-up, because Pi delivers a follow-up only once the run has no more
+tool calls.
+The 2026-09-19 live records, with a fleet turn under way, show stage 3 and stage
+4 both large:
+
+| measure | value |
+| --- | --- |
+| stage 3 wake (median of 11 records) | 76.8 s |
+| stage 4 session activation (median) | 406.5 s |
+| total (median) | 507.1 s |
+
+Stage 4 is the wait the captain felt: the note sat in the durable queue until the
+busy turn ended and a new turn drained it.
+
+A captain-inbox note is now delivered as Pi **steering input** instead of a
+follow-up, so Pi hands it to the running run at the next LLM boundary.
+The durable captain-inbox note, the durable wake queue, the watcher, and the
+reply path are unchanged; only the moment Pi surfaces the already-durable wake
+moves, and every other main wake keeps its follow-up delivery.
+
+Measured against the real installed Pi (`pi 0.85.1`) with the real watcher
+extension, a local fake provider whose completion asks for a short `bash` tool
+call each round, and the arm child raising one wake while that run is busy:
+
+| arm | delivery to the busy run |
+| --- | --- |
+| captain-inbox note (steering input) | 175 ms |
+| any other main wake (follow-up control) | 1306 ms |
+
+The follow-up control is the before behavior for a captain note: before the fast
+lane every wake was a follow-up, so it paid the whole run.
+The measurement is pinned by:
+
+```sh
+FM_PI_FAST_LANE_LIVE_E2E=1 bash tests/fm-pi-fast-lane-live-e2e.test.sh
+```
+
+The choice itself is pinned without a live Pi by
+`tests/fm-pi-watch-extension.test.sh`: a captain-inbox note is delivered with
+`deliverAs: "steer"`, and every other main wake with `deliverAs: "followUp"`.
+
 ## What remains slow
 
-The wake stage is sub-second and the transport is sub-second.
-The remaining latency is the turn itself, roughly 35 s here, and it is dominated
-by the session's accumulated context rather than by any transport in the chain.
+The transport and the console handling are sub-second, and the busy-session
+wait for a captain note is now the next tool boundary rather than the whole
+turn.
+Stage 3 (the watcher surfacing the note) is still bounded by the watcher's own
+cycle when the note arrives while that cycle is busy, and the turn itself is
+still dominated by the session's accumulated context.
+No transport change removes either; they are separate follow-ups from the
+delivery-mode change this record covers.

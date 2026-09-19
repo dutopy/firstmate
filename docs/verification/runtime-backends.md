@@ -2002,6 +2002,26 @@ The same guard against the pre-change extension in the same lab measured a 676.9
 Measured through the same real `fm_branch_report` tool and real `bin/` scripts with a 1 ms interval timer, the largest single block of the JavaScript thread fell from 273 ms to 2.0 ms for a routine outcome, from 286 ms to 2.0 ms for a captain outcome, and from 134 ms to 1.9 ms for main's acknowledgement, against a 1.3-2.2 ms idle-loop floor.
 Those absolute figures are specific to this host and Pi version; the guards assert the relationship (delivery must stay in the class of the same machine's own floor) rather than a remembered millisecond number.
 
+### 2026-09-19 captain-message fast lane
+
+The captain-message fast lane delivers a captain-inbox note wake as Pi steering input instead of a follow-up, so a busy main run reaches it at its next LLM boundary.
+The delivery mode is pinned portably by `tests/fm-pi-watch-extension.test.sh`; the busy-session latency is measured by the real-Pi guard below.
+
+Evidence produced 2026-09-19 on Linux, Node v26.7.0, against the installed `pi 0.85.1`.
+The guard runs the real `pi` in print mode against a local fake provider on 127.0.0.1 whose only tool call is a short local `sleep`; no credential is read, no request leaves the machine, and the captain's active session is not touched.
+
+```sh
+FM_PI_FAST_LANE_LIVE_E2E=1 bash tests/fm-pi-fast-lane-live-e2e.test.sh
+```
+
+```text
+info - captain-note steering delivery: 175 ms; non-captain follow-up control: 1306 ms (pi 0.85.1)
+ok - a captain inbox note reaches a busy real Pi run at the next tool boundary, well before the follow-up control
+```
+
+The follow-up control is the before behavior for a captain note: before the fast lane every wake was a follow-up and paid the whole run.
+The absolute figures depend on the fake run's round count and tool sleep; the guard asserts the bound and the relationship rather than a remembered millisecond number.
+
 ## Native Codex through Pi
 
 Verified on 2026-09-08 with Pi 0.85.1 and the installed `pi-codex-native` 0.2.1 adapter.
