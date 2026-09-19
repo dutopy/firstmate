@@ -13,16 +13,25 @@ Out of scope by contract: downloading from Discord (the conversation console
 owns that), any provider other than Groq, any model other than the
 captain-authorized French ``whisper-large-v3``, and persisting audio anywhere.
 
+A short question can mishear into a phonetically adjacent sentence with the
+opposite meaning, and the caller cannot tell a garbled question from a garbled
+instruction. ``transcribe_checked`` therefore reads the same audio twice - one
+extra bounded call at a different decode temperature - and reports the two
+readings' disagreement, or any failure of that second call, as uncertainty
+instead of hiding it. The first reading is always returned.
+
 Test seams: ``FM_GROQ_API_BASE`` overrides the API base URL so a suite can point
 this module at a loopback fake. It never changes what is redacted.
 """
 
 from __future__ import annotations
 
+import difflib
 import json
 import mimetypes
 import os
 import re
+import unicodedata
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -45,6 +54,18 @@ DEFAULT_PROMPT = (
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_ERROR_BYTES = 4 * 1024
 _KEY_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+# The confidence check. One extra decode of the same audio at a different
+# temperature is compared against the first reading: a genuine mishearing
+# decodes into a different sentence, while a phrase that was really heard
+# decodes the same way twice. Only audio at or under the duration bound is
+# checked, so the extra cost stays on the short phrases that mishear.
+DEFAULT_CONFIDENCE_TEMPERATURE = 0.6
+DEFAULT_CONFIDENCE_MAX_SECONDS = 30.0
+MAX_CONFIDENCE_MAX_SECONDS = 600.0
+DEFAULT_CONFIDENCE_TIMEOUT_SECONDS = 20.0
+CONFIDENCE_MIN_RATIO = 0.75
+CONFIDENCE_ALTERNATE_MAX_CHARS = 300
 
 
 class GroqError(Exception):
@@ -119,6 +140,18 @@ def validate_prompt(prompt: str) -> str:
     return prompt
 
 
+def validate_confidence_max_seconds(value: Any) -> float:
+    """The audio duration bound under which the second decoding pass is spent."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise GroqError("confidence check duration bound must be a number")
+    seconds = float(value)
+    if not 0 < seconds <= MAX_CONFIDENCE_MAX_SECONDS:
+        raise GroqError(
+            f"confidence check duration bound must be between 0 and {MAX_CONFIDENCE_MAX_SECONDS:g} seconds"
+        )
+    return seconds
+
+
 def api_base_url(configured: str = "") -> str:
     override = os.environ.get("FM_GROQ_API_BASE")
     base = (override or configured or DEFAULT_BASE_URL).strip().rstrip("/")
@@ -163,22 +196,15 @@ def encode_multipart(
     return boundary, bytes(body)
 
 
-def transcribe(
-    audio_path: Path,
-    filename: str,
+def _validated_settings(
     *,
     api_key: str,
-    model: str = DEFAULT_MODEL,
-    language: str = DEFAULT_LANGUAGE,
-    prompt: str = DEFAULT_PROMPT,
-    base_url: str = DEFAULT_BASE_URL,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> str:
-    """Return the transcript text for one audio file, or raise GroqError.
-
-    Every failure is one bounded, redacted line. The caller owns the audio file's
-    lifetime and deletes it; this function never writes the audio anywhere.
-    """
+    model: str,
+    language: str,
+    prompt: str,
+    timeout: float,
+) -> Tuple[str, str, str, str, float]:
+    """Validate one request's fixed settings, returning them normalized."""
     if not api_key or not isinstance(api_key, str):
         raise GroqError("Groq transcription is enabled but no API key is configured")
     model = validate_model(model)
@@ -186,9 +212,13 @@ def transcribe(
     prompt = validate_prompt(prompt)
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
         raise GroqError("transcription timeout must be a number")
-    timeout = float(timeout)
-    if timeout <= 0 or timeout > MAX_TIMEOUT_SECONDS:
+    seconds = float(timeout)
+    if seconds <= 0 or seconds > MAX_TIMEOUT_SECONDS:
         raise GroqError(f"transcription timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds")
+    return api_key, model, language, prompt, seconds
+
+
+def _read_audio(audio_path: Path, filename: str) -> Tuple[bytes, str]:
     path = Path(audio_path)
     try:
         audio = path.read_bytes()
@@ -196,14 +226,32 @@ def transcribe(
         raise GroqError(f"could not read the downloaded audio: {exc}") from exc
     if not audio:
         raise GroqError("the downloaded audio was empty")
-    safe_name = _safe_filename(filename)
+    return audio, _safe_filename(filename)
+
+
+def _post_audio(
+    audio: bytes,
+    safe_name: str,
+    *,
+    api_key: str,
+    model: str,
+    language: str,
+    prompt: str,
+    base_url: str,
+    timeout: float,
+    temperature: float,
+) -> str:
+    """POST one already-read audio buffer and return its transcript text.
+
+    Every failure is one bounded, redacted line, so no caller can leak the key.
+    """
     boundary, body = encode_multipart(
         [
             ("model", model),
             ("language", language),
             ("prompt", prompt),
             ("response_format", "json"),
-            ("temperature", "0"),
+            ("temperature", f"{temperature:g}"),
         ],
         "file",
         safe_name,
@@ -250,3 +298,169 @@ def transcribe(
     if not isinstance(text, str):
         raise GroqError("Groq transcription response did not contain text")
     return text
+
+
+def transcribe(
+    audio_path: Path,
+    filename: str,
+    *,
+    api_key: str,
+    model: str = DEFAULT_MODEL,
+    language: str = DEFAULT_LANGUAGE,
+    prompt: str = DEFAULT_PROMPT,
+    base_url: str = DEFAULT_BASE_URL,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> str:
+    """Return the transcript text for one audio file, or raise GroqError.
+
+    Every failure is one bounded, redacted line. The caller owns the audio file's
+    lifetime and deletes it; this function never writes the audio anywhere.
+    """
+    api_key, model, language, prompt, seconds = _validated_settings(
+        api_key=api_key, model=model, language=language, prompt=prompt, timeout=timeout
+    )
+    audio, safe_name = _read_audio(audio_path, filename)
+    return _post_audio(
+        audio,
+        safe_name,
+        api_key=api_key,
+        model=model,
+        language=language,
+        prompt=prompt,
+        base_url=base_url,
+        timeout=seconds,
+        temperature=0.0,
+    )
+
+
+def normalize_transcript(text: str) -> str:
+    """Case-, accent-, and punctuation-insensitive form, for comparing readings."""
+    decomposed = unicodedata.normalize("NFKD", text or "")
+    stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", stripped.lower()).split())
+
+
+def transcript_tokens(text: str) -> List[str]:
+    """The words of one reading, accents and punctuation already removed."""
+    return normalize_transcript(text).split()
+
+
+def transcripts_agree(primary: str, alternate: str, min_ratio: float = CONFIDENCE_MIN_RATIO) -> Tuple[bool, float]:
+    """True when two readings of one audio carry the same words.
+
+    Intentional differences (case, accents, punctuation, spacing) never count,
+    and a second reading that hears the same sentence with one word more or less
+    still agrees, because the shared words are the sentence.
+    The returned ratio is a word-level similarity, so dropping or adding a
+    function word among many keeps two readings together while a reading that
+    heard a different sentence - or far fewer words - falls well below the
+    threshold and is reported as doubt rather than averaged away.
+    """
+    first = transcript_tokens(primary)
+    second = transcript_tokens(alternate)
+    if first == second:
+        return True, 1.0
+    if not first or not second:
+        return False, 0.0
+    ratio = difflib.SequenceMatcher(None, first, second).ratio()
+    return ratio >= min_ratio, ratio
+
+
+def transcribe_checked(
+    audio_path: Path,
+    filename: str,
+    *,
+    api_key: str,
+    model: str = DEFAULT_MODEL,
+    language: str = DEFAULT_LANGUAGE,
+    prompt: str = DEFAULT_PROMPT,
+    base_url: str = DEFAULT_BASE_URL,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    check: bool = True,
+    check_max_seconds: float = DEFAULT_CONFIDENCE_MAX_SECONDS,
+    check_timeout: Optional[float] = None,
+    duration_secs: Optional[float] = None,
+    temperature: float = DEFAULT_CONFIDENCE_TEMPERATURE,
+) -> Tuple[str, Dict[str, Any]]:
+    """Transcribe one audio file, then spend one extra bounded call testing it.
+
+    Returns ``(text, confidence)``, where ``text`` is the first reading and is
+    never withheld. ``confidence`` is a small JSON-safe record whose ``status``
+    is one of ``agree``, ``disagree``, ``unavailable``, ``skipped``, or
+    ``disabled``, and whose ``uncertain`` flag is True exactly when the reading
+    must not be treated as settled: the two readings disagreed, or the check
+    itself could not complete. Both cases return the text so the caller can
+    deliver it carrying a visible marker rather than silently trusting it.
+
+    The check is one extra call, never retried, and runs only for audio at or
+    under ``check_max_seconds``. The same language and vocabulary prompt are
+    used for both readings, so the only difference is the decoding temperature.
+    """
+    api_key, model, language, prompt, seconds = _validated_settings(
+        api_key=api_key, model=model, language=language, prompt=prompt, timeout=timeout
+    )
+    audio, safe_name = _read_audio(audio_path, filename)
+    text = _post_audio(
+        audio,
+        safe_name,
+        api_key=api_key,
+        model=model,
+        language=language,
+        prompt=prompt,
+        base_url=base_url,
+        timeout=seconds,
+        temperature=0.0,
+    )
+    settings = {
+        "api_key": api_key,
+        "model": model,
+        "language": language,
+        "prompt": prompt,
+        "base_url": base_url,
+    }
+    if not check:
+        return text, {
+            "status": "disabled",
+            "uncertain": False,
+            "checked": False,
+            "reason": "the confidence check is off",
+        }
+    bound = validate_confidence_max_seconds(check_max_seconds)
+    if duration_secs is not None:
+        if isinstance(duration_secs, bool) or not isinstance(duration_secs, (int, float)):
+            raise GroqError("audio duration must be a number of seconds")
+        duration = float(duration_secs)
+        if duration > bound:
+            return text, {
+                "status": "skipped",
+                "uncertain": False,
+                "checked": False,
+                "reason": f"the audio is {duration:g}s, longer than the {bound:g}s confidence bound",
+            }
+    second_timeout = min(seconds, DEFAULT_CONFIDENCE_TIMEOUT_SECONDS) if check_timeout is None else check_timeout
+    if isinstance(second_timeout, bool) or not isinstance(second_timeout, (int, float)):
+        raise GroqError("transcription timeout must be a number")
+    second_timeout = float(second_timeout)
+    if second_timeout <= 0 or second_timeout > MAX_TIMEOUT_SECONDS:
+        raise GroqError(f"transcription timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds")
+    try:
+        alternate = _post_audio(audio, safe_name, timeout=second_timeout, temperature=temperature, **settings)
+    except GroqError as exc:
+        # The check itself failed, so the reading is unknown, not settled: keep
+        # the transcript and mark it rather than delivering it as confident.
+        return text, {
+            "status": "unavailable",
+            "uncertain": True,
+            "checked": True,
+            "reason": bounded(str(exc), 200),
+        }
+    agree, ratio = transcripts_agree(text, alternate)
+    if agree:
+        return text, {"status": "agree", "uncertain": False, "checked": True, "ratio": round(ratio, 3)}
+    return text, {
+        "status": "disagree",
+        "uncertain": True,
+        "checked": True,
+        "ratio": round(ratio, 3),
+        "alternate": bounded(alternate, CONFIDENCE_ALTERNATE_MAX_CHARS),
+    }

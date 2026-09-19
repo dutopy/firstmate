@@ -56,7 +56,7 @@ PY
 
 start_server() { # start_server <world-file> <port-file>
   setsid python3 - "$1" "$2" "$FAKE_TOKEN" "$GROQ_KEY" > "$TMP_ROOT/fake-server.log" 2>&1 <<'PY' &
-import json, sys
+import json, re, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -147,12 +147,33 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Authorization") != f"Bearer {KEY}":
                 self._send(401, {"error": {"message": "bad key " + KEY}})
                 return
+            body_text = raw.decode("utf-8", "replace")
+            fields = dict(re.findall(r'name="([A-Za-z_]+)"\r\n\r\n([^\r]*)\r\n', body_text))
+            filename = (re.search(r'filename="([^"]*)"', body_text) or [None, ""])[1]
             world["groq_calls"] = int(world.get("groq_calls", 0)) + 1
+            per_file = world.setdefault("groq_calls_by_filename", {})
+            per_file[filename] = int(per_file.get(filename, 0)) + 1
+            call_index = per_file[filename]
+            requests = world.setdefault("groq_requests", [])
+            requests.append({"filename": filename, "call": call_index,
+                             "model": fields.get("model"), "language": fields.get("language"),
+                             "prompt": fields.get("prompt"), "response_format": fields.get("response_format"),
+                             "temperature": fields.get("temperature")})
+            del requests[:-50]
             save(world)
             if int(world.get("groq_status", 200)) != 200:
-                self._send(int(world["groq_status"]), {"error": {"message": "bad audio"}})
+                self._send(int(world["groq_status"]), {"error": {"message": "bad audio " + KEY}})
+                return
+            fail_at = (world.get("groq_fail_at_call") or {}).get(filename)
+            if fail_at is not None and call_index >= int(fail_at):
+                self._send(500, {"error": {"message": "reading refused " + KEY}})
+                return
+            sequence = (world.get("groq_transcripts_by_filename") or {}).get(filename)
+            if isinstance(sequence, list) and sequence:
+                text = sequence[min(call_index - 1, len(sequence) - 1)]
             else:
-                self._send(200, {"text": world.get("transcript", "Bonjour, ceci est un test.")})
+                text = world.get("transcript", "Bonjour, ceci est un test.")
+            self._send(200, {"text": text})
             return
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
@@ -348,6 +369,47 @@ printf '%s' "$(cat "$LOG")" | grep -q "$GROQ_KEY" && fail "the transcription key
 printf '%s' "$(cat "$LOG")" | grep -q "$FAKE_TOKEN" && fail "the bot token leaked into the listener output"
 pass "a voice message is transcribed, shown, and captured without leaking a secret"
 
+# --- 1b. the configured language, model, and vocabulary prompt are sent -------
+readings=$(python3 - "$WORLD" <<'PY'
+import json, sys
+requests = [r for r in (json.load(open(sys.argv[1])).get("groq_requests") or [])
+            if r["filename"] == "voice-message.ogg"]
+if len(requests) != 2:
+    print(f"expected two readings of the channel voice message, saw {requests}")
+else:
+    first, second = requests
+    ok = (
+        first["model"] == "whisper-large-v3"
+        and first["language"] == "fr"
+        and first["response_format"] == "json"
+        and first["prompt"].startswith("Hermes, Firstmate, ProApplis")
+        and first["prompt"] == second["prompt"]
+        and second["language"] == "fr"
+        and first["temperature"] == "0"
+        and second["temperature"] != "0"
+    )
+    print("ok" if ok else f"bad:{first} {second}")
+PY
+)
+assert_equals "ok" "$readings" "the pinned model, French, and the vocabulary prompt reach every reading, and the second reading differs only in temperature"
+
+# --- 1c. agreement leaves the transcript unmarked ----------------------------
+AGREED=$(python3 - "$WORLD" "$H" "$CH" <<'PY'
+import json, os, sys
+world, home, ch = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+posts = [m["content"] for m in world.get("posts", {}).get(ch, [])]
+directory = f"{home}/state/discord-workspace/conversation-console/transcripts"
+records = [json.load(open(os.path.join(directory, name))) for name in os.listdir(directory)]
+ok_records = [r for r in records if r.get("status") == "ok"]
+assert len(ok_records) == 2, records
+assert all(r.get("confidence", {}).get("status") == "agree" for r in ok_records), ok_records
+assert "Transcription : Quel est l'etat de la flotte ?" in posts, posts
+assert not [p for p in posts if "incertaine" in p], posts
+print("ok")
+PY
+)
+assert_equals "ok" "$AGREED" "two readings that agree are delivered unmarked and recorded as agreement"
+
 # --- 2. a replay never re-transcribes or re-posts ---------------------------
 CALLS_BEFORE=$(world_get 'world["groq_calls"]')
 POSTS_BEFORE=$(world_get 'sum(len(v) for v in world.get("posts", {}).values())')
@@ -501,5 +563,144 @@ PY
 )
 assert_equals "ok" "$DISABLED" "a disabled transcription records the audio as ignored"
 pass "an explicitly disabled transcription leaves audio on the existing ignored path"
+
+# --- 6. an uncertain transcription is marked, never silently trusted --------
+# One fresh home on its own channel, so each case is one attachment with its own
+# scripted readings: agreement is delivered unmarked, a disagreement and a failed
+# second reading are marked for the captain to confirm, and a long audio is read
+# once only, so the extra call stays bounded to short phrases.
+CH2=666000000000000002
+CONF_OK=777000000000000011
+CONF_BAD=777000000000000012
+CONF_FAIL=777000000000000013
+CONF_LONG=777000000000000014
+python3 - "$WORLD" "$GUILD" "$CH2" "$CAPTAIN" "$CONF_OK" "$CONF_BAD" "$CONF_FAIL" "$CONF_LONG" <<'PY'
+import json, sys
+world_path, guild, ch2, captain = sys.argv[1:5]
+ok_id, bad_id, fail_id, long_id = sys.argv[5:9]
+world = json.load(open(world_path))
+existing = next(iter(world["messages"]))
+cdn = world["messages"][existing][0]["attachments"][0]["url"].rsplit("/cdn/", 1)[0]
+
+def audio(message_id, attachment_id, name, secs):
+    return {"id": message_id, "content": "", "author": {"id": captain}, "channel_id": ch2, "flags": 8192,
+            "attachments": [{"id": attachment_id, "filename": name, "size": 204,
+                             "url": f"{cdn}/cdn/{name}", "content_type": "audio/ogg", "duration_secs": secs}]}
+
+world["groq_status"] = 200
+world["channels"][ch2] = {"id": ch2, "type": 0, "guild_id": guild}
+world["messages"][ch2] = [
+    audio("666000000000000900", ok_id, "confidence-ok.ogg", 3.0),
+    audio("666000000000000901", bad_id, "confidence-bad.ogg", 3.0),
+    audio("666000000000000902", fail_id, "confidence-fail.ogg", 3.0),
+    audio("666000000000000903", long_id, "confidence-long.ogg", 45.0),
+]
+world["groq_transcripts_by_filename"] = {
+    # A second reading that hears the same sentence with one word more still
+    # agrees, so an ordinary decode difference is not marked as doubt.
+    "confidence-ok.ogg": ["confidence-task ou en es tu maintenant ?", "Confidence-task, ou en es tu ?"],
+    "confidence-bad.ogg": ["confidence-task, tu es a l'arret la ?", "Salut a tous !"],
+    "confidence-fail.ogg": ["confidence-task, tu es a l'ecoute ?", "confidence-task, tu es a l'ecoute ?"],
+    "confidence-long.ogg": ["confidence-task, message long", "confidence-task, message long"],
+}
+world["groq_fail_at_call"] = {"confidence-fail.ogg": 2}
+json.dump(world, open(world_path, "w"))
+PY
+
+cat > "$TMP_ROOT/fast-classifier" <<'FAKE'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '{"verdict": "fast_answer", "flag": "answer_from_records", "confidence": 0.97, "reason": "test fixture"}\n'
+FAKE
+chmod +x "$TMP_ROOT/fast-classifier"
+cat > "$TMP_ROOT/fake-crew-state" <<'FAKE'
+#!/usr/bin/env bash
+printf 'state: working \xc2\xb7 source: run-step \xc2\xb7 test fixture\n'
+FAKE
+chmod +x "$TMP_ROOT/fake-crew-state"
+export FM_CONSOLE_CREW_STATE_CMD="$TMP_ROOT/fake-crew-state"
+
+make_home h7
+CONF_CFG="$H/config/discord-conversation-console.json"
+python3 - "$CONF_CFG" "$CH2" "$TMP_ROOT/fast-classifier" <<PY
+import json, sys
+path, ch2, classifier = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.load(open(path))
+data["channels"] = [{"label": "Confidence", "guild_id": "$GUILD", "channel_id": ch2}]
+data["fast_path"]["classifier_command"] = classifier
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+PY
+touch "$H/state/confidence-task.meta"
+out=$(dc listen --config "$CONF_CFG" 2>&1) || fail "confidence listen failed: $out"
+assert_contains "$out" "captured=4" "all four confidence-case audio messages are captured"
+CONFIDENCE_OK=$(python3 - "$WORLD" "$H" "$CH2" "$GROQ_KEY" <<'PY'
+import json, os, sys
+world, home, ch2, key = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3], sys.argv[4]
+requests = world.get("groq_requests") or []
+by_name = {}
+for request in requests:
+    by_name.setdefault(request["filename"], []).append(request)
+# the two readings differ only in temperature, and never leave the French route
+temperatures = [r["temperature"] for r in by_name.get("confidence-ok.ogg", [])]
+assert temperatures == ["0", "0.6"], temperatures
+assert all(r["language"] == "fr" for r in requests), requests
+assert all(r["model"] == "whisper-large-v3" for r in requests), requests
+assert len(by_name.get("confidence-long.ogg", [])) == 1, "a long audio is read once and never checked"
+posts = [m["content"] for m in world.get("posts", {}).get(ch2, [])]
+marked = [p for p in posts if p.startswith("Transcription incertaine")]
+assert "Transcription : confidence-task ou en es tu maintenant ?" in posts, posts
+assert any("confidence-task, tu es a l'arret la ?" in p for p in marked), posts
+assert any("confidence-task, tu es a l'ecoute ?" in p for p in marked), posts
+# the fast path still answers the two settled readings, and only those
+assert posts.count("On it - checking the records.") == 2, posts
+assert len([p for p in posts if "confidence-task is in progress." in p]) == 2, posts
+notes_dir = os.path.join(home, "state", "inbox")
+notes = [open(os.path.join(notes_dir, n), encoding="utf-8").read()
+         for n in sorted(os.listdir(notes_dir)) if n.endswith(".note")]
+assert len(notes) == 2, f"exactly the two uncertain readings take the full turn, saw {len(notes)}"
+for note in notes:
+    assert "transcription-uncertain:" in note, note
+    assert "ask the captain to confirm the spoken words" in note, note
+assert len([n for n in notes if "transcription-second-reading: Salut a tous !" in n]) == 1, notes
+assert len([n for n in notes if "the second reading of the same audio failed" in n]) == 1, notes
+directory = f"{home}/state/discord-workspace/conversation-console/transcripts"
+records = [json.load(open(os.path.join(directory, name))) for name in os.listdir(directory)]
+assert sorted(r["confidence"]["status"] for r in records) == ["agree", "disagree", "skipped", "unavailable"], records
+by_status = {r["confidence"]["status"]: r["confidence"] for r in records}
+assert by_status["agree"]["uncertain"] is False and by_status["skipped"]["checked"] is False, by_status
+assert by_status["disagree"]["uncertain"] is True and by_status["unavailable"]["uncertain"] is True, by_status
+assert by_status["disagree"]["alternate"] == "Salut a tous !", by_status
+for text in notes + posts:
+    assert key not in text, "the transcription key must never reach a note or a post"
+print("ok")
+PY
+)
+assert_equals "ok" "$CONFIDENCE_OK" "agreement stays unmarked, disagreement and a failed check are marked, and a long audio is read once"
+
+# --- 6b. the comparison rule itself, at the module boundary ------------------
+RULE=$(python3 - "$ROOT" <<'PY'
+import importlib.util as util, sys
+spec = util.spec_from_file_location("whisper", f"{sys.argv[1]}/bin/fm_groq_whisper.py")
+whisper = util.module_from_spec(spec)
+spec.loader.exec_module(whisper)
+cases = [
+    # the reported mishearing, and second readings of the same sentence
+    ("Tu es a l'arret la ?", "Salut a tous !", False),
+    ("Tu es a l'arret la ?", "Tu es a l arret la", True),
+    ("Quel est l'etat de la flotte ?", "Quel etat de la flotte", True),
+    ("Vous etes arrete maintenant ?", "Vous etes arrete ?", True),
+    ("Tu es a l'arret la ?", "Tu es", False),
+    ("", "Salut", False),
+]
+bad = [case for case in cases if whisper.transcripts_agree(case[0], case[1])[0] is not case[2]]
+print("ok" if not bad else f"bad:{bad}")
+PY
+)
+assert_equals "ok" "$RULE" "the reading comparison keeps the same words together and separates a different sentence"
+CONF_LEAK=$(grep -r "$GROQ_KEY" "$H/state" 2>/dev/null | head -1 || true)
+assert_equals "" "$CONF_LEAK" "the transcription key never reaches an uncertainty record"
+CONF_STATUS=$(dc status --config "$CONF_CFG" 2>&1) || fail "confidence status failed: $CONF_STATUS"
+assert_contains "$CONF_STATUS" "transcription confidence check: on" "status reports the confidence check"
+pass "an uncertain transcription carries a visible marker into the note and the thread"
 
 echo "# all fm-discord-conversation-console-audio tests passed"

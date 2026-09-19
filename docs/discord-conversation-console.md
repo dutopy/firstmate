@@ -52,8 +52,8 @@ It names:
 - `audio`: the Discord CDN host allowlist and the size and duration bounds for an
   incoming voice message or uploaded audio attachment.
 - `transcription`: the Groq Whisper switch, the API key reference, the model, the
-  language, the vocabulary prompt, and the transcript display choice; on by
-  default.
+  language, the vocabulary prompt, the transcript display choice, and the
+  second-reading confidence check with its duration bound; on by default.
 - `bounds`: the per-pass message, thread, and retained ignored-record caps, and
   `bounds.reply_max_chars`, the hard character bound the reply path renders and
   trims every captain-facing answer to.
@@ -334,6 +334,47 @@ Transcription is on by default (`transcription.enabled`, `transcription.provider
 setting `transcription.enabled=false` turns it off, and then an audio message is
 ignored exactly as before.
 
+### Transcription confidence
+
+A short phrase can mishear into a phonetically adjacent sentence with the
+opposite meaning, and a garbled question about state is indistinguishable from a
+garbled instruction, so an unchecked transcript would be trusted rather than
+questioned.
+The transcript is therefore read twice for audio at or under
+`transcription.confidence_check_max_seconds` (default 30): the same audio, the
+same French language, and the same vocabulary prompt, decoded once more at a
+different temperature through one extra bounded call.
+Readings that agree on the words - ignoring case, accents, punctuation,
+spacing, and a word more or less - are delivered unmarked.
+Two readings that disagree mark the transcript, and so does a second call that
+fails, because an unverified reading is not a settled one.
+The first reading is always delivered: the point is to make the doubt visible,
+never to withhold or replace what was heard.
+
+An uncertain transcript reaches both readers:
+
+- the thread shows it under `Transcription incertaine - à confirmer : ` instead
+  of the ordinary prefix;
+- the durable note carries `transcription-uncertain` with the reason, the second
+  reading as `transcription-second-reading` when there was one, and the
+  instruction to have the captain confirm the spoken words before answering;
+- the fast path is skipped for it, because a record-backed answer to a question
+  the captain may not have asked is worse than a slower confirmation, so the
+  message always takes the full turn and no `On it - checking the records.`
+  acknowledgement is posted for it.
+
+The extra call is bounded: one call, no retry, only for short audio (a longer
+attachment is read once and its record says the check was skipped), and a second
+call that is slower than `min(transcription.timeout_seconds, 20)` is marked as
+unverified rather than retried or silently accepted.
+Two readings agree when their words are at least 75% similar at the word level,
+which leaves an ordinary decode difference alone and separates a reading that
+heard a different sentence.
+`transcription.confidence_check` (default on) turns the whole check off.
+The confidence record keeps only a status, the uncertainty flag, whether the
+check ran, the agreement ratio, the second reading, and a bounded redacted
+reason, so no key and no audio can reach a durable record.
+
 The temporary audio lives in one mode-0600 file under the console state, is read
 once, and is deleted before the request returns, including on every failure path.
 The transcript record keeps only text and non-secret metadata, so no audio and no
@@ -344,7 +385,9 @@ The config keys are `transcription.enabled`, `transcription.provider`,
 `transcription.model` (fixed at `whisper-large-v3`, never turbo),
 `transcription.language` (default `fr`), `transcription.prompt`,
 `transcription.base_url`, `transcription.timeout_seconds`,
-`transcription.transcript_prefix`, and `transcription.post_transcript`.
+`transcription.transcript_prefix`, `transcription.post_transcript`,
+`transcription.confidence_check`, and
+`transcription.confidence_check_max_seconds`.
 The shared `audio` section owns `max_bytes`, `max_duration_secs`,
 `delete_temporary_raw`, and `allowed_cdn_hosts`.
 A transcription is exactly once per request id: a replayed capture reuses the
@@ -531,5 +574,11 @@ the temporary audio is deleted after success and after failure, the bot token an
 the Groq key never reach durable state or the listener output, a corrupt and an
 oversized audio each produce one honest reply instead of a crash, and a disabled
 transcription leaves audio on the existing ignored path.
+It also pins the confidence check on the exact request: the model, `fr`, and the
+vocabulary prompt on every reading with only the temperature differing between
+them; agreement unmarked; a disagreement and a failed second reading each marked
+in the thread, in the note, and in the durable record, with the uncertain message
+taking the full turn while the settled readings still answer from records; and a
+long attachment read exactly once.
 The dependency contract is owned by
 [`verification/discord-console-audio-transcription.md`](verification/discord-console-audio-transcription.md).

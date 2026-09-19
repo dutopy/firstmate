@@ -108,7 +108,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -161,6 +161,14 @@ DEFAULT_TRANSCRIPTION_PROMPT = whisper.DEFAULT_PROMPT
 DEFAULT_TRANSCRIPTION_BASE_URL = whisper.DEFAULT_BASE_URL
 DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS = whisper.DEFAULT_TIMEOUT_SECONDS
 DEFAULT_TRANSCRIPTION_PREFIX = "Transcription : "
+# The visible uncertainty marker. It replaces the ordinary prefix on the posted
+# transcript and is repeated in the note, so neither the captain nor firstmate
+# can read an uncertain transcription as a settled one.
+DEFAULT_TRANSCRIPTION_UNCERTAIN_PREFIX = "Transcription incertaine - \u00e0 confirmer : "
+DEFAULT_TRANSCRIPTION_CONFIDENCE_CHECK = True
+DEFAULT_TRANSCRIPTION_CONFIDENCE_MAX_SECONDS = whisper.DEFAULT_CONFIDENCE_MAX_SECONDS
+TRANSCRIPT_CONFIDENCE_STATUSES = ("agree", "disagree", "unavailable", "skipped", "disabled")
+TRANSCRIPT_CONFIDENCE_MAX_REASON_CHARS = 200
 MAX_TRANSCRIPT_RECORDS = 5000
 
 # The fast path. The deterministic acknowledgement is posted the moment a
@@ -587,6 +595,20 @@ class ConsoleConfig:
         self.transcription_post_transcript = fwl.bool_from_path(
             raw, ["transcription.post_transcript", "transcription_post_transcript"], True
         )
+        # The confidence check costs one extra bounded call, and only on short
+        # audio, so it is on by default: a silently wrong transcript is worse
+        # than a slower one.
+        self.transcription_confidence_check = fwl.bool_from_path(
+            raw,
+            ["transcription.confidence_check", "transcription_confidence_check"],
+            DEFAULT_TRANSCRIPTION_CONFIDENCE_CHECK,
+        )
+        try:
+            self.transcription_confidence_max_seconds = whisper.validate_confidence_max_seconds(
+                tx.get("confidence_check_max_seconds", DEFAULT_TRANSCRIPTION_CONFIDENCE_MAX_SECONDS)
+            )
+        except whisper.GroqError as exc:
+            raise FMError(str(exc)) from exc
 
     @classmethod
     def load(cls, env: "fwl.Env", path_text: Optional[str]) -> "ConsoleConfig":
@@ -652,6 +674,8 @@ def sample_config() -> Dict[str, Any]:
             "timeout_seconds": DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
             "transcript_prefix": DEFAULT_TRANSCRIPTION_PREFIX,
             "post_transcript": True,
+            "confidence_check": DEFAULT_TRANSCRIPTION_CONFIDENCE_CHECK,
+            "confidence_check_max_seconds": DEFAULT_TRANSCRIPTION_CONFIDENCE_MAX_SECONDS,
         },
         "bounds": {
             "max_messages_per_channel": DEFAULT_MAX_MESSAGES,
@@ -1395,7 +1419,7 @@ def event_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
     allowed = [
         "schema", "source", "kind", "label", "guild_id", "channel_id", "parent_id",
         "thread_id", "message_id", "author_id", "external_id", "request_id", "jump_url", "timestamp",
-        "transcript",
+        "transcript", "transcript_confidence",
         "transport",
     ]
     return {key: event[key] for key in allowed if key in event}
@@ -1413,6 +1437,16 @@ def note_body(event: Dict[str, Any]) -> str:
         lines.append(f"link: {event.get('jump_url')}")
     if event.get("transcript"):
         lines.append("transcript: Groq Whisper large-v3 (fr) of the captain's audio message")
+        if transcript_is_uncertain(event):
+            confidence = event.get("transcript_confidence")
+            lines.append(f"transcription-uncertain: {transcript_uncertainty_reason(confidence)}")
+            alternate = confidence.get("alternate")
+            if isinstance(alternate, str) and alternate:
+                lines.append(f"transcription-second-reading: {alternate}")
+            lines.append(
+                "ask the captain to confirm the spoken words before answering; "
+                "do not act on a single uncertain reading"
+            )
     lines.append("")
     lines.append(str(event.get("content") or ""))
     lines.append("")
@@ -1820,7 +1854,11 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
             # The permanent connection was enabled but this message only reached
             # the console through the bounded poll; make the fallback visible.
             record_delivery_gap(env, "polling-capture", f"message {event.get('message_id')} captured by polling while the gateway was enabled")
-    if not (cfg.fast_path_enabled and cfg.live_posting_enabled) or not request_id:
+    # An uncertain transcript always takes the full turn: the fast path answers
+    # from records, and an answer to a question the captain may not have asked is
+    # worse than a slower confirmation. The marker in the note is what firstmate
+    # then asks the captain about.
+    if not (cfg.fast_path_enabled and cfg.live_posting_enabled) or not request_id or transcript_is_uncertain(event):
         note_id = handoff_event(env, event)
         if request_id:
             update_latency(env, request_id, captured_at=time.time(), note_id=note_id, path="full_turn")
@@ -1946,6 +1984,61 @@ def audio_failure_text(reason: str) -> str:
     return f"Je n'ai pas pu transcrire ce message audio : {reason}"
 
 
+def sanitize_transcript_confidence(
+    confidence: Any, redact_text: Optional[Callable[[str], str]] = None
+) -> Dict[str, Any]:
+    """Keep only the JSON-safe, non-secret fields of one confidence record.
+
+    The record describes how the transcript was checked, so it may hold only a
+    status, the flags, the agreement ratio, the second reading, and a bounded
+    redacted reason - never the key or the audio.
+    """
+    if not isinstance(confidence, dict):
+        return {}
+    record: Dict[str, Any] = {}
+    status = confidence.get("status")
+    if isinstance(status, str) and status in TRANSCRIPT_CONFIDENCE_STATUSES:
+        record["status"] = status
+    for flag in ("uncertain", "checked"):
+        value = confidence.get(flag)
+        if isinstance(value, bool):
+            record[flag] = value
+    ratio = confidence.get("ratio")
+    if isinstance(ratio, (int, float)) and not isinstance(ratio, bool):
+        record["ratio"] = round(float(ratio), 3)
+    for key, limit in (
+        ("alternate", whisper.CONFIDENCE_ALTERNATE_MAX_CHARS),
+        ("reason", TRANSCRIPT_CONFIDENCE_MAX_REASON_CHARS),
+    ):
+        value = confidence.get(key)
+        if isinstance(value, str) and value:
+            record[key] = (redact_text(value) if redact_text else value)[:limit]
+    return record
+
+
+def confidence_is_uncertain(confidence: Any) -> bool:
+    return isinstance(confidence, dict) and confidence.get("uncertain") is True
+
+
+def transcript_is_uncertain(event: Dict[str, Any]) -> bool:
+    """True when this event's transcript must not be read as settled."""
+    return confidence_is_uncertain(event.get("transcript_confidence"))
+
+
+def transcript_uncertainty_reason(confidence: Dict[str, Any]) -> str:
+    """One line of why the transcript is uncertain, for the note's reader."""
+    if confidence.get("status") == "unavailable":
+        detail = str(confidence.get("reason") or "no detail")
+        return f"the second reading of the same audio failed, so this reading is unverified ({detail})"
+    ratio = confidence.get("ratio")
+    if isinstance(ratio, (int, float)) and not isinstance(ratio, bool):
+        return (
+            "two readings of the same audio disagree "
+            f"(word agreement {float(ratio):.2f}), so the transcript may not be what was said"
+        )
+    return "two readings of the same audio disagree, so the transcript may not be what was said"
+
+
 def route_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any]) -> bool:
     """Download, transcribe, and feed one audio message through the text path.
 
@@ -1964,7 +2057,9 @@ def route_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClie
     existing = load_transcript_record(env, request_id)
     if existing is not None:
         if existing.get("status") == "ok":
-            _deliver_transcript(env, cfg, client, event, str(existing.get("text") or ""))
+            _deliver_transcript(
+                env, cfg, client, event, str(existing.get("text") or ""), existing.get("confidence")
+            )
             return True
         event["reason"] = "audio-transcription-failed"
         return False
@@ -1976,9 +2071,10 @@ def route_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClie
         _post_honest_failure(env, cfg, client, event, reason)
         event["reason"] = f"audio-transcription-failed: {reason[:120]}"
         return False
+    confidence = meta.get("confidence")
     store_transcript_record(env, request_id, {"status": "ok", "text": text, **meta})
-    _post_transcript(env, cfg, client, event, text, request_id)
-    _deliver_transcript(env, cfg, client, event, text)
+    _post_transcript(env, cfg, client, event, text, request_id, confidence)
+    _deliver_transcript(env, cfg, client, event, text, confidence)
     return True
 
 
@@ -2019,7 +2115,7 @@ def _transcribe_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "Conso
                 f"transcription is enabled but {cfg.transcription_key_env} is not set in the environment or {env.home}/.env"
             )
         try:
-            text = whisper.transcribe(
+            text, confidence = whisper.transcribe_checked(
                 tmp_path,
                 str(meta.get("filename") or "audio"),
                 api_key=api_key,
@@ -2028,6 +2124,9 @@ def _transcribe_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "Conso
                 prompt=cfg.transcription_prompt,
                 base_url=cfg.transcription_base_url,
                 timeout=cfg.transcription_timeout,
+                check=cfg.transcription_confidence_check,
+                check_max_seconds=cfg.transcription_confidence_max_seconds,
+                duration_secs=meta.get("duration_secs"),
             )
         except whisper.GroqError as exc:
             raise FMError(str(exc)) from exc
@@ -2047,6 +2146,7 @@ def _transcribe_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "Conso
         "size": meta.get("size"),
         "duration_secs": meta.get("duration_secs"),
         "audio_kind": audio_kind,
+        "confidence": sanitize_transcript_confidence(confidence, client.redact),
     }
     return record_meta, text
 
@@ -2057,23 +2157,47 @@ def validate_audio_cdn_url(url: str, cfg: "ConsoleConfig") -> str:
     return fwl.validate_discord_cdn_url(url, cfg)
 
 
-def _deliver_transcript(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any], text: str) -> None:
+def _deliver_transcript(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    client: "ConsoleClient",
+    event: Dict[str, Any],
+    text: str,
+    confidence: Any = None,
+) -> None:
+    """Feed one transcript into the shared text path, carrying its confidence.
+
+    The confidence travels with the message so the capture path can both mark
+    the transcript and refuse to answer an uncertain one from records alone.
+    """
     if not text:
         return
     text_event = dict(event)
     text_event["kind"] = "text"
     text_event["content"] = text
     text_event["transcript"] = True
+    if isinstance(confidence, dict) and confidence:
+        text_event["transcript_confidence"] = confidence
     text_event.pop("attachments", None)
     text_event.pop("flags", None)
     route_text_event(env, cfg, client, text_event)
 
 
-def _post_transcript(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", event: Dict[str, Any], text: str, request_id: str) -> None:
+def _post_transcript(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    client: "ConsoleClient",
+    event: Dict[str, Any],
+    text: str,
+    request_id: str,
+    confidence: Any = None,
+) -> None:
     """Show what was heard in the thread, once, before the answer arrives."""
     if not (cfg.transcription_post_transcript and cfg.live_posting_enabled):
         return
-    body = _safe_fast_path_text(cfg.transcription_prefix + text, cfg.fast_path_max_answer_chars)
+    uncertain = confidence_is_uncertain(confidence)
+    prefix = DEFAULT_TRANSCRIPTION_UNCERTAIN_PREFIX if uncertain else cfg.transcription_prefix
+    body = _safe_fast_path_text(prefix + text, cfg.fast_path_max_answer_chars)
     if not body:
         return
     try:
@@ -3513,6 +3637,7 @@ def cmd_config_check(args: argparse.Namespace, env: "fwl.Env") -> int:
     if cfg.transcription_enabled:
         print(f"transcription model: {cfg.transcription_model}")
         print(f"transcription language: {cfg.transcription_language}")
+        print(f"transcription confidence check: {'on' if cfg.transcription_confidence_check else 'off'}")
         print(f"transcription key reference: {cfg.transcription_key_env}")
         print(f"transcription audio bound: {cfg.audio_max_bytes} bytes, {cfg.audio_max_duration_secs:g}s")
     return 0
@@ -3839,6 +3964,7 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
         counts = transcript_counts(env)
         print(f"transcripts recorded: {counts['ok']} ok, {counts['failed']} failed")
         print(f"transcription model: {cfg.transcription_model} ({cfg.transcription_language})")
+        print(f"transcription confidence check: {'on' if cfg.transcription_confidence_check else 'off'}")
     fast_counts = fast_path_counts(env)
     print(f"fast-path acks: {fast_counts['acks']}")
     print(f"fast-path audited messages: {fast_counts['audits']}")
