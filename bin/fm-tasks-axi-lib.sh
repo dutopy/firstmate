@@ -140,6 +140,45 @@ fm_tasks_axi_backend_from_toml() {  # <toml-path>
   ' "$toml"
 }
 
+# Read the markdown adapter's configured archive path from a .tasks.toml. The
+# completion gate needs it to resolve a captain call whose answered row has been
+# pruned out of the active backlog, and the path is a [markdown] key the same
+# config surface already owns. Prints the raw configured value; the caller joins
+# a relative path against the backlog root. Returns non-zero when the file, the
+# section, or the key is absent, so the caller applies the adapter's default.
+fm_tasks_axi_markdown_archive_from_toml() {  # <toml-path>
+  local toml=$1
+  [ -f "$toml" ] || return 1
+  LC_ALL=C awk '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    BEGIN { in_markdown=0; found=0; single=sprintf("%c", 39) }
+    {
+      line=$0
+      sub(/[[:space:]]*#.*/, "", line)
+      line=trim(line)
+      if (line ~ /^\[[^]]+\]$/) {
+        in_markdown = (line == "[markdown]")
+        next
+      }
+      if (in_markdown && line ~ /^archive[[:space:]]*=/) {
+        sub(/^archive[[:space:]]*=[[:space:]]*/, "", line)
+        line=trim(line)
+        if ((substr(line, 1, 1) == "\"" && substr(line, length(line), 1) == "\"") ||
+            (substr(line, 1, 1) == single && substr(line, length(line), 1) == single)) {
+          print substr(line, 2, length(line) - 2)
+          found=1
+          exit
+        }
+      }
+    }
+    END { if (!found) exit 1 }
+  ' "$toml"
+}
+
 # Resolve the active tasks-axi backend with the same precedence as tasks-axi.
 fm_tasks_axi_backend_resolve() {  # <tasks-axi-working-directory>
   local root=$1 backend

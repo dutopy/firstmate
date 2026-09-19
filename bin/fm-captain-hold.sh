@@ -128,7 +128,8 @@
 # `--none` is an explicit semantic attestation that the just-reviewed surface
 # has no unresolved captain call, and is refused while the origin still has an
 # open keyed status decision. With a non-empty inventory, every listed task is
-# verified durable (actively captain-held, or closed with a recorded answer),
+# verified durable (actively captain-held, or closed with a recorded answer,
+# whether the answered row is still live or the Done archive pruned it),
 # the inventory is unioned idempotently into the metadata, and every still-open
 # keyed status decision is transferred to its durable owner with a
 # `captain-held [key=...]` status close naming the inventory. Later review
@@ -506,9 +507,21 @@ resolution_block() {  # <mode>
 
 # Durable state of one captain call: an active captain hold (annotations
 # surviving even when a date gate has expired) or a recorded captain answer.
+# An answered call that has aged out of the active backlog and been pruned into
+# the Done archive is equally durable, so the gate reads that archive too: a
+# markdown home keeps only `done_keep` done rows live (bin/fm-tasks-axi.sh owns
+# the configured default), and without this an attested call that the captain
+# genuinely answered becomes unverifiable the moment it is pruned, permanently
+# blocking teardown of the work that carried it.
 verify_hold_durable() {  # <task-id>
-  local id=$1 show state hold_kind body
-  task_show "$id" || fail "captain-held task $id is absent from this home's configured backlog (data directory $DATA)"
+  local id=$1 show state hold_kind body archive
+  if ! task_show "$id"; then
+    archive=$(captain_hold_done_archive)
+    if [ -n "$archive" ] && captain_hold_archive_answered "$archive" "$id"; then
+      return 0
+    fi
+    fail "captain-held task $id is absent from this home's configured backlog (data directory $DATA)"
+  fi
   show=$TASK_SHOW_OUTPUT
   state=$(show_field "$show" state)
   hold_kind=$(show_field_value "$show" hold_kind)
@@ -520,6 +533,48 @@ verify_hold_durable() {  # <task-id>
     return 0
   fi
   fail "captain-held task $id is neither held for the captain nor closed with a recorded captain answer"
+}
+
+# The Done archive beside the active markdown backlog, or empty on any other
+# backend (no archive exists to consult) or when the path cannot be resolved.
+# The configured [markdown] archive wins; absent, the adapter's tracked default
+# puts done-archive.md beside the backlog file.
+captain_hold_done_archive() {
+  local root toml configured
+  fm_backlog_tasks_axi_addressing "$DATA" >/dev/null 2>&1 || return 0
+  root=$FM_BACKLOG_AXI_ROOT
+  [ -n "$FM_BACKLOG_AXI_FILE" ] || return 0
+  toml="$root/.tasks.toml"
+  if ! configured=$(fm_tasks_axi_markdown_archive_from_toml "$toml"); then
+    configured=''
+  fi
+  [ -n "$configured" ] || configured=data/done-archive.md
+  case "$configured" in
+    /*) : ;;
+    *) configured="$root/$configured" ;;
+  esac
+  [ -f "$configured" ] && [ ! -L "$configured" ] || return 0
+  printf '%s\n' "$configured"
+}
+
+# 0 only when the Done archive carries this id as a captain call with a recorded
+# resolution. The caller has already proved the id is absent from the active
+# backlog; this never reads the active file, so an ordinary archived done row
+# with no captain hold or no recorded answer is not accepted.
+captain_hold_archive_answered() {  # <archive> <id>
+  local archive=$1 id=$2 row
+  [ -f "$archive" ] && [ ! -L "$archive" ] && [ -s "$archive" ] || return 1
+  row=$(LC_ALL=C awk -v id="$id" '
+    index($0, "- [x] " id " ") == 1 { print; grabbing=1; next }
+    grabbing && (index($0, "- [") == 1 || index($0, "## ") == 1) { grabbing=0 }
+    grabbing { print }
+  ' "$archive") || return 1
+  [ -n "$row" ] || return 1
+  case "$row" in
+    *"(hold-kind: captain)"*) : ;;
+    *) return 1 ;;
+  esac
+  body_has_resolution_record "$row"
 }
 
 # --- migrated legacy-id resolution on the Beads backend ---------------------
@@ -719,11 +774,22 @@ resolve_migrated_entry() {  # <origin-or-empty> <entry>
 # beads backend - the migrated row the markdown-to-beads hold migration wrote.
 # Prints "<resolved id> <how>", where <how> is exact, legacy, migrated-note or
 # migrated-prefix, so a caller can record which evidence carried the attestation.
-resolve_entry() {  # <origin-or-empty> <entry>; prints "<id> <how>" or fails
-  local origin=$1 entry=$2 legacy migrated rc
+# The optional third argument additionally accepts a captain call whose answered
+# row the active backlog has pruned to the Done archive. The keyed-answer intake
+# deliberately keeps the active-only contract, because an archived row cannot be
+# answered where it no longer lives; the completion gate opts in.
+resolve_entry() {  # <origin-or-empty> <entry> [allow-archive]; prints "<id> <how>" or fails
+  local origin=$1 entry=$2 legacy migrated rc archive allow_archive=${3:-0}
   if task_show "$entry"; then
     printf '%s exact' "$entry"
     return 0
+  fi
+  if [ "$allow_archive" = 1 ]; then
+    archive=$(captain_hold_done_archive)
+    if [ -n "$archive" ] && captain_hold_archive_answered "$archive" "$entry"; then
+      printf '%s archived' "$entry"
+      return 0
+    fi
   fi
   if [ -n "$origin" ] && [ "$origin" != "$BINDING_ANY" ]; then
     legacy=$(legacy_hold_id "$origin" "$entry")
@@ -794,7 +860,7 @@ write_hold_set_stamp() {  # <task-id> <shown-body> <timestamp> <preserve-existin
 # attestation evidence.
 verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how>"
   local origin=$1 entry=$2 resolved resolve_status=0
-  resolved=$(resolve_entry "$origin" "$entry") || resolve_status=$?
+  resolved=$(resolve_entry "$origin" "$entry" 1) || resolve_status=$?
   if [ "$resolve_status" -ne 0 ]; then
     [ "$resolve_status" -ne 124 ] \
       || fail "the backlog backend exceeded its read bound resolving $entry"

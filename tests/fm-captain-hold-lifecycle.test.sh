@@ -295,6 +295,59 @@ write_scout_with_attested_inventory() {  # <home> <scout-id> <keys>
   printf '# Report\n\nThe investigation finished.\n' > "$home/data/$scout/report.md"
 }
 
+# A markdown home keeps only `done_keep` done rows live; tasks-axi prunes the
+# rest into done-archive.md. An attested captain call the captain really
+# answered must stay verifiable there, or a scout whose only remaining call is
+# that one can never be torn down. The completion gate reads the archive, while
+# a pruned row that is not a recorded captain answer still refuses.
+test_verify_resolves_an_answered_call_pruned_to_the_archive() {
+  local home scout held
+  home=$(make_home archive-answered-call)
+  held=sample-archived-call
+  scout=sample-archive-scout
+  run_captain "$home" hold "$held" --title "Choose the archive route" \
+    --reason "captain route choice pending" --repo sample >/dev/null \
+    || fail "could not register the archived-call fixture"
+  printf 'Take the north route.\n' > "$home/archive-answer.txt"
+  run_captain "$home" answer "$held" --decision-file "$home/archive-answer.txt" >/dev/null \
+    || fail "could not answer the archived-call fixture"
+  tasks_in "$home" prune --keep 0 >/dev/null 2>&1 \
+    || fail "could not prune the answered call into the Done archive"
+  assert_no_grep "$held" "$home/data/backlog.md" \
+    "the answered call stayed in the active backlog after pruning"
+  assert_grep "$held" "$home/data/done-archive.md" \
+    "the answered call did not reach the Done archive"
+
+  write_scout_with_attested_inventory "$home" "$scout" "$held"
+  run_captain "$home" verify "$scout" >/dev/null \
+    || fail "verify did not resolve an answered call pruned to the Done archive"
+  pass "verify resolves a recorded answer pruned to the Done archive"
+}
+
+test_verify_refuses_a_pruned_row_without_a_recorded_answer() {
+  local home scout plain closed
+  home=$(make_home archive-unanswered)
+  scout=sample-plain-scout
+  plain=sample-plain-done
+  closed=sample-closed-call
+  tasks_in "$home" add "$plain" "Ordinary completed work" --kind ship --repo sample >/dev/null \
+    || fail "could not create the plain done fixture"
+  tasks_in "$home" "done" "$plain" >/dev/null || fail "could not complete the plain done fixture"
+  run_captain "$home" hold "$closed" --title "Closed without an answer" \
+    --reason "captain call closed by hand, no recorded answer" --repo sample >/dev/null \
+    || fail "could not create the closed-call fixture"
+  tasks_in "$home" "done" "$closed" >/dev/null || fail "could not close the held row by hand"
+  tasks_in "$home" prune --keep 0 >/dev/null 2>&1 || fail "could not prune the negative fixtures"
+  assert_grep "$plain" "$home/data/done-archive.md" "the plain done row did not reach the archive"
+  assert_grep "$closed" "$home/data/done-archive.md" "the closed hold did not reach the archive"
+
+  write_scout_with_attested_inventory "$home" "$scout" "$plain,$closed"
+  if run_captain "$home" verify "$scout" >/dev/null 2>&1; then
+    fail "verify accepted a pruned row that is not a recorded captain answer"
+  fi
+  pass "verify refuses a pruned row without a recorded captain answer"
+}
+
 test_verify_resolves_a_hold_migrated_to_beads_notes() {
   local fixture home beads scout
   require_tasks_axi_beads "verify against a beads-migrated hold" || return 0
@@ -4035,6 +4088,8 @@ test_merge_entrypoints_refuse_a_reused_task_incarnation
 test_merge_entrypoints_serialize_forced_teardown_before_task_reads
 test_released_merge_passes_the_entrypoint_and_lands
 test_teardown_refuses_a_ship_when_the_captain_hold_cannot_be_read
+test_verify_resolves_an_answered_call_pruned_to_the_archive
+test_verify_refuses_a_pruned_row_without_a_recorded_answer
 test_verify_resolves_a_hold_migrated_to_beads_notes
 test_verify_resolves_a_hold_migrated_under_the_configured_prefix
 test_marker_noted_row_wins_over_a_prefix_namesake

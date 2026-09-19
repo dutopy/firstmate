@@ -103,6 +103,59 @@ run_teardown() {  # <case> <id> [--force]
 
 # --- (a) the settled shared slot is released once -----------------------------
 
+# The slot's landed proof runs with the tearing-down task's own mode first. A
+# scout carries no delivery mode and so defaults to no-mistakes, whose landed
+# proof prefers origin/<default>; a local-only delivery that landed on the LOCAL
+# default branch in a project with no remote refused under that proof forever.
+# The shared-slot check therefore retries with the local-only proof and accepts
+# either, so a scout sharing a slot whose work is fully on local main releases.
+test_scout_mode_sharing_a_local_only_landed_slot_releases() {
+  local dir a=local-scout-a b=shared-ship-b rc
+  dir=$(make_case scout-local-only-slot)
+  mark_case_as_treehouse_pool "$dir"
+  # Give the project an origin whose main lags local main, so the no-mistakes
+  # landed proof (origin/<default>) genuinely cannot see the landing while the
+  # local-only proof (local main) can.
+  git init -q --bare "$dir/origin.git"
+  git -C "$dir/project" remote add origin "$dir/origin.git"
+  git -C "$dir/project" push -q origin main
+  git -C "$dir/wt" checkout -q -b fm/landed-local-only
+  printf 'landed local-only change\n' > "$dir/wt/change.txt"
+  git -C "$dir/wt" add change.txt
+  git -C "$dir/wt" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm 'landed local-only change'
+  git -C "$dir/project" branch -f main fm/landed-local-only
+  fm_write_meta "$dir/home/state/$a.meta" \
+    "window=firstmate:fm-$a" "endpoint_task_id=$a" \
+    "worktree=$dir/wt" "project=$dir/project" "harness=pi" \
+    "kind=scout" "yolo=off" "spawn_gen=fixture-$a"
+  fm_write_meta "$dir/home/state/$b.meta" \
+    "window=firstmate:fm-$b" "endpoint_task_id=$b" \
+    "worktree=$dir/wt" "project=$dir/project" "harness=pi" \
+    "kind=ship" "mode=local-only" "yolo=off" "spawn_gen=fixture-$b"
+  printf 'done: report written\n' > "$dir/home/state/$a.status"
+  printf 'done: ready on local main\n' > "$dir/home/state/$b.status"
+  write_data_report "$dir" "$a"
+  cp "$ROOT/.tasks.toml" "$dir/home/.tasks.toml"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/home/data/backlog.md"
+  (cd "$dir/home" && tasks-axi add "$a" "Scout work sharing the slot" \
+    --kind scout --repo "$dir/project" >/dev/null) \
+    || fail "could not create the scout's backlog row"
+  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" \
+    FM_DATA_OVERRIDE="$dir/home/data" FM_CONFIG_OVERRIDE="$dir/home/config" \
+    "$ROOT/bin/fm-captain-hold.sh" complete "$a" --none >/dev/null 2>&1 \
+    || fail "could not attest the scout's empty captain-call inventory"
+  set +e
+  run_teardown "$dir" "$a" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "a scout sharing a local-only landed slot still refused: $(cat "$dir/stderr")"
+  [ "$(grep -c 'treehouse <return>' "$dir/runtime.log" || true)" = 1 ] \
+    || fail "the settled slot was not returned exactly once: $(cat "$dir/runtime.log")"
+  assert_present "$dir/home/data/$a/report.md" "the settlement removed the scout's outside report"
+  pass "fm-teardown: a default-mode scout sharing a slot landed on local main releases"
+}
+
 test_settled_shared_slot_releases_and_records() {
   local dir a=shared-a b=shared-b rc
   dir=$(make_case settled)
@@ -361,6 +414,8 @@ test_scout_deliverable_outside_still_settles() {
   assert_present "$dir/home/data/$b/report.md" "the settlement removed the scout's outside report"
   pass "fm-teardown: a co-owner deliverable recorded outside the copy still settles"
 }
+
+test_scout_mode_sharing_a_local_only_landed_slot_releases
 
 test_settled_shared_slot_releases_and_records
 test_coowner_teardown_skips_an_already_returned_slot

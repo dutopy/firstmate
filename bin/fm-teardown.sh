@@ -2395,6 +2395,20 @@ shared_worktree_slot_is_landed() {  # <slot>
   local WT=$slot KIND=ship
   local FORCE='' PR_URL=''
   local TEARDOWN_WORKTREE_BRANCH_FOR_SAFETY=''
+  # The slot's landed delivery is not necessarily the tearing-down task's: a
+  # shared slot holds whichever task last claimed it, and this caller may be a
+  # scout whose own mode defaults to no-mistakes. A local-only delivery lands on
+  # the LOCAL default branch, which the ordinary rule never consults
+  # (content_in_default prefers origin/<default>), so a copy whose work is fully
+  # on local main would refuse here as unlanded forever. Both rules prove the
+  # same thing - returning the copy would lose nothing - so accept either, and
+  # report the refusal only when both refused. The local-only rule is strictly
+  # the stronger proof for that case (reachability from the local default branch
+  # rather than tree equality), so this only widens acceptance.
+  if out=$(validate_worktree_teardown_safety 2>&1); then
+    return 0
+  fi
+  local MODE=local-only
   if out=$(validate_worktree_teardown_safety 2>&1); then
     return 0
   fi
