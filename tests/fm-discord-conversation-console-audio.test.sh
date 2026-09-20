@@ -703,4 +703,74 @@ CONF_STATUS=$(dc status --config "$CONF_CFG" 2>&1) || fail "confidence status fa
 assert_contains "$CONF_STATUS" "transcription confidence check: on" "status reports the confidence check"
 pass "an uncertain transcription carries a visible marker into the note and the thread"
 
+# --- 7. an uploaded audio file takes the voice message's transcription path --
+# The captain can send an audio file rather than a Discord voice message: the
+# message carries no voice flag, only one supported audio attachment and no
+# caption. It must be downloaded, transcribed, shown, and captured on the same
+# path, and the durable record must name which of the two kinds it was.
+CH3=666000000000000003
+UPLOAD_ID=777000000000000021
+MULTI_A=777000000000000022
+MULTI_B=777000000000000023
+python3 - "$WORLD" "$GUILD" "$CH3" "$CAPTAIN" "$UPLOAD_ID" "$MULTI_A" "$MULTI_B" <<'PY'
+import json, sys
+(world_path, guild, ch3, captain, upload_id, multi_a, multi_b) = sys.argv[1:8]
+world = json.load(open(world_path))
+existing = next(iter(world["messages"]))
+cdn = world["messages"][existing][0]["attachments"][0]["url"].rsplit("/cdn/", 1)[0]
+
+def upload_attachment(att_id, name):
+    return {"id": att_id, "filename": name, "size": 204, "url": f"{cdn}/cdn/{name}",
+            "content_type": "audio/ogg", "duration_secs": 4.0}
+
+world["groq_status"] = 200
+world["channels"][ch3] = {"id": ch3, "type": 0, "guild_id": guild}
+world["messages"][ch3] = [
+    {"id": "666000000000001000", "content": "", "author": {"id": captain}, "channel_id": ch3,
+     "flags": 0, "attachments": [upload_attachment(upload_id, "note-vocale.ogg")]},
+    {"id": "666000000000001001", "content": "", "author": {"id": captain}, "channel_id": ch3,
+     "flags": 0, "attachments": [upload_attachment(multi_a, "a.ogg"), upload_attachment(multi_b, "b.ogg")]},
+]
+world.setdefault("groq_transcripts_by_filename", {})["note-vocale.ogg"] = ["fichier audio importe"]
+json.dump(world, open(world_path, "w"))
+PY
+make_home h8
+UPLOAD_CFG="$H/config/discord-conversation-console.json"
+python3 - "$UPLOAD_CFG" "$CH3" <<PY
+import json, sys
+path, ch3 = sys.argv[1], sys.argv[2]
+data = json.load(open(path))
+data["channels"] = [{"label": "Uploads", "guild_id": "$GUILD", "channel_id": ch3}]
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+PY
+out=$(dc listen --config "$UPLOAD_CFG" 2>&1) || fail "uploaded-audio listen failed: $out"
+assert_contains "$out" "captured=1" "an uploaded audio file is transcribed and captured"
+assert_contains "$out" "ignored=1" "a caption-less message with two audio files is refused, not crashed"
+UPLOAD_OK=$(python3 - "$WORLD" "$H" "$CH3" <<'PY'
+import json, os, sys
+world, home, ch3 = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+posts = [m["content"] for m in world.get("posts", {}).get(ch3, [])]
+assert "Transcription : fichier audio importe" in posts, posts
+directory = f"{home}/state/discord-workspace/conversation-console/transcripts"
+records = [json.load(open(os.path.join(directory, n))) for n in os.listdir(directory)]
+ok = [r for r in records if r.get("status") == "ok"]
+assert len(ok) == 1, records
+assert ok[0]["audio_kind"] == "audio-upload", ok
+assert ok[0]["text"] == "fichier audio importe", ok
+failed = [r for r in records if r.get("status") == "failed"]
+assert len(failed) == 1, records
+assert "exactly one supported audio attachment" in failed[0]["reason"], failed
+assert any("Je n'ai pas pu transcrire" in p for p in posts), posts
+notes_dir = os.path.join(home, "state", "inbox")
+notes = [open(os.path.join(notes_dir, n), encoding="utf-8").read()
+         for n in sorted(os.listdir(notes_dir)) if n.endswith(".note")]
+assert len(notes) == 1 and "fichier audio importe" in notes[0], notes
+print("ok")
+PY
+)
+assert_equals "ok" "$UPLOAD_OK" "the uploaded audio is transcribed once and recorded as an upload, and a two-file message fails honestly"
+UPLOAD_LEAK=$(grep -r "$FAKE_TOKEN\|$GROQ_KEY" "$H/state" 2>/dev/null | head -1 || true)
+assert_equals "" "$UPLOAD_LEAK" "the uploaded-audio path leaks no token and no transcription key"
+pass "an uploaded audio file takes the same transcription path as a voice message"
+
 echo "# all fm-discord-conversation-console-audio tests passed"
