@@ -13,6 +13,7 @@
 #   fm-discord-session-mirror.sh sample-config
 #   fm-discord-session-mirror.sh config-check [--config <json>]
 #   fm-discord-session-mirror.sh report [--config <json>] [--task <id>]...
+#   fm-discord-session-mirror.sh ensure [--config <json>] [--dry-run]
 #   fm-discord-session-mirror.sh sync [--config <json>] [--task <id>]... [--dry-run]
 #   fm-discord-session-mirror.sh artifact [--config <json>] --task <id> --kind <report|patch|pr|livrable|rapport|lien|test> --title <t> --body-file <f> [--dry-run]
 #   fm-discord-session-mirror.sh request [--config <json>] --thread <id> [--text-file <f>] [--dry-run]
@@ -20,9 +21,13 @@
 #
 # The config file is local and non-secret: config/discord-session-mirror.json
 # by default, or --config. It owns the project-to-forum mapping, the forum tag
-# vocabulary, and the reconciled-state-to-tag table; none of those live in
-# code. Every write is refused unless the config enables live.posting, and
-# `report` never contacts Discord at all.
+# vocabulary, the reconciled-state-to-tag table, and the refused guilds; none of
+# those live in code. Every write is refused unless the config enables
+# live.posting, and `report` never contacts Discord at all.
+# `ensure` reconciles the live preconditions a webhook transport cannot
+# establish for itself - the forum tags the contract requires and one webhook per
+# target forum - writes the resulting non-secret ids back to the config, and
+# records the exact undo of every live change.
 # The bot token follows the existing Firstmate Discord convention: it is
 # decrypted from the configured config/*.sops.yaml secret file into process
 # memory only, via the same owner as bin/fm-discord-live.sh, and is redacted

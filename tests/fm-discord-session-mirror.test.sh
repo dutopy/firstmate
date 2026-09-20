@@ -94,6 +94,10 @@ class Handler(BaseHTTPRequestHandler):
         elif len(parts) == 4 and parts[0] == "guilds" and parts[2:] == ["threads", "active"]:
             guild = parts[1]
             self._send(200, {"threads": [t for t in world.get("threads", []) if t.get("guild_id") == guild]})
+        elif len(parts) == 3 and parts[0] == "guilds" and parts[2] == "webhooks":
+            self._send(200, [h for h in world.get("webhooks", []) if h.get("guild_id") == parts[1]])
+        elif len(parts) == 2 and parts[0] == "guilds":
+            self._send(200, {"id": parts[1], "name": world.get("guild_names", {}).get(parts[1], "Guild")})
         elif len(parts) == 5 and parts[2] == "threads" and parts[3] == "archived" and parts[4] == "public":
             self._send(200, {"threads": [t for t in world.get("threads", []) if t.get("parent_id") == parts[1] and t.get("archived")]})
         elif len(parts) == 2 and parts[0] == "channels":
@@ -124,7 +128,28 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._send(401, {"message": "Unauthorized"})
             return
-        if len(parts) == 3 and parts[0] == "channels" and parts[2] == "threads":
+        if len(parts) == 3 and parts[0] == "channels" and parts[2] == "webhooks":
+            channel = next((c for c in world.get("channels", []) if c["id"] == parts[1]), None)
+            if channel is None:
+                self._send(404, {"message": "Unknown Channel"})
+                return
+            if not body.get("name"):
+                self._send(400, {"message": "name is required"})
+                return
+            world["counter"] = int(world.get("counter", 930000000000000000)) + 1
+            webhook = {
+                "id": str(world["counter"]),
+                "guild_id": channel.get("guild_id"),
+                "channel_id": parts[1],
+                "name": body["name"],
+                "token": "faketoken-created-%s" % world["counter"],
+                "type": 1,
+            }
+            world.setdefault("webhooks", []).append(webhook)
+            world["webhook_creates"] = int(world.get("webhook_creates", 0)) + 1
+            save(world)
+            self._send(200, webhook)
+        elif len(parts) == 3 and parts[0] == "channels" and parts[2] == "threads":
             forum = next((c for c in world.get("channels", []) if c["id"] == parts[1]), None)
             if forum is None:
                 self._send(404, {"message": "Unknown Channel"})
@@ -188,15 +213,34 @@ class Handler(BaseHTTPRequestHandler):
             self._send(401, {"message": "Unauthorized"})
             return
         if len(parts) == 2 and parts[0] == "channels":
+            # A thread is also listed as a channel, so the thread lookup wins:
+            # applied_tags belongs to the thread, available_tags to the forum.
             thread = next((t for t in world.get("threads", []) if t["id"] == parts[1]), None)
-            if thread is None:
+            if thread is not None:
+                if "applied_tags" in body:
+                    thread["applied_tags"] = list(body["applied_tags"] or [])
+                    world["tag_patches"] = int(world.get("tag_patches", 0)) + 1
+                save(world)
+                self._send(200, thread)
+                return
+            channel = next((c for c in world.get("channels", []) if c["id"] == parts[1]), None)
+            if channel is None:
                 self._send(404, {"message": "Unknown Channel"})
                 return
-            if "applied_tags" in body:
-                thread["applied_tags"] = list(body["applied_tags"] or [])
-                world["tag_patches"] = int(world.get("tag_patches", 0)) + 1
+            if "available_tags" in body:
+                merged = []
+                for item in body["available_tags"] or []:
+                    if not isinstance(item, dict) or not item.get("name"):
+                        continue
+                    if item.get("id"):
+                        merged.append({"id": str(item["id"]), "name": str(item["name"])})
+                    else:
+                        world["counter"] = int(world.get("counter", 930000000000000000)) + 1
+                        merged.append({"id": str(world["counter"]), "name": str(item["name"])})
+                channel["available_tags"] = merged
+                world["channel_tag_patches"] = int(world.get("channel_tag_patches", 0)) + 1
             save(world)
-            self._send(200, thread)
+            self._send(200, channel)
         elif len(parts) == 4 and parts[0] == "channels" and parts[2] == "messages":
             message = next((m for m in world.get("messages", {}).get(parts[1], []) if m["id"] == parts[3]), None)
             if message is None:
@@ -388,7 +432,11 @@ new_world() {
   ],
   "threads": [],
   "messages": {},
+  "webhooks": [],
+  "guild_names": {"$GUILD": "Hermes", "$OTHER_GUILD": "Other Guild"},
   "thread_creates": 0,
+  "webhook_creates": 0,
+  "channel_tag_patches": 0,
   "tag_patches": 0,
   "edits": 0,
   "posts": 0,
@@ -970,3 +1018,105 @@ printf '%s' "$SOPS_OUT" | grep -q 'Traceback' && fail "a missing decryption tool
 pass "a missing decryption tool is one bounded, actionable line"
 
 echo "fm-discord-session-mirror tests passed"
+# --- 20. ensure reconciles the live preconditions a webhook cannot create -----
+new_world
+new_home c20
+add_task m-one "$TMP_ROOT/project"
+set_state m-one working
+CFG="$H/config/discord-session-mirror.json"
+
+out=$(mirror ensure --config "$CFG" --dry-run 2>&1) || fail "ensure dry-run failed: $out"
+assert_contains "$out" "webhook=missing" "the dry-run plan names the missing webhook"
+assert_contains "$out" "dry-run: no tag, webhook, config, or Discord write was made" "the dry-run declares its bound"
+[ "$(world_get webhook_creates)" = "0" ] || fail "a dry-run created a webhook"
+[ "$(world_get channel_tag_patches)" = "0" ] || fail "a dry-run patched a channel"
+python3 - "$CFG" <<'PY' || fail "a dry-run rewrote the config"
+import json, sys
+data = json.load(open(sys.argv[1]))
+assert "tag_ids" not in data["projects"]["atelier"], data["projects"]["atelier"]
+PY
+pass "ensure --dry-run prints the plan and writes nothing"
+
+out=$(mirror ensure --config "$CFG" 2>&1) || fail "ensure failed: $out"
+assert_contains "$out" "created tag(s)" "ensure reports the created tags"
+assert_contains "$out" "webhook" "ensure reports the webhooks"
+assert_contains "$out" "undo: Discord REST DELETE /webhooks/" "the undo names the webhook deletion"
+assert_contains "$out" "undo: cp " "the undo names the config restore"
+[ "$(world_get webhook_creates)" = "3" ] || fail "ensure created $(world_get webhook_creates) webhooks instead of 3"
+[ "$(world_get channel_tag_patches)" = "1" ] || fail "ensure patched $(world_get channel_tag_patches) channels instead of 1"
+python3 - "$CFG" "$H/config/discord-webhooks.json" "$WORLD" "$TAG_SESSION" "$TAG_TERMINE" "$TAG_ART_REPORT" "$FORUM_B" <<'PY' || fail "ensure did not reconcile the tags, the ids, and the webhook file"
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+hooks = json.load(open(sys.argv[2]))["webhooks"]
+world = json.load(open(sys.argv[3]))
+expected = ["actif", "bloque", "en-attente", "session", "termine", "worktree"]
+atelier = cfg["projects"]["atelier"]
+assert sorted(atelier["tag_ids"]) == expected, atelier["tag_ids"]
+assert atelier["tag_ids"]["session"] == sys.argv[4], atelier["tag_ids"]
+assert atelier["tag_ids"]["termine"] == sys.argv[5], atelier["tag_ids"]
+assert atelier["artifact_tags"]["report"] == sys.argv[6], atelier["artifact_tags"]
+assert sorted(cfg["projects"]["other"]["tag_ids"]) == expected, cfg["projects"]["other"]
+forum_b = next(c for c in world["channels"] if c["id"] == sys.argv[7])
+assert sorted(t["name"] for t in forum_b["available_tags"]) == expected, forum_b["available_tags"]
+assert len(hooks) == 3, hooks
+assert len({(h["kind"], h["channel_id"]) for h in hooks}) == 3, hooks
+assert all(h["url"].startswith("https://discord.com/api/v10/webhooks/") for h in hooks), hooks
+assert all(h["webhook_id"] == h["url"].split("/")[6] for h in hooks), hooks
+PY
+ls "$H"/state/discord-workspace/session-mirror/ensure/*.json >/dev/null 2>&1 || fail "ensure wrote no undo journal"
+ls "$H"/config/discord-session-mirror.json.pre-ensure-* >/dev/null 2>&1 || fail "ensure wrote no config backup"
+pass "ensure creates the declared tags, writes the ids back, and files one webhook per forum"
+
+out=$(mirror ensure --config "$CFG" 2>&1) || fail "second ensure failed: $out"
+assert_contains "$out" "already satisfies the mirror contract; nothing to do" "a second ensure is a no-op"
+[ "$(world_get webhook_creates)" = "3" ] || fail "a second ensure created another webhook"
+[ "$(world_get channel_tag_patches)" = "1" ] || fail "a second ensure patched another channel"
+pass "ensure is idempotent across passes"
+
+# --- 21. a refused guild cannot be reached by any command --------------------
+new_world
+new_home c21
+python3 - "$H/config/discord-session-mirror.json" "$OTHER_GUILD" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["refused_guild_ids"] = {sys.argv[2]: "client guild - never touch"}
+json.dump(data, open(sys.argv[1], "w"))
+PY
+out=$(mirror config-check --config "$H/config/discord-session-mirror.json" 2>&1) && fail "a refused guild was accepted" || true
+assert_contains "$out" "is a refused guild" "the refusal is enforced at config load"
+assert_contains "$out" "client guild - never touch" "the recorded reason is printed"
+out=$(mirror ensure --config "$H/config/discord-session-mirror.json" 2>&1) && fail "ensure ran against a refused guild" || true
+assert_contains "$out" "is a refused guild" "every command refuses a refused guild"
+[ "$(world_get webhook_creates)" = "0" ] || fail "a refused guild was contacted"
+pass "a refused guild is refused at config load, so no command can reach it"
+
+# --- 22. ensure refuses a forum that would pass Discord's tag cap ------------
+new_world
+new_home c22
+python3 - "$WORLD" "$FORUM_B" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+forum = next(c for c in world["channels"] if c["id"] == sys.argv[2])
+forum["available_tags"] = [{"id": str(920000000000000000 + i), "name": "tag%d" % i} for i in range(20)]
+json.dump(world, open(sys.argv[1], "w"))
+PY
+out=$(mirror ensure --config "$H/config/discord-session-mirror.json" 2>&1) && fail "an over-cap forum was patched" || true
+assert_contains "$out" "20-tag cap" "the tag cap is named"
+[ "$(world_get channel_tag_patches)" = "0" ] || fail "an over-cap forum was patched"
+[ "$(world_get webhook_creates)" = "0" ] || fail "an over-cap forum left a partial reconciliation"
+pass "ensure refuses the whole pass when one forum cannot satisfy the contract"
+
+# --- 23. a configured tag id the forum does not carry is refused -------------
+new_world
+new_home c23
+python3 - "$H/config/discord-session-mirror.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+data["projects"]["atelier"]["artifact_tags"] = {"report": "919999999999999999"}
+json.dump(data, open(sys.argv[1], "w"))
+PY
+out=$(mirror ensure --config "$H/config/discord-session-mirror.json" 2>&1) && fail "an unknown configured tag id was accepted" || true
+assert_contains "$out" "does not carry the configured tag id(s) 919999999999999999" "the unknown tag id is named"
+[ "$(world_get channel_tag_patches)" = "0" ] || fail "an unknown tag id still patched a channel"
+[ "$(world_get webhook_creates)" = "0" ] || fail "an unknown tag id still created a webhook"
+pass "ensure refuses a configured tag id the target forum does not carry"

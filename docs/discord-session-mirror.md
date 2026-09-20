@@ -74,6 +74,11 @@ It owns, and the code never hard-codes:
 - `allow_untagged`: with it off, an unconfigured `tag_ids` entry blocks the post
   and says so; with it on, the session thread is published without tags and the
   exact missing names are printed on every creation.
+- `refused_guild_ids`: a map from a guild id to the reason it must never be
+  touched. A project whose `guild_id` appears there fails config load, so a
+  later project entry cannot quietly reverse the refusal - every command stops
+  instead. The id stays in this gitignored local config rather than in the
+  repository, which is public.
 - `webhook_file`: the captain-owned webhook inventory, `config/discord-webhooks.json`
   by default.
 - `bounds.max_tasks_per_pass` and `bounds.max_thread_listing`: the per-pass and
@@ -114,6 +119,45 @@ The six tags a sessions forum must carry are `session`, `worktree`, and the four
 state tags. With the default `state_tags` those are `actif`, `en-attente`,
 `bloque`, and `termine`; the state table may rename them, and `tag_ids` maps
 whichever names the config uses to the forum's ids.
+
+## Live preconditions
+
+A webhook cannot read a channel and cannot create a forum tag, so the two things
+a webhook transport depends on - the forum tags the contract requires and the
+webhook itself - cannot be established by a publishing pass.
+`ensure` reconciles both once, idempotently:
+
+```sh
+bin/fm-discord-session-mirror.sh ensure --config <json> [--dry-run]
+```
+
+For every configured project forum it creates only the tags that forum's
+contract declares.
+A sessions forum gets `session_tag`, `worktree_tag`, and every `state_tags`
+value; an artifacts forum gets the tag names that project's `artifact_tags`
+maps to.
+It refuses rather than silently trimming a forum that would pass Discord's
+20-tag cap, and it reports an artifacts forum whose project declares no
+`artifact_tags` as untagged rather than inventing a vocabulary for it.
+It then writes the resulting name-to-id map back into `tag_ids` for a sessions
+forum and `artifact_tags` for an artifacts forum, because those are the ids the
+webhook transport cannot read for itself.
+A configured tag id is verified against the forum rather than created, and an id
+the forum does not carry refuses the whole pass before any write, so a
+reconciliation never leaves half a forum behind.
+
+It then ensures one webhook per target forum, reusing in order a configured
+entry from `webhook_file`, an existing guild webhook whose name and channel match
+`firstmate-<guild-slug>-<kind>`, and creating one only when neither exists.
+The non-secret webhook id and execute url are appended to `webhook_file` in mode
+0600; the token is never printed and never written anywhere else.
+
+Before it changes either file it writes a `.pre-ensure-<stamp>` copy beside it,
+and it records the exact undo of every live change - the pre-run `available_tags`
+list per forum, each created webhook id, and the config backups - as one private
+journal under `state/discord-workspace/session-mirror/ensure/`, printing the same
+lines.
+`--dry-run` prints the plan and writes nothing at all.
 
 ## Session card and triggers
 
@@ -234,8 +278,11 @@ Only the sanitized session identity, state, project, worktree, branch, and links
 are ever posted. Worker transcripts, captain wording, operational supervision
 text (`FIRSTMATE_OP:`, watcher wakes, rendered notes), credentials, and client
 content are refused before any publish. The client-facing guild is out of scope
-for this capability, and the mirror performs no destructive Discord operation:
-there is no delete, archive, rename, or tag-creation path.
+for this capability: its id is listed in the config's `refused_guild_ids`, and a
+project mapped to a refused guild fails config load, so the refusal cannot be
+reversed by adding a project entry alone. The mirror performs no destructive
+Discord operation: there is no delete, archive, rename, or tag-creation path
+outside `ensure`'s additive tag reconciliation.
 
 ## Operating cadence
 

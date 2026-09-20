@@ -18,6 +18,23 @@ Every artifact is canonical in exactly one tagged artifact-forum post.
 The related exchange receives only a concise card and a link to that artifact post or private artifact URL.
 There is no live voice-channel capture in this phase.
 
+## Control channels
+
+Every internal guild carries exactly one `#firstmate` text channel, in that
+guild's Control category, and that channel is the only place the captain talks to
+the primary firstmate.
+One channel per guild replaces a single shared surface: the conversation then
+belongs to the guild it was raised in, and no guild's captain traffic can land in
+another guild's channel.
+The mapping from guild to `#firstmate` channel is the `channels` list of
+`config/discord-conversation-console.json`, one entry per internal guild with its
+`label`, `guild_id`, and `channel_id`.
+[`docs/discord-conversation-console.md`](discord-conversation-console.md) owns
+that config schema, the inbound pass, and the reply path; this document owns only
+the structural fact that the mapping exists and where it lives.
+Adding a guild means adding one entry there, never widening an existing channel's
+scope.
+
 ## Bot identity boundary
 
 One Firstmate operations bot handles text intake, artifact cards and index links, audio transcription replies, and status replies.
@@ -108,6 +125,21 @@ Tests may use `transcription.provider` set to `fake` with fixture transcripts.
 Hosted Groq support is only a design and configuration boundary in this phase.
 A later live task must use a dedicated Firstmate Discord/transcription secret file decrypted with sops and age into process memory.
 No plaintext `.env`, Hermes recipient, client recipient, shared client key, Groq network call, or committed secret is part of this phase.
+
+## Client guild refusal
+
+The client-facing guild is permanently out of scope for every Firstmate Discord
+capability.
+The refusal is explicit and enforced rather than remembered: the guild id is
+listed in the `refused_guild_ids` map of the capability's gitignored local
+config, with the reason recorded beside it, and a config that maps any project to
+a refused guild fails validation, so every command stops rather than proceeding.
+No client guild id is ever committed to this repository, which is public.
+The refusal cannot be reversed by adding a project entry, inviting the bot, or
+editing a channel: it takes a deliberate removal of the config entry, which is a
+captain decision.
+See [`docs/discord-session-mirror.md`](discord-session-mirror.md) for the
+enforcing config key.
 
 ## Rollback and retirement
 

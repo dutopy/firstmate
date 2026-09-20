@@ -44,6 +44,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -79,6 +80,8 @@ CONFIG_SCHEMA = "fm-discord-session-mirror.config.v1"
 SESSION_SCHEMA = "fm-discord-session-mirror.session.v1"
 REQUEST_SCHEMA = "fm-discord-session-mirror.request.v1"
 ARTIFACT_SCHEMA = "fm-discord-session-mirror.artifact.v1"
+ENSURE_SCHEMA = "fm-discord-session-mirror.ensure.v1"
+REFUSED_GUILDS_KEY = "refused_guild_ids"
 
 PROJECT_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 STATE_LINE_RE = re.compile(r"^state:\s*([a-z]+)\b")
@@ -108,8 +111,15 @@ WEBHOOK_KINDS = ("sessions", "artifacts", "emails")
 WEBHOOK_URL_RE = re.compile(
     r"^https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/(?:v[0-9]+/)?webhooks/([0-9]{5,32})/([A-Za-z0-9_.\-]{20,200})$"
 )
+# Discord's hard per-forum cap on available_tags; a forum that would exceed it
+# is refused rather than silently trimmed.
+TAG_CAP = 20
+# A forum channel is the only channel kind that carries available_tags.
+FORUM_TYPES = (15, 16)
 WEBHOOK_MAX_RETRIES = 3
 WEBHOOK_API_BASE = "https://discord.com/api/v10"
+WEBHOOK_NAME_LIMIT = 80
+DEFAULT_WEBHOOK_NAME_PREFIX = "firstmate"
 WEBHOOK_USER_AGENT = "firstmate-discord-session-mirror (bounded webhook transport, +https://localhost)"
 USERNAME_LIMIT = 80
 
@@ -221,9 +231,30 @@ def validate_config_file_reference(value: Any, field: str, home: Path) -> str:
     return value
 
 
+def validate_refused_guilds(raw: Any) -> Dict[str, str]:
+    """Guilds this capability must never touch, each with the recorded reason.
+
+    The refusal is configuration, not a code constant, so no captain-private
+    guild id is committed to a public repository; it is enforced at config load,
+    so a later project entry that points at a refused guild cannot quietly
+    reverse it - every command stops instead.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise FMError(f"{REFUSED_GUILDS_KEY} must be a JSON object mapping a guild id to its refusal reason")
+    out: Dict[str, str] = {}
+    for guild_id, reason in raw.items():
+        sid = fwl.validate_snowflake(guild_id, f"{REFUSED_GUILDS_KEY} key")
+        assert sid is not None
+        out[sid] = bounded_text(reason, f"{REFUSED_GUILDS_KEY}.{sid}", 200)
+    return out
+
+
 class MirrorProject:
-    def __init__(self, key: str, raw: Dict[str, Any], seen_ids: Dict[str, str]) -> None:
+    def __init__(self, key: str, raw: Dict[str, Any], seen_ids: Dict[str, str], raw_key: str = "") -> None:
         self.key = key
+        self.raw_key = raw_key or key
         prefix = f"projects.{key}"
         if not isinstance(raw, dict):
             raise FMError(f"{prefix} must be a JSON object")
@@ -327,6 +358,7 @@ class MirrorConfig:
         self.webhook_file = validate_config_file_reference(
             raw.get("webhook_file", DEFAULT_WEBHOOK_FILE), "webhook_file", home
         )
+        self.refused_guilds = validate_refused_guilds(raw.get(REFUSED_GUILDS_KEY))
         projects = raw.get("projects")
         if not isinstance(projects, dict) or not projects:
             raise FMError("projects must be a non-empty JSON object mapping a project key to its Discord forums")
@@ -338,7 +370,15 @@ class MirrorConfig:
                 raise FMError(f"projects key {key!r} must be a lowercase project identifier")
             if normalized in self.projects:
                 raise FMError(f"projects has duplicate normalized key: {normalized}")
-            self.projects[normalized] = MirrorProject(normalized, value, seen_ids)
+            self.projects[normalized] = MirrorProject(normalized, value, seen_ids, str(key))
+        for key in sorted(self.projects):
+            project = self.projects[key]
+            reason = self.refused_guilds.get(project.guild_id)
+            if reason:
+                raise FMError(
+                    f"projects.{key}.guild_id {project.guild_id} is a refused guild ({reason}); "
+                    "this capability never reads or writes it"
+                )
 
     def project_for_path(self, path_text: str) -> Optional[MirrorProject]:
         candidate = os.path.realpath(str(Path(path_text).expanduser()))
@@ -383,6 +423,7 @@ def sample_config() -> Dict[str, Any]:
         "live": {"posting": False},
         "allow_untagged": False,
         "transport": "auto",
+        REFUSED_GUILDS_KEY: {},
         "webhook_file": DEFAULT_WEBHOOK_FILE,
         "session_tag": DEFAULT_SESSION_TAG,
         "worktree_tag": DEFAULT_WORKTREE_TAG,
@@ -537,6 +578,8 @@ class MirrorClient:
         self._active_threads: Dict[str, List[Dict[str, Any]]] = {}
         self._channels: Dict[str, Dict[str, Any]] = {}
         self._archived: Dict[str, List[Dict[str, Any]]] = {}
+        self._guilds: Dict[str, Dict[str, Any]] = {}
+        self._guild_webhooks: Dict[str, List[Dict[str, Any]]] = {}
         self.calls = 0
 
     @property
@@ -616,6 +659,32 @@ class MirrorClient:
         if not isinstance(data, dict):
             raise FMError(f"thread starter message for {thread_id} was malformed")
         return data
+
+    def guild(self, guild_id: str) -> Dict[str, Any]:
+        if guild_id not in self._guilds:
+            data = self._request("GET", f"/guilds/{guild_id}")
+            if not isinstance(data, dict):
+                raise FMError(f"guild lookup for {guild_id} was malformed")
+            self._guilds[guild_id] = data
+        return self._guilds[guild_id]
+
+    def guild_webhooks(self, guild_id: str) -> List[Dict[str, Any]]:
+        if guild_id not in self._guild_webhooks:
+            data = self._request("GET", f"/guilds/{guild_id}/webhooks")
+            if not isinstance(data, list):
+                raise FMError(f"webhook listing for guild {guild_id} was malformed")
+            self._guild_webhooks[guild_id] = [item for item in data if isinstance(item, dict)]
+        return self._guild_webhooks[guild_id]
+
+    def create_channel_webhook(self, channel_id: str, name: str) -> Dict[str, Any]:
+        data = self._request("POST", f"/channels/{channel_id}/webhooks", {"name": name})
+        if not isinstance(data, dict) or not str(data.get("id") or "").isdigit() or not data.get("token"):
+            raise FMError(f"Discord did not return a usable webhook for channel {channel_id}")
+        return data
+
+    def set_channel_tags(self, channel_id: str, available_tags: List[Dict[str, str]]) -> None:
+        self._request("PATCH", f"/channels/{channel_id}", {"available_tags": available_tags})
+        self._channels.pop(channel_id, None)
 
 
 # --------------------------------------------------------------------------
@@ -1727,6 +1796,7 @@ def cmd_config_check(args: argparse.Namespace, env: Env) -> int:
     print(f"secret file: {cfg.secret_file} (key {cfg.token_key})")
     print(f"webhook file: {cfg.webhook_file} ({len(webhooks.entries)} entr{'y' if len(webhooks.entries) == 1 else 'ies'}, urls never printed)")
     print(f"live posting: {'enabled' if cfg.live_posting else 'disabled'}")
+    print(f"refused guilds: {len(cfg.refused_guilds)} (never read or written)")
     print("session tags: " + ", ".join([cfg.session_tag, cfg.worktree_tag, *sorted(set(cfg.state_tags.values()))]))
     print("state tags: " + ", ".join(f"{key}={cfg.state_tags[key]}" for key in REQUIRED_STATE_KEYS))
     for key in sorted(cfg.projects):
@@ -1747,6 +1817,279 @@ def add_config_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", help="non-secret Discord session mirror config JSON")
 
 
+# --------------------------------------------------------------------------
+# ensure: the live preconditions the configured forums must already satisfy
+# --------------------------------------------------------------------------
+
+
+def target_forums(cfg: MirrorConfig) -> List[Tuple[MirrorProject, str, str]]:
+    """Every forum the mirror posts into, in project-key order."""
+    out: List[Tuple[MirrorProject, str, str]] = []
+    for key in sorted(cfg.projects):
+        project = cfg.projects[key]
+        if project.sessions_forum_id:
+            out.append((project, "sessions", project.sessions_forum_id))
+        if project.artifact_forum_id:
+            out.append((project, "artifacts", project.artifact_forum_id))
+    return out
+
+
+def required_tag_names(cfg: MirrorConfig, project: MirrorProject, kind: str) -> List[str]:
+    """The forum tag vocabulary this capability's own contract requires there.
+
+    A sessions forum is always named. An artifacts forum may declare a tag by
+    name, which is created here when the forum lacks it, or by numeric id, which
+    is already the direct instruction and is verified instead.
+    """
+    if kind == "sessions":
+        return [cfg.session_tag, cfg.worktree_tag, *sorted(set(cfg.state_tags.values()))]
+    tokens: List[str] = []
+    for key in sorted(project.artifact_tags):
+        tag = project.artifact_tags[key]
+        if tag not in tokens:
+            tokens.append(tag)
+    return tokens
+
+
+def slugify(text: str, limit: int = 24) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(text).strip().lower()).strip("-")
+    return slug[:limit].strip("-") or "guild"
+
+
+def webhook_records(path: Path) -> List[Dict[str, Any]]:
+    """The raw webhook file records, kept verbatim so a rewrite preserves them."""
+    if not path.exists():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    items = raw.get("webhooks") if isinstance(raw, dict) else raw
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def available_tag_list(channel: Dict[str, Any]) -> List[Dict[str, str]]:
+    tags: List[Dict[str, str]] = []
+    for item in channel.get("available_tags") or []:
+        if isinstance(item, dict) and item.get("id") and item.get("name"):
+            tags.append({"id": str(item["id"]), "name": str(item["name"])})
+    return tags
+
+
+def cmd_ensure(args: argparse.Namespace, env: Env) -> int:
+    """Reconcile the live preconditions the configured forums must satisfy.
+
+    A webhook cannot read a channel and cannot create a tag, so the tags and the
+    webhook a target forum needs cannot be established by a normal publishing
+    pass. This bounded pass does that once: it creates only the tags the config
+    declares and one webhook per target forum, writes the resulting non-secret
+    ids back to the config, and records the exact undo of every live change.
+    """
+    cfg = load_config(env, args.config)
+    webhook_path = env.home / cfg.webhook_file
+    store = WebhookStore(webhook_path)
+    live = bool(cfg.live_posting and not args.dry_run)
+    plan = target_forums(cfg)
+    print(f"ensure: {len(plan)} configured forum(s) across {len(cfg.projects)} project(s)")
+    for project, kind, forum_id in plan:
+        names = required_tag_names(cfg, project, kind)
+        declared = ", ".join(names) if names else "(none declared; artifact posts stay untagged)"
+        present = "present" if store.for_channel(kind, forum_id) is not None else "missing"
+        print(f"  {project.key} {kind} forum {forum_id}: tags={declared} webhook={present}")
+    if not live:
+        reason = "dry-run" if args.dry_run else "live posting is disabled"
+        print(f"{reason}: no tag, webhook, config, or Discord write was made")
+        return 0
+    passing = Pass(cfg, MirrorState(env), live)
+    client = passing.client_for(env)
+    records = webhook_records(webhook_path)
+    config_changed = False
+    records_changed = False
+    tag_changes: List[Dict[str, Any]] = []
+    webhook_changes: List[Dict[str, Any]] = []
+    guild_names: Dict[str, str] = {}
+    guild_slugs: Dict[str, str] = {}
+    # Phase one reads every target forum and refuses the whole pass before any
+    # write when one of them cannot satisfy the contract, so a refusal never
+    # leaves half a reconciliation behind.
+    planned: List[Dict[str, Any]] = []
+    for project, kind, forum_id in plan:
+        channel = client.channel(forum_id)
+        if str(channel.get("guild_id") or "") != project.guild_id:
+            raise FMError(
+                f"forum {forum_id} belongs to guild {channel.get('guild_id')}, not the configured {project.guild_id}; refusing to touch it"
+            )
+        if channel.get("type") not in FORUM_TYPES:
+            raise FMError(f"channel {forum_id} is not a forum channel (type {channel.get('type')}); refusing to set tags")
+        existing = available_tag_list(channel)
+        names = required_tag_names(cfg, project, kind)
+        present_names = {tag["name"] for tag in existing}
+        present_ids = {tag["id"] for tag in existing}
+        absent_ids = [token for token in names if fwl.ID_RE.fullmatch(token) and token not in present_ids]
+        if absent_ids:
+            raise FMError(
+                f"forum {forum_id} does not carry the configured tag id(s) {', '.join(absent_ids)}; refusing"
+            )
+        missing = [token for token in names if not fwl.ID_RE.fullmatch(token) and token not in present_names]
+        if missing and len(existing) + len(missing) > TAG_CAP:
+            raise FMError(
+                f"forum {forum_id} would need {len(existing) + len(missing)} tags, over Discord's {TAG_CAP}-tag cap; "
+                "refusing to add them - prune the forum's tag vocabulary first"
+            )
+        planned.append(
+            {"project": project, "kind": kind, "forum_id": forum_id, "names": names, "missing": missing}
+        )
+    for row in planned:
+        project, kind, forum_id = row["project"], row["kind"], row["forum_id"]
+        names, missing = row["names"], row["missing"]
+        channel = client.channel(forum_id)
+        existing = available_tag_list(channel)
+        if missing:
+            previous = list(existing)
+            client.set_channel_tags(forum_id, existing + [{"name": name} for name in missing])
+            channel = client.channel(forum_id)
+            existing = available_tag_list(channel)
+            tag_changes.append(
+                {
+                    "forum_id": forum_id,
+                    "project": project.key,
+                    "kind": kind,
+                    "names": missing,
+                    "previous_available_tags": previous,
+                }
+            )
+            print(f"  {project.key} {kind}: created tag(s) {', '.join(missing)} on forum {forum_id}")
+        by_name = {tag["name"]: tag["id"] for tag in existing}
+        by_id = {tag["id"]: tag["name"] for tag in existing}
+        for token in names:
+            if fwl.ID_RE.fullmatch(token):
+                if token not in by_id:
+                    raise FMError(f"forum {forum_id} no longer carries tag id {token} after the update")
+            elif token not in by_name:
+                raise FMError(f"forum {forum_id} still lacks tag {token} after the update")
+        project_raw = cfg.raw["projects"][project.raw_key]
+        if kind == "sessions":
+            tag_ids = dict(project_raw.get("tag_ids") or {})
+            for name in names:
+                if tag_ids.get(name) != by_name[name]:
+                    tag_ids[name] = by_name[name]
+                    config_changed = True
+            project_raw["tag_ids"] = {name: tag_ids[name] for name in sorted(tag_ids)}
+        else:
+            artifact_tags = dict(project_raw.get("artifact_tags") or {})
+            for kind_key, tag in project.artifact_tags.items():
+                resolved = tag if fwl.ID_RE.fullmatch(tag) else by_name.get(tag)
+                if resolved and artifact_tags.get(kind_key) != resolved:
+                    artifact_tags[kind_key] = resolved
+                    config_changed = True
+            project_raw["artifact_tags"] = {key: artifact_tags[key] for key in sorted(artifact_tags)}
+        if store.for_channel(kind, forum_id) is not None:
+            continue
+        guild_name = guild_names.get(project.guild_id) or str(client.guild(project.guild_id).get("name") or project.label)
+        guild_names[project.guild_id] = guild_name
+        slug = guild_slugs.get(project.guild_id) or ""
+        if not slug:
+            slug = next(
+                (
+                    str(record.get("guild_slug") or "")
+                    for record in records
+                    if str(record.get("guild") or "") == guild_name and record.get("guild_slug")
+                ),
+                "",
+            )
+            slug = slug or slugify(guild_name)
+            guild_slugs[project.guild_id] = slug
+        name = truncate(f"{DEFAULT_WEBHOOK_NAME_PREFIX}-{slug}-{kind}", WEBHOOK_NAME_LIMIT)
+        adopted = next(
+            (
+                hook
+                for hook in client.guild_webhooks(project.guild_id)
+                if str(hook.get("channel_id") or "") == forum_id
+                and str(hook.get("name") or "") == name
+                and hook.get("token")
+            ),
+            None,
+        )
+        if adopted is not None:
+            webhook_id, token, created = str(adopted["id"]), str(adopted["token"]), False
+        else:
+            created_hook = client.create_channel_webhook(forum_id, name)
+            webhook_id, token, created = str(created_hook["id"]), str(created_hook["token"]), True
+        records.append(
+            {
+                "guild": guild_name,
+                "guild_slug": slug,
+                "project": project.label,
+                "kind": kind,
+                "channel_id": forum_id,
+                "webhook_id": webhook_id,
+                "url": f"{WEBHOOK_API_BASE}/webhooks/{webhook_id}/{token}",
+            }
+        )
+        records_changed = True
+        if created:
+            webhook_changes.append(
+                {
+                    "id": webhook_id,
+                    "name": name,
+                    "channel_id": forum_id,
+                    "kind": kind,
+                    "project": project.key,
+                    "guild_id": project.guild_id,
+                }
+            )
+        print(f"  {project.key} {kind}: webhook {webhook_id} {'created' if created else 'adopted'} for forum {forum_id}")
+    if not (config_changed or records_changed or tag_changes or webhook_changes):
+        print("ensure: every configured forum already satisfies the mirror contract; nothing to do")
+        return 0
+    stamp = utc_now().replace(":", "").replace("-", "")
+    backups: List[Tuple[str, str]] = []
+    if config_changed:
+        backup = cfg.path.with_name(f"{cfg.path.name}.pre-ensure-{stamp}")
+        shutil.copy2(cfg.path, backup)
+        os.chmod(backup, 0o600)
+        backups.append((str(backup), str(cfg.path)))
+        fwl.atomic_json(cfg.path, cfg.raw, mode=0o600)
+    if records_changed:
+        if webhook_path.exists():
+            backup = webhook_path.with_name(f"{webhook_path.name}.pre-ensure-{stamp}")
+            shutil.copy2(webhook_path, backup)
+            os.chmod(backup, 0o600)
+            backups.append((str(backup), str(webhook_path)))
+        fwl.atomic_json(webhook_path, {"webhooks": records}, mode=0o600)
+    undo: List[str] = []
+    for change in tag_changes:
+        undo.append(
+            "Discord REST PATCH /channels/"
+            + change["forum_id"]
+            + " with available_tags="
+            + json.dumps(change["previous_available_tags"], ensure_ascii=False)
+            + f"  (restores the pre-run tag vocabulary of {change['project']} {change['kind']})"
+        )
+    for change in webhook_changes:
+        undo.append(f"Discord REST DELETE /webhooks/{change['id']}  (removes the webhook this run created)")
+    for backup, original in backups:
+        undo.append(f"cp {backup} {original}  (restores the pre-run non-secret config)")
+    record = {
+        "schema": ENSURE_SCHEMA,
+        "at": utc_now(),
+        "config": str(cfg.path),
+        "webhook_file": cfg.webhook_file,
+        "tags_created": tag_changes,
+        "webhooks_created": webhook_changes,
+        "backups": [backup for backup, _ in backups],
+        "undo": undo,
+    }
+    journal = mirror_state_path(env, "ensure") / f"{fwl.sha256_text(stamp + str(cfg.path))[:16]}.json"
+    fwl.atomic_json(journal, record, mode=0o600)
+    print(
+        f"ensure: {sum(len(change['names']) for change in tag_changes)} tag(s) created, "
+        f"{len(webhook_changes)} webhook(s) created; undo recorded in {journal}"
+    )
+    for line in undo:
+        print(f"  undo: {line}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fm-discord-session-mirror.sh")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1759,6 +2102,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_config_argument(p)
     p.add_argument("--task", action="append")
     p.set_defaults(func=cmd_report)
+    p = sub.add_parser("ensure")
+    add_config_argument(p)
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_ensure)
     p = sub.add_parser("sync")
     add_config_argument(p)
     p.add_argument("--task", action="append")
