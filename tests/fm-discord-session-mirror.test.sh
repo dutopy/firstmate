@@ -154,6 +154,11 @@ class Handler(BaseHTTPRequestHandler):
             if forum is None:
                 self._send(404, {"message": "Unknown Channel"})
                 return
+            if len("" if (body.get("message") or {}).get("content") is None else str(body["message"]["content"])) > 2000:
+                self._send(400, {"message": "Invalid Form Body", "code": 50035,
+                                 "errors": {"content": {"_errors": [{"code": "BASE_TYPE_MAX_LENGTH",
+                                                                        "message": "Must be 2000 or fewer in length."}]}}})
+                return
             name = body.get("name") or ""
             if not name or len(name) > 100:
                 self._send(400, {"message": "invalid thread name"})
@@ -188,6 +193,11 @@ class Handler(BaseHTTPRequestHandler):
         elif len(parts) == 3 and parts[0] == "channels" and parts[2] == "messages":
             if body.get("allowed_mentions") != {"parse": []}:
                 self._send(400, {"message": "allowed_mentions must be empty parse"})
+                return
+            if len("" if body.get("content") is None else str(body["content"])) > 2000:
+                self._send(400, {"message": "Invalid Form Body", "code": 50035,
+                                 "errors": {"content": {"_errors": [{"code": "BASE_TYPE_MAX_LENGTH",
+                                                                        "message": "Must be 2000 or fewer in length."}]}}})
                 return
             world["counter"] = int(world.get("counter", 930000000000000000)) + 1
             message = {"id": str(world["counter"]), "content": body.get("content"),
@@ -338,6 +348,20 @@ class Handler(BaseHTTPRequestHandler):
         body = self._body()
         if body.get("allowed_mentions") != {"parse": []}:
             self._send(400, {"message": "allowed_mentions must be empty parse"})
+            return
+        # Discord's own webhook field rules, which the live API enforces: a
+        # username may not contain "discord" or "clyde", and message content
+        # may not exceed 2000 characters. Live runs returned both as HTTP 400.
+        username = "" if body.get("username") is None else str(body.get("username"))
+        if any(word in username.lower() for word in ("discord", "clyde")):
+            self._send(400, {"message": "Invalid Form Body", "code": 50035,
+                             "errors": {"username": {"_errors": [{"code": "USERNAME_INVALID_CONTAINS",
+                                                                      "message": 'Username cannot contain "discord"'}]}}})
+            return
+        if len("" if body.get("content") is None else str(body["content"])) > 2000:
+            self._send(400, {"message": "Invalid Form Body", "code": 50035,
+                             "errors": {"content": {"_errors": [{"code": "BASE_TYPE_MAX_LENGTH",
+                                                                     "message": "Must be 2000 or fewer in length."}]}}})
             return
         world["counter"] = int(world["counter"]) + 1
         message = {"id": str(world["counter"]), "channel_id": str(world["counter"]), "content": body.get("content")}
@@ -1120,3 +1144,60 @@ assert_contains "$out" "does not carry the configured tag id(s) 9199999999999999
 [ "$(world_get channel_tag_patches)" = "0" ] || fail "an unknown tag id still patched a channel"
 [ "$(world_get webhook_creates)" = "0" ] || fail "an unknown tag id still created a webhook"
 pass "ensure refuses a configured tag id the target forum does not carry"
+
+# --- 24. Discord's own webhook field rules are cleared before the call -----
+# Two live HTTP 400s drove this: Discord refuses a webhook username containing
+# "discord", which a task id commonly does, and refuses message content over
+# 2000 characters, which a body at its own limit plus its title reaches. Both
+# are refused locally with the real budget instead of surfacing the form error.
+new_world
+new_home c24
+start_webhook_server
+write_webhook_file atelier
+add_task m-discord-artifact "$TMP_ROOT/project"
+set_state m-discord-artifact working
+python3 - "$H/config/discord-session-mirror.json" "$TAG_ART_REPORT" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+# A webhook cannot read a forum's tag vocabulary, so the artifact tag has to be
+# the numeric id the forum advertises.
+data["projects"]["atelier"]["artifact_tags"] = {"report": sys.argv[2]}
+json.dump(data, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
+python3 - "$H/config/discord-webhooks.json" "$FORUM_A_ART" "$WEBHOOK_ID" "$WEBHOOK_TOKEN" <<'PY'
+import json, sys
+path, forum, webhook_id, token = sys.argv[1:5]
+data = json.load(open(path))
+data["webhooks"].append({
+    "guild": "Hermes", "guild_slug": "hermes", "project": "Firstmate & supervision", "kind": "artifacts",
+    "channel_id": forum, "webhook_id": webhook_id,
+    "url": f"https://discord.com/api/webhooks/{webhook_id}/{token}",
+})
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+PY
+out=$(mirror sync --config "$H/config/discord-session-mirror.json" 2>&1) || fail "discord-named task sync failed: $out"
+printf 'Un rapport court et publiable.\n' > "$TMP_ROOT/short.md"
+out=$(mirror artifact --config "$H/config/discord-session-mirror.json" --task m-discord-artifact --kind report \
+  --title "Rapport" --body-file "$TMP_ROOT/short.md" 2>&1) || fail "an artifact for a task whose id contains 'discord' failed: $out"
+assert_contains "$out" "artifact thread" "the artifact is recorded for a discord-named task"
+USERNAMES=$(python3 - "$WEBHOOK_WORLD" "$FORUM_A_ART" <<'PY'
+import json, sys
+world = json.load(open(sys.argv[1]))
+posts = [p for p in world.get("posts", []) if p.get("applied_tags")]
+bad = [p["username"] for p in posts if any(w in str(p.get("username") or "").lower() for w in ("discord", "clyde"))]
+print("ok" if posts and not bad else f"bad:{bad} posts={posts}")
+PY
+)
+assert_equals "ok" "$USERNAMES" "every published webhook username is free of the forbidden words"
+CREATES_BEFORE=$(world_get thread_creates)
+POSTS_BEFORE=$(world_get posts)
+python3 - "$TMP_ROOT/oversized.md" <<'PY'
+import sys
+open(sys.argv[1], "w").write("x" * 1995 + "\n")
+PY
+out=$(mirror artifact --config "$H/config/discord-session-mirror.json" --task m-discord-artifact --kind report \
+  --title "Rapport" --body-file "$TMP_ROOT/oversized.md" 2>&1) && fail "an artifact whose title and body exceed Discord's content limit was sent" || true
+assert_contains "$out" "Discord accepts at most 2000" "an over-long artifact is refused with Discord's real budget"
+[ "$(world_get thread_creates)" = "$CREATES_BEFORE" ] || fail "the refused artifact still created a thread"
+[ "$(world_get posts)" = "$POSTS_BEFORE" ] || fail "the refused artifact still posted"
+pass "the artifact path clears Discord's username and content-length rules before the call"

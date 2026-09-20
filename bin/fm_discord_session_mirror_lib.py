@@ -122,9 +122,16 @@ WEBHOOK_NAME_LIMIT = 80
 DEFAULT_WEBHOOK_NAME_PREFIX = "firstmate"
 WEBHOOK_USER_AGENT = "firstmate-discord-session-mirror (bounded webhook transport, +https://localhost)"
 USERNAME_LIMIT = 80
+# Discord rejects a webhook username containing either of these words, whatever
+# the case; a task id or project label commonly contains "discord".
+USERNAME_FORBIDDEN_WORDS = ("discord", "clyde")
 
 TITLE_LIMIT = 100
 BODY_LIMIT = 2000
+# Discord's own limit for one message's content. The artifact post composes its
+# body with the title, and the session card composes several fields, so bounding
+# any one input alone still lets the composed content fail live.
+MESSAGE_LIMIT = 2000
 CREW_STATE_TIMEOUT = 25
 MAX_TASKS_DEFAULT = 25
 MAX_BOUND_DEFAULT = 200
@@ -544,12 +551,39 @@ def render_card(project: MirrorProject, task_id: str, worktree: str, branch: str
         lines.append(f"**Branche :** {branch}")
     lines.append(f"**Etat :** {state}")
     lines.append(CARD_FOOTER)
-    return "\n".join(lines)
+    return bounded_post_content("\n".join(lines), "the session card")
 
 
 def session_identity(project: MirrorProject, worktree: str) -> str:
-    """The readable speaker label the captain sees in a session thread."""
-    return truncate(f"{project.label} - {worktree}", USERNAME_LIMIT)
+    """The readable speaker label the captain sees in a session thread.
+
+    A webhook username is a Discord-validated field: it may not contain
+    `discord` or `clyde`, and a task id or project label commonly does. The
+    forbidden word is dropped and the seam it leaves is closed, so the post
+    still carries a readable identity instead of being refused outright.
+    """
+    label = f"{project.label} - {worktree}"
+    for word in USERNAME_FORBIDDEN_WORDS:
+        label = re.sub(word, "", label, flags=re.IGNORECASE)
+    label = re.sub(r"-{2,}", "-", label)
+    label = re.sub(r"(?:\s*-\s*){2,}", " - ", label)
+    label = re.sub(r"[ \t]{2,}", " ", label).strip(" -")
+    return truncate(label, USERNAME_LIMIT) or "Firstmate"
+
+
+def bounded_post_content(content: str, field: str) -> str:
+    """The one bound every posted Discord content string passes through.
+
+    Discord rejects a message whose content exceeds its own 2000-character
+    limit, and the callers compose content from several inputs, so a bound on
+    any single input is not enough. Refusing here names the exact budget
+    instead of surfacing Discord's opaque form error after the call.
+    """
+    if len(content) > MESSAGE_LIMIT:
+        raise FMError(
+            f"{field} would post {len(content)} characters of content; Discord accepts at most {MESSAGE_LIMIT}"
+        )
+    return content
 
 
 def assert_publishable(text: str, field: str) -> str:
@@ -1502,7 +1536,7 @@ def cmd_artifact(args: argparse.Namespace, env: Env) -> int:
             thread_id, _identity = artifact_transport.create_forum_post(
                 env,
                 thread_title,
-                f"**{title}**\n\n{body}",
+                bounded_post_content(f"**{title}**\n\n{body}", "the artifact title and --body-file together"),
                 tag_ids,
                 session_identity(project, task["task"]),
             )
