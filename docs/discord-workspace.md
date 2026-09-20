@@ -18,6 +18,21 @@ Every artifact is canonical in exactly one tagged artifact-forum post.
 The related exchange receives only a concise card and a link to that artifact post or private artifact URL.
 There is no live voice-channel capture in this phase.
 
+### Applied live structure
+
+The three profiles above are this contract's vocabulary for the captain's three
+lanes, and the live workspace applies them as three equal-rank internal
+workspaces rather than as three categories inside one guild.
+Each lane carries one `#exchanges` forum and one `#artifacts` forum per active
+project category, and a task is routed to exactly one project category by its
+project path, so the category is what selects the project context.
+[`verification/discord-workspace-structure.md`](verification/discord-workspace-structure.md)
+is the applied table with every guild, category and forum id, and
+[`verification/discord-workspace-activation.md`](verification/discord-workspace-activation.md)
+holds the routing, artifact-link and transcription proofs.
+The archived Firstmate workspace that carried the literal category triple is an
+inactive archive and is never written to.
+
 ## Control channels
 
 Every internal guild carries exactly one `#firstmate` text channel, in that
