@@ -52,6 +52,12 @@ This is generic across built-in adapters with an `answers` command, and the runn
 External process-event bindings intentionally expose no answer operation and cannot feed the captain-answer intake.
 `captain-hold-lifecycle` owns when a binding is required and what the keys must be.
 
+The Hermes `#decisions` channel of a pilot profile is armed through its own adapter, which binds before it registers and refuses a profile whose `decisions-register` CLI does not answer:
+
+```sh
+bin/fm-procevent-hermes-decisions.sh arm --profile <name> --profile-home <dir>
+```
+
 A configured remote secondmate reply source is armed and handled through `bin/fm-procevent-remote-reply.sh`.
 Its header owns exact commands, while the adapter owns cursor continuity, validated deduplicated status ingest, path-confined document fetch, acknowledgement, and re-arming after a good delta.
 A continuity break is escalated once and stays unarmed until an operator deliberately rebases it.
