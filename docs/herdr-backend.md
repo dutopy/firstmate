@@ -46,9 +46,10 @@ Removing or upgrading the shadowing client is the durable fix; `bin/backends/her
 ## Watching and task containers
 
 The ordinary topology puts one task tab per endpoint in the exact workspace of the Firstmate or secondmate that launches it.
-When the launcher has no Herdr workspace to inherit, the adapter maintains one durable home-labeled workspace instead.
-The primary home label is `firstmate`.
-A secondmate home label is `2ndmate-<secondmate-id>`, derived from its validated `.fm-secondmate-home` marker.
+When the launcher has no Herdr workspace to inherit, the adapter maintains one durable home-labeled space instead.
+The label is lane-qualified and role-segmented, matching the fleet role layout owned by `dutopy-config/docs/herdr-role-layout.md`: the primary home label is `<Lane> — Firstmate`, and a secondmate home label is `<Lane> — Secondmate <secondmate-id>` derived from its validated `.fm-secondmate-home` marker.
+A home declares the lane it serves in local gitignored `config/herdr-lane`, read fresh with surrounding whitespace stripped and defaulting to `System`; the name is case-preserved because a space label is matched exactly, and a value that is not a clean lane name warns and falls back to the default rather than silently placing the home in a lane nothing matches.
+Each home owns its own lane, so `config/herdr-lane` is deliberately NOT inheritable: the primary's `System` must never converge a secondmate out of the lane it serves.
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
 
 Attach to the selected named Herdr session and switch to the relevant home workspace to watch its task tabs.
@@ -69,7 +70,7 @@ That covers a missing or unusable socket identity, a closed or unreadable launch
 
 Firstmate running outside Herdr entirely has no launcher workspace to inherit, so its workers use this home's own labeled workspace, created on first use.
 That path needs the home label to identify exactly one workspace: two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
-Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason, and because the adapter cannot distinguish that label collision from its own container.
+Avoid naming a personal workspace `<Lane> — Firstmate` or `<Lane> — Secondmate <id>` for that reason, and because the adapter cannot distinguish that label collision from its own container.
 An older secondmate workspace using `firstmate-<id>` is not migrated automatically; rename it manually before expecting new tasks or recovery to use it.
 Recovery and list-live still scan the first workspace matching the home label, because they address panes they already recorded rather than choosing where new work goes.
 

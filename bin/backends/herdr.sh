@@ -66,8 +66,9 @@
 # never overrides a real invocation. It exists only so this file's own unit
 # tests, which source it directly without that preamble, resolve to a sane
 # default (the firstmate repo root - never a secondmate home, so
-# fm_backend_herdr_workspace_label falls through to "firstmate" exactly like
-# pre-P3 behavior when a test does not care about home-specific labeling).
+# fm_backend_herdr_workspace_label resolves to the lane-qualified primary
+# label with the default lane when a test does not care about home-specific
+# labeling).
 FM_BACKEND_HERDR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_HERDR_ROOT}}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -152,6 +153,40 @@ FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX=".herdr-presentation"
 # The config item a home writes to opt out of, or explicitly in to, the
 # projection.
 FM_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
+
+# The config item a home writes to declare which fleet lane it serves. The
+# lane is the leading segment of the home's own container label, ahead of the
+# role segment (docs/herdr-backend.md "Watching and task containers").
+FM_BACKEND_HERDR_LANE_CONFIG="herdr-lane"
+# The lane a home serves when it declared none: the primary home's lane.
+FM_BACKEND_HERDR_DEFAULT_LANE="System"
+# The separator between the lane and role segments of a managed space label,
+# byte-identical to the role-layout owner's mapping in dutopy-config.
+FM_BACKEND_HERDR_LABEL_SEPARATOR="—"
+
+# fm_backend_herdr_lane <config-dir>: the fleet lane this home serves, read
+# fresh from $FM_HOME/config/herdr-lane (the same whole-file whitespace-
+# stripped convention as config/backlog-backend and config/crew-harness) and
+# defaulting to System. The name is case-preserved because a space label is
+# matched exactly. A value that is not a clean lane name warns and falls back
+# to the default rather than silently placing the home in a lane Herdr cannot
+# match. config/herdr-lane is deliberately NOT in FM_INHERITABLE_CONFIG: each
+# home owns its own lane, so the primary's System must never converge a
+# secondmate into the primary's lane.
+fm_backend_herdr_lane() {  # [<config-dir>]
+  local config_dir=${1:-$FM_HOME/config} file value
+  file="$config_dir/$FM_BACKEND_HERDR_LANE_CONFIG"
+  [ -f "$file" ] || { printf '%s' "$FM_BACKEND_HERDR_DEFAULT_LANE"; return 0; }
+  value=$(tr -d '[:space:]' < "$file" 2>/dev/null) || value=""
+  case "$value" in
+    '') printf '%s' "$FM_BACKEND_HERDR_DEFAULT_LANE" ;;
+    [!A-Za-z]*|*[!A-Za-z0-9_-]*)
+      echo "warning: $file: invalid lane \"$value\"; using \"$FM_BACKEND_HERDR_DEFAULT_LANE\" (a lane is a stable capitalised name such as System, ProApplis or Folium)" >&2
+      printf '%s' "$FM_BACKEND_HERDR_DEFAULT_LANE"
+      ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
 
 # fm_backend_herdr_presentation_preference <config-dir>: the single owner of
 # config/herdr-presentation-spaces parsing. Echoes exactly one of "off", "on"
@@ -344,29 +379,32 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   fm_backend_herdr_presentation_default_supported "$state_dir"
 }
 
-# fm_backend_herdr_workspace_label: the per-firstmate-HOME herdr workspace
-# label (docs/herdr-backend.md "Default task container shape"). The PRIMARY home (no
-# secondmate marker) resolves to the constant "firstmate", byte-identical to
-# every pre-existing task's recorded label - no forced migration. A SECONDMATE
-# home resolves to "2ndmate-<secondmate-id>", so its tasks land in their own
-# workspace, obviously distinguishable from the primary's (and from every
-# other secondmate's) in herdr's spaces sidebar. Read fresh from FM_HOME on
-# every call rather than cached at source time: FM_HOME is the home's own
-# durable identity, not env plumbing threaded through a call chain, so the
-# label is automatically stable across every respawn/recovery for the life of
-# that home. fm-spawn.sh briefly shadows FM_HOME to a secondmate's own home
-# when the PRIMARY spawns that secondmate (its own process's FM_HOME still
-# names the primary at that point) - see fm-spawn.sh's herdr case arm.
+# fm_backend_herdr_workspace_label: the per-firstmate-HOME herdr space label
+# (docs/herdr-backend.md "Watching and task containers"). The label is
+# lane-qualified and role-segmented, matching the fleet role layout owned by
+# dutopy-config: "<Lane> — Firstmate" for the PRIMARY home (no secondmate
+# marker) and "<Lane> — Secondmate <id>" for a SECONDMATE home. The lane comes
+# from fm_backend_herdr_lane (config/herdr-lane, default System) so a home
+# declares the lane it serves; a secondmate home's label is therefore
+# distinguishable from the primary's and from every other secondmate's in
+# herdr's spaces sidebar. Read fresh from FM_HOME on every call rather than
+# cached at source time: FM_HOME is the home's own durable identity, not env
+# plumbing threaded through a call chain, so the label is automatically stable
+# across every respawn/recovery for the life of that home. fm-spawn.sh briefly
+# shadows FM_HOME to a secondmate's own home when the PRIMARY spawns that
+# secondmate (its own process's FM_HOME still names the primary at that point)
+# - see fm-spawn.sh's herdr case arm.
 fm_backend_herdr_workspace_label() {
-  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id
+  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id lane
+  lane=$(fm_backend_herdr_lane "$FM_HOME/config")
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
-      printf '2ndmate-%s' "$id"
+      printf '%s %s Secondmate %s' "$lane" "$FM_BACKEND_HERDR_LABEL_SEPARATOR" "$id"
       return 0
     fi
   fi
-  printf 'firstmate'
+  printf '%s %s Firstmate' "$lane" "$FM_BACKEND_HERDR_LABEL_SEPARATOR"
 }
 
 # fm_backend_herdr_cli: run `herdr <args...>` scoped to <session>, setting
@@ -758,6 +796,8 @@ fm_backend_herdr_projection_concise_task_label() {  # <task-id>
   case "$task" in
     firstmate/*) task=${task#firstmate/} ;;
     2ndmate-*/*) task=${task#*/} ;;
+    *" — Firstmate/"*) task=${task#*/} ;;
+    *" — Secondmate "*/*) task=${task#*/} ;;
   esac
   case "$task" in
     fm-*) task=${task#fm-} ;;
@@ -1457,7 +1497,9 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning FM_HOME label (firstmate or 2ndmate-<id>).
+# <parent-label> is the owning FM_HOME's lane-qualified space label
+# ("<Lane> — Firstmate" or "<Lane> — Secondmate <id>"), or the legacy
+# "firstmate"/"2ndmate-<id>" form for a task recorded before the label moved.
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the home label no
@@ -1497,13 +1539,16 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
       end;
     def is_top_level_parent:
       (.label | type) == "string"
-      and ((.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")));
+      and ((.label == "firstmate")
+           or (.label | test("^2ndmate-[^/]+$"))
+           or (.label | test("^[A-Za-z0-9_-]+ — Firstmate$"))
+           or (.label | test("^[A-Za-z0-9_-]+ — Secondmate [A-Za-z0-9._-]+$")));
     def is_new_child:
       (.label | type) == "string"
       and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child:
       (.label | type) == "string"
-      and (.label | test("^(firstmate|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"));
+      and (.label | test("/.+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child_for($owner):
       is_legacy_child and (.label | startswith($owner + "/"));
     def is_child_for($owner):
@@ -2639,7 +2684,7 @@ fm_backend_herdr_projection_live_binding_matches() {  # <session> <token> <works
         and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
       def is_legacy_child_for($owner):
         (.label | type) == "string"
-        and (.label | test("^(firstmate|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"))
+        and (.label | test("/.+ · p:[A-Za-z0-9_-]{22}$"))
         and (.label | startswith($owner + "/"));
       (.result.workspaces // null) as $spaces
       | select(($spaces | type) == "array")

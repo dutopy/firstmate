@@ -65,7 +65,7 @@ case "$CONTAINER" in
   *) fail "container_ensure returned an unexpected shape: $CONTAINER" ;;
 esac
 [ -n "$SEEDED_TAB_ID" ] || fail "the first container_ensure in a brand-new isolated session must CREATE the workspace and report its seeded default tab id"
-pass "real herdr: container_ensure starts the isolated session's server, creates the firstmate workspace ($CONTAINER), and reports its seeded default tab id ($SEEDED_TAB_ID)"
+pass "real herdr: container_ensure starts the isolated session's server, creates the System — Firstmate workspace ($CONTAINER), and reports its seeded default tab id ($SEEDED_TAB_ID)"
 
 # --- client selection: the real status shape the selection reads ------------
 # bin/backends/herdr.sh "client selection" steps around a client the running
@@ -89,7 +89,7 @@ CONTAINER2=${CONTAINER2_RAW%%$'\t'*}
 SEEDED_TAB_ID2=${CONTAINER2_RAW#*$'\t'}
 [ "$CONTAINER2" = "$CONTAINER" ] || fail "container_ensure is not idempotent: '$CONTAINER' vs '$CONTAINER2'"
 [ -z "$SEEDED_TAB_ID2" ] || fail "an ADOPTED (reused) workspace must report an EMPTY seeded default tab id, got '$SEEDED_TAB_ID2'"
-pass "real herdr: container_ensure is idempotent (reuses/adopts the existing firstmate workspace, reports no seeded default tab on adoption)"
+pass "real herdr: container_ensure is idempotent (reuses/adopts the existing System — Firstmate workspace, reports no seeded default tab on adoption)"
 
 # --- create_task + duplicate refusal + default-tab prune ---------------------
 
@@ -207,8 +207,8 @@ pass "real herdr: a secondmate-shaped home (.fm-secondmate-home) gets its OWN he
 
 SM_WSID=${SM_CONTAINER#*:}
 SM_LABEL_REAL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$SM_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
-[ "$SM_LABEL_REAL" = "2ndmate-smoketest-sm1" ] || fail "the secondmate workspace's real herdr label should be 2ndmate-smoketest-sm1, got '$SM_LABEL_REAL'"
-pass "real herdr: the secondmate-shaped home's workspace is labeled 2ndmate-<secondmate-id> in herdr itself"
+[ "$SM_LABEL_REAL" = "System — Secondmate smoketest-sm1" ] || fail "the secondmate workspace's real herdr label should be 'System — Secondmate smoketest-sm1', got '$SM_LABEL_REAL'"
+pass "real herdr: the secondmate-shaped home's workspace is labeled '<lane> — Secondmate <secondmate-id>' in herdr itself"
 
 SM_TASK_LABEL="fm-smtask1"
 SM_TASK_IDS=$(FM_HOME="$SM_HOME" fm_backend_herdr_create_task "$SM_CONTAINER" "$SM_TASK_LABEL" /tmp "$SM_SEEDED_TAB_ID") || fail "secondmate create_task failed"
@@ -247,8 +247,8 @@ sleep 0.5
 fm_backend_herdr_server_ensure "$SESSION" || fail "the isolated session's server did not come back up after the stop"
 
 POST_LIST=$(herdr workspace list --session "$SESSION" 2>&1)
-POST_PRIMARY_ID=$(printf '%s' "$POST_LIST" | jq -r '.result.workspaces[]? | select(.label == "firstmate") | .workspace_id')
-POST_SM_ID=$(printf '%s' "$POST_LIST" | jq -r --arg l "2ndmate-smoketest-sm1" '.result.workspaces[]? | select(.label == $l) | .workspace_id')
+POST_PRIMARY_ID=$(printf '%s' "$POST_LIST" | jq -r '.result.workspaces[]? | select(.label == "System — Firstmate") | .workspace_id')
+POST_SM_ID=$(printf '%s' "$POST_LIST" | jq -r --arg l "System — Secondmate smoketest-sm1" '.result.workspaces[]? | select(.label == $l) | .workspace_id')
 [ "$POST_PRIMARY_ID" = "${CONTAINER#*:}" ] || fail "the primary workspace id did not survive the restart: before=${CONTAINER#*:} after=$POST_PRIMARY_ID"
 [ "$POST_SM_ID" = "$SM_WSID" ] || fail "the secondmate workspace id did not survive the restart: before=$SM_WSID after=$POST_SM_ID"
 
