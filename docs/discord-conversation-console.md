@@ -45,6 +45,9 @@ It names:
 - `fast_path`: the instant acknowledgement, the Jev-gated record-backed answer,
   and the typing indicator; off by default. `docs/discord-conversation-console.md`
   owns the keys and the contract.
+- `prepare`: the advisory request-preparation step that attaches a structured
+  packet to the durable intake note; off by default. `docs/discord-conversation-console.md`
+  owns the keys and the packet schema.
 - `gateway`: the gateway `url`, the `intents` bitfield, the reconnect
   `backoff_base_seconds` and `backoff_max_seconds`, and the
   `fallback_poll_seconds` and `fallback_after_attempts` that bound the polling
@@ -151,6 +154,145 @@ The config keys are `fast_path.enabled`, `fast_path.answers`,
 `fast_path.acknowledgement`, `fast_path.acknowledgement_enabled`,
 `fast_path.typing`, `fast_path.classifier_command`,
 `fast_path.classifier_timeout_seconds`, and `fast_path.max_answer_chars`.
+
+## Prepared request
+
+The captain writes free-form prose; the main turn then spends its first moments
+working out what kind of message it is, which project and task it is about, and
+which records to read.
+The prepared request removes that work from the turn: one bounded advisory step
+reads the message before the main turn and attaches a structured packet to the
+durable intake note.
+It is off by default; `prepare.enabled` turns it on.
+
+Preparation is advisory and read-only with respect to the fleet.
+It never answers the captain, never dispatches work, never changes a task
+record, and never calls anything but the classifier and the read-only records.
+The captain's raw message always travels with the packet and stays the
+authority.
+
+### The packet
+
+One packet is recorded durably per message under `prepare/` in the console
+state, and the same content is rendered into the note the session reads:
+
+```json
+{
+  "schema": "fm-discord-conversation-console.prepared-request.v1",
+  "request_id": "discord:<guild>:<channel>:<message>",
+  "intent": "state_question | new_work | decision_answer | chat",
+  "intent_confidence": 0.96,
+  "project": "firstmate",
+  "entity": "discord-console-jev-request-preparation",
+  "ask": "the captain's own words, whitespace-normalised onto one line",
+  "identifiers": {
+    "task": "the task id the message is about, or empty",
+    "pr": ["https://github.com/<owner>/<repo>/pull/<n>"],
+    "date": ["2026-09-20"],
+    "received": "2026-09-20",
+    "channel": "<channel or thread id>",
+    "thread": "<thread id, or empty>"
+  },
+  "facts": ["three to five lines read from the records"],
+  "raw_message": "the captain's exact message",
+  "raw_message_chars": 96,
+  "raw_message_sha256": "<sha256 of the raw message>",
+  "prepared_at": "<UTC timestamp>"
+}
+```
+
+The note renders it as a `PREPARED REQUEST` block - `intent`, `project` and
+`entity`, `ask`, `identifiers`, and `facts` - followed by `RAW MESSAGE
+(authoritative)` and the captain's exact text.
+A note with no packet is byte-for-byte the note the console wrote before this
+step existed.
+
+`intent` is one of four classes: a state question answerable from current
+records, new work, an answer or decision for something firstmate asked, or chat
+that needs no lookup.
+`ask` is a faithful one-line normalisation - whitespace collapsed, bounded -
+and never a paraphrase, so the packet cannot become a second, model-authored
+version of the request that diverges from what the captain sent.
+`identifiers` is read from the message and the records: a task id is reported
+only when it names a task that exists, a pull request only when its full URL
+appears in the text, and a date only when the message carries one.
+`received` is the message's own creation date.
+Each `facts` line is a read of an existing record - the reconciled task state
+(`bin/fm-crew-state.sh`), the backlog line, the task's latest recorded event, a
+recorded pull-request link, the in-flight list, the project registry - and
+nothing is inferred.
+
+`project` and `entity` are selected, never generated: the console passes the
+model the code-built candidate lists (the registry's project ids, and the task
+ids the message names plus the in-flight backlog), so it can only choose a value
+that already exists.
+A candidate list that is empty is not asked about, and that axis answers
+`null`.
+
+### Fail-closed preparation
+
+Every outcome other than a confident, well-formed verdict is the fallback, and
+the fallback is the raw message alone.
+A disabled switch, an unavailable or missing classifier command, an API or
+network error, a malformed response, an out-of-vocabulary answer, a confidence
+below `FM_JV_PREPARE_THRESHOLD` (default 0.9), and the wall-clock bound all
+produce a durable outcome with `status: fallback` and a reason naming what
+happened, and the note keeps the raw message with no `PREPARED REQUEST` block.
+`FM_JV_PREPARE_TIMEOUT` bounds the classifier wall clock, and the console's own
+`prepare.timeout_seconds` (default 4, at most 60) bounds the child: a stuck
+preparer is killed, never waited on.
+
+Preparation is separate from the reply path.
+It cannot answer a message, and it cannot change the route: the fast path still
+decides between a record-backed answer and the full turn, exactly as before.
+A message the fast path answers posts its answer and never becomes a note, so
+its started preparation is cancelled at once instead of being waited on.
+An uncertain transcription is not prepared at all.
+
+The config keys are `prepare.enabled`, `prepare.classifier_command`,
+`prepare.timeout_seconds` (default 4, at most 60), and `prepare.max_facts`
+(default 5, between 3 and 5).
+The classifier's own floor and bound are `FM_JV_PREPARE_THRESHOLD` (default 0.9)
+and `FM_JV_PREPARE_TIMEOUT` (default 20).
+
+### Cost and timing
+
+The preparer is started beside the route gate and read only at the handoff, so
+its call runs concurrently with the advisory call the capture already makes
+rather than adding a second wait to the wake path.
+It is the only new cost: the packet's facts are local record reads.
+A real packet produced from a real captain message, next to that message, and
+the measured cost and overlap proof are recorded in
+[`verification/discord-console-prepared-request.md`](verification/discord-console-prepared-request.md).
+
+### Seeing that a packet was used or skipped
+
+- `status` reports `request preparation: on|off`, `packets prepared: <n>`,
+  `packets skipped: <n>`, and `prepare last: <status> (<reason>)`.
+- `latency` prints each request's `prepare` status and its `prepare_ms`, and its
+  medians include `prepare_ms`, so the capture cost and the prepared/skipped mix
+  are readable per request and in aggregate.
+- Every message's durable outcome is one JSON record under `prepare/` in the
+  console state, keyed by the request: `status`, `reason`, `duration_ms`, and the
+  `packet` itself when it was used.
+- The note itself is the third signal: the `PREPARED REQUEST` block is present
+  exactly when a packet was used.
+
+### Undoing a live change
+
+Preparation ships off, so nothing changes until it is enabled.
+Each live-facing change and its exact undo:
+
+- Enabling it is `prepare.enabled: true` in `config/discord-conversation-console.json`.
+  Its undo is to set that back to `false` (or remove the `prepare` block) and
+  restart the listener with `bin/fm-discord-conversation-console.sh stop --config
+  <json>` then `bin/fm-discord-conversation-console.sh start --config <json>`.
+- The durable outcomes it writes are `prepare/` under the console state.
+  Its undo is to delete that directory, after which `status` reports zero
+  prepared and zero skipped.
+- The code itself is this capability's commits.
+  Its undo is to revert them on the default branch, because nothing else in the
+  console depends on them.
 
 ## Captain-message fast lane
 
@@ -437,6 +579,8 @@ It reports a health verdict (`healthy`, `starting`, `stopped`, `polling-disabled
 each configured channel and its last cursor, the live switches, whether the
 listener is registered, the connection mode and state, the last pass counts, and
 the posted, open, and recorded-interaction card counts.
+It also reports the preparation switch, the prepared and skipped packet counts,
+and the last preparation outcome (`Prepared request` above).
 When the permanent connection is unavailable, the connection mode reads
 `polling-fallback` so the fallback is visible.
 
@@ -547,6 +691,19 @@ acknowledgement while the typing indicator still appears, the acknowledgement
 defaults on when the switch is absent, disabling both the acknowledgement and
 the typing indicator is refused, and the typing indicator is bounded to a full
 turn and stops with the answer.
+`tests/fm-jev-console-prepare.test.sh` drives the preparation classifier against
+a fake System One server, covering the confident verdict, the code-built
+candidate lists, and every fail-safe path.
+`tests/fm-discord-console-prepare.test.sh` drives the prepared request end to
+end: the packet and the raw message reach the same note, every fallback leaves
+the raw message alone, a fast answer skips preparation without waiting for it,
+the disabled default writes no preparation state, preparation never posts an
+answer and never changes a task record, the prepared and skipped outcome is
+visible through `status` and `latency`, preparation is exactly-once across a
+replay, and the measured capture cost proves the preparer call runs beside the
+route call rather than after it.
+The measured numbers and method are recorded in
+[`verification/discord-console-prepared-request.md`](verification/discord-console-prepared-request.md).
 `tests/fm-jev-console-route.test.sh` drives the console-route classifier against
 a fake System One server, covering both routes and every fail-safe path.
 The measured live latencies and the observed full-turn baseline are recorded in

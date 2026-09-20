@@ -94,6 +94,7 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import socket
@@ -206,6 +207,38 @@ FAST_PATH_QUESTION_HINTS = (
 FAST_PATH_BLOCKED_HINTS = ("blocked", "bloqu\u00e9", "bloque")
 # Per-record-kind retention, so the per-message fast-path records stay bounded.
 FAST_PATH_MAX_RECORDS = 5000
+
+# The prepared request. Before the main turn, one bounded advisory step reads the
+# captain's free-form message and attaches a structured packet to the durable
+# intake note: the intent class, the target project and task entity selected
+# from code-built candidate lists, the identifiers the message carries, and
+# three to five facts already present in the records. The packet is advisory:
+# the captain's raw message always accompanies it and stays authoritative, and a
+# disabled, missing, failing, slow, or low-confidence preparation falls back
+# deterministically to the raw message alone. Preparation never answers the
+# captain, never dispatches work, and never changes a task record.
+PREPARE_SCHEMA = "fm-discord-conversation-console.prepared-request.v1"
+DEFAULT_PREPARE_TIMEOUT_SECONDS = 4.0
+MAX_PREPARE_TIMEOUT_SECONDS = 60.0
+DEFAULT_PREPARE_MAX_FACTS = 5
+MIN_PREPARE_FACTS = 3
+MAX_PREPARE_FACTS = 5
+PREPARE_MAX_RECORDS = 5000
+PREPARE_INTENTS = ("state_question", "new_work", "decision_answer", "chat")
+PREPARE_ENV_TIMEOUT = "FM_JV_PREPARE_TIMEOUT"
+# The candidate lists the model may select from are bounded, so one message can
+# never carry an unbounded request, and every packet field stays short because
+# a note body is read by a session with finite context.
+MAX_PREPARE_MESSAGE_CHARS = 4000
+MAX_PREPARE_CANDIDATE_TASKS = 40
+MAX_PREPARE_PR_URLS = 3
+MAX_PREPARE_DATES = 3
+PREPARE_ASK_MAX_CHARS = 600
+PREPARE_FACT_MAX_CHARS = 240
+PREPARE_SUMMARY_MAX_CHARS = 200
+PREPARE_PROJECT_LINE_RE = re.compile(r"^- (\S+) \[([^\]]*)\] - (.*)$")
+PREPARE_PR_URL_RE = re.compile(r"https?://[^\s<>()]*?/pull/\d+")
+PREPARE_DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 
 # Captain-facing reply presentation. Discord chat is read on a phone, so the
 # reply path renders one deterministic shape - a short bold label per section,
@@ -521,6 +554,40 @@ class ConsoleConfig:
             raise FMError("gateway.backoff_max_seconds must be at least gateway.backoff_base_seconds")
         self._parse_audio(raw)
         self._parse_transcription(raw)
+        self._parse_prepare(raw)
+
+    def _parse_prepare(self, raw: Dict[str, Any]) -> None:
+        """The advisory request-preparation step; off by default.
+
+        A disabled step is the whole fallback: no packet is built, no preparer
+        is run, and the durable note keeps the raw message exactly as it does
+        today.
+        """
+        prepare = raw.get("prepare") if isinstance(raw.get("prepare"), dict) else {}
+        self.prepare_enabled = fwl.bool_from_path(raw, ["prepare.enabled", "prepare_enabled"], False)
+        classifier = prepare.get("classifier_command")
+        if classifier is None or classifier == "":
+            self.prepare_classifier = (SCRIPT_DIR / "fm-jev-console-prepare.sh").resolve()
+        elif isinstance(classifier, str):
+            self.prepare_classifier = Path(classifier).expanduser().resolve()
+        else:
+            raise FMError("prepare.classifier_command must be a path string")
+        self.prepare_timeout = env_float(
+            PREPARE_ENV_TIMEOUT,
+            prepare.get("timeout_seconds", DEFAULT_PREPARE_TIMEOUT_SECONDS),
+            "prepare.timeout_seconds",
+        )
+        if self.prepare_timeout > MAX_PREPARE_TIMEOUT_SECONDS:
+            raise FMError(
+                "prepare.timeout_seconds must be at most %g" % MAX_PREPARE_TIMEOUT_SECONDS
+            )
+        self.prepare_max_facts = fwl.validate_positive_json_integer(
+            prepare.get("max_facts", DEFAULT_PREPARE_MAX_FACTS),
+            "prepare.max_facts",
+            MAX_PREPARE_FACTS,
+        )
+        if self.prepare_max_facts < MIN_PREPARE_FACTS:
+            raise FMError("prepare.max_facts must be at least %d" % MIN_PREPARE_FACTS)
 
     def _parse_audio(self, raw: Dict[str, Any]) -> None:
         """The Discord-CDN allowlist and bounds shared with the workspace schema."""
@@ -657,6 +724,12 @@ def sample_config() -> Dict[str, Any]:
             "fallback_poll_seconds": DEFAULT_FALLBACK_POLL_SECONDS,
             "fallback_after_attempts": DEFAULT_FALLBACK_AFTER_ATTEMPTS,
         },
+        "prepare": {
+            "enabled": False,
+            "classifier_command": "",
+            "timeout_seconds": DEFAULT_PREPARE_TIMEOUT_SECONDS,
+            "max_facts": DEFAULT_PREPARE_MAX_FACTS,
+        },
         "audio": {
             "max_bytes": DEFAULT_AUDIO_MAX_BYTES,
             "max_duration_secs": DEFAULT_AUDIO_MAX_DURATION_SECONDS,
@@ -723,6 +796,13 @@ def fast_path_record_path(env: "fwl.Env", kind: str, request_id: str) -> Path:
 
 def typing_path(env: "fwl.Env", channel_id: str) -> Path:
     return console_state_path(env, "typing", f"{channel_id}.json")
+
+
+def prepare_outcome_path(env: "fwl.Env", request_id: str) -> Path:
+    """One durable preparation outcome per request: the packet, or the fallback."""
+    if not request_id:
+        raise FMError("a preparation outcome needs a request id")
+    return console_state_path(env, "prepare", f"{fwl.sha256_text(request_id)}.json")
 
 
 def cards_dir(env: "fwl.Env") -> Path:
@@ -914,6 +994,79 @@ def prune_fast_path_records(directory: Path) -> None:
             stale.unlink()
         except OSError:
             pass
+
+
+def load_prepare_outcome(env: "fwl.Env", request_id: str) -> Optional[Dict[str, Any]]:
+    if not request_id:
+        return None
+    try:
+        record = fwl.load_existing_json(prepare_outcome_path(env, request_id))
+    except FMError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def store_prepare_outcome(env: "fwl.Env", request_id: str, record: Dict[str, Any]) -> None:
+    """Write one preparation outcome durably; a failed write never fails a capture."""
+    if not request_id:
+        return
+    stored = dict(record)
+    stored.update({"schema": PREPARE_SCHEMA, "request_id": request_id, "recorded_at": fwl.utc_now()})
+    path = prepare_outcome_path(env, request_id)
+    try:
+        with fwl.state_transaction(env):
+            fwl.atomic_json(path, stored)
+            prune_prepare_outcomes(path.parent)
+    except FMError:
+        return
+
+
+def prune_prepare_outcomes(directory: Path) -> None:
+    try:
+        records = sorted(directory.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+    except OSError:
+        return
+    for stale in records[PREPARE_MAX_RECORDS:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def prepare_counts(env: "fwl.Env") -> Dict[str, Any]:
+    """Read-only prepared/fallen-back tallies and the newest outcome, for status."""
+    result: Dict[str, Any] = {"prepared": 0, "fallback": 0, "last": {}}
+    directory = console_state_path(env, "prepare")
+    newest: Optional[Path] = None
+    newest_mtime = -1.0
+    try:
+        if not directory.is_dir():
+            return result
+        for path in directory.glob("*.json"):
+            try:
+                record = fwl.load_existing_json(path)
+                mtime = path.stat().st_mtime
+            except (FMError, OSError):
+                continue
+            if not isinstance(record, dict):
+                continue
+            if record.get("status") == "prepared":
+                result["prepared"] += 1
+            else:
+                result["fallback"] += 1
+            if mtime > newest_mtime:
+                newest_mtime = mtime
+                newest = path
+    except OSError:
+        return result
+    if newest is not None:
+        try:
+            record = fwl.load_existing_json(newest)
+        except FMError:
+            record = None
+        if isinstance(record, dict):
+            result["last"] = record
+    return result
 
 
 def transcript_record_path(env: "fwl.Env", request_id: str) -> Path:
@@ -1127,6 +1280,8 @@ def latency_rows(env: "fwl.Env", limit: int = DEFAULT_LATENCY_REPORT_ROWS) -> Li
                 "delivered_at": delivered_at,
                 "activated_at": activated_at,
                 "answered_at": answered_at,
+                "prepare_status": str(record.get("prepare_status") or ""),
+                "prepare_ms": _epoch_float(record.get("prepare_ms")),
                 "stage1_discord_to_console": delta(discord_at, ingested_at),
                 "stage2_console_handling": delta(ingested_at, captured_at),
                 "stage3_wake": delta(captured_at, delivered_at),
@@ -1151,7 +1306,7 @@ def _median(values: List[float]) -> Optional[float]:
 def latency_medians(rows: List[Dict[str, Any]]) -> Dict[str, Optional[float]]:
     keys = (
         "stage1_discord_to_console", "stage2_console_handling", "stage3_wake",
-        "stage4_session_activation", "stage5_turn", "total",
+        "stage4_session_activation", "stage5_turn", "prepare_ms", "total",
     )
     result: Dict[str, Optional[float]] = {}
     for key in keys:
@@ -1448,6 +1603,16 @@ def note_body(event: Dict[str, Any]) -> str:
                 "do not act on a single uncertain reading"
             )
     lines.append("")
+    packet = event.get("prepared_packet")
+    if isinstance(packet, dict):
+        # The packet is advisory and the raw message is authoritative, so the
+        # two always travel together and in that order: the derived reading
+        # first, then the captain's own words under an explicit heading that
+        # says which one wins.
+        lines.append("PREPARED REQUEST (advisory, derived from the raw message below)")
+        lines.extend(render_prepared_packet(packet))
+        lines.append("")
+        lines.append("RAW MESSAGE (authoritative)")
     lines.append(str(event.get("content") or ""))
     lines.append("")
     lines.append(
@@ -1800,6 +1965,560 @@ def render_captain_reply(text: str, max_chars: int = DEFAULT_REPLY_MAX_CHARS) ->
     return _bound_reply_text(rendered_text, max_chars)
 
 
+# ---------------------------------------------------------------------------
+# Prepared request: an advisory packet attached to the durable intake note
+#
+# The preparation is the second half of the captain-request fast path. The
+# wake half delivers the note immediately; this half makes the note cheaper to
+# act on by reading the message once, before the main turn, and attaching what
+# the turn would otherwise have to hunt for: the intent, the target selected
+# from code-built candidate lists, the identifiers the message carries, and a
+# few facts already present in the records. Everything here is advisory and
+# read-only with respect to the fleet: it never answers the captain, never
+# dispatches work, and never writes anywhere outside the console's own state.
+# The captain's raw message is always kept beside the packet and stays the
+# authority.
+# ---------------------------------------------------------------------------
+
+def known_projects(env: "fwl.Env") -> List[Dict[str, str]]:
+    """The registered projects as code-built candidates, from data/projects.md.
+
+    The model may only select one of these; it can never name a project the
+    registry does not carry. A missing registry yields no candidates rather
+    than a guess, and then the project axis is simply not asked.
+    """
+    registry = env.data / "projects.md"
+    projects: List[Dict[str, str]] = []
+    seen: set = set()
+    try:
+        if not registry.is_file() or registry.is_symlink():
+            return projects
+        for line in registry.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = PREPARE_PROJECT_LINE_RE.match(line)
+            if not match:
+                continue
+            project_id = match.group(1)
+            if project_id in seen:
+                continue
+            seen.add(project_id)
+            posture = match.group(2).strip()
+            summary = re.sub(r"\s*\(added \d{4}-\d{2}-\d{2}\)\s*$", "", match.group(3).strip())
+            if posture:
+                summary = f"{summary} [{posture}]" if summary else f"[{posture}]"
+            projects.append(
+                {"id": project_id, "summary": summary[:PREPARE_SUMMARY_MAX_CHARS]}
+            )
+    except OSError:
+        return projects
+    return projects
+
+
+def backlog_entries(env: "fwl.Env") -> Dict[str, Dict[str, str]]:
+    """One pass over data/backlog.md: task id -> title, repo, kind, since, done."""
+    entries: Dict[str, Dict[str, str]] = {}
+    backlog = env.data / "backlog.md"
+    try:
+        if not backlog.is_file() or backlog.is_symlink():
+            return entries
+        for line in backlog.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = FAST_PATH_BACKLOG_LINE_RE.match(line)
+            if not match:
+                continue
+            task_id = match.group(1)
+            entry = {"title": "", "repo": "", "kind": "", "since": "", "done": "no"}
+            if line.startswith("- [x]") or line.startswith("- [X]"):
+                entry["done"] = "yes"
+            parts = line.split(" - ", 1)
+            if len(parts) > 1:
+                body = parts[1]
+                entry["title"] = re.split(
+                    r"\s+\((?:repo|kind|priority|since|hold)[:=]", body, maxsplit=1
+                )[0].strip()[:PREPARE_SUMMARY_MAX_CHARS]
+                for field, pattern in (
+                    ("repo", r"\(repo: ([^)]+)\)"),
+                    ("kind", r"\(kind: ([^)]+)\)"),
+                    ("since", r"\(since ([^)]+)\)"),
+                ):
+                    found = re.search(pattern, body)
+                    if found:
+                        entry[field] = found.group(1).strip()
+            entries[task_id] = entry
+    except OSError:
+        return entries
+    return entries
+
+
+def candidate_tasks(env: "fwl.Env", content: str) -> List[Dict[str, str]]:
+    """The task ids this message may be about: every id it names, plus the
+    in-flight backlog. Bounded and code-built, so the model can only select a
+    task that already exists."""
+    wanted: List[str] = []
+    known = known_task_ids(env)
+    for token in FAST_PATH_TASK_TOKEN_RE.findall(content or ""):
+        if token in known and token not in wanted:
+            wanted.append(token)
+    for task_id in in_flight_backlog_ids(env):
+        if task_id not in wanted:
+            wanted.append(task_id)
+    bounded = wanted[:MAX_PREPARE_CANDIDATE_TASKS]
+    entries = backlog_entries(env)
+    return [
+        {"id": task_id, "title": (entries.get(task_id) or {}).get("title", "")}
+        for task_id in bounded
+    ]
+
+
+def normalise_ask(content: str) -> str:
+    """The captain's own words on one bounded line.
+
+    This is a faithful normalisation - whitespace collapsed, surrounding blank
+    space removed - and never a paraphrase. The packet must not become a
+    second, model-authored version of the ask that could diverge from the
+    message the captain actually sent.
+    """
+    text = re.sub(r"\s+", " ", str(content or "")).strip()
+    if len(text) > PREPARE_ASK_MAX_CHARS:
+        text = text[: PREPARE_ASK_MAX_CHARS - 1].rstrip() + "\u2026"
+    return text
+
+
+def extract_identifiers(env: "fwl.Env", event: Dict[str, Any], entity: str) -> Dict[str, Any]:
+    """The identifiers the message carries, read from the text and the event.
+
+    Nothing here is inferred: a task id is only reported when it names a task
+    that exists in the records, a pull request only when the text carries its
+    full URL, and a date only when it appears in the message.
+    """
+    content = str(event.get("content") or "")
+    task_id = entity or extract_task_id(env, content) or ""
+    prs: List[str] = []
+    for match in PREPARE_PR_URL_RE.finditer(content):
+        url = match.group(0).rstrip(".,;")
+        if url not in prs:
+            prs.append(url)
+    dates: List[str] = []
+    for match in PREPARE_DATE_RE.finditer(content):
+        if match.group(1) not in dates:
+            dates.append(match.group(1))
+    created = parse_discord_epoch(event.get("message_id"), event.get("timestamp"))
+    received = ""
+    if created:
+        received = datetime.datetime.fromtimestamp(created, datetime.timezone.utc).strftime("%Y-%m-%d")
+    target = str(event.get("thread_id") or event.get("channel_id") or "")
+    return {
+        "task": task_id,
+        "pr": prs[:MAX_PREPARE_PR_URLS],
+        "date": dates[:MAX_PREPARE_DATES],
+        "received": received,
+        "channel": target,
+        "thread": str(event.get("thread_id") or ""),
+    }
+
+
+def prepare_facts(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    entity: str,
+    project: str,
+    entries: Dict[str, Dict[str, str]],
+) -> List[str]:
+    """Three to five durable facts about the message's target, or about the fleet.
+
+    Every fact is a read of an existing record - the reconciled task state, the
+    backlog line, the last recorded event, a recorded pull-request link, the
+    in-flight list, the registry. Nothing is inferred and nothing is changed,
+    and the count is bounded by the configured maximum.
+    """
+    facts: List[str] = []
+    if entity:
+        facts.extend(task_facts(env, entity, entries.get(entity) or {}))
+    if project:
+        registry = {item["id"]: item for item in known_projects(env)}
+        listed = registry.get(project)
+        if listed:
+            facts.append(f"project {project}: {listed['summary']}")
+        owned = [
+            task_id
+            for task_id, entry in entries.items()
+            if entry.get("repo") == project and entry.get("done") == "no"
+        ]
+        facts.append(
+            f"{project} open tasks: {len(owned)}" + ((" (" + ", ".join(sorted(owned)[:6]) + ")") if owned else "")
+        )
+    facts.extend(fleet_facts(env, entries))
+    unique: List[str] = []
+    for fact in facts:
+        text = str(fact or "").strip()
+        if not text or text in unique:
+            continue
+        unique.append(text[:PREPARE_FACT_MAX_CHARS])
+    return unique[: cfg.prepare_max_facts]
+
+
+def task_facts(env: "fwl.Env", task_id: str, entry: Dict[str, str]) -> List[str]:
+    """What the records already say about one task, read read-only."""
+    facts: List[str] = []
+    word = task_plain_state(env, task_id)
+    if word:
+        facts.append(f"reconciled state: {task_id} is {word}")
+    if entry:
+        described = [
+            part
+            for part in (
+                ("repo: " + entry["repo"]) if entry.get("repo") else "",
+                ("kind: " + entry["kind"]) if entry.get("kind") else "",
+                ("since " + entry["since"]) if entry.get("since") else "",
+                "backlog: done" if entry.get("done") == "yes" else "backlog: open",
+            )
+            if part
+        ]
+        title = entry.get("title") or "(untitled)"
+        facts.append(f"backlog: {title} ({', '.join(described)})")
+    else:
+        facts.append(f"backlog: {task_id} is not listed")
+    last_event = last_status_event(env, task_id)
+    if last_event:
+        facts.append(f"last recorded event: {last_event}")
+    pr_url = task_pr_url(env, task_id)
+    if pr_url:
+        facts.append(f"recorded pull request: {pr_url}")
+    return facts
+
+
+def fleet_facts(env: "fwl.Env", entries: Dict[str, Dict[str, str]]) -> List[str]:
+    """The always-available facts about the queue itself, read read-only."""
+    in_flight = in_flight_backlog_ids(env)
+    facts: List[str] = []
+    if in_flight:
+        shown = ", ".join(in_flight[:6])
+        more = f" (+{len(in_flight) - 6} more)" if len(in_flight) > 6 else ""
+        facts.append(f"in flight: {len(in_flight)} ({shown}){more}")
+    else:
+        facts.append("in flight: none")
+    open_count = sum(1 for entry in entries.values() if entry.get("done") != "yes")
+    done_count = len(entries) - open_count
+    facts.append(f"backlog: {open_count} open, {done_count} done")
+    projects = known_projects(env)
+    facts.append(f"projects registered: {len(projects)}")
+    return facts
+
+
+def last_status_event(env: "fwl.Env", task_id: str) -> str:
+    """The task's latest recorded status event, bounded and read read-only."""
+    path = env.state / f"{task_id}.status"
+    try:
+        if not path.is_file() or path.is_symlink():
+            return ""
+        lines = [
+            line.strip()
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if line.strip()
+        ]
+    except OSError:
+        return ""
+    if not lines:
+        return ""
+    return lines[-1][:PREPARE_FACT_MAX_CHARS]
+
+
+def task_pr_url(env: "fwl.Env", task_id: str) -> str:
+    """The pull request the task's own metadata records, or an empty string."""
+    meta = env.state / f"{task_id}.meta"
+    try:
+        if not meta.is_file() or meta.is_symlink():
+            return ""
+        for line in meta.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("pr="):
+                value = line[len("pr="):].strip()
+                if value:
+                    return value
+    except OSError:
+        return ""
+    return ""
+
+
+class PrepareCall:
+    """One bounded advisory preparer child, started before its answer is needed.
+
+    The console starts it beside the route classification and reads it only at
+    the handoff, so preparation runs inside a window the capture already spends
+    on an advisory call instead of adding a second wait to the wake path. Every
+    outcome other than a well-formed answer is the fallback, and the child is
+    killed at its deadline so a stuck preparer can never hold the note.
+    """
+
+    def __init__(self, cmd: List[str], payload: str, timeout: float, env_extra: Dict[str, str]):
+        self.timeout = timeout
+        self.started_at = time.time()
+        self.error = ""
+        self._proc: Optional[subprocess.Popen] = None
+        environ = dict(os.environ)
+        environ.update(env_extra)
+        try:
+            self._proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                env=environ,
+            )
+            if self._proc.stdin is None:
+                raise OSError("no standard input on the preparer child")
+            self._proc.stdin.write(payload)
+            self._proc.stdin.close()
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.cancel()
+
+    def finish(self) -> Optional[str]:
+        """Wait out the remaining bound, returning stdout or None on any failure."""
+        proc = self._proc
+        if proc is None:
+            return None
+        remaining = self.timeout - (time.time() - self.started_at)
+        try:
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(proc.args, self.timeout)
+            proc.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            self.error = self.error or f"timeout after {self.timeout:g}s"
+            self.cancel()
+            return None
+        if proc.returncode != 0:
+            self.error = f"exit {proc.returncode}"
+            self.cancel()
+            return None
+        output = ""
+        try:
+            if proc.stdout is not None:
+                output = proc.stdout.read()
+        except (OSError, ValueError) as exc:
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.cancel()
+            return None
+        self.cancel()
+        return output
+
+    def cancel(self) -> None:
+        """Kill and reap the child; safe to call more than once."""
+        proc = self._proc
+        if proc is None:
+            return
+        self._proc = None
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=5)
+        except (subprocess.SubprocessError, OSError):
+            pass
+        for stream in (proc.stdin, proc.stdout):
+            try:
+                if stream is not None and not stream.closed:
+                    stream.close()
+            except (OSError, ValueError):
+                pass
+
+
+def start_prepare(env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any]) -> Optional[PrepareCall]:
+    """Start the bounded advisory preparer for one message, or None when it cannot start.
+
+    The started call is stashed on the event, because it is read later in the
+    same capture - after the route decision - and never by anyone else. The
+    pop in finish_prepare/discard_prepare is therefore the only way it ends.
+    """
+    if not cfg.prepare_enabled:
+        return None
+    if not cfg.prepare_classifier.is_file():
+        return None
+    content = str(event.get("content") or "")
+    payload = json.dumps(
+        {
+            "message": content[:MAX_PREPARE_MESSAGE_CHARS],
+            "label": str(event.get("label") or ""),
+            "projects": known_projects(env),
+            "tasks": candidate_tasks(env, content),
+        },
+        ensure_ascii=False,
+    )
+    call = PrepareCall(
+        [str(cfg.prepare_classifier), "-"],
+        payload,
+        cfg.prepare_timeout,
+        {"FM_HOME": str(env.home), PREPARE_ENV_TIMEOUT: str(round(cfg.prepare_timeout, 3))},
+    )
+    event["prepare_call"] = call
+    return call
+
+
+def parse_prepare_verdict(output: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """One strict JSON verdict from the preparer, or (None, why it is unusable)."""
+    text = (output or "").strip()
+    if not text:
+        return None, "the preparer produced no answer"
+    line = text.splitlines()[-1]
+    try:
+        verdict = json.loads(line)
+    except json.JSONDecodeError:
+        return None, "the preparer answer is not JSON"
+    if not isinstance(verdict, dict):
+        return None, "the preparer answer is not a JSON object"
+    if verdict.get("flag"):
+        return None, str(verdict.get("reason") or verdict.get("flag"))
+    intent = verdict.get("intent")
+    if intent not in PREPARE_INTENTS:
+        return None, f"the preparer named an unknown intent: {intent!r}"
+    confidence = verdict.get("intent_confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return None, "the preparer returned no usable confidence"
+    if not math.isfinite(float(confidence)) or not 0.0 <= float(confidence) <= 1.0:
+        return None, "the preparer returned a confidence outside 0..1"
+    return verdict, "ok"
+
+
+def build_prepared_packet(
+    env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any], verdict: Dict[str, Any]
+) -> Dict[str, Any]:
+    """The advisory packet, built from the verdict plus the durable records."""
+    content = str(event.get("content") or "")
+    entity = str(verdict.get("entity") or "")
+    # The preparer only ever sees code-built candidates, so this is a boundary
+    # assertion rather than a filter: an id that names no existing record is
+    # dropped instead of being repeated into the packet.
+    if entity and entity not in known_task_ids(env):
+        entity = ""
+    project = str(verdict.get("project") or "")
+    entries = backlog_entries(env)
+    return {
+        "schema": PREPARE_SCHEMA,
+        "request_id": str(event.get("request_id") or ""),
+        "intent": str(verdict.get("intent") or ""),
+        "intent_confidence": round(float(verdict.get("intent_confidence")), 4),
+        "project": project or None,
+        "entity": entity or None,
+        "ask": normalise_ask(content),
+        "identifiers": extract_identifiers(env, event, entity),
+        "facts": prepare_facts(env, cfg, entity, project, entries),
+        "raw_message": content,
+        "raw_message_chars": len(content),
+        "raw_message_sha256": fwl.sha256_text(content),
+        "prepared_at": fwl.utc_now(),
+    }
+
+
+def finish_prepare(
+    env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any], reason: str = ""
+) -> Dict[str, Any]:
+    """Resolve a started preparation into a durable outcome and attach the packet.
+
+    The caller names the reason when it deliberately did not prepare (a fast
+    answer consumed the message, an uncertain transcription must first be
+    confirmed). Every other path reads the started call here, and any failure,
+    timeout, or uncertain verdict is the fallback: the note keeps the raw
+    message alone and the outcome records why.
+    """
+    request_id = str(event.get("request_id") or "")
+    call = event.pop("prepare_call", None)
+    duration_ms: Optional[float] = None
+    verdict: Optional[Dict[str, Any]] = None
+    failure = reason
+    if call is None:
+        if not failure:
+            failure = "no preparer was started"
+    else:
+        output = call.finish()
+        # The measured cost is the whole bounded read, wait included: that is
+        # the figure the wake path pays for the packet.
+        duration_ms = round((time.time() - call.started_at) * 1000.0, 1)
+        if output is None:
+            failure = reason or call.error or "the preparer produced no answer"
+        else:
+            verdict, failure = parse_prepare_verdict(output)
+    if verdict is None:
+        outcome: Dict[str, Any] = {
+            "status": "fallback",
+            "reason": failure or "uncertain preparation",
+            "packet": None,
+        }
+    else:
+        outcome = {
+            "status": "prepared",
+            "reason": "ok",
+            "packet": build_prepared_packet(env, cfg, event, verdict),
+        }
+    outcome["duration_ms"] = duration_ms
+    store_prepare_outcome(env, request_id, outcome)
+    if isinstance(outcome.get("packet"), dict):
+        event["prepared_packet"] = outcome["packet"]
+    return outcome
+
+
+def discard_prepare(
+    env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any], reason: str
+) -> Dict[str, Any]:
+    """Cancel a started preparation whose packet has nowhere to go, and record why.
+
+    This is what a fast answer does: it never becomes a note, so waiting out the
+    preparer's bound would only delay the captain's answer. The child is killed
+    at once and the outcome records that this message skipped preparation.
+    """
+    call = event.pop("prepare_call", None)
+    duration_ms: Optional[float] = None
+    if isinstance(call, PrepareCall):
+        duration_ms = round((time.time() - call.started_at) * 1000.0, 1)
+        call.cancel()
+    outcome: Dict[str, Any] = {
+        "status": "fallback",
+        "reason": reason,
+        "packet": None,
+        "duration_ms": duration_ms,
+    }
+    store_prepare_outcome(env, str(event.get("request_id") or ""), outcome)
+    return outcome
+
+
+def prepare_latency_fields(outcome: Dict[str, Any]) -> Dict[str, Any]:
+    """The preparation stage as the latency journal records it, or nothing."""
+    if not isinstance(outcome, dict) or not outcome.get("status"):
+        return {}
+    return {
+        "prepare_status": str(outcome.get("status")),
+        "prepare_reason": str(outcome.get("reason") or "")[:200],
+        "prepare_ms": outcome.get("duration_ms"),
+    }
+
+
+def render_prepared_packet(packet: Dict[str, Any]) -> List[str]:
+    """The packet block as the note body reads it, one line per field."""
+    lines: List[str] = []
+    lines.append(f"intent: {packet.get('intent')} (confidence {packet.get('intent_confidence')})")
+
+    def shown(value: Any) -> str:
+        # A null axis reads as `none` on purpose: the note is prose firstmate
+        # reads, and Python's None is an implementation detail of the record.
+        return "none" if value in (None, "") else str(value)
+
+    lines.append(f"project: {shown(packet.get('project'))} | entity: {shown(packet.get('entity'))}")
+    lines.append(f"ask: {packet.get('ask')}")
+    identifiers = packet.get("identifiers") if isinstance(packet.get("identifiers"), dict) else {}
+    pairs = []
+    for key in ("task", "pr", "date", "received", "channel"):
+        value = identifiers.get(key)
+        if isinstance(value, list):
+            value = ", ".join(str(item) for item in value)
+        if value:
+            pairs.append(f"{key}={value}")
+    lines.append("identifiers: " + (" ".join(pairs) if pairs else "none"))
+    facts = packet.get("facts") if isinstance(packet.get("facts"), list) else []
+    lines.append("facts:")
+    for fact in facts:
+        lines.append(f"- {fact}")
+    return lines
+
+
 def post_fast_path_message(env: "fwl.Env", client: "ConsoleClient", channel_id: str, text: str, nonce: str) -> str:
     """Post one idempotent fast-path message; a replay returns the first message id."""
     path = fwl.receipt_path(env, nonce)
@@ -1854,14 +2573,35 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
             # The permanent connection was enabled but this message only reached
             # the console through the bounded poll; make the fallback visible.
             record_delivery_gap(env, "polling-capture", f"message {event.get('message_id')} captured by polling while the gateway was enabled")
+    # The advisory preparation starts here, beside the route classification, and
+    # is read only at the handoff. That is what keeps it off the wake path: the
+    # capture already spends this window on an advisory gate when the fast path
+    # is on, so the packet costs the captain no extra wait to be attached.
+    prepare_skip = ""
+    if cfg.prepare_enabled and request_id:
+        if transcript_is_uncertain(event):
+            prepare_skip = "uncertain transcription: the spoken words are not confirmed yet"
+        else:
+            if start_prepare(env, cfg, event) is None:
+                prepare_skip = "the preparer command is not available"
     # An uncertain transcript always takes the full turn: the fast path answers
     # from records, and an answer to a question the captain may not have asked is
     # worse than a slower confirmation. The marker in the note is what firstmate
     # then asks the captain about.
     if not (cfg.fast_path_enabled and cfg.live_posting_enabled) or not request_id or transcript_is_uncertain(event):
+        prepare_outcome: Dict[str, Any] = {}
+        if cfg.prepare_enabled and request_id:
+            prepare_outcome = finish_prepare(env, cfg, event, prepare_skip)
         note_id = handoff_event(env, event)
         if request_id:
-            update_latency(env, request_id, captured_at=time.time(), note_id=note_id, path="full_turn")
+            update_latency(
+                env,
+                request_id,
+                captured_at=time.time(),
+                note_id=note_id,
+                path="full_turn",
+                **prepare_latency_fields(prepare_outcome),
+            )
         return "captured"
     ack_message_id = ""
     ack_at: Optional[float] = None
@@ -1921,16 +2661,30 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
                 decision["answer_text"] = ""
                 store_fast_path_record(env, "decisions", request_id, decision)
     note_id = ""
+    prepare_outcome = {}
     if path != "fast_answer" or not answer_text:
         path = "full_turn"
+        if cfg.prepare_enabled and request_id:
+            prepare_outcome = finish_prepare(env, cfg, event, prepare_skip)
         note_id = handoff_event(env, event)
         if new_decision and cfg.fast_path_typing_enabled:
             try:
                 ensure_typing(env, cfg, client, event)
             except FMError:
                 pass
+    elif cfg.prepare_enabled and request_id:
+        # A fast answer never becomes a note, so the packet would have nowhere to
+        # go: cancel the started call at once instead of waiting out its bound,
+        # and record that the message skipped preparation for this reason.
+        prepare_outcome = discard_prepare(
+            env,
+            cfg,
+            event,
+            prepare_skip or "the fast path answered the message without a full turn",
+        )
     if request_id:
         latency_fields: Dict[str, Any] = {"path": path, "captured_at": answer_at or time.time()}
+        latency_fields.update(prepare_latency_fields(prepare_outcome))
         if ack_at is not None:
             latency_fields["ack_at"] = ack_at
         if ack_message_id:
@@ -3965,6 +4719,19 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"transcripts recorded: {counts['ok']} ok, {counts['failed']} failed")
         print(f"transcription model: {cfg.transcription_model} ({cfg.transcription_language})")
         print(f"transcription confidence check: {'on' if cfg.transcription_confidence_check else 'off'}")
+    print(f"request preparation: {'on' if cfg.prepare_enabled else 'off'}")
+    if cfg.prepare_enabled:
+        prepared = prepare_counts(env)
+        print(f"packets prepared: {prepared['prepared']}")
+        print(f"packets skipped: {prepared['fallback']}")
+        last_prepared = prepared.get("last") if isinstance(prepared.get("last"), dict) else {}
+        if last_prepared.get("status"):
+            print(
+                "prepare last: %s (%s)"
+                % (last_prepared.get("status"), str(last_prepared.get("reason") or "")[:160])
+            )
+        else:
+            print("prepare last: none")
     fast_counts = fast_path_counts(env)
     print(f"fast-path acks: {fast_counts['acks']}")
     print(f"fast-path audited messages: {fast_counts['audits']}")
@@ -4058,7 +4825,8 @@ def cmd_latency(args: argparse.Namespace, env: "fwl.Env") -> int:
             f"{row['request_id'] or row['message_id']}: transport={row['transport'] or '?'} path={row['path'] or '?'} "
             f"s1={_stage_text(row['stage1_discord_to_console'])} s2={_stage_text(row['stage2_console_handling'])} "
             f"s3={_stage_text(row['stage3_wake'])} s4={_stage_text(row['stage4_session_activation'])} "
-            f"s5={_stage_text(row['stage5_turn'])} total={_stage_text(row['total'])}"
+            f"s5={_stage_text(row['stage5_turn'])} total={_stage_text(row['total'])} "
+            f"prepare={row['prepare_status'] or 'off'}"
         )
     print("medians: " + " ".join(f"{key}={_stage_text(medians[key])}" for key in sorted(medians)))
     print(f"transports: {json.dumps(latency_transport_counts(env), sort_keys=True)}")
