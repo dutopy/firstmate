@@ -15,6 +15,8 @@
 #   fm-discord-conversation-console.sh reply [--config <json>] --text-file <f>
 #       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
 #       [--nonce <n>] [--dry-run]
+#   fm-discord-conversation-console.sh mirror [--config <json>] --text-file <f>
+#       --item-key <durable item identity> [--tag captain|main] [--channel <id>] [--dry-run]
 #   fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
 #       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
 #       [--nonce <n>] [--dry-run]
@@ -31,6 +33,14 @@
 # posting switches. It never stores a token: the bot token is decrypted into
 # process memory only through the shared owner in bin/fm_discord_live.py, and no
 # token is printed, logged, or written to disk.
+#
+# `mirror` posts one bounded item of a live Pi session's dialog into the
+# configured #firstmate channel through this console's own bot identity, so the
+# native Pi session mirror needs no second identity. Each item carries a durable
+# item key supplied by the caller, and the shared receipt makes the post
+# exactly-once across restarts and replays. The channel and the switch live in
+# the config (mirror.enabled, mirror.channel_id), never in code, and the whole
+# capability is off by default.
 #
 # `card` posts one captain-facing card with up to five labelled option buttons.
 # Each press arrives as a gateway interaction, is answered through Discord's

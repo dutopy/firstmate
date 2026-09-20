@@ -703,6 +703,7 @@ tests/fm-cursor-harness.test.sh 30103
 tests/fm-cursor-primary-live-e2e.test.sh 21
 tests/fm-cursor-primary.test.sh 54947
 tests/fm-discord-console-fast-path.test.sh 18000
+tests/fm-discord-console-mirror.test.sh 4000
 tests/fm-discord-conversation-console-audio.test.sh 5000
 tests/fm-discord-conversation-console.test.sh 20000
 tests/fm-discord-live.test.sh 38579
@@ -753,6 +754,7 @@ tests/fm-pi-branch-extension.test.sh 22239
 tests/fm-pi-branch-live-e2e.test.sh 56
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 21
 tests/fm-pi-primary-live-e2e.test.sh 20
+tests/fm-pi-session-mirror-extension.test.sh 4000
 tests/fm-pi-watch-extension.test.sh 42970
 tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pr-check-security.test.sh 172215

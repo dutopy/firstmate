@@ -10,10 +10,15 @@ A message posted in a thread under `#firstmate` keeps that thread identity, so i
 answer returns to that thread and several parallel conversations never cross.
 
 It is separate from, and reuses, the private Discord operations workspace
-(`discord-workspace.md`) and the session mirror (`discord-session-mirror.md`).
+(`discord-workspace.md`) and the per-project session mirror
+(`discord-session-mirror.md`).
 `bin/fm-discord-conversation-console.sh` is the only entrypoint for this
 capability, and `bin/fm_discord_conversation_console_lib.py` owns its config
 schema, state records, inbound pass, and outbound reply.
+The console also carries the captain's native Pi session mirror
+(`Session mirror` below), which is a different surface from the per-project
+session mirror: it posts into this console's own channel, through this
+console's own bot, and it is off by default.
 It reuses `bin/fm_discord_workspace_lib.py` for the shared config, state, lock,
 and receipt primitives, and `bin/fm_discord_live.py` for the Discord HTTP client,
 token decryption, retry bounds, and token redaction.
@@ -48,6 +53,8 @@ It names:
 - `prepare`: the advisory request-preparation step that attaches a structured
   packet to the durable intake note; off by default. `docs/discord-conversation-console.md`
   owns the keys and the packet schema.
+- `mirror`: the native Pi session mirror's switch, target channel, and bound;
+  off by default. `Session mirror` below owns the contract.
 - `gateway`: the gateway `url`, the `intents` bitfield, the reconnect
   `backoff_base_seconds` and `backoff_max_seconds`, and the
   `fallback_poll_seconds` and `fallback_after_attempts` that bound the polling
@@ -565,6 +572,129 @@ same function.
 The full reply path is unchanged otherwise - no model call is added and no answer
 is guessed.
 
+## Session mirror
+
+The captain's terminal Pi session can be mirrored into the same `#firstmate`
+channel, so what happens at the keyboard is visible on Discord too.
+It is off by default and it introduces no second identity: the mirror posts
+through this console's own bot, into a channel named by this config.
+
+Two owners, one concern each:
+
+- `.pi/extensions/fm-discord-session-mirror.ts` owns WHICH dialog is new: a
+  durable cursor over the live Pi session file, consulted at every turn end.
+- `bin/fm-discord-conversation-console.sh mirror` owns the delivery: the
+  configured channel, the console identity, the bound, and the shared
+  nonce-keyed receipt.
+
+The extension is tracked with the other Pi extensions, so it loads from the
+project's own extension directory like the watcher and the supervision branch.
+It is inert until the config enables it, and it reads the live session only
+through Pi's own session manager: it writes no session file.
+
+### What is mirrored
+
+One completed turn's visible conversational text: the captain's terminal
+messages, attributed `[captain]`, and Firstmate's visible answers, attributed
+`[main]`.
+Everything else stays out: tool calls and results, reasoning, operational
+injections (watcher wakes, session starts, launch briefs, the away supervisor),
+an assistant message that failed, and any item with no visible text once
+trimmed.
+Collection happens at turn end, never mid-turn, so a partial turn is never
+posted.
+
+### Configuration
+
+- `mirror.enabled` (default off) is the switch.
+- `mirror.channel_id` is the target, and it must be one of the configured
+  `#firstmate` channels; an enabled mirror with no channel, or with a channel
+  outside the list, is refused at config load instead of guessed.
+- `mirror.max_chars` (default 1800, at least 100 and never above Discord's 2000
+  character body limit) is the bound every mirrored item is rendered to.
+
+The config is re-read at every turn end, so turning the switch off stops the
+mirror at the next turn boundary with no Pi restart.
+
+### Delivery and idempotence
+
+```sh
+bin/fm-discord-conversation-console.sh mirror [--config <json>] --text-file <f>
+    --item-key <durable item identity> [--tag captain|main] [--channel <id>] [--dry-run]
+```
+
+`--item-key` is the durable identity of the source item, built from the session
+file and the entry's position, and it is what the receipt is keyed by.
+The identity is the source position and never the text, so a restart, a
+replayed turn, or a cursor lost between a post and its cursor write all converge
+on one receipt and post nothing twice, while two identical lines from two
+positions still post twice because they are two items.
+A live replay of an already-delivered item prints `mirror exists for item ...;
+no second post` and posts nothing.
+
+A post is `[captain] <text>` or `[main] <text>`, bounded to `mirror.max_chars`
+with any omission stated in place - `[mirror truncated: N characters omitted]`
+between the head and the tail - so a long item is one bounded message rather
+than a silently partial one.
+An empty item is refused before any Discord call.
+Operational text is a settled skip: nothing is posted, no receipt is written,
+and the command exits successfully so its caller moves past that item instead
+of retrying it forever.
+
+### The durable cursor
+
+The extension keeps one cursor record at
+`state/discord-workspace/conversation-console/mirror-cursor.json`: the session
+file, the entry position, when it last advanced, and the last delivery error.
+It advances only after an item's delivery is settled, so a failed delivery
+leaves the un-delivered items for the next turn end and records its reason
+there, and a turn end delivers at most eight items so a backlog mirrors as a
+bounded sequence rather than one burst.
+A session the mirror has never recorded is seeded at its current position and
+nothing is posted, which is what keeps enabling the mirror mid-session from
+dumping that session's history into the channel.
+`status` reports the cursor's file and position.
+
+### Seeing that it works
+
+- `config-check` prints `session mirror`, `mirror channel`, and `mirror bound`.
+- `status` prints those and the cursor, so the position the mirror will resume
+  from is readable without reading any record by hand.
+- Every delivery writes the shared receipt under
+  `state/discord-workspace/receipts/`, carrying `kind: mirror`, the item nonce,
+  the target channel, and the Discord message id it posted.
+- `--dry-run` prints the plan and the bounded body and posts nothing.
+
+### Undoing a live change
+
+The capability ships off, so merging the code alone changes no running
+behavior.
+Each live-facing change and its exact undo:
+
+- Turning it on is `mirror.enabled: true` plus `mirror.channel_id` in
+  `config/discord-conversation-console.json`.
+  Its undo is to set `mirror.enabled` back to `false`, or to remove the `mirror`
+  block entirely; either takes effect at the next turn end, with no Pi restart,
+  because the extension re-reads the config every turn.
+- Its durable records are `mirror-cursor.json` under the console state and the
+  `kind: mirror` receipts.
+  Their undo is to delete them, after which `status` reports no cursor and a
+  replay of that session mirrors again from the seed position instead of
+  trusting a receipt.
+- The posted items are ordinary messages in the mirrored channel.
+  Their undo is to delete them there; no other record depends on them beyond the
+  receipts above.
+- The code itself is this capability's commits.
+  Its undo is to revert them on the default branch, because nothing else in the
+  console depends on them.
+
+### Cost
+
+The mirror adds no model call.
+One turn end with new dialog spawns at most eight short-lived commands, each one
+Discord post bounded by `DELIVERY_TIMEOUT_MS` in the extension and by the
+Discord client's own retry bounds, and a turn end with nothing new spawns none.
+
 ## Status
 
 ```sh
@@ -581,6 +711,8 @@ listener is registered, the connection mode and state, the last pass counts, and
 the posted, open, and recorded-interaction card counts.
 It also reports the preparation switch, the prepared and skipped packet counts,
 and the last preparation outcome (`Prepared request` above).
+It reports the session mirror's switch, channel, bound, and durable cursor
+(`Session mirror` above).
 When the permanent connection is unavailable, the connection mode reads
 `polling-fallback` so the fallback is visible.
 
@@ -722,6 +854,30 @@ against the real installed Pi: a captain note reaches a mid-turn run at the next
 tool boundary, well before the follow-up control.
 The before and after numbers are recorded in
 [`verification/discord-console-latency.md`](verification/discord-console-latency.md).
+
+`tests/fm-discord-console-mirror.test.sh` drives the session mirror's delivery
+path against the same fake server: one item posts once through the console's own
+identity with an empty `allowed_mentions`, a replayed item key posts nothing
+again, two identical lines from two positions post twice, a long item posts one
+body inside the bound with its omission stated, an empty item posts nothing, and
+operational text is a settled skip that records no receipt.
+It also pins the configuration surface: `mirror.channel_id` decides the
+destination, an unconfigured `--channel` is refused, a disabled mirror and a
+disabled `live.posting` both refuse, the dry run posts nothing, and
+`config-check` and `status` report the switch, the channel, the bound, and the
+cursor without changing any durable state.
+`tests/fm-pi-session-mirror-extension.test.sh` drives the real tracked extension
+through a stubbed Pi session manager and the real `mirror` command against the
+same fake server: a disabled mirror is inert, a session under the mirror's watch
+mirrors its captain and answer lines in order, a lost cursor replays nothing
+because the receipts own idempotence, an empty, tool-only, or errored item is
+skipped while the cursor still advances, an operational injection stays
+unmirrored, a mid-session enable seeds instead of dumping history, a refused
+delivery holds the cursor and records its reason until the next turn delivers
+it, and one turn end delivers at most eight items.
+The live demonstration, its posted identifiers, and the replay that posted
+nothing twice are recorded in
+[`verification/discord-console-session-mirror.md`](verification/discord-console-session-mirror.md).
 
 `tests/fm-discord-conversation-console-audio.test.sh` drives transcription
 against a fake local Discord CDN and a fake local Groq API: a captain voice

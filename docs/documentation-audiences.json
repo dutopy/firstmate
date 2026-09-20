@@ -485,6 +485,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/verification/discord-console-session-mirror.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/dispatch-auth.md",
       "audience": "maintainer-verification"
     },

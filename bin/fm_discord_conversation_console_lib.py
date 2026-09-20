@@ -351,6 +351,32 @@ THREAD_CHANNEL_TYPES = (10, 11, 12)
 # firstmate answer is captain-facing prose, never supervision machinery.
 REFUSED_MARKERS = ("FIRSTMATE WATCHER WAKE", "FIRSTMATE_OP:", "\u2063", "\u26f5")
 
+# The native Pi session mirror. The captain's terminal Pi session is mirrored
+# into one configured #firstmate channel through this console's own bot
+# identity, so no second bot or webhook identity is introduced. The capability
+# reuses the delivery discipline the other mirrors already have: the caller
+# supplies a durable item identity, the shared nonce-keyed receipt makes the
+# post exactly-once across restarts and replays, the rendered body is cut to a
+# configured bound so one item can never exceed one Discord message, and an
+# empty item is refused before any post. The channel and the switch are config,
+# never code. The channel and the whole capability default to off.
+MIRROR_CURSOR_SCHEMA = "fm-discord-conversation-console.mirror-cursor.v1"
+MIRROR_TAGS = ("captain", "main")
+DEFAULT_MIRROR_MAX_CHARS = 1800
+MIN_MIRROR_MAX_CHARS = 100
+# The raw item may be longer than one Discord message because the mirror path
+# bounds and truncates before posting; this only refuses a pathologically large
+# hand-written file.
+MAX_MIRROR_RAW_CHARS = 20000
+MAX_MIRROR_RAW_BYTES = 80000
+# The durable item identity the caller passes. It is a position in the source,
+# never the item's text, so two identical lines delivered from two positions
+# still post twice while one position delivered twice posts once.
+MIRROR_ITEM_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+# A truncated item keeps its head and its tail, with the omission stated in
+# place, so a bounded post is visibly bounded rather than silently partial.
+MIRROR_TRUNCATION = "[mirror truncated: %d characters omitted]"
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -462,6 +488,27 @@ class ConsoleConfig:
         self.live_polling_enabled = fwl.bool_from_path(raw, ["live.polling", "approvals.live_polling", "live_polling"], False)
         self.live_posting_enabled = fwl.bool_from_path(raw, ["live.posting", "approvals.live_posting", "live_posting"], False)
         self.live_gateway_enabled = fwl.bool_from_path(raw, ["live.gateway", "approvals.live_gateway", "live_gateway"], False)
+        mirror = raw.get("mirror") if isinstance(raw.get("mirror"), dict) else {}
+        self.mirror_enabled = fwl.bool_from_path(raw, ["mirror.enabled", "mirror_enabled"], False)
+        self.mirror_channel_id = (
+            fwl.validate_snowflake(mirror.get("channel_id"), "mirror.channel_id", required=False) or ""
+        )
+        self.mirror_max_chars = fwl.validate_positive_json_integer(
+            mirror.get("max_chars", DEFAULT_MIRROR_MAX_CHARS),
+            "mirror.max_chars",
+            MAX_REPLY_CHARS,
+        )
+        if self.mirror_max_chars < MIN_MIRROR_MAX_CHARS:
+            raise FMError("mirror.max_chars must be at least %d" % MIN_MIRROR_MAX_CHARS)
+        # The channel is only required once the mirror is on, so shipping the
+        # capability off-by-default never invalidates an existing config. When
+        # it is on, the target must be one of the configured #firstmate
+        # channels rather than any channel the code happens to be handed.
+        if self.mirror_enabled:
+            if not self.mirror_channel_id:
+                raise FMError("mirror.channel_id must name the #firstmate channel the session mirror posts into")
+            if self.channel_for_id(self.mirror_channel_id) is None:
+                raise FMError("mirror.channel_id is not one of the configured #firstmate channels")
         fast_path = raw.get("fast_path") if isinstance(raw.get("fast_path"), dict) else {}
         self.fast_path_enabled = fwl.bool_from_path(raw, ["fast_path.enabled", "fast_path_enabled"], False)
         self.fast_path_answers_enabled = fwl.bool_from_path(raw, ["fast_path.answers", "fast_path_answers"], True)
@@ -704,6 +751,11 @@ def sample_config() -> Dict[str, Any]:
             {"label": "Internal server B", "guild_id": "111111111111111112", "channel_id": "444444444444444442"},
         ],
         "live": {"polling": False, "posting": False, "gateway": False},
+        "mirror": {
+            "enabled": False,
+            "channel_id": "444444444444444441",
+            "max_chars": DEFAULT_MIRROR_MAX_CHARS,
+        },
         "fast_path": {
             "enabled": False,
             "answers": True,
@@ -765,6 +817,26 @@ def sample_config() -> Dict[str, Any]:
 
 def console_state_path(env: "fwl.Env", *parts: str) -> Path:
     return fwl.discord_state_path(env, CONSOLE_STATE_SUBDIR, *parts)
+
+
+def mirror_cursor_path(env: "fwl.Env") -> Path:
+    return console_state_path(env, "mirror-cursor.json")
+
+
+def read_mirror_cursor(env: "fwl.Env") -> Optional[Dict[str, Any]]:
+    """Read the extension's durable mirror cursor for a report; never raise.
+
+    The console owns this record's shape - the extension is only its writer - so
+    a record carrying a different schema reads as no cursor rather than as a
+    position this report would then misstate.
+    """
+    try:
+        record = fwl.load_existing_json(mirror_cursor_path(env))
+    except FMError:
+        return None
+    if not isinstance(record, dict) or record.get("schema") != MIRROR_CURSOR_SCHEMA:
+        return None
+    return record
 
 
 def cursor_path(env: "fwl.Env", channel_id: str) -> Path:
@@ -1963,6 +2035,41 @@ def render_captain_reply(text: str, max_chars: int = DEFAULT_REPLY_MAX_CHARS) ->
         sections.append("\n".join(rendered))
     rendered_text = "\n\n".join(section for section in sections if section)
     return _bound_reply_text(rendered_text, max_chars)
+
+
+def bound_mirror_text(text: str, max_chars: int) -> str:
+    """Bound one mirrored dialog item to a single Discord message body.
+
+    The mirror deliberately does not use ``render_captain_reply``: that renderer
+    reflows prose into captain-facing sections, and a mirrored turn must read as
+    the turn was written. What is shared is the hard bound. A text inside the
+    bound is returned byte-for-byte, so the durable receipt digests the text the
+    captain read; a longer one keeps its head and its tail and states the
+    omission between them, so the post is always one whole, visibly bounded
+    message rather than a silently partial one.
+    """
+    if not isinstance(text, str) or not text:
+        return ""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    # The marker states how many characters were dropped, and its own width
+    # depends on that number, so the room left for head and tail is settled by
+    # solving the pair rather than guessed; two passes always converge.
+    room = max_chars - len(MIRROR_TRUNCATION % 0) - 2
+    for _ in range(4):
+        marker = MIRROR_TRUNCATION % (len(text) - room)
+        settled = max_chars - len(marker) - 2
+        if settled <= 0:
+            return text[:max_chars]
+        if settled == room:
+            break
+        room = settled
+    marker = MIRROR_TRUNCATION % (len(text) - room)
+    head = (room + 1) // 2
+    tail = room - head
+    if tail <= 0:
+        return f"{text[:room]}\n{marker}"
+    return f"{text[:head]}\n{marker}\n{text[-tail:]}"
 
 
 # ---------------------------------------------------------------------------
@@ -4387,6 +4494,14 @@ def cmd_config_check(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"fast-path classifier: {cfg.fast_path_classifier}")
         print(f"fast-path classifier timeout: {round(cfg.fast_path_timeout, 3)}s")
     print(f"gateway url: {gateway_host_label(cfg.gateway_url)}")
+    print(f"session mirror: {'on' if cfg.mirror_enabled else 'off'}")
+    if cfg.mirror_channel_id:
+        mirror_channel = cfg.channel_for_id(cfg.mirror_channel_id)
+        print(
+            "mirror channel: %s (%s)"
+            % (cfg.mirror_channel_id, mirror_channel.label if mirror_channel else "not a configured channel")
+        )
+    print(f"mirror bound: {cfg.mirror_max_chars} chars")
     print(f"audio transcription: {'on' if cfg.transcription_enabled else 'off'}")
     if cfg.transcription_enabled:
         print(f"transcription model: {cfg.transcription_model}")
@@ -4511,6 +4626,81 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         update_latency(env, args.request_id, answered_at=time.time(), answer_message_id=discord_message_id)
     print(fwl.record_receipt(env, nonce, receipt, discord_message_id))
     print(f"replied in conversation {channel_id}")
+    return 0
+
+
+def cmd_mirror(args: argparse.Namespace, env: "fwl.Env") -> int:
+    """Post one bounded mirrored dialog item into the configured #firstmate channel.
+
+    The native Pi session mirror (``.pi/extensions/fm-discord-session-mirror.ts``)
+    owns WHICH dialog is new - a durable cursor over the live session file - and
+    this command owns the delivery: the existing console bot identity, the
+    configured channel, and the shared nonce-keyed receipt.
+
+    The nonce is derived from the caller's durable ``--item-key``, never from the
+    text, so the same source position delivered twice converges on one receipt
+    and no second post, while two identical lines from two positions still post
+    twice. A restart, a replayed turn, and a cursor lost between the post and its
+    cursor write therefore all deliver exactly once.
+    """
+    cfg = ConsoleConfig.load(env, args.config)
+    if not cfg.mirror_enabled:
+        raise FMError("the session mirror is disabled; enable mirror.enabled in the conversation console config")
+    channel_id = fwl.validate_snowflake(args.channel, "--channel", required=False) or cfg.mirror_channel_id
+    if not channel_id:
+        raise FMError("no mirror channel is configured; set mirror.channel_id in the conversation console config")
+    configured = cfg.channel_for_id(channel_id)
+    if configured is None:
+        raise FMError("--channel is not a configured #firstmate channel")
+    if args.tag not in MIRROR_TAGS:
+        raise FMError("--tag must be one of: %s" % ", ".join(MIRROR_TAGS))
+    item_key = str(args.item_key or "").strip()
+    if not MIRROR_ITEM_KEY_RE.fullmatch(item_key):
+        raise FMError("--item-key must be a durable bounded item identity")
+    # An empty or blank item is refused before any Discord call, so a partial or
+    # empty turn can never reach the captain's channel.
+    text = fwl.read_text_file(
+        args.text_file, max_bytes=MAX_MIRROR_RAW_BYTES, max_chars=MAX_MIRROR_RAW_CHARS
+    )
+    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    for marker in REFUSED_MARKERS:
+        if marker in text:
+            # A settled non-delivery, not a failure: the item is machinery or a
+            # quotation of it, which is never mirrored, and the caller must move
+            # past it rather than retry it forever.
+            print(f"mirror skipped item {item_key}: operational text is never mirrored")
+            return 0
+    body = bound_mirror_text(f"[{args.tag}] {text}", cfg.mirror_max_chars)
+    digest = fwl.sha256_text(body)
+    nonce = f"mirror:{channel_id}:{item_key}"
+    target = {"guild_id": configured.guild_id, "channel_id": channel_id}
+    receipt = fwl.base_receipt("mirror", ADAPTER, target, digest)
+    if args.dry_run:
+        print("Discord session mirror plan (no network).")
+        print(f"destination channel: {channel_id}")
+        print(f"item: {item_key}")
+        print(f"tag: {args.tag}")
+        print(f"nonce: {nonce}")
+        print(f"rendered item ({len(body)} chars, bound {cfg.mirror_max_chars}):")
+        print(body)
+        print("dry-run only; no Discord post was made.")
+        return 0
+    if not cfg.live_posting_enabled:
+        raise FMError("live posting is disabled; enable live.posting in the conversation console config")
+    existing = fwl.load_existing_json(fwl.receipt_path(env, nonce))
+    if existing is not None:
+        # The item identity is the durable key, so the recorded receipt is the
+        # whole answer: a restart or a replay posts nothing twice.
+        print(f"mirror exists for item {item_key}; no second post")
+        return 0
+    client = ConsoleClient(cfg, env)
+    try:
+        discord_message_id = client.post_message(channel_id, body)
+    except FMError as exc:
+        print(f"fm-discord-conversation-console: {client.redact(str(exc))}", file=sys.stderr)
+        return 1
+    print(fwl.record_receipt(env, nonce, receipt, discord_message_id))
+    print(f"mirrored item {item_key} in conversation {channel_id} as message {discord_message_id}")
     return 0
 
 
@@ -4720,6 +4910,21 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"transcription model: {cfg.transcription_model} ({cfg.transcription_language})")
         print(f"transcription confidence check: {'on' if cfg.transcription_confidence_check else 'off'}")
     print(f"request preparation: {'on' if cfg.prepare_enabled else 'off'}")
+    print(f"session mirror: {'on' if cfg.mirror_enabled else 'off'}")
+    if cfg.mirror_channel_id:
+        mirror_channel = cfg.channel_for_id(cfg.mirror_channel_id)
+        print(
+            "mirror channel: %s (%s)"
+            % (cfg.mirror_channel_id, mirror_channel.label if mirror_channel else "not a configured channel")
+        )
+    print(f"mirror bound: {cfg.mirror_max_chars} chars")
+    cursor = read_mirror_cursor(env)
+    if cursor and cursor.get("file"):
+        print(f"mirror cursor: {cursor.get('file')} at entry {cursor.get('index')}")
+        if cursor.get("recorded_at"):
+            print(f"mirror cursor recorded: {cursor.get('recorded_at')}")
+    else:
+        print("mirror cursor: none recorded")
     if cfg.prepare_enabled:
         prepared = prepare_counts(env)
         print(f"packets prepared: {prepared['prepared']}")
@@ -5009,6 +5214,14 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p.add_argument("--nonce")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_reply)
+    p = sub.add_parser("mirror")
+    add_config_argument(p)
+    p.add_argument("--text-file", required=True)
+    p.add_argument("--item-key", required=True)
+    p.add_argument("--tag", default="captain")
+    p.add_argument("--channel")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_mirror)
     p = sub.add_parser("card")
     add_config_argument(p)
     target = p.add_mutually_exclusive_group(required=True)
