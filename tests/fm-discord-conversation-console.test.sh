@@ -1190,6 +1190,142 @@ finally:
     fmc.store_card = real_store_card
     fmc.run_card_option = real_run_option
 
+# 5c. The uncertain reading's confirmation card. It rides the same card
+#     machinery, so it is posted once per reading (idempotent by request id),
+#     only where a press could arrive, and its three buttons are the three
+#     existing card actions: confirm as heard, correct in chat, discard.
+REQ1 = f"discord:{GUILD}:{CH}:888000000000000001"
+REQ2 = f"discord:{GUILD}:{CH}:888000000000000002"
+REQ3 = f"discord:{GUILD}:{CH}:888000000000000003"
+READING = "confidence-task, tu es a l'arret la ?"
+
+class CardPostClient(FakeClient):
+    def __init__(self):
+        super().__init__([])
+        self.posts = []
+    def post_message(self, channel_id, content, components=None):
+        self.posts.append({"channel_id": channel_id, "content": content, "components": components})
+        return f"77700000000000900{len(self.posts)}"
+
+card_cfg = type("CardCfg", (), {
+    "captain_user_ids": [CAPTAIN], "bot_user_id": BOT,
+    "transcription_confirm_card": True, "live_posting_enabled": True, "live_gateway_enabled": True,
+})()
+poster = CardPostClient()
+transcript_event = {"request_id": REQ1, "channel_id": CH, "guild_id": GUILD}
+# Without the registered permanent connection a press could never arrive, so no
+# card is posted and the reason says exactly that.
+no_card, no_reason = fmc.post_transcript_card(env, card_cfg, poster, transcript_event, READING)
+assert no_card == "" and "not registered" in no_reason, (no_card, no_reason)
+assert poster.posts == [], poster.posts
+(home / "state" / "procevent").mkdir(parents=True, exist_ok=True)
+(home / "state" / "procevent" / f"{fmc.GATEWAY_SOURCE_ID}.source").write_text("x\n", encoding="utf-8")
+card1, card_reason = fmc.post_transcript_card(env, card_cfg, poster, transcript_event, READING)
+assert card1 and card_reason == "", (card1, card_reason)
+assert len(poster.posts) == 1, poster.posts
+posted = poster.posts[0]
+assert posted["channel_id"] == CH, posted
+assert posted["content"].startswith(f"{fmc.DEFAULT_TRANSCRIPTION_UNCERTAIN_PREFIX}{READING}"), posted["content"]
+buttons = posted["components"][0]["components"]
+assert [b["label"] for b in buttons] == ["C'est bien \u00e7a", "Je corrige", "\u00c0 jeter"], buttons
+assert [b["style"] for b in buttons] == [3, 2, 4], buttons
+assert [b["custom_id"] for b in buttons] == [f"fmcard:{card1}:{index}" for index in range(3)], buttons
+again, _ = fmc.post_transcript_card(env, card_cfg, poster, transcript_event, READING)
+assert again == card1 and len(poster.posts) == 1, "a replay posts no second card"
+stored_card = fmc.load_card(env, card1)
+assert stored_card["kind"] == "transcript" and stored_card["request_id"] == REQ1, stored_card
+assert stored_card["status"] == "open" and stored_card["task_id"] == "", stored_card
+assert [option["action"] for option in stored_card["options"]] == ["answer", "chat", "release"], stored_card
+assert fmc.load_transcript_record(env, REQ1) is None or "confirmation" not in fmc.load_transcript_record(env, REQ1)
+
+# 5d. A captain press on the confirmation option records the confirmation on the
+#     card and on the reading itself, never touches a captain hold, and appends
+#     exactly one durable wake; a repeated interaction id records nothing again.
+fmc.store_transcript_record(env, REQ1, {
+    "status": "ok", "text": READING,
+    "confidence": {"status": "disagree", "uncertain": True, "alternate": "Salut a tous !", "ratio": 0.18},
+})
+
+def wake_lines():
+    path = home / "state" / ".wake-queue"
+    if not path.exists():
+        return []
+    return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+hold_calls = []
+real_hold = fmc.run_captain_hold
+fmc.run_captain_hold = lambda env, argv: (hold_calls.append(argv), (0, ""))[1]
+try:
+    cards_dir_path = home / "state" / "discord-workspace" / "conversation-console" / "cards"
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000021", "tok", CAPTAIN,
+        f"fmcard:{card1}:0", GUILD, CH, str(stored_card["message_id"]),
+    )
+    confirmed_wakes = [line for line in wake_lines() if f"transcript confirmed {REQ1}:" in line]
+    assert len(confirmed_wakes) == 1, wake_lines()
+    assert "captain inbox note" in confirmed_wakes[0], confirmed_wakes
+    answered_card = fmc.load_card(env, card1)
+    assert answered_card["status"] == "answered", answered_card
+    assert answered_card["answer"]["action"] == "answer" and answered_card["answer"]["value"] == READING, answered_card["answer"]
+    confirmed_reading = fmc.load_transcript_record(env, REQ1)
+    assert confirmed_reading["confirmation"]["status"] == "confirmed", confirmed_reading
+    assert confirmed_reading["confidence"]["alternate"] == "Salut a tous !", confirmed_reading
+    press_record = json.loads((cards_dir_path / "interactions" / "999000000000000021.json").read_text())
+    assert press_record["status"] == "recorded" and press_record["action"] == "answer", press_record
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000021", "tok", CAPTAIN,
+        f"fmcard:{card1}:0", GUILD, CH, str(stored_card["message_id"]),
+    )
+    assert len([line for line in wake_lines() if f"transcript confirmed {REQ1}" in line]) == 1, wake_lines()
+
+    # 5e. A non-captain press is refused, records no confirmation, and wakes nobody.
+    card2, _ = fmc.post_transcript_card(
+        env, card_cfg, poster, {"request_id": REQ2, "channel_id": CH, "guild_id": GUILD}, "Quel etat de la flotte ?"
+    )
+    message2 = str(fmc.load_card(env, card2)["message_id"])
+    fmc.store_transcript_record(env, REQ2, {"status": "ok", "text": "Quel etat de la flotte ?"})
+    wakes_before_refusal = len(wake_lines())
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000022", "tok", "555555555555555555",
+        f"fmcard:{card2}:0", GUILD, CH, message2,
+    )
+    refused = json.loads((cards_dir_path / "interactions" / "999000000000000022.json").read_text())
+    assert refused["status"] == "refused" and refused["reason"] == "non-captain", refused
+    assert len(wake_lines()) == wakes_before_refusal, wake_lines()
+    assert fmc.load_card(env, card2)["status"] == "open", fmc.load_card(env, card2)
+    assert "confirmation" not in fmc.load_transcript_record(env, REQ2), fmc.load_transcript_record(env, REQ2)
+
+    # 5f. Discard maps onto the existing release action and deletes nothing; the
+    #     correction maps onto the existing free-form chat option.
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000023", "tok", CAPTAIN,
+        f"fmcard:{card2}:2", GUILD, CH, message2,
+    )
+    discarded = fmc.load_card(env, card2)
+    assert discarded["status"] == "answered" and discarded["answer"]["action"] == "release", discarded
+    discarded_reading = fmc.load_transcript_record(env, REQ2)
+    assert discarded_reading["confirmation"]["status"] == "discarded", discarded_reading
+    assert discarded_reading["text"] == "Quel etat de la flotte ?", discarded_reading
+    assert [line for line in wake_lines() if f"transcript reading discarded {REQ2}:" in line], wake_lines()
+    card3, _ = fmc.post_transcript_card(
+        env, card_cfg, poster, {"request_id": REQ3, "channel_id": CH, "guild_id": GUILD}, "tu es a l'ecoute ?"
+    )
+    message3 = str(fmc.load_card(env, card3)["message_id"])
+    fmc.store_transcript_record(env, REQ3, {"status": "ok", "text": "tu es a l'ecoute ?"})
+    fmc.handle_card_interaction(
+        env, cfg(), FakeClient([]), "999000000000000024", "tok", CAPTAIN,
+        f"fmcard:{card3}:1", GUILD, CH, message3,
+    )
+    chat_record = json.loads((cards_dir_path / "interactions" / "999000000000000024.json").read_text())
+    assert chat_record["status"] == "chat" and chat_record.get("action") is None, chat_record
+    assert fmc.load_transcript_record(env, REQ3)["confirmation"]["status"] == "correcting", fmc.load_transcript_record(env, REQ3)
+    assert [line for line in wake_lines() if f"transcript correction requested {REQ3}:" in line], wake_lines()
+finally:
+    fmc.run_captain_hold = real_hold
+# A transcript press never feeds the keyed-answer intake: an uncertain reading is
+# not a captain-held task and the console never mints one for it.
+assert hold_calls == [], hold_calls
+
 # 6. A timed-out interaction request is never retried, and the acknowledgement
 #    uses the short acknowledgement bound.
 attempts = []
@@ -1223,6 +1359,25 @@ finally:
 print("ok - focused interaction checks pass")
 PY
   pass "a guild payload and the acknowledgement ordering are covered by focused checks"
+
+  # A transcript confirmation card is the console's own, so the task-card command
+  # refuses one and names who posts it instead.
+  cat > "$TMP_ROOT/card-transcript.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "kind": "transcript",
+  "request_id": "discord:111111111111111111:666000000000000001:777000000000000001",
+  "body": "Transcription incertaine - à confirmer : test",
+  "options": [
+    {"label": "C'est bien ça", "action": "answer", "value": "test"},
+    {"label": "À jeter", "action": "release", "value": "test"}
+  ]
+}
+JSON
+  out=$(FM_HOME="$H2" "$ROOT/bin/fm-discord-conversation-console.sh" card --config "$CFG2" --channel "$CH" --card-file "$TMP_ROOT/card-transcript.json" 2>&1) \
+    && fail "the card command posted an uncertain-transcription confirmation card" || true
+  assert_contains "$out" "posted by the console itself" "the card command refuses a transcript card and names who posts it"
+  pass "an uncertain reading's card is posted by the console once and its presses are captain-only and task-free"
 
   # The "later" option records a dated deferral through the same intake.
   out=$(FM_HOME="$H2" "$ROOT/bin/fm-captain-hold.sh" hold card-later-test --title "Discord later test" --reason "Pick later" --repo firstmate 2>&1) \

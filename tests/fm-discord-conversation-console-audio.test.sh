@@ -190,6 +190,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             world["counter"] = int(world.get("counter", 900000000000000000)) + 1
             message = {"id": str(world["counter"]), "content": body.get("content"),
+                       "components": body.get("components"),
                        "author": {"id": BOT, "bot": True}, "channel_id": parts[1]}
             world.setdefault("posts", {}).setdefault(parts[1], []).append(message)
             save(world)
@@ -702,6 +703,108 @@ assert_equals "" "$CONF_LEAK" "the transcription key never reaches an uncertaint
 CONF_STATUS=$(dc status --config "$CONF_CFG" 2>&1) || fail "confidence status failed: $CONF_STATUS"
 assert_contains "$CONF_STATUS" "transcription confidence check: on" "status reports the confidence check"
 pass "an uncertain transcription carries a visible marker into the note and the thread"
+
+# --- 6c. an uncertain reading carries a confirmation card the captain presses --
+# The card is the affordance the captain asked for, and it rides the existing
+# card machinery: it is posted only where a press could arrive, it carries the
+# three existing card actions, one card follows one reading, and a replay posts
+# no second card and no second transcript.
+CH4=666000000000000004
+CARD_BAD=777000000000000041
+CARD_GOOD=777000000000000042
+python3 - "$WORLD" "$GUILD" "$CH4" "$CAPTAIN" "$CARD_BAD" "$CARD_GOOD" <<'PY'
+import json, sys
+world_path, guild, ch4, captain = sys.argv[1:5]
+bad_id, good_id = sys.argv[5:7]
+world = json.load(open(world_path))
+existing = next(iter(world["messages"]))
+cdn = world["messages"][existing][0]["attachments"][0]["url"].rsplit("/cdn/", 1)[0]
+
+def audio(message_id, attachment_id, name, secs):
+    return {"id": message_id, "content": "", "author": {"id": captain}, "channel_id": ch4, "flags": 8192,
+            "attachments": [{"id": attachment_id, "filename": name, "size": 204,
+                             "url": f"{cdn}/cdn/{name}", "content_type": "audio/ogg", "duration_secs": secs}]}
+
+world["channels"][ch4] = {"id": ch4, "type": 0, "guild_id": guild}
+world["messages"][ch4] = [
+    audio("666000000000001100", bad_id, "card-bad.ogg", 3.0),
+    audio("666000000000001101", good_id, "card-good.ogg", 3.0),
+]
+world.setdefault("groq_transcripts_by_filename", {})["card-bad.ogg"] = ["confidence-task, tu es a l'arret la ?", "Salut a tous !"]
+world["groq_transcripts_by_filename"]["card-good.ogg"] = ["confidence-task ou en es tu maintenant ?", "Confidence-task, ou en es tu ?"]
+json.dump(world, open(world_path, "w"))
+PY
+make_home h9
+CARD_CFG="$H/config/discord-conversation-console.json"
+python3 - "$CARD_CFG" "$CH4" <<PY
+import json, sys
+path, ch4 = sys.argv[1], sys.argv[2]
+data = json.load(open(path))
+data["channels"] = [{"label": "Cards", "guild_id": "$GUILD", "channel_id": ch4}]
+data["live"]["gateway"] = True
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+PY
+mkdir -p "$H/state/procevent"
+touch "$H/state/procevent/discord-conversation-console-gateway.source"
+out=$(dc listen --config "$CARD_CFG" 2>&1) || fail "confirmation-card listen failed: $out"
+assert_contains "$out" "captured=2" "both confirmation-card audio messages are captured"
+CARD_POST=$(python3 - "$WORLD" "$H" "$CH4" "$GUILD" <<'PY'
+import glob, json, os, sys
+world, home, ch4, guild = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3], sys.argv[4]
+posts = world.get("posts", {}).get(ch4, [])
+cards = [m for m in posts if m.get("components")]
+assert len(cards) == 1, f"exactly one card, for the uncertain reading only: {posts}"
+card = cards[0]
+assert card["content"].startswith("Transcription incertaine - \u00e0 confirmer : "), card["content"]
+assert "confidence-task, tu es a l'arret la ?" in card["content"], card["content"]
+row = card["components"]
+assert len(row) == 1 and row[0]["type"] == 1, row
+buttons = row[0]["components"]
+assert [b["label"] for b in buttons] == ["C'est bien \u00e7a", "Je corrige", "\u00c0 jeter"], buttons
+assert [b["style"] for b in buttons] == [3, 2, 4], buttons
+assert [b["type"] for b in buttons] == [2, 2, 2], buttons
+records = [json.load(open(p)) for p in glob.glob(f"{home}/state/discord-workspace/conversation-console/cards/*.json")]
+assert len(records) == 1, records
+record = records[0]
+assert record["kind"] == "transcript" and record["task_id"] == "", record
+assert record["status"] == "open" and record["request_id"] == f"discord:{guild}:{ch4}:666000000000001100", record
+assert record["message_id"] == card["id"], (record, card)
+assert [b["custom_id"] for b in buttons] == [f"fmcard:{record['card_id']}:{index}" for index in range(3)], (buttons, record)
+assert [option["action"] for option in record["options"]] == ["answer", "chat", "release"], record
+transcripts = [json.load(open(p)) for p in glob.glob(f"{home}/state/discord-workspace/conversation-console/transcripts/*.json")]
+uncertain = [r for r in transcripts if (r.get("confidence") or {}).get("uncertain")]
+assert len(uncertain) == 1, transcripts
+assert uncertain[0]["confirm_card"] == {"status": "posted", "card_id": record["card_id"]}, uncertain[0]
+settled = [r for r in transcripts if r.get("status") == "ok" and not (r.get("confidence") or {}).get("uncertain")]
+assert len(settled) == 1 and "confirm_card" not in settled[0], settled
+notes = [open(os.path.join(home, "state", "inbox", n), encoding="utf-8").read()
+         for n in sorted(os.listdir(os.path.join(home, "state", "inbox"))) if n.endswith(".note")]
+assert len(notes) == 2, notes
+with_card = [n for n in notes if "transcription-confirmation-card:" in n]
+assert len(with_card) == 1, notes
+assert f"transcription-confirmation-card: the conversation carries a card for this reading (card {record['card_id']})" in with_card[0], with_card[0]
+assert "transcription-uncertain:" in with_card[0] and "ask the captain to confirm the spoken words" in with_card[0], with_card[0]
+print("ok")
+PY
+)
+assert_equals "ok" "$CARD_POST" "the uncertain reading carries one confirmation card with the three existing card actions"
+CARD_STATUS=$(dc status --config "$CARD_CFG" 2>&1) || fail "confirmation-card status failed: $CARD_STATUS"
+assert_contains "$CARD_STATUS" "transcription confirmation card: on" "status reports the confirmation card switch"
+assert_contains "$CARD_STATUS" "transcript confirmation cards: 1 posted, 1 open" "status reports the posted confirmation card"
+POSTS_BEFORE_CARD_REPLAY=$(world_get 'len(world.get("posts", {}).get("666000000000000004", []))')
+rm -rf "$H/state/discord-workspace/conversation-console/cursors"
+out=$(dc listen --config "$CARD_CFG" 2>&1) || fail "confirmation-card replay failed: $out"
+assert_equals "$POSTS_BEFORE_CARD_REPLAY" "$(world_get 'len(world.get("posts", {}).get("666000000000000004", []))')" \
+  "a replay posts no second card and no second transcript"
+CARD_REPLAY=$(python3 - "$H" <<'PY'
+import glob, json, sys
+cards = glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/*.json")
+records = [json.load(open(p)) for p in cards]
+print("ok" if len(records) == 1 and records[0]["status"] == "open" else f"bad:{records}")
+PY
+)
+assert_equals "ok" "$CARD_REPLAY" "a replayed reading keeps its one open confirmation card"
+pass "an uncertain reading carries a confirmation card the captain can press, once"
 
 # --- 7. an uploaded audio file takes the voice message's transcription path --
 # The captain can send an audio file rather than a Discord voice message: the

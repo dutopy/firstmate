@@ -46,6 +46,18 @@ permanent connection is registered, because a bounded poll cannot receive an
 interaction, and while its task is still an open captain call, so a posted card
 is one whose every button can validate.
 
+The same card machinery carries the captain's confirmation of an uncertain
+transcription. When two readings of a captain voice message disagree, the
+console posts the uncertain reading as a card whose three buttons are existing
+card actions: confirm the reading as it was heard (``answer``), correct it by
+typing in the conversation (``chat``), or discard that reading (``release``).
+A press is recorded in the card record, folded into the durable transcript
+record for that reading, and announced through the same captain-inbox wake seam,
+so the pending item proceeds without the captain typing anything, and the audio
+path, the transcript record, and the existing chat confirmation are all left as
+they are. Only the configured captain user ids may press, and a replayed
+delivery posts no second card and records no second outcome.
+
 Every captured request also gets one bounded latency-journal record that the
 read-only ``latency`` subcommand and ``status`` report. The five measured stages
 are: stage 1 Discord creation to console ingest, stage 2 console handling, stage
@@ -278,6 +290,23 @@ MAX_CARD_HINT_CHARS = 200
 MAX_CARD_LABEL_CHARS = 80
 MAX_CARD_VALUE_CHARS = 1000
 CARD_ACTIONS = ("answer", "release", "later", "chat")
+CARD_KIND_TASK = "task"
+CARD_KIND_TRANSCRIPT = "transcript"
+CARD_KINDS = (CARD_KIND_TASK, CARD_KIND_TRANSCRIPT)
+# The uncertain reading's confirmation card maps its three buttons onto the
+# existing card actions rather than inventing a fourth: the reading as heard is
+# the answer, the correction is the free-form chat option, and the discard is
+# the release option that drops the reading without deleting anything.
+TRANSCRIPT_CARD_CONFIRM_LABEL = "C'est bien \u00e7a"
+TRANSCRIPT_CARD_CORRECT_LABEL = "Je corrige"
+TRANSCRIPT_CARD_DISCARD_LABEL = "\u00c0 jeter"
+TRANSCRIPT_CARD_HINT = "Ou r\u00e9ponds directement dans la conversation."
+TRANSCRIPT_CARD_CONTEXT = (
+    "Deux lectures du m\u00eame audio divergent : confirme la lecture, corrige-la, ou jette-la."
+)
+TRANSCRIPT_CARD_CONFIRM_STYLE = 3
+TRANSCRIPT_CARD_CORRECT_STYLE = 2
+TRANSCRIPT_CARD_DISCARD_STYLE = 4
 # Discord button styles: 1 primary, 2 secondary, 3 success, 4 danger.
 CARD_STYLE_BY_ACTION = {"answer": 1, "release": 3, "later": 2, "chat": 2}
 CARD_BUTTON_STYLES = (1, 2, 3, 4)
@@ -723,6 +752,13 @@ class ConsoleConfig:
             )
         except whisper.GroqError as exc:
             raise FMError(str(exc)) from exc
+        # The confirmation card turns the existing "ask the captain to confirm"
+        # into one press, and it is on by default because that is the affordance
+        # the captain asked for. It posts only where a press could arrive, so a
+        # home without the permanent connection keeps today's chat confirmation.
+        self.transcription_confirm_card = fwl.bool_from_path(
+            raw, ["transcription.confirm_card", "transcription_confirm_card"], True
+        )
 
     @classmethod
     def load(cls, env: "fwl.Env", path_text: Optional[str]) -> "ConsoleConfig":
@@ -801,6 +837,7 @@ def sample_config() -> Dict[str, Any]:
             "post_transcript": True,
             "confidence_check": DEFAULT_TRANSCRIPTION_CONFIDENCE_CHECK,
             "confidence_check_max_seconds": DEFAULT_TRANSCRIPTION_CONFIDENCE_MAX_SECONDS,
+            "confirm_card": True,
         },
         "bounds": {
             "max_messages_per_channel": DEFAULT_MAX_MESSAGES,
@@ -1674,6 +1711,13 @@ def note_body(event: Dict[str, Any]) -> str:
                 "ask the captain to confirm the spoken words before answering; "
                 "do not act on a single uncertain reading"
             )
+            card_id = str(event.get("transcript_confirm_card") or "")
+            if card_id:
+                lines.append(
+                    "transcription-confirmation-card: "
+                    f"the conversation carries a card for this reading (card {card_id}) whose press "
+                    "confirms it, asks for a correction in chat, or discards it, and appends its own durable wake"
+                )
     lines.append("")
     packet = event.get("prepared_packet")
     if isinstance(packet, dict):
@@ -2918,9 +2962,13 @@ def route_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClie
     existing = load_transcript_record(env, request_id)
     if existing is not None:
         if existing.get("status") == "ok":
-            _deliver_transcript(
-                env, cfg, client, event, str(existing.get("text") or ""), existing.get("confidence")
-            )
+            confidence = existing.get("confidence")
+            reading = str(existing.get("text") or "")
+            confirm_card = ""
+            if confidence_is_uncertain(confidence):
+                confirm_card, card_skip = post_transcript_card(env, cfg, client, event, reading)
+                store_transcript_card_outcome(env, request_id, confirm_card, card_skip)
+            _deliver_transcript(env, cfg, client, event, reading, confidence, confirm_card)
             return True
         event["reason"] = "audio-transcription-failed"
         return False
@@ -2935,7 +2983,11 @@ def route_audio_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClie
     confidence = meta.get("confidence")
     store_transcript_record(env, request_id, {"status": "ok", "text": text, **meta})
     _post_transcript(env, cfg, client, event, text, request_id, confidence)
-    _deliver_transcript(env, cfg, client, event, text, confidence)
+    confirm_card = ""
+    if confidence_is_uncertain(confidence):
+        confirm_card, card_skip = post_transcript_card(env, cfg, client, event, text)
+        store_transcript_card_outcome(env, request_id, confirm_card, card_skip)
+    _deliver_transcript(env, cfg, client, event, text, confidence, confirm_card)
     return True
 
 
@@ -3025,11 +3077,14 @@ def _deliver_transcript(
     event: Dict[str, Any],
     text: str,
     confidence: Any = None,
+    confirm_card: str = "",
 ) -> None:
     """Feed one transcript into the shared text path, carrying its confidence.
 
     The confidence travels with the message so the capture path can both mark
-    the transcript and refuse to answer an uncertain one from records alone.
+    the transcript and refuse to answer an uncertain one from records alone, and
+    the confirmation card's id travels with it so the note can name the card the
+    conversation already carries.
     """
     if not text:
         return
@@ -3039,6 +3094,8 @@ def _deliver_transcript(
     text_event["transcript"] = True
     if isinstance(confidence, dict) and confidence:
         text_event["transcript_confidence"] = confidence
+    if confirm_card:
+        text_event["transcript_confirm_card"] = confirm_card
     text_event.pop("attachments", None)
     text_event.pop("flags", None)
     route_text_event(env, cfg, client, text_event)
@@ -3140,16 +3197,29 @@ def parse_card_spec(raw: Dict[str, Any], max_chars: int = DEFAULT_REPLY_MAX_CHAR
     """Validate one caller-supplied card definition under the reply length bound.
 
     The caller owns every captain-facing word: the body, the option labels, and
-    each decisive option's value. Nothing here derives an option from prose.
+    each decisive option's value. Nothing here derives an option from prose. A
+    task card names the captain-held task its press answers; a transcript card
+    names the uncertain-transcription request its press confirms, corrects, or
+    discards.
     """
     if not isinstance(raw, dict):
         raise FMError("the card file must be a JSON object")
     schema = raw.get("schema", CARD_SCHEMA)
     if schema != CARD_SCHEMA:
         raise FMError(f"unsupported card schema: {schema}")
-    task_id = _card_text(raw.get("task_id"), "card.task_id", 120)
-    if not fwl.TASK_ID_RE.fullmatch(task_id):
-        raise FMError("card.task_id must be a privacy-safe task id")
+    kind = raw.get("kind", CARD_KIND_TASK)
+    if kind not in CARD_KINDS:
+        raise FMError(f"card.kind must be one of: {', '.join(CARD_KINDS)}")
+    task_id = ""
+    request_id = ""
+    if kind == CARD_KIND_TRANSCRIPT:
+        request_id = _card_text(raw.get("request_id"), "card.request_id", 200)
+        if not fwl.REQUEST_RE.fullmatch(request_id):
+            raise FMError("card.request_id must be a discord:<guild>:<channel>:<message> request id")
+    else:
+        task_id = _card_text(raw.get("task_id"), "card.task_id", 120)
+        if not fwl.TASK_ID_RE.fullmatch(task_id):
+            raise FMError("card.task_id must be a privacy-safe task id")
     body = _card_text(raw.get("body"), "card.body", MAX_CARD_BODY_CHARS)
     for marker in REFUSED_MARKERS:
         if marker in body:
@@ -3188,7 +3258,14 @@ def parse_card_spec(raw: Dict[str, Any], max_chars: int = DEFAULT_REPLY_MAX_CHAR
     content = body if not hint else f"{body}\n\n{hint}"
     if len(content) > max_chars:
         raise FMError(f"the rendered card is longer than the {max_chars} character reply bound")
-    return {"task_id": task_id, "body": body, "fallback_hint": hint, "options": options}
+    return {
+        "kind": kind,
+        "task_id": task_id,
+        "request_id": request_id,
+        "body": body,
+        "fallback_hint": hint,
+        "options": options,
+    }
 
 
 def render_card_content(spec: Dict[str, Any], suffix: str = "") -> str:
@@ -3410,15 +3487,16 @@ def card_wake_body(task_id: str, option: Dict[str, Any]) -> str:
     return f"card {action} {task_id}: {label}".strip()
 
 
-def announce_card_answer(env: "fwl.Env", task_id: str, option: Dict[str, Any], interaction_id: str) -> str:
-    """Append exactly one durable wake for a validated card press.
+def announce_card_wake(env: "fwl.Env", body: str, interaction_id: str) -> str:
+    """Append exactly one durable wake line through the captain-inbox seam.
 
     It rides the same captain-inbox seam a typed message uses
-    (``bin/fm-inbox.sh note``), so firstmate's ordinary supervision picks it up
-    and the wake stays durable. The interaction id is the inbox external id, so
-    a repeated delivery of the same press returns the first note and appends no
-    second wake. A refused or failed press never reaches here. Returns "" on
-    success, or a redacted reason on failure.
+    (``bin/fm-inbox.sh note``), so firstmate's ordinary supervision picks the
+    recorded press up without the captain saying anything in chat, and the wake
+    stays durable. The interaction id is the inbox external id, so a repeated
+    delivery of the same press returns the first note and appends no second
+    wake. A refused or failed press never reaches here. Returns "" on success,
+    or a redacted reason on failure.
     """
     command = [
         str(env.script_dir / "fm-inbox.sh"),
@@ -3447,7 +3525,7 @@ def announce_card_answer(env: "fwl.Env", task_id: str, option: Dict[str, Any], i
         proc = subprocess.run(
             command,
             env=child_env,
-            input=card_wake_body(task_id, option),
+            input=body,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -3460,6 +3538,190 @@ def announce_card_answer(env: "fwl.Env", task_id: str, option: Dict[str, Any], i
     if proc.returncode != 0:
         return ((proc.stdout + proc.stderr).strip() or "the card wake was refused")[:500]
     return ""
+
+
+def announce_card_answer(env: "fwl.Env", task_id: str, option: Dict[str, Any], interaction_id: str) -> str:
+    """Append exactly one durable wake for a validated task-card press."""
+    return announce_card_wake(env, card_wake_body(task_id, option), interaction_id)
+
+
+def transcript_card_wake_body(request_id: str, option: Dict[str, Any]) -> str:
+    """The single durable wake line a validated uncertain-reading press appends.
+
+    The key is the transcription request the reading belongs to, not a task:
+    an uncertain reading is not a captain-held backlog task and the console
+    never mints one, so the wake names the reading's own outcome instead.
+    """
+    outcome = {
+        "answer": "transcript confirmed",
+        "release": "transcript reading discarded",
+        "chat": "transcript correction requested",
+    }.get(str(option.get("action") or "answer"), "transcript card")
+    return f"{outcome} {request_id}: {str(option.get('label') or '')}".strip()
+
+
+def announce_transcript_card_press(env: "fwl.Env", request_id: str, option: Dict[str, Any], interaction_id: str) -> str:
+    """Append exactly one durable wake for a validated uncertain-reading press."""
+    return announce_card_wake(env, transcript_card_wake_body(request_id, option), interaction_id)
+
+
+def transcript_card_id(request_id: str) -> str:
+    """The confirmation card of one transcription request, derived from it.
+
+    The request id is the nonce, so a replayed capture resolves to the same card
+    id and posts no second card.
+    """
+    return card_id_for(f"transcript:{request_id}")
+
+
+def build_transcript_card_spec(event: Dict[str, Any], reading: str) -> Dict[str, Any]:
+    """The uncertain reading as the three existing card actions it maps onto."""
+    body = f"{DEFAULT_TRANSCRIPTION_UNCERTAIN_PREFIX}{reading.strip()}\n\n{TRANSCRIPT_CARD_CONTEXT}"
+    options = [
+        {
+            "label": TRANSCRIPT_CARD_CONFIRM_LABEL,
+            "action": "answer",
+            "value": reading.strip(),
+            "style": TRANSCRIPT_CARD_CONFIRM_STYLE,
+        },
+        {"label": TRANSCRIPT_CARD_CORRECT_LABEL, "action": "chat", "style": TRANSCRIPT_CARD_CORRECT_STYLE},
+        {
+            "label": TRANSCRIPT_CARD_DISCARD_LABEL,
+            "action": "release",
+            "value": reading.strip(),
+            "style": TRANSCRIPT_CARD_DISCARD_STYLE,
+        },
+    ]
+    return parse_card_spec(
+        {
+            "schema": CARD_SCHEMA,
+            "kind": CARD_KIND_TRANSCRIPT,
+            "request_id": str(event.get("request_id") or ""),
+            "body": body,
+            "fallback_hint": TRANSCRIPT_CARD_HINT,
+            "options": options,
+        }
+    )
+
+
+def store_transcript_card_outcome(env: "fwl.Env", request_id: str, card_id: str = "", reason: str = "") -> None:
+    """Fold the confirmation card's outcome into the reading's own record.
+
+    The card record is the durable record of the press; this makes the reading's
+    transcript record answer whether a card was posted for it and why a card was
+    not posted, which is what an operator needs to see when no card appeared.
+    It is bookkeeping beside a delivery in progress, so it never raises.
+    """
+    if not request_id:
+        return
+    try:
+        record = load_transcript_record(env, request_id)
+        if not isinstance(record, dict):
+            return
+        if card_id:
+            record["confirm_card"] = {"status": "posted", "card_id": card_id}
+        else:
+            record["confirm_card"] = {"status": "skipped", "reason": (reason or "no reason recorded")[:200]}
+        store_transcript_record(env, request_id, record)
+    except FMError:
+        return
+
+
+def record_transcript_confirmation(
+    env: "fwl.Env", request_id: str, status: str, option: Dict[str, Any], user_id: str
+) -> None:
+    """Record the captain's confirmation of the reading on the transcript record.
+
+    A missing or unreadable record is not an error: the card record itself still
+    holds the press, so this never raises on the press path.
+    """
+    if not request_id:
+        return
+    try:
+        record = load_transcript_record(env, request_id)
+        if not isinstance(record, dict):
+            return
+        record["confirmation"] = {
+            "status": status,
+            "action": str(option.get("action") or ""),
+            "label": str(option.get("label") or ""),
+            "user_id": user_id,
+            "at": fwl.utc_now(),
+        }
+        store_transcript_record(env, request_id, record)
+    except FMError:
+        return
+
+
+def post_transcript_card(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    client: "ConsoleClient",
+    event: Dict[str, Any],
+    reading: str,
+) -> Tuple[str, str]:
+    """Post the confirmation card for one uncertain reading, or say why not.
+
+    Returns ``(card_id, reason)``: an id once the reading's card exists durably,
+    else an empty id and the reason it was not posted. It is posted only where
+    its press could arrive - posting on, the permanent connection on and
+    registered - because a bounded poll cannot receive an interaction, and it is
+    idempotent by request id, so a replayed delivery posts no second card.
+    Nothing here ever fails the transcription delivery it accompanies.
+    """
+    request_id = str(event.get("request_id") or "")
+    if not cfg.transcription_confirm_card:
+        return "", "the confirmation card is off"
+    if not request_id:
+        return "", "the audio message carries no request id"
+    card_id = transcript_card_id(request_id)
+    try:
+        existing = load_card(env, card_id)
+    except FMError:
+        existing = None
+    if isinstance(existing, dict) and existing.get("message_id"):
+        return card_id, ""
+    if not cfg.live_posting_enabled:
+        return "", "live posting is off"
+    if not cfg.live_gateway_enabled:
+        return "", "the permanent connection is off"
+    if not (env.state / "procevent" / f"{GATEWAY_SOURCE_ID}.source").is_file():
+        return "", "the permanent connection is not registered"
+    if not reading.strip():
+        return "", "the reading is empty"
+    try:
+        spec = build_transcript_card_spec(event, reading)
+    except FMError as exc:
+        return "", client.redact(str(exc))[:200]
+    try:
+        message_id = client.post_message(
+            str(event.get("channel_id") or ""), render_card_content(spec), card_components(spec, card_id)
+        )
+    except FMError as exc:
+        return "", client.redact(str(exc))[:200]
+    try:
+        store_card(
+            env,
+            {
+                "schema": CARD_SCHEMA,
+                "kind": CARD_KIND_TRANSCRIPT,
+                "card_id": card_id,
+                "nonce": f"transcript:{request_id}",
+                "request_id": request_id,
+                "task_id": "",
+                "guild_id": str(event.get("guild_id") or ""),
+                "channel_id": str(event.get("channel_id") or ""),
+                "message_id": message_id,
+                "body": spec["body"],
+                "fallback_hint": spec["fallback_hint"],
+                "options": spec["options"],
+                "status": "open",
+                "created_at": fwl.utc_now(),
+            },
+        )
+    except FMError as exc:
+        return "", f"the card was posted but could not be recorded: {client.redact(str(exc))[:200]}"
+    return card_id, ""
 
 
 def card_ephemeral(client: "ConsoleClient", token: str, text: str) -> None:
@@ -3581,6 +3843,7 @@ def handle_card_interaction(
         refuse("refused", "unknown-option")
         return
     option = options[index]
+    is_transcript = str(card.get("kind") or CARD_KIND_TASK) == CARD_KIND_TRANSCRIPT
     prior = load_card_interaction(env, interaction_id)
     prior_status = str(prior.get("status") or "") if isinstance(prior, dict) else ""
     # A repeated delivery never records twice; it replays the first answer.
@@ -3598,14 +3861,60 @@ def handle_card_interaction(
     if str(option.get("action") or "") == "chat":
         # No answer is recorded: the captain will answer in the conversation.
         # The wake still fires, so firstmate knows to expect a chat answer.
-        wake_error = announce_card_answer(env, str(card.get("task_id") or ""), option, interaction_id)
+        task_id = str(card.get("task_id") or "")
+        request_id = str(card.get("request_id") or "")
+        wake_error = (
+            announce_transcript_card_press(env, request_id, option, interaction_id)
+            if is_transcript
+            else announce_card_answer(env, task_id, option, interaction_id)
+        )
         chat_fields: Dict[str, Any] = {"option_index": index}
         if wake_error:
             chat_fields["wake_error"] = client.redact(wake_error)[:500]
         record("chat", **chat_fields)
+        if is_transcript:
+            record_transcript_confirmation(env, request_id, "correcting", option, user_id)
         followup(CARD_CHAT_CONFIRMATION)
         return
     record("pending", option_index=index)
+    if is_transcript:
+        # An uncertain reading is not a captain-held task, so a transcript press
+        # never touches a hold: it records the outcome on the card and on the
+        # reading itself and appends one wake, and it deletes nothing - the
+        # transcript record, the second reading, and the audio path are untouched.
+        # The console builds exactly the confirm, correct, and discard options,
+        # so any other action on a transcript card is recorded as failed rather
+        # than acted on.
+        action = str(option.get("action") or "")
+        if action not in ("answer", "release"):
+            record("failed", option_index=index, reason="unsupported-transcript-option")
+            return
+        task_id = str(card.get("task_id") or "")
+        request_id = str(card.get("request_id") or "")
+        card["status"] = "answered"
+        card["answer"] = {
+            "option_index": index,
+            "label": str(option.get("label") or ""),
+            "action": action,
+            "value": str(option.get("value") or ""),
+            "until": "",
+            "user_id": user_id,
+            "answered_at": fwl.utc_now(),
+        }
+        store_card(env, card)
+        record_transcript_confirmation(
+            env, request_id, "confirmed" if action == "answer" else "discarded", option, user_id
+        )
+        wake_error = announce_transcript_card_press(env, request_id, option, interaction_id)
+        pressed_fields: Dict[str, Any] = {"option_index": index, "action": action}
+        if wake_error:
+            pressed_fields["wake_error"] = client.redact(wake_error)[:500]
+        record("recorded", **pressed_fields)
+        try:
+            card_edit_original(client, token, card, suffix=card_answer_suffix(option), disabled=True)
+        except FMError:
+            pass
+        return
     task_id = str(card.get("task_id") or "")
     code, output = run_card_option(env, task_id, option)
     if code != 0:
@@ -4507,6 +4816,7 @@ def cmd_config_check(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"transcription model: {cfg.transcription_model}")
         print(f"transcription language: {cfg.transcription_language}")
         print(f"transcription confidence check: {'on' if cfg.transcription_confidence_check else 'off'}")
+        print(f"transcription confirmation card: {'on' if cfg.transcription_confirm_card else 'off'}")
         print(f"transcription key reference: {cfg.transcription_key_env}")
         print(f"transcription audio bound: {cfg.audio_max_bytes} bytes, {cfg.audio_max_duration_secs:g}s")
     return 0
@@ -4717,6 +5027,11 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     if not card_file.is_absolute():
         card_file = (Path.cwd() / card_file).resolve()
     spec = parse_card_spec(fwl.read_json(card_file), cfg.reply_max_chars)
+    if spec["kind"] != CARD_KIND_TASK:
+        raise FMError(
+            "the card command posts task cards; an uncertain-transcription confirmation card is "
+            "posted by the console itself when the reading arrives"
+        )
     nonce = args.nonce or (
         "card:%s:%s" % (spec["task_id"], fwl.sha256_text(json.dumps(spec, sort_keys=True))[:CARD_ID_HEX_CHARS])
     )
@@ -4769,6 +5084,7 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
         return 1
     card = {
         "schema": CARD_SCHEMA,
+        "kind": spec["kind"],
         "card_id": card_id,
         "nonce": nonce,
         "task_id": spec["task_id"],
@@ -4909,6 +5225,7 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"transcripts recorded: {counts['ok']} ok, {counts['failed']} failed")
         print(f"transcription model: {cfg.transcription_model} ({cfg.transcription_language})")
         print(f"transcription confidence check: {'on' if cfg.transcription_confidence_check else 'off'}")
+        print(f"transcription confirmation card: {'on' if cfg.transcription_confirm_card else 'off'}")
     print(f"request preparation: {'on' if cfg.prepare_enabled else 'off'}")
     print(f"session mirror: {'on' if cfg.mirror_enabled else 'off'}")
     if cfg.mirror_channel_id:
@@ -4953,6 +5270,8 @@ def cmd_status(args: argparse.Namespace, env: "fwl.Env") -> int:
     interaction_count = sum(1 for _ in interaction_dir.glob("*.json")) if interaction_dir.is_dir() else 0
     print(f"cards posted: {len(cards)}")
     print(f"cards open: {len(open_cards)}")
+    transcript_cards = [record for record in cards if str(record.get("kind") or CARD_KIND_TASK) == CARD_KIND_TRANSCRIPT]
+    print(f"transcript confirmation cards: {len(transcript_cards)} posted, {len([record for record in transcript_cards if str(record.get('status') or 'open') == 'open'])} open")
     print(f"card interactions recorded: {interaction_count}")
     last_audit = fast_counts.get("last") or {}
     if isinstance(last_audit, dict) and last_audit.get("path"):

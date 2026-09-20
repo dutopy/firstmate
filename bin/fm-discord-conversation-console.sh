@@ -50,6 +50,13 @@
 # receive an interaction, and unless the card's task is still an open captain
 # call, so every button on a posted card can validate.
 #
+# The console also posts one card of its own: an uncertain voice transcription is
+# posted as a confirmation card whose three buttons are the existing card actions
+# (confirm the reading as heard, correct it in chat, discard it). Its press is
+# recorded on the card and on the reading's transcript record, wakes firstmate
+# through the same inbox seam, and never touches a captain hold, because an
+# uncertain reading is not a held task. Switch: transcription.confirm_card.
+#
 # start registers the permanent-connection source
 # `discord-conversation-console-gateway` when live.gateway is enabled, and the
 # bounded REST source `discord-conversation-console` otherwise; stop retires

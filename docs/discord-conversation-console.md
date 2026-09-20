@@ -407,6 +407,9 @@ a replay with the same nonce posts no second card.
 
 A press arrives as a gateway `INTERACTION_CREATE` dispatch of type
 `MESSAGE_COMPONENT`.
+The console also posts one card of its own, with the same record store, press
+handler, and wake seam but a different target: an uncertain transcription's
+confirmation card, owned by `Confirming an uncertain reading` above.
 The presser is resolved through the same fallback the message path uses for an
 author: the top-level `user` for a direct payload, else `member.user` for a guild
 payload.
@@ -536,7 +539,8 @@ The config keys are `transcription.enabled`, `transcription.provider`,
 `transcription.base_url`, `transcription.timeout_seconds`,
 `transcription.transcript_prefix`, `transcription.post_transcript`,
 `transcription.confidence_check`, and
-`transcription.confidence_check_max_seconds`.
+`transcription.confidence_check_max_seconds`, plus
+`transcription.confirm_card` (default on) for the confirmation card below.
 The shared `audio` section owns `max_bytes`, `max_duration_secs`,
 `delete_temporary_raw`, and `allowed_cdn_hosts`.
 A transcription is exactly once per request id: a replayed capture reuses the
@@ -546,6 +550,63 @@ failed transcription is answered with one honest line in the same conversation
 instead of silence, and the failed request is recorded durably.
 `status` reports the switch, the recorded transcript counts, and the model and
 language.
+
+### Confirming an uncertain reading
+
+An uncertain transcript already stops the fast path and asks the captain to
+confirm the spoken words; the confirmation card makes that confirmation one
+press instead of a typed correction, and it is an addition to the existing chat
+confirmation rather than a replacement for it.
+When the readings disagree, or the second reading failed, and the console is
+posting, it posts the uncertain reading as an action card in the same
+conversation, immediately after the transcript message, and the durable note
+names that card.
+The card's three buttons are the three existing card actions, mapped onto that
+reading:
+
+- `C'est bien ça` is the card's `answer` option: the reading as it was heard is
+  confirmed, and the confirmation is recorded on the card and on the reading's
+  own transcript record.
+- `Je corrige` is the card's `chat` option: nothing is recorded as an answer, the
+  console posts the ordinary answer-in-chat line, and the recorded outcome is
+  that a correction is coming in the conversation.
+- `À jeter` is the card's `release` option: only that reading is dropped, and
+  no durable record and no second reading is deleted with it.
+
+A press is handled by the same card path every task card uses: it is
+acknowledged first, accepted only from a configured captain user id, refused with
+a private follow-up otherwise, idempotent by interaction id, recorded durably,
+and announced as exactly one durable wake through the same captain-inbox seam.
+The buttons are then disabled and the card shows the recorded outcome.
+The wake names the reading's own request id rather than a task, because an
+uncertain reading is not a captain-held backlog task and the console never
+creates one for it: `transcript confirmed <request-id>: <label>`,
+`transcript correction requested <request-id>: <label>`, or
+`transcript reading discarded <request-id>: <label>`.
+
+A card is posted only where a press could arrive: `transcription.confirm_card`
+(default on), `live.posting` and `live.gateway` on, and the permanent connection
+registered.
+When any of those is missing, or the reading cannot be rendered as a card, no
+card is posted, the reading's record says why, and the existing chat
+confirmation is the only path, exactly as before.
+One card belongs to one reading: the card id is derived from the request id, so a
+replayed capture posts no second card and records no second outcome.
+
+When nothing is pressed, nothing else happens: the card stays open, the reading
+stays marked uncertain, the note's instruction to confirm the words stands, the
+captain can still answer in chat, and no reminder or retry is posted.
+
+`status` reports the switch and the posted and open confirmation-card counts,
+and `config-check` reports the switch.
+Each posted card is a `cards/<card-id>.json` record with `kind: transcript`, the
+reading's request id, and an empty `task_id`; each press is a
+`cards/interactions/<interaction-id>.json` record; the reading's
+transcript record gains `confirm_card` (posted, or skipped with its reason) and
+`confirmation` (confirmed, correcting, or discarded, with the presser and the
+time).
+Posting an uncertain reading as a card never touches a captain hold and never
+changes what is transcribed or stored about the audio.
 
 ## Outbound
 
@@ -707,8 +768,9 @@ loop.
 It reports a health verdict (`healthy`, `starting`, `stopped`, `polling-disabled`,
 `polling-fallback`, `secret-missing`, `config-invalid`, or `state-malformed`),
 each configured channel and its last cursor, the live switches, whether the
-listener is registered, the connection mode and state, the last pass counts, and
-the posted, open, and recorded-interaction card counts.
+listener is registered, the connection mode and state, the last pass counts, the
+posted, open, and recorded-interaction card counts, and the transcript
+confirmation-card counts (`Confirming an uncertain reading` above).
 It also reports the preparation switch, the prepared and skipped packet counts,
 and the last preparation outcome (`Prepared request` above).
 It reports the session mirror's switch, channel, bound, and durable cursor
@@ -893,5 +955,17 @@ them; agreement unmarked; a disagreement and a failed second reading each marked
 in the thread, in the note, and in the durable record, with the uncertain message
 taking the full turn while the settled readings still answer from records; and a
 long attachment read exactly once.
+It also pins the confirmation card: one card per uncertain reading with the three
+existing card actions and no card for a settled reading, the card named in the
+note and recorded on the reading, and a replay posting no second card.
 The dependency contract is owned by
 [`verification/discord-console-audio-transcription.md`](verification/discord-console-audio-transcription.md).
+
+`tests/fm-discord-conversation-console.test.sh`'s focused interaction checks also
+drive the confirmation card's press path: a captain press records the
+confirmation on the card and on the reading, a discard records the discarded
+reading without deleting it, a correction records the chat path, a repeated
+interaction id records nothing again, a non-captain press is refused and wakes
+nobody, and no transcript press ever feeds the keyed-answer intake.
+The measured evidence and what remains live are recorded in
+[`verification/discord-console-uncertain-transcription-card.md`](verification/discord-console-uncertain-transcription-card.md).
