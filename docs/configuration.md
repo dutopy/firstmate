@@ -11,8 +11,9 @@ The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it 
 This section is the single owner of the top-level operational-home layout; producer script headers and their help own exact child-file fields and mutation contracts.
 The tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `FM_HOME` contains private operational directories.
 `data/` holds durable private fleet records such as the project and secondmate registries, captain preferences, optional shared captain preferences, learnings, backlog, briefs, scout reports, and explicitly installed content-addressed extension packages under `data/extensions/packages/`.
-`state/` holds runtime records such as task metadata, append-only status events, endpoint signals, watcher and wake-queue coordination, inactive terminal-outcome receipts under `state/terminal-outcomes/`, enabled extension working namespaces under `state/extensions/`, away-mode state, generated Relay artifacts, parent-side remote ledger copies under `state/secondmate-summary-cache/`, one-shot Bearings reconcile requests under `state/reconcile-notify/`, private secondmate config-reread generations with their retry and quarantine state, per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`), and parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
+`state/` holds runtime records such as task metadata, append-only status events, endpoint signals, watcher and wake-queue coordination, inactive terminal-outcome receipts under `state/terminal-outcomes/`, enabled extension working namespaces under `state/extensions/`, away-mode state, generated Relay artifacts, parent-side remote ledger copies under `state/secondmate-summary-cache/`, one-shot Bearings reconcile requests under `state/reconcile-notify/`, private secondmate config-reread generations with their retry and quarantine state, the proposal lane's cadence records and its optional `state/proposals.check.sh` watcher check (`bin/fm-proposal-lane.sh`), per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`), and parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`, and `projects/` holds the local project clones that Firstmate reads but changes only through the narrow guarded and concrete captain-approved exceptions in `AGENTS.md`.
+The proposal lane's durable proposal ledger is `data/proposals.jsonl`, addressed by `bin/fm-proposal-lane.sh` and merged by `bin/fm-proposal-lane.jq`; [docs/proposal-lane.md](proposal-lane.md) owns its states and behaviour contract.
 Untracked files and directories whose names begin with `scratchpad` are also gitignored, so temporary scratch does not make porcelain-based secondmate sync guards treat a home as dirty.
 
 `bin/fm-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
@@ -261,6 +262,22 @@ Opt in for a home that stows often enough that entries never sit unreinforced fo
 The flag is per home and is not inherited by secondmate homes, because stow cadence is a property of the home doing the stowing.
 Only the file's presence is read, so its contents are ignored; remove it to return to the default contract on the next pass.
 The skill text owns the marker spelling, the tick order, and the reinforcement rule.
+
+## Proposal lane (config/proposals.json)
+
+The proposal lane reads the records this home already writes and brings one bounded card of improvement proposals with the evidence behind each one; [`docs/proposal-lane.md`](proposal-lane.md) owns its behaviour contract, its never-do list, and its undo paths, and `bin/fm-proposal-lane.sh --help` owns the commands.
+Its optional local, gitignored config is `config/proposals.json`, an object whose every key is optional:
+
+- `paused` (boolean, default `false`) silences the observation pass and the card until it is resumed.
+- `interval` (whole seconds, 60..31536000, default `604800`) is the shortest gap between two cards.
+- `scan_interval` (whole seconds, 60..2592000, default `86400`) is the shortest gap between two observation passes.
+- `card_max` (whole number, 1..20, default `5`) bounds the card, and `card_min` (whole number, 1..20, default `3`) records the size the lane aims for.
+- `stale_days` (whole number, 1..3650, default `30`) is how long a proposed entry may go unobserved before it is superseded.
+- `key_min` (whole number, 2..1000, default `3`) and `key_min_tasks` (whole number, 1..1000, default `2`) bound the emergent keyed-family pass.
+
+The matching `FM_PROPOSAL_PAUSED`, `FM_PROPOSAL_INTERVAL`, `FM_PROPOSAL_SCAN_INTERVAL`, `FM_PROPOSAL_MAX`, `FM_PROPOSAL_MIN`, `FM_PROPOSAL_STALE_DAYS`, `FM_PROPOSAL_KEY_MIN`, and `FM_PROPOSAL_KEY_MIN_TASKS` environment variables override those keys for one run.
+A malformed file, an unknown scalar type, or a value outside its range is refused with the file path rather than silently defaulted, and `bin/fm-proposal-lane.sh pause` rewrites only the `paused` key so the rest of the file survives.
+The lane is armed once per home with `bin/fm-proposal-lane.sh arm`, which installs the `proposals` watcher check; an unarmed home still answers `/proposals` on demand.
 
 ## Secondmate routes (data/secondmates.md)
 

@@ -233,6 +233,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/proposals/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/quiet/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -403,6 +407,10 @@
     {
       "path": "docs/pi-supervision-branch.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/proposal-lane.md",
+      "audience": "operator-current"
     },
     {
       "path": "docs/remote-secondmates.md",

@@ -1,0 +1,34 @@
+# Friction catalog for the proposal lane (bin/fm-proposal-lane.sh).
+#
+# One rule per line, tab-separated:
+#   id <TAB> source <TAB> pattern <TAB> min_lines <TAB> min_tasks <TAB> repo <TAB> title <TAB> change <TAB> cost
+#
+# source is one of:
+#   status   worker status events, state/<id>.status
+#   backlog  this home's backlog
+#   notes    captured operator notes, state/inbox/*.note
+#   captain  the durable operator preference record, data/captain.md
+#   reports  finished-task reports, data/*/report.md
+# pattern is an extended regular expression matched once per record line.
+# A rule proposes only when at least min_lines lines match across at least
+# min_tasks distinct sources, so a rule can never fire without evidence.
+# Anchoring a status pattern on ^(blocked|paused|needs-decision) keeps its
+# evidence to friction events rather than any line that mentions the subject.
+# repo is the project the accepted work is filed against, or - for none.
+# No field may contain a tab, and neither title, change, nor cost may contain a
+# tab or a newline.
+#
+# The catalog grows: add one line here to teach the lane a friction family it
+# should propose on, and see docs/proposal-lane.md for the contract.
+nm-custody-recovery	status	^(blocked|paused|needs-decision).*(blocked_recover_(preserved_head_missing|unverified_head)|preserved head)	3	2	firstmate	Validation loses custody of a preserved head	Make the validation pipeline offer its guarded recovery whenever the preserved head is provably present, instead of requiring a manual reconciliation.	One bounded change in the pipeline status contract plus its tests.
+nm-review-nonconvergence	status	^(blocked|paused|needs-decision|failed).*(nonconvergen|repeated-family|review-fix rounds)	4	2	firstmate	A repeated review family keeps re-opening after its correction	Stop a repeated finding family deterministically after its one authorized correction instead of requiring a hand decision each round.	One bounded change where a correction pass is recorded.
+validation-env-gap	status	^(blocked|paused|needs-decision).*(environment failures|(actionlint|mise trust|node|ruby).{0,40}(unavailable|missing|not installed))	1	1	firstmate	Validation stops on a missing tool in its own environment	Check the linters and runtimes a validation run needs before it starts and report the gap in one line.	Small preflight check, no new dependency.
+validation-missing-head	status	^(blocked|paused|needs-decision|resolved).*(missing-submitted-head|submitted head .{0,40}missing)	2	1	firstmate	The validation copy cannot be created from the submitted head	Keep the submitted commit reachable for the whole run so the validation copy can always be created.	One bounded change in the run's commit handling.
+github-auth-divergence	status	^(blocked|paused|needs-decision|working).*(gh preflight|GH_TOKEN|auth divergence|auth preflight)	4	1	firstmate	Worker and supervisor disagree about their forge identity	Compare the worker's and the supervisor's forge identity before a run and refuse with one line naming the divergence.	Small preflight reusing the existing identity probes.
+credential-availability	status	^(blocked|paused|needs-decision).*(credential|secret)[^.;]{0,60}(absent|unavailable|waiting|wait |fails|failure|only in|provide|prohibited)	3	2	firstmate	Access to a secret or scope keeps blocking work	Keep one durable record per blocked secret or scope with its request state, so a later task reuses an approved access instead of re-negotiating it.	Small record addition, no new secret store.
+closing-unverified	reports	not verified|could not verify|unverified	5	3	firstmate	Finished work closes with an area nobody verified	Require a closing task to name the unverified area and file it as a follow-up item instead of leaving it in the closing note.	One line in the closing contract.
+captain-manual-step	backlog	hold-kind: captain|Applied by the captain	4	1	firstmate	The same manual step keeps coming back to the operator	Prepare the exact command and its evidence once per step so it is run rather than rediscovered.	Small preparation helper; the operator still runs the step.
+captain-repeat-correction	notes	en fait|ce n.est pas|je ne veux pas|plut.t que|not what I asked	8	8	firstmate	Corrections and preferences stay buried in raw captured notes	Detect correction or preference language in a captured note and offer the durable preference entry to fold it into.	One bounded rule in the note intake path.
+captain-custody-rule	captain	preserve active pipeline custody|never abort or overlap	1	1	firstmate	Pipeline custody rests on an instruction rather than on the guard	Make the guarded recovery path refuse an abort or an overlapping run structurally, so custody survives an agent mistake.	Small guard change plus its tests.
+captain-deterministic-first	captain	deterministic event-driven	1	1	firstmate	The deterministic-first rule is not enforced where polling is chosen	Require a recorded rejection of the event-driven option before any new polling source is armed.	One gate in the polling source path.
+captain-serial-review	captain	single-finding review|one thorough review	1	1	firstmate	Review rounds stay serial instead of one consolidated pass	Consolidate every finding of a review round into one correction pass before the next review.	Small policy change in the correction pass.
