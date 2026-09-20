@@ -57,6 +57,21 @@
 # never a wedged, un-endable session - while still nagging again on a later turn
 # if the problem persists.
 #
+# Follow-up ladder for a passive adapter (FM_TURNEND_FOLLOWUP_COUNT): a
+# one-per-turn latch is not a bound, because a pane stuck in a repeating wake
+# makes every alternate turn a fresh latch and the adapter can fire on every
+# other turn forever (the 2026-09-20 saturation). A passive adapter therefore
+# reports how many CONSECUTIVE guard-driven follow-ups this session has already
+# taken, and this firstmate-owned script supplies the lower half of a two-tier
+# bound: at FM_TURNEND_GUARD_ALERT_AT it prints ONE early alert, and at
+# FM_TURNEND_GUARD_NOTICE_AT it prints ONE final loud notice naming the supported
+# clearing operation, each deduplicated by its own marker so the ladder never
+# becomes an alert loop of its own. The adapter's own hard ceiling
+# (FM_PI_TURNEND_FOLLOWUP_CEILING, above this bound) is what stops the follow-ups
+# entirely; this bound exists so the session is TOLD before that ceiling rather
+# than going quietly dark at it. The count is advisory input only: a harness that
+# never sets it keeps today's unchanged behavior.
+#
 # Loop-guard, --claude mode (Stop-owned auto-arm cooperation): Claude Code
 # marks EVERY stop after ANY stop-hook-driven continuation stop_hook_active=true,
 # including turns started by the asyncRewake auto-arm, so the one-shot allow
@@ -109,9 +124,18 @@ CURSOR_MODE=0
 SYNC_WAIT_MS=${FM_CLAUDE_AUTOARM_SYNC_WAIT_MS:-800}
 EPOCH_FRESH=${FM_CLAUDE_AUTOARM_EPOCH_FRESH:-15}
 BLOCK_BUDGET=${FM_CLAUDE_TURNEND_BLOCK_BUDGET:-3}
+FOLLOWUP_COUNT=${FM_TURNEND_FOLLOWUP_COUNT:-0}
+ALERT_AT=${FM_TURNEND_GUARD_ALERT_AT:-3}
+NOTICE_AT=${FM_TURNEND_GUARD_NOTICE_AT:-6}
 case "$SYNC_WAIT_MS" in ''|*[!0-9]*) SYNC_WAIT_MS=800 ;; esac
 case "$EPOCH_FRESH" in ''|*[!0-9]*|0) EPOCH_FRESH=15 ;; esac
 case "$BLOCK_BUDGET" in ''|*[!0-9]*|0) BLOCK_BUDGET=3 ;; esac
+case "$FOLLOWUP_COUNT" in ''|*[!0-9]*) FOLLOWUP_COUNT=0 ;; esac
+case "$ALERT_AT" in ''|*[!0-9]*|0) ALERT_AT=3 ;; esac
+case "$NOTICE_AT" in ''|*[!0-9]*|0) NOTICE_AT=6 ;; esac
+[ "$NOTICE_AT" -ge "$ALERT_AT" ] || NOTICE_AT=$ALERT_AT
+FOLLOWUP_ALERT_MARKER="$STATE/.turnend-followup-alert"
+FOLLOWUP_NOTICE_MARKER="$STATE/.turnend-followup-final"
 
 for arg in "$@"; do
   case "$arg" in
@@ -191,15 +215,28 @@ budget_reset() {
   fm_lock_release "$BUDGET_LOCK"
 }
 
+# Clear the follow-up ladder's dedup markers whenever this home genuinely stops
+# needing the ladder: supervision is not needed at all, or a live watcher proved
+# healthy. Without this reset the one-shot early alert and final notice would be
+# spent for the rest of the process lifetime and a later independent episode
+# could not raise them. The adapter's own counter is reset on the same events.
+followup_episode_reset() {
+  rm -f "$FOLLOWUP_ALERT_MARKER" "$FOLLOWUP_NOTICE_MARKER" 2>/dev/null || true
+}
+
 fm_supervision_status "$STATE" "$GRACE"
 if [ "$FM_SUP_NEEDED" = false ]; then
+  followup_episode_reset
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0
 fi
 # One owner of the "supervision is on, let this turn end" exit contract, shared
 # by every proof of supervision below.
 allow_supervised_stop() {
-  [ "$CLAUDE_MODE" -eq 1 ] || exit 0
+  if [ "$CLAUDE_MODE" -eq 0 ]; then
+    followup_episode_reset
+    exit 0
+  fi
   fm_failure_episode_reset "$STATE" && exit 0
   exit 2
 }
@@ -226,6 +263,30 @@ if [ "$(fm_path_age "$STATE/.last-watcher-beat")" -lt "$AFK_GRACE" ] \
   allow_supervised_stop
 fi
 
+# The bounded, deduplicated early-alert / final-notice block appended to the
+# blind-turn banner for a passive adapter that reported its consecutive
+# guard-driven follow-up count. Exactly one of the two rungs prints, at most
+# once per episode, and the final rung names the supported clearing operation so
+# the recovery is an operation rather than an improvisation
+# (docs/turnend-guard.md "Clearing accumulated follow-ups").
+followup_ladder_lines() {
+  [ "$FOLLOWUP_COUNT" -ge "$ALERT_AT" ] || return 0
+  if [ "$FOLLOWUP_COUNT" -ge "$NOTICE_AT" ]; then
+    [ ! -e "$FOLLOWUP_NOTICE_MARKER" ] || return 0
+    (set -C; : > "$FOLLOWUP_NOTICE_MARKER") 2>/dev/null || return 0
+    printf '●  FOLLOW-UP CEILING REACHED - this is the LAST automatic recovery follow-up for this session.\n'
+    printf '●  %s consecutive turns have ended without live supervision and without a captain message.\n' "$FOLLOWUP_COUNT"
+    printf '●  Automatic follow-ups stop at the ceiling; queued wakes stay durable and are not lost.\n'
+    printf '●  Clear the accumulated follow-ups without submitting them, then restore supervision:\n'
+    printf '●    bin/fm-turnend-guard-clear.sh\n'
+    return 0
+  fi
+  [ ! -e "$FOLLOWUP_ALERT_MARKER" ] || return 0
+  (set -C; : > "$FOLLOWUP_ALERT_MARKER") 2>/dev/null || return 0
+  printf '●  EARLY WARNING - the same supervision failure has now forced %s consecutive recovery follow-ups.\n' "$FOLLOWUP_COUNT"
+  printf '●  Follow-ups stop at the ceiling; clear the accumulated ones with bin/fm-turnend-guard-clear.sh before the session saturates.\n'
+}
+
 block_stop() {
   local afk x_mode reason rule
   afk=0
@@ -251,6 +312,7 @@ block_stop() {
       printf '●  The Stop-owned auto-arm did not claim this home either, so recovery is NOT already under way.\n'
     fi
     printf '●  %s\n' "$reason"
+    followup_ladder_lines
     printf '●%s\n' "$rule"
   } >&2
   exit 2

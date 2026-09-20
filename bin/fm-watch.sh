@@ -39,9 +39,15 @@
 #                          also carries a "demand-deep-inspection" marker so the
 #                          wake payload itself, not just repetition, forces a
 #                          closer look instead of another routine supervision
-#                          resume. Unless afk is active. A pane about to escalate
-#                          whose worker declared why it is quiet - a `paused:`
-#                          external wait or a verified `captain-held` transfer -
+#                          resume. The repetition ladder is separately bounded:
+#                          at FM_WEDGE_ESCALATE_MAX consecutive escalations it
+#                          stops and reports why once per unchanged pane state,
+#                          while the threshold crossing raises one deduplicated
+#                          durable early alert naming the repeating pane. Unless
+#                          afk is active, a pane about to escalate that can
+#                          account for its quiet - a `paused:` external wait or
+#                          a verified `captain-held` transfer, or a validation
+#                          gate awaiting a supervisor decision where configured -
 #                          is deferred to that same long recheck cadence instead
 #                          (wedge_wait_evidence), and a pane whose own task
 #                          worktree was written during the quiet window is
@@ -404,7 +410,8 @@ window_label() {
 # The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
 # `_` so a window name is usable as a filename suffix. Every per-window file the
 # watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-,
-# .wedge-escalations-, .paused-*, .writing-*, .waiting-*), and live homes hold those markers on
+# .wedge-escalations-, .wedge-alert-, .wedge-ceiling-, .paused-*, .writing-*,
+# .waiting-*), and live homes hold those markers on
 # disk under the current format, so the format lives here alone: a second copy is
 # how a future change to it silently orphans a window's markers instead of clearing
 # them. The helpers below take the derived key rather than re-deriving it, so one
@@ -698,8 +705,8 @@ signal_turnend_panes_churned() {  # <file> ...
     return 1
   done
   for key in "${churned_keys[@]}"; do
-    if ! rm -f "$STATE/.stale-$key" "$STATE/.wedge-escalations-$key"; then
-      for created in "${created_keys[@]}"; do
+    if ! rm -f "$STATE/.stale-$key" || ! clear_wedge_tracking "$key"; then
+      for created in "${created_keys[@]+"${created_keys[@]}"}"; do
         rm -f "$STATE/.churn-since-$created"
       done
       return 1
@@ -874,6 +881,75 @@ EOF
 # pane/hash state resets to genuinely active (see the two rm-on-reset call sites
 # below).
 FM_WEDGE_DEMAND_INSPECT_COUNT=${FM_WEDGE_DEMAND_INSPECT_COUNT:-3}
+
+# The ladder's own ceiling on consecutive wedge escalations for one pane state.
+# FM_WEDGE_DEMAND_INSPECT_COUNT only makes the repetition louder; it does not
+# bound it, so a pane that keeps re-escalating on the SAME hash climbed forever
+# (two finished lanes reached 226 and 203 consecutive escalations, roughly one
+# per FM_STALE_ESCALATE_SECS, before the dead-record bound existed). An idle pane
+# whose task record is still open in this home is not a wedge the ladder can
+# resolve by climbing, so past this ceiling the ladder stops and reports why,
+# once per pane state. Every genuine reset of a window's pane/hash state clears
+# the ceiling marker with the count (clear_wedge_tracking below).
+FM_WEDGE_ESCALATE_MAX=${FM_WEDGE_ESCALATE_MAX:-12}
+
+# Clear every piece of one window's wedge-ladder state together. The count, the
+# early-alert episode marker, and the ceiling record must never disagree: a
+# count reset without the markers would spend the one-shot alert on the wrong
+# episode, and a marker left behind would swallow the next episode's alert.
+clear_wedge_tracking() {  # <window-key>
+  local key=$1
+  rm -f "$STATE/.wedge-escalations-$key" "$STATE/.wedge-alert-$key" "$STATE/.wedge-ceiling-$key"
+}
+
+# ONE bounded, deduplicated early alert the first time a pane's wedge ladder
+# crosses its small repeat threshold. This is event-driven (it fires on the
+# escalation event, never on a timer), it names the repeating source so the
+# reader knows WHICH pane is looping, and it never re-fires for the same pane
+# state - so it cannot become an alert loop of its own. It goes on the durable
+# wake queue rather than the pane, because the whole point is to reach the
+# supervisor before the repeating wake saturates the session.
+wedge_repeat_alert() {  # <window> <task> <count>
+  local win=$1 task=$2 count=$3 key notify_key queued reason
+  key=$(window_key "$win")
+  [ ! -e "$STATE/.wedge-alert-$key" ] || return 0
+  notify_key="wedge-repeat-$task-$key"
+  reason="check: wedge escalations repeating: $win has wedge-escalated $count times in a row with no change (idle pane, task record still open) - inspect it before this repeats up to the escalation ceiling"
+  queued=$(fm_wake_queued_keys check)
+  if ! printf '%s\n' "$queued" | grep -Fx "$notify_key" >/dev/null 2>&1; then
+    fm_wake_append check "$notify_key" "$reason" || return 0
+  fi
+  # The episode marker goes down only after the alert is durable, so a failed
+  # append cannot spend this pane's one alert on nothing.
+  printf '%s' "$count" > "$STATE/.wedge-alert-$key"
+  triage_log "early alert (wedge escalation $count in a row, task record still open): $win"
+}
+
+# The wedge ladder's ceiling record: report the stop ONCE per pane state and
+# then absorb every later threshold crossing without escalating. It re-arms the
+# idle timer on both paths, exactly like wedge_dead_record, so the backend and
+# crew-state probes stay on their once-per-STALE_ESCALATE_SECS budget instead of
+# running on every poll. Returns 0 when it handled the window, so the caller
+# stops; there is no unchanged path left to escalate.
+wedge_ceiling_record() {  # <window> <since-file> <triage-label> <idle-age> <count> <task>
+  local win=$1 since_file=$2 label=$3 age=$4 count=$5 task=$6 key marker reason
+  key=$(window_key "$win")
+  marker="$STATE/.wedge-ceiling-$key"
+  date +%s > "$since_file"
+  if [ -s "$marker" ]; then
+    triage_log "absorbed $label (wedge escalation ceiling reached, not re-escalated, idle ${age}s): $win"
+    return 0
+  fi
+  reason="stale: $win (idle ${age}s, possible wedge, escalation ceiling reached at ${count} - ${label}; this pane is idle with its task record still open in this home, which is not a wedge the ladder can resolve by climbing, so it stopped here and is reported once instead of re-escalating while the pane state is unchanged - reconcile the record, and check for unlanded work before any cleanup)"
+  # Append before the marker, for the reason stale_wait_record gives: a marker
+  # written ahead of a failed append outlives it and would absorb the retry,
+  # which is the one way this bound could swallow the report outright rather
+  # than deliver it once.
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf '%s %s\n' "$count" "$(date +%s)" > "$marker"
+  clear_write_tracking "$key"
+  wake "$reason"
+}
 
 # One bounded re-surface for a pane the watcher is deliberately absorbing, so no
 # absorb can rot invisibly. <age> is how long the current absorb has held and
@@ -1109,10 +1185,28 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
           return 0
         fi
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
+        if [ "$n" -gt "$FM_WEDGE_ESCALATE_MAX" ]; then
+          # The ladder's own ceiling. An idle pane whose task record is still
+          # open in this home is not a wedge the ladder can resolve by climbing
+          # further: the count only ever proved that the same pane keeps looking
+          # the same, so the ladder stops here and says so once instead of
+          # escalating forever (2026-09-20: an unbounded ladder was half of what
+          # filled the primary session).
+          wedge_ceiling_record "$win" "$since_file" "$label" "$age" "$FM_WEDGE_ESCALATE_MAX" "$task"
+          return 0
+        fi
         echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
         if [ "$n" -ge "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
           reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
+        fi
+        # Event-driven early detection, not a timer: the FIRST time this pane's
+        # ladder crosses its small repeat threshold, raise ONE deduplicated
+        # alert naming the repeating source so the captain hears about it before
+        # the ladder (or the turn-end follow-up ladder it feeds) saturates the
+        # session. The episode marker bounds it to one alert per pane state.
+        if [ "$n" -eq "$FM_WEDGE_DEMAND_INSPECT_COUNT" ]; then
+          wedge_repeat_alert "$win" "$task" "$n"
         fi
         fm_wake_append stale "$win" "$reason" || exit 1
         rm -f "$since_file"
@@ -1158,7 +1252,8 @@ handle_paused_stale() {  # <window> <task> <hash>
   key=$(window_key "$win")
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
-  rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  rm -f "$STATE/.stale-since-$key"
+  clear_wedge_tracking "$key"
   clear_write_tracking "$key"
   statusf="$STATE/$task.status"
   mtime=$(stat_mtime "$statusf")
@@ -1238,7 +1333,8 @@ busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-fil
       # pause tracking stays unwritten here, exactly as the idle away-mode handoff
       # leaves it, because the daemon owns that bookkeeping.
       key=$(window_key "$win")
-      rm -f "$since_file" "$escalation_file"
+      rm -f "$since_file"
+      clear_wedge_tracking "$key"
       clear_write_tracking "$key"
       declared="declared:$(fm_wake_signal_sig "$statusf" || true)"
       if captain_held_silenced "$(last_status_line "$statusf")"; then
@@ -1273,8 +1369,9 @@ clear_pause_state() {  # <window-key>
 clear_stale_hash_tracking() {  # <window-key>
   local key=$1
   clear_write_tracking "$key"
-  rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" \
+  rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" \
     "$STATE/.waiting-resurfaced-$key"
+  clear_wedge_tracking "$key"
 }
 
 clear_pause_tracking() {  # <window-key>
@@ -2720,7 +2817,8 @@ EOF
         if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
           busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" && paused_bound=0
         else
-          rm -f "$ssf" "$ewf"
+          rm -f "$ssf"
+          clear_wedge_tracking "$key"
           clear_write_tracking "$key"
         fi
         # A busy pane normally means real work resumed, so stale pause bookkeeping
@@ -2738,7 +2836,8 @@ EOF
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
         busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" && paused_bound=0
       else
-        rm -f "$ssf" "$ewf"
+        rm -f "$ssf"
+        clear_wedge_tracking "$key"
         clear_write_tracking "$key"
       fi
       task=$(window_to_task "$w" "$STATE")

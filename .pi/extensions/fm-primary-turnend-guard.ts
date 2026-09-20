@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -9,8 +9,6 @@ import {
   encodeFirstmateOperationalInput,
   firstmateShellInvocation,
 } from "./lib/fm-operational-input.ts";
-
-let guardFollowupActive = false;
 
 type LockOwnership = "owned" | "missing" | "other";
 
@@ -21,6 +19,93 @@ const fmHome = process.env.FM_HOME || process.env.FM_ROOT_OVERRIDE || root;
 const state = process.env.FM_STATE_OVERRIDE || `${fmHome}/state`;
 const marker = `${state}/.pi-turnend-extension-loaded`;
 const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(extensionFile)).digest("hex")}`;
+
+// Consecutive guard-driven follow-up ladder for this session. A one-per-turn
+// boolean latch is NOT a bound: it clears on the very next settled turn, so a
+// pane stuck in a repeating wake makes every alternate turn a fresh latch and
+// this guard fires again on every other turn forever - the 2026-09-20
+// saturation that filled a primary session to 99% context. This count is
+// persisted, charged once per EMITTED follow-up, and reset only by something
+// that genuinely ends the episode: a healthy/not-needed guard verdict, a real
+// captain message, or a fresh session. At FM_PI_TURNEND_FOLLOWUP_CEILING the
+// extension stops emitting follow-ups entirely. That is the harness-side
+// ceiling that still holds if the firstmate-owned lower bound in
+// bin/fm-turnend-guard.sh misbehaves; the lower bound exists so the session is
+// TOLD (one early alert, one final loud notice) before this ceiling rather than
+// going quietly dark at it. docs/turnend-guard.md owns the contract.
+const followupStateFile = `${state}/.turnend-pi-followups`;
+const followupCeiling = positiveIntEnv("FM_PI_TURNEND_FOLLOWUP_CEILING", 12);
+
+type FollowupLadder = { count: number; stopped: string };
+
+type SessionIdSource = { sessionManager?: { getSessionId?: () => unknown } };
+
+// In-process mirror of the ladder. The state file is what carries the bound
+// across a reload, but the bound itself must never depend on the filesystem: a
+// home whose state directory cannot be written still gets a bounded loop rather
+// than an unbounded one.
+let followupMirror: { session: string; count: number; stopped: string } | null = null;
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw || !/^[0-9]+$/.test(raw)) return fallback;
+  const value = Number.parseInt(raw, 10);
+  return value > 0 ? value : fallback;
+}
+
+function followupLadderSession(ctx: unknown): string {
+  try {
+    const id = String((ctx as SessionIdSource)?.sessionManager?.getSessionId?.() ?? "");
+    return id || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function readPersistedLadder(session: string): FollowupLadder {
+  try {
+    const fields = new Map<string, string>();
+    for (const line of readFileSync(followupStateFile, "utf8").split("\n")) {
+      const at = line.indexOf("=");
+      if (at > 0) fields.set(line.slice(0, at), line.slice(at + 1));
+    }
+    // A different session owns the ladder: start it fresh rather than charging
+    // a new session for a predecessor's follow-ups.
+    if ((fields.get("session") ?? "") !== session) return { count: 0, stopped: "" };
+    const count = Number.parseInt(fields.get("count") ?? "", 10);
+    return {
+      count: Number.isFinite(count) && count > 0 ? count : 0,
+      stopped: fields.get("stopped") ?? "",
+    };
+  } catch {
+    return { count: 0, stopped: "" };
+  }
+}
+
+function readFollowupLadder(session: string): FollowupLadder {
+  const persisted = readPersistedLadder(session);
+  if (!followupMirror || followupMirror.session !== session) return persisted;
+  // Whichever side is further along owns the bound, so neither a lost write nor
+  // a stale file can reopen the loop.
+  if (persisted.count >= followupMirror.count) return persisted;
+  return { count: followupMirror.count, stopped: followupMirror.stopped };
+}
+
+function writeFollowupLadder(session: string, count: number, stopped: string): void {
+  followupMirror = { session, count, stopped };
+  try {
+    writeFileSync(followupStateFile, `session=${session}\ncount=${count}\nstopped=${stopped}\n`);
+  } catch {
+  }
+}
+
+function resetFollowupLadder(): void {
+  followupMirror = null;
+  try {
+    if (existsSync(followupStateFile)) rmSync(followupStateFile);
+  } catch {
+  }
+}
 
 function parentPid(pid: string): string {
   const result = spawnSync("ps", ["-o", "ppid=", "-p", pid], { encoding: "utf8" });
@@ -446,13 +531,14 @@ async function claimSessionstartMessage(
   return sessionstartMessage(generation, result);
 }
 
-function runGuard(): Promise<{ code: number; stderr: string }> {
+function runGuard(followupCount: number): Promise<{ code: number; stderr: string }> {
   return new Promise((resolveResult) => {
     const invocation = firstmateShellInvocation(`${root}/bin/fm-turnend-guard.sh`, []);
     let child: ChildProcess;
     try {
       child = spawn(invocation.command, invocation.args, {
         stdio: ["pipe", "ignore", "pipe"],
+        env: { ...process.env, FM_TURNEND_FOLLOWUP_COUNT: String(followupCount) },
       });
     } catch {
       resolveResult({ code: 0, stderr: "" });
@@ -542,6 +628,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on?.("session_start", (event, ctx) => {
     const reason = String((event as { reason?: unknown }).reason ?? "");
+    if (reason === "startup" || reason === "new") resetFollowupLadder();
     const source = reason === "startup"
       ? startupRebuildSource(ctx) ?? "startup"
       : { new: "clear", resume: "resume", fork: "fork" }[reason];
@@ -600,16 +687,33 @@ export default function (pi: ExtensionAPI) {
     return { block: true, reason: result.stderr.trim() || "denied by the watcher-arm PreToolUse seatbelt" };
   });
 
-  pi.on("agent_settled", async () => {
-    if (guardFollowupActive) {
-      guardFollowupActive = false;
+  pi.on("agent_settled", async (_event, ctx) => {
+    const session = followupLadderSession(ctx);
+    const ladder = readFollowupLadder(session);
+
+    // The guard still runs at the ceiling: its verdict is the only signal that
+    // supervision recovered, so the ladder must be able to restart without
+    // waiting for a captain message or a new session.
+    const result = await runGuard(ladder.count);
+    if (result.code !== 2) {
+      // Supervision is healthy or not needed at this turn end, so the episode
+      // is over and the ladder restarts rather than staying spent.
+      resetFollowupLadder();
       return;
     }
 
-    const result = await runGuard();
-    if (result.code !== 2) return;
+    // The harness-side ceiling already bit for this session. Emitting nothing
+    // further while it stays unhealthy is the whole point of the ceiling.
+    if (ladder.stopped === "ceiling") return;
 
-    guardFollowupActive = true;
+    const count = ladder.count + 1;
+    if (count > followupCeiling) {
+      // Record WHY the ladder stopped, so an operator reading state sees a
+      // bounded ceiling rather than a silently vanished guard.
+      writeFollowupLadder(session, ladder.count, "ceiling");
+      return;
+    }
+    writeFollowupLadder(session, count, "");
     try {
       const content = encodeFirstmateOperationalInput(
         "turn-end-guard",
@@ -619,8 +723,22 @@ export default function (pi: ExtensionAPI) {
       );
       await pi.sendUserMessage(content, { deliverAs: "followUp" });
     } catch {
-      guardFollowupActive = false;
+      // The follow-up was never taken, so it must not be charged against the
+      // ladder - the same reason the old latch cleared on delivery failure.
+      writeFollowupLadder(session, ladder.count, "");
     }
+  });
+
+  // A real captain message ends the episode, so a later stuck pane still gets
+  // its full bounded budget of follow-ups. Pi reports prompt provenance
+  // structurally on the input event (source "interactive" | "rpc" |
+  // "extension"), so this can never mistake this extension's own injected
+  // follow-up for a captain message.
+  const inputEvents = pi as unknown as {
+    on?: (event: string, handler: (event: { source?: unknown }) => void) => void;
+  };
+  inputEvents.on?.("input", (event) => {
+    if (String(event?.source ?? "") === "interactive") resetFollowupLadder();
   });
 
   markLoaded();

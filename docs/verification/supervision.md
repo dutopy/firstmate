@@ -445,6 +445,28 @@ Observed output:
 fm-claude-stop-autoarm: ok
 ```
 
+### Pi follow-up bound and prompt provenance, 2026-09-20
+
+The Pi follow-up ladder depends on one vendor signal: Pi's `input` event reporting prompt provenance structurally.
+A stub can only confirm the assumption already written into it, so the signal was proven against the real harness on 2026-09-20 with the installed Pi 0.85.1 on macOS, using a throwaway probe extension and two cheap model turns on `openai-codex/gpt-5.6-sol`:
+
+```sh
+PROBE_LOG=<provenance.log> pi --print --approve --no-session --no-context-files --no-extensions \
+  --no-skills --tools read -e <probe.ts> --model openai-codex/gpt-5.6-sol --thinking low \
+  "Reply with exactly: FIRST_OK"
+```
+
+Observed log rows, formatted as `input<TAB><source><TAB><text>`:
+
+```text
+input	interactive	Reply with exactly: FIRST_OK
+input	extension	INJECTED_PROBE: reply with exactly SECON
+```
+
+So a typed captain message is `interactive` and a `pi.sendUserMessage(..., { deliverAs: "followUp" })` injected message is `extension`, which is exactly the distinction the ladder resets on and never mistakes its own follow-up for.
+`tests/fm-pi-primary-live-e2e.test.sh`'s `run_input_provenance_probe` is the guard that refreshes this, and the same construction was reproduced by hand before it was added.
+The ladder's own logic - the harness-side ceiling and its `stopped=ceiling` record, the firstmate-owned early alert and final notice, and the three reset events - is pinned portably in `tests/fm-turnend-guard.test.sh`, and the wedge ladder's ceiling and deduplicated early alert in `tests/fm-watch-triage.test.sh`.
+
 ## Watcher continuity
 
 The cross-harness evidence combines the 2026-07-17 live pass with Claude's replacement Stop-owned path revalidated on 2026-07-24, all against isolated project and home state.

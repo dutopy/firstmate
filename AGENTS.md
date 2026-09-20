@@ -152,6 +152,8 @@ state/               runtime records and signals; gitignored
   .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
   .cursor-park-owner .cursor-park-owner.lock .turnend-cursor-blocks   Cursor stop-hook owner record, publication and commit lock, and bounded repair-nag budget; never touch
   .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .writing-* .waiting-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
+  .turnend-pi-followups .turnend-followup-alert .turnend-followup-final   passive-adapter turn-end follow-up ladder: the Pi consecutive-follow-up counter and its ceiling-stop record, plus the shared guard's one-shot early-alert and final-notice markers; removed by bin/fm-turnend-guard-clear.sh
+  .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .wedge-alert-* .wedge-ceiling-* .dead-reported-* .writing-* .waiting-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .proposal-lane-last-scan .proposal-lane-last-card   proposal-lane cadence records; bin/fm-proposal-lane.sh owns their format and lifecycle
   .proposal-lane.lock   proposal-lane ledger serialization lock; never touch
@@ -456,6 +458,7 @@ Guard warnings do not replace the contract.
 Queued wakes must be presented before other action and acknowledged only after handling, stale liveness must be repaired through the emitted protocol, and the worktree-tangle warning must be resolved without touching unlanded work.
 The spawn assertion and generated ship brief must both enforce that project work starts in an isolated disposable worktree, never the primary checkout.
 Harness-aware turn-end guards are structural backstops, not permission to omit the live cycle.
+A primary session that has accumulated repeated turn-end follow-ups is cleared with `bin/fm-turnend-guard-clear.sh`, the supported operation whose effect, record list, and pane-key drain `docs/turnend-guard.md` owns.
 
 ### Away-mode and quiet-mode stub
 

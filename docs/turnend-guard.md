@@ -74,7 +74,7 @@ Every other direct `FM_GUARD_GRACE` reader (`bin/fm-guard.sh`, the strict-watche
 - Claude registers two `Stop` hooks in `.claude/settings.json`, both anchored through `CLAUDE_PROJECT_DIR`: `bin/fm-turnend-guard.sh --claude`, and `bin/fm-claude-stop-autoarm.sh` with `asyncRewake: true` and `timeout: 28800`.
 - Codex registers a `Stop` hook in `.codex/hooks.json`, anchors the executable to the hook process working directory, verifies a Firstmate-shaped hook-bearing root, and passes the original payload to the shared guard.
 - OpenCode listens for `session.idle` in `.opencode/plugins/fm-primary-turnend-guard.js`, lets the watcher coordinator act first, and calls `client.session.promptAsync` once when the guard returns 2.
-- Pi listens for `agent_settled` in `.pi/extensions/fm-primary-turnend-guard.ts`, runs once per logical agent run, and calls `pi.sendUserMessage(..., { deliverAs: "followUp" })` once when the guard returns 2.
+- Pi listens for `agent_settled` in `.pi/extensions/fm-primary-turnend-guard.ts`, runs once per logical agent run, and calls `pi.sendUserMessage(..., { deliverAs: "followUp" })` when the guard returns 2, bounded by the follow-up ladder below.
 - omp answers its blocking `session_stop` hook in `.omp/extensions/fm-primary-turnend-guard.ts`, passing the payload's own `stop_hook_active` to the shared guard and returning `{ continue: true, additionalContext }` when the guard returns 2, so the continuation is compelled rather than requested; the continuation's stop carries `stop_hook_active: true`, which bounds it to one per turn, and omp's own cap of eight consecutive continuations is the second backstop. `session_stop` never fires for an interrupted turn or a task session, so those boundaries are deliberately unguarded.
 - Cursor registers a `stop` hook in `.cursor/hooks.json` and delegates the whole turn boundary to `bin/fm-turnend-guard-cursor.sh`, the park described below.
   Cursor also loads `<project>/.claude/settings.json`, so every tracked Claude-shaped entrypoint whose event Cursor covers stands down on a Cursor-delivered payload through `bin/fm-hook-host-lib.sh`.
@@ -126,8 +126,20 @@ Their adapters fail open at the hook boundary to protect the user session but sc
 omp is the exception among the Pi-derived harnesses: its `session_stop` hook blocks like Codex's `Stop` hook, so no passive latch is needed and the `stop_hook_active` loop guard applies unchanged.
 The generated prompts use the canonical `turn-end-guard` kind after the U+2063 `FIRSTMATE_OP: ` prefix, so Ahoy does not treat them as captain messages.
 Each passive adapter owns a loop latch.
-Pi keeps the latch across internal tool turns and clears it only when the generated follow-up settles or delivery fails.
 OpenCode's forced follow-up is supported for persistent TUI sessions and remains fail-open in headless `opencode run`.
+
+A one-per-turn latch is a latch, not a bound: it clears on the very next settled turn, so a pane stuck in a repeating wake makes every alternate turn a fresh latch and the guard can fire on every other turn forever.
+On 2026-09-20 exactly that filled a primary session with repeated follow-ups until the context reached 99% and the captain could no longer get an answer.
+Pi therefore carries a real two-tier bound, and neither tier is a boolean:
+
+- The harness side (`.pi/extensions/fm-primary-turnend-guard.ts`) persists a consecutive-follow-up count in `state/.turnend-pi-followups` and stops emitting follow-ups entirely at `FM_PI_TURNEND_FOLLOWUP_CEILING` (default 12), recording `stopped=ceiling` and why.
+  That is the ceiling that still holds if the lower firstmate-owned bound misbehaves, and it is charged once per EMITTED follow-up, so a failed delivery is never charged.
+- The firstmate-owned lower bound lives in the shared predicate `bin/fm-turnend-guard.sh`, which the adapter feeds through `FM_TURNEND_FOLLOWUP_COUNT`.
+  At `FM_TURNEND_GUARD_ALERT_AT` (default 3) it prints ONE early alert, and at `FM_TURNEND_GUARD_NOTICE_AT` (default 6) it prints ONE final loud notice naming the supported clearing operation, each deduplicated by its own marker under the state directory.
+  The lower bound exists so the session is TOLD before the silent ceiling rather than going quietly dark at it; a harness that reports no count sees none of it.
+
+The ladder restarts only on an event that genuinely ends the episode: a healthy or not-needed guard verdict, a real captain message (Pi reports prompt provenance structurally, so the adapter's own injected follow-up cannot be mistaken for one), or a fresh session.
+The count is keyed to the session id, so a new session never inherits a predecessor's follow-ups.
 
 Grok makes exactly one typed capability decision from each running Stop payload.
 A boolean `stopHookActive` selects native blocking, including both false on the initial stop and true on the bounded continuation.
@@ -166,6 +178,37 @@ That hook is deliberately left to a follow-up alongside the deferred `preCompact
 If a passive adapter cannot invoke its SDK, or the Grok legacy fallback cannot find `grok` or a session id, the next pull-based `fm-guard.sh` call reports the problem.
 That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it always points to the active harness protocol rather than embedding another repair command.
 
+## Clearing accumulated follow-ups
+
+A session that already accumulated guard follow-ups before the bound bit - or whose ladder was spent and has since recovered - needs an OPERATION, not an improvisation.
+The supported command is:
+
+```
+bin/fm-turnend-guard-clear.sh
+```
+
+It removes this home's passive-adapter ladder records - `state/.turnend-pi-followups`, `state/.turnend-followup-alert`, and `state/.turnend-followup-final` - so the ladder restarts from zero and the one-shot alerts can be raised again for a genuinely new episode.
+It touches nothing else: the durable wake queue, task records, worktrees, and unlanded work are left alone, and no watcher is started, stopped, or signalled.
+It also prints the keys below, because the messages ALREADY queued in the session are not removed by a shell command.
+
+Drain those on the session's own pane, WITHOUT submitting them:
+
+- Attached directly to the Pi session, `Alt+Up` is Pi's `app.message.dequeue`: it restores the queued follow-up messages into the editor, unsubmitted.
+  `Ctrl+C` is Pi's `app.clear`: it clears that editor, dropping the restored messages. Press it ONCE - a second press exits Pi.
+- Under Herdr the `Alt+Up` shortcut never reaches Pi: Herdr binds `alt+up` to `previous_workspace` (and `alt+enter` to `split_horizontal`), so the client consumes the key before the pane sees it.
+  Send the keys straight to the pane instead, which bypasses the client's own bindings:
+
+  ```
+  herdr pane send-keys <pane-id> escape
+  herdr pane send-keys <pane-id> ctrl+c
+  ```
+
+  The first key aborts the run and restores the queued messages to the editor without submitting them; the second clears that editor.
+- Under tmux: `tmux send-keys -t <pane> Escape`, then `tmux send-keys -t <pane> C-c`.
+
+Then restore supervision with the session-start operating block for that harness.
+`bin/fm-turnend-guard-clear.sh --help` owns the exact record list, environment, and exit status.
+
 ## Compatibility limits
 
 - Child crewmate and scout worktrees are outside scope.
@@ -179,6 +222,8 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - Kimi has no project-level hook configuration and remains outside the primary guard integrations above.
 - Captain-approved Kimi crew wake support uses `bin/fm-kimi-turnend-hook.sh` to edit only one marker-delimited Firstmate region in that global config and install a silent always-zero hook.
 - The hook remains inert unless the payload `cwd` contains a per-task token pointer that resolves through Firstmate's private registry to one `state/<id>.turn-ended` marker.
+- OpenCode's in-memory `skipNextIdle` latch has the same alternate-turn shape the Pi ladder was built to replace, and OpenCode exposes no prompt-provenance signal equivalent to Pi's `input` event source, so a captain-message reset there has no structural source yet.
+  Its follow-up is therefore still bounded only by the latch, and a genuine bound for it is tracked as follow-up work rather than claimed here.
 - Installation refuses before writing unless `python3` with `tomllib` and `jq` are available.
 - If `jq` is removed after installation, the hook remains silent and exits 0, turn-end wakes stop, and Kimi crews fall back to idle detection.
 - Unreadable hook input remains fail-open.
@@ -187,6 +232,8 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 ## Regression coverage
 
 `tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` open-generation claim wait, monotonic failed-epoch progression, bounded attended fail-open, the same bound against a ledger frozen by an inert auto-arm with and without a verified failure episode, post-alarm continuation suppression, positive recovery reset, generation and legacy claim cases that must block or clear instead of allowing a blind stop, away-mode daemon ownership between watcher cycles and over a watcher lock left behind by an exited watcher, plus its dead, pid-reused, absent, stale-beacon, and away-mode-off negatives, the away-mode beacon's poll-derived grace widening for a live daemon still mid-cycle and its bound against a dead daemon, a beacon older than that wider grace, and FM_POLL's inapplicability with away mode off, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
+It also covers the Pi follow-up ladder end to end: one follow-up per blocking logical run carrying its ladder count, the harness-side ceiling stopping the loop and recording `stopped=ceiling`, a captain message and a healthy verdict each restarting the ladder while the adapter's own injected follow-up does not, an undelivered follow-up never being charged, the firstmate-owned early alert and final notice each firing once and naming the clearing command, the ladder staying inert for a harness that reports no count, and the clearing operation removing exactly its three records, leaving the wake queue alone, and printing the Pi keys, the Herdr conflict, and the reliable Herdr and tmux pane-key paths.
+`tests/fm-turnend-foreign-owner-arm-fix.test.sh` runs the extracted isolated executable reproduction against real auto-arm and turn-end guard scripts, proving that a live foreign owner still prevents arming while repeated non-owner Stops receive a diagnostic and exit safely.
 `tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control; the auto-arm model's healthy fresh-beacon-without-a-watcher case, session-and-recovery-bound long-turn rewake tolerance, independently broken tolerance signals, open-claim negative control, stale-beacon alarm, and isolation from other models; and the extension model's live-watcher path, ownership-qualified fresh hand-off, held-lock failures, independently broken ownership signals, stale-beacon alarm, queued-wake warning, and Pi and pi-signed harness routing.
 It also covers true-reason banner wording and reason-keyed episode dedup surviving a beacon mtime change.
 `tests/fm-cursor-primary.test.sh` covers the Cursor park end to end over real processes with no harness installed: each tracked Claude-shaped entrypoint standing down on a Cursor payload, both follow-up sources, the bounded repair nag and its reset, the nested loop bounds, supersession, away-mode and lock-ownership inertness, Pi-host stand-down without Cursor identity and continued parking when `PI_CODING_AGENT` leaks alongside `CURSOR_AGENT` or `CURSOR_INVOKED_AS`, child-worktree exclusion, and that the adapter never exits 2.

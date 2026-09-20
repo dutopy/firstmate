@@ -2038,6 +2038,179 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated() {
 # It must surface at once, never wait out the wedge timer, so these users (a
 # non-no-mistakes crew, or any crew with no running pipeline) are never left hanging.
 
+# --- the wedge ladder's ceiling and its deduplicated early alert --------------
+# The 2026-09-20 saturation had two halves: a turn-end follow-up ladder with no
+# bound, and a wedge ladder that could climb forever on a pane whose task record
+# was still open and whose agent was simply idle. The escalation count is now
+# capped and the threshold crossing raises ONE durable, deduplicated alert, so a
+# repeating pane is heard before it can fill the session.
+
+test_wedge_escalation_ceiling_stops_the_ladder_and_names_why() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid
+  dir=$(make_case wedge-escalation-ceiling); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  window="test:fm-ceiling"
+  printf 'idle building output' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/ceiling.meta"
+  printf 'working: still compiling\n' > "$state/ceiling.status"
+  sig=$(seen_sig "$state/ceiling.status"); printf '%s' "$sig" > "$state/.seen-ceiling_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle building output")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  # Priming round: the first sighting of this stale hash classifies and absorbs
+  # it, establishing .stale-$key and starting the wedge timer, exactly as the
+  # other wedge tests' Phase A does.
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "the watcher exited on the ceiling priming round (should absorb): $(cat "$out")"
+  fi
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional priming stop"
+
+  # The ladder has already climbed to its ceiling for this unchanged pane.
+  printf '12\n' > "$state/.wedge-escalations-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX=12 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "the watcher did not report the wedge escalation ceiling"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "the ceiling report did not print a stale wake"
+  grep -F "escalation ceiling reached at 12" "$out" >/dev/null \
+    || fail "the ceiling report did not name the count it stopped at: $(cat "$out")"
+  grep -F "task record still open" "$out" >/dev/null \
+    || fail "the ceiling report did not name why the ladder stopped"
+  grep -F "not a wedge the ladder can resolve by climbing" "$out" >/dev/null \
+    || fail "the ceiling report did not state that an idle open task is not a wedge"
+  [ -s "$state/.wedge-ceiling-$key" ] || fail "the ceiling record was not written"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the ceiling report failed"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "the ceiling report was not queued"
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional phase-A watcher stop"
+
+  # Second crossing on the SAME unchanged pane state: absorbed, never re-reported.
+  : > "$out"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=240 FM_WEDGE_ESCALATE_MAX=12 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "the watcher re-reported a pane already at the wedge ceiling: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "a pane already at the wedge ceiling printed a second report"
+  reap "$pid"
+  unset FM_FAKE_CREW_STATE
+  pass "the wedge ladder stops at FM_WEDGE_ESCALATE_MAX, names why, and never re-reports an unchanged pane"
+}
+
+test_wedge_repeat_alert_is_early_bounded_and_deduplicated() {
+  local dir state fakebin out capture_file window key pane_hash sig pid checks
+  dir=$(make_case wedge-repeat-alert); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-repeat"
+  printf 'idle building output' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/repeat.meta"
+  printf 'working: still compiling\n' > "$state/repeat.status"
+  sig=$(seen_sig "$state/repeat.status"); printf '%s' "$sig" > "$state/.seen-repeat_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle building output")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  # Priming round: absorb the first sighting and start the wedge timer.
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "the watcher exited on the repeat-alert priming round (should absorb): $(cat "$out")"
+  fi
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional priming stop"
+
+  # One escalation short of the small repeat threshold: this crossing is the
+  # event that must raise the alert, with no timer involved.
+  printf '2\n' > "$state/.wedge-escalations-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "the watcher did not escalate the repeating pane"; }
+  [ -s "$state/.wedge-alert-$key" ] || fail "the early alert episode marker was not written"
+  checks=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_wake_queued_keys check' _ "$ROOT/bin/fm-wake-lib.sh")
+  printf '%s\n' "$checks" | grep -Fx "wedge-repeat-repeat-$key" >/dev/null \
+    || fail "the early alert was not queued under its dedup key: $checks"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" 2>/dev/null | grep -F "wedge escalations repeating" >/dev/null \
+    || fail "the early alert payload did not name the repeating pane"
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional phase-A watcher stop"
+
+  # Same pane, next crossing: the alert is one-shot per episode, so it must not
+  # become an alert loop of its own.
+  : > "$out"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "the watcher did not escalate the repeating pane a second time"; }
+  checks=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_wake_queued_keys check' _ "$ROOT/bin/fm-wake-lib.sh")
+  [ -z "$checks" ] || { reap "$pid"; fail "the early alert re-queued on the next crossing: $checks"; }
+  grep -F "escalation 4" "$out" >/dev/null || fail "the second crossing did not escalate normally"
+  reap "$pid"
+  unset FM_FAKE_CREW_STATE
+  pass "the wedge repeat alert fires once at its threshold, names the pane, and never loops"
+}
+
+test_wedge_ladder_resets_with_pane_state() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case wedge-ladder-reset); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-ladder-reset"
+  printf 'working on something new' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/reset.meta"
+  printf 'working: implementing\n' > "$state/reset.status"
+  sig=$(seen_sig "$state/reset.status"); printf '%s' "$sig" > "$state/.seen-reset_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "working on something new")
+  # A spent ladder from a previous episode of this pane's life.
+  printf '11\n' > "$state/.wedge-escalations-$key"
+  printf '11 1\n' > "$state/.wedge-ceiling-$key"
+  printf '3' > "$state/.wedge-alert-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "the watcher exited for a fresh pane (should absorb): $(cat "$out")"
+  fi
+  [ ! -e "$state/.wedge-ceiling-$key" ] || { reap "$pid"; fail "a changed pane state retained the previous episode's ceiling record"; }
+  [ ! -e "$state/.wedge-alert-$key" ] || { reap "$pid"; fail "a changed pane state retained the previous episode's alert marker"; }
+  reap "$pid"
+  unset FM_FAKE_CREW_STATE
+  pass "a changed pane state clears the wedge ladder's count, alert marker, and ceiling record together"
+}
+
 test_nonterminal_stale_not_working_surfaced() {
   local dir state fakebin out drain_out capture_file window key pane_hash sig pid
   dir=$(make_case nonterminal-stale-stopped); state="$dir/state"; fakebin="$dir/fakebin"
@@ -5229,6 +5402,9 @@ test_finished_task_gone_endpoint_settled
 test_unfinished_task_with_gone_endpoint_still_surfaces
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
+test_wedge_escalation_ceiling_stops_the_ladder_and_names_why
+test_wedge_repeat_alert_is_early_bounded_and_deduplicated
+test_wedge_ladder_resets_with_pane_state
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
 test_wedge_escalation_resets_when_pane_becomes_active
 test_busy_pane_below_turn_age_bound_is_absorbed

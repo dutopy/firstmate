@@ -241,10 +241,53 @@ run_native_ahoy_regressions() {
     || fail "Pi native later-message Ahoy reran session start"
 }
 
+# Live proof of the ONE harness signal the Pi follow-up ladder depends on: Pi's
+# `input` event reports prompt provenance structurally, as `interactive` for a
+# typed captain message and `extension` for a message this extension injected
+# with sendUserMessage. The ladder resets on the former and never on the latter,
+# and a stub can only confirm the assumption already written into it, so this
+# case runs the real harness. Two cheap model turns, no tmux.
+run_input_provenance_probe() {
+  local probe_dir log out
+  probe_dir="$LAB/pi-input-provenance"
+  log="$probe_dir/provenance.log"
+  mkdir -p "$probe_dir"
+  cat > "$probe_dir/probe.ts" <<'TS'
+import { appendFileSync } from "node:fs";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  let sent = false;
+  pi.on("input", (event) => {
+    const e = event as { source?: unknown; text?: unknown };
+    appendFileSync(process.env.PROBE_LOG!, `input\t${String(e.source)}\t${String(e.text).slice(0, 40)}\n`);
+  });
+  pi.on("turn_end", () => {
+    if (sent) return;
+    sent = true;
+    pi.sendUserMessage("INJECTED_PROBE: reply with exactly SECOND_OK", { deliverAs: "followUp" });
+  });
+}
+TS
+  out=$(
+    cd "$probe_dir" &&
+      PROBE_LOG="$log" pi --print --approve --no-session --no-context-files --no-extensions \
+        --no-skills --tools read \
+        -e "$probe_dir/probe.ts" \
+        --model openai-codex/gpt-5.6-sol --thinking low \
+        "Reply with exactly: FIRST_OK"
+  ) || fail "Pi input-provenance probe exited nonzero: $out"
+  grep -Fq "$(printf 'input\tinteractive\t')" "$log" \
+    || fail "Pi did not report a typed prompt as input source 'interactive': $(cat "$log")"
+  grep -Fq "$(printf 'input\textension\t')" "$log" \
+    || fail "Pi did not report an extension-injected message as input source 'extension': $(cat "$log")"
+}
+
 mkdir -p "$LAB"
 git clone -q "$ROOT" "$PROJECT"
 run_ahoy_transcript_regressions
 run_native_ahoy_regressions
+run_input_provenance_probe
 mkdir -p "$PROJECT/.pi/extensions/lib"
 cp "$ROOT/.pi/extensions/fm-calm.ts" "$PROJECT/.pi/extensions/fm-calm.ts"
 cp "$ROOT/.pi/extensions/fm-primary-pi-watch.ts" "$PROJECT/.pi/extensions/fm-primary-pi-watch.ts"
