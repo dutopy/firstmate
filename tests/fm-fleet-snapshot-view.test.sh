@@ -1153,7 +1153,7 @@ EOF
 }
 
 test_large_backlog_contribution_input_avoids_argument_limit() {
-  local home fakebin out records argmax expected note
+  local home fakebin out records argmax expected note record bytes=0 i=0
   home=$(make_home large-backlog)
   fakebin=$(make_fakebin "$home/fakebin")
   argmax=$(getconf ARG_MAX 2>/dev/null || printf 2097152)
@@ -1163,10 +1163,11 @@ test_large_backlog_contribution_input_avoids_argument_limit() {
   note=$(printf 'x%.0s' $(seq 1 400))
   {
     printf '## Queued\n'
-    i=0
-    while [ "$(wc -c < "$home/data/backlog.md" 2>/dev/null || echo 0)" -lt $((argmax * 2)) ]; do
+    while [ "$bytes" -lt $((argmax * 2)) ]; do
       i=$((i + 1))
-      printf -- '- [ ] rec-%06d - Record %06d %s (repo: alpha) (since 2026-07-07)\n' "$i" "$i" "$note"
+      printf -v record -- '- [ ] rec-%06d - Record %06d %s (repo: alpha) (since 2026-07-07)\n' "$i" "$i" "$note"
+      printf '%s' "$record"
+      bytes=$((bytes + ${#record}))
     done
   } > "$home/data/backlog.md"
   expected=$i
@@ -1190,6 +1191,7 @@ test_large_backlog_contribution_input_avoids_argument_limit() {
 }
 
 test_empty_fleet_json
+test_fixture_snapshot_json
 test_home_summary_excludes_secondmate_from_child_inventory
 test_undated_captain_hold_phrasing_and_aging
 test_hold_buckets_are_total_and_text_blind
