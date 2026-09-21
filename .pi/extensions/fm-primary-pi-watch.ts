@@ -55,6 +55,11 @@ type CloseClassification = {
   message: string;
 };
 
+type RestorationOutcome = {
+  failure: string;
+  recovery?: { generation: string; watcherPid: string };
+};
+
 type PendingActionableClose = {
   version: 1;
   token: string;
@@ -105,6 +110,10 @@ type SessionGeneration = {
   // still delivering the wake it was started for; its bounded retry runs once
   // that delivery settles instead of being skipped by the single-flight guard.
   deferredClose: { message: string; predecessorArmPid: string } | null;
+  // The single-flight successor restoration, held apart from `restoring` on
+  // purpose: `restoring` guards wake DELIVERY, and delivering an earlier wake
+  // can wait minutes on a branch turn. Continuity must never queue behind it.
+  continuity: Promise<RestorationOutcome> | null;
 };
 
 function refreshWatchToolShell(
@@ -437,6 +446,7 @@ function createGeneration(): SessionGeneration {
     cleanupFailure: "",
     unconsumedWakes: new Map(),
     deferredClose: null,
+    continuity: null,
   };
 }
 
@@ -781,7 +791,7 @@ export default function (pi: ExtensionAPI) {
           // A new restoration supersedes whatever became of the previous
           // successor; only a failure during this delivery is retried after it.
           owner.deferredClose = null;
-          const restoration = await restoreAfterActionableClose(owner, pending.predecessorArmPid);
+          const restoration = await restoreContinuity(owner, pending.predecessorArmPid);
           if (!generationIsLive(owner)) {
             settleClaim("failed");
             releaseClaim();
@@ -890,10 +900,25 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  async function restoreAfterActionableClose(owner: SessionGeneration, predecessorArmPid: string): Promise<{
-    failure: string;
-    recovery?: { generation: string; watcherPid: string };
-  }> {
+  // Continuity restoration is single-flight per generation and deliberately
+  // independent of the wake-delivery pipeline's `restoring` guard. Delivering an
+  // earlier wake awaits the supervision branch's settlement, which routinely
+  // takes minutes, and gating the successor start on that left the home with no
+  // watcher at all for the whole wait - which is what the PID-strict turn-end
+  // guard then reported as supervision off. A restoration already in flight is
+  // adopted, so a close arriving mid-restore never starts a second cycle.
+  function restoreContinuity(owner: SessionGeneration, predecessorArmPid: string): Promise<RestorationOutcome> {
+    if (owner.continuity) return owner.continuity;
+    const run = runRestoration(owner, predecessorArmPid);
+    owner.continuity = run;
+    const clear = (): void => {
+      if (owner.continuity === run) owner.continuity = null;
+    };
+    void run.then(clear, clear);
+    return run;
+  }
+
+  async function runRestoration(owner: SessionGeneration, predecessorArmPid: string): Promise<RestorationOutcome> {
     let failure = "";
     for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
       if (!generationIsLive(owner)) return { failure: "" };
@@ -1042,6 +1067,13 @@ export default function (pi: ExtensionAPI) {
         enqueuePendingActionable(owner, pending);
         if (!generationIsLive(owner)) return;
         owner.retryFailures = 0;
+        // Restore the singleton successor for THIS close before anything else.
+        // The wake-delivery pipeline below may still be busy with an earlier
+        // wake, and owner.restoring must not delay a replacement watcher: this
+        // close just destroyed the only one. The pipeline adopts this same
+        // restoration when it reaches this pending record, so Option B ordering
+        // (verified successor before delivery) still holds.
+        void restoreContinuity(owner, predecessor);
         void processPendingActionables(owner);
         return;
       }

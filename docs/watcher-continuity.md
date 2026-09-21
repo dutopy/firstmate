@@ -25,6 +25,8 @@ While supervision is still needed and away mode remains inactive, an actionable 
 ## Actionable wake ordering
 
 After an actionable Pi, omp, or OpenCode child close, the adapter starts and verifies one singleton successor before it delivers the original wake.
+Pi's successor restoration is single-flight per session generation and deliberately independent of the wake-delivery pipeline's own single-flight guard.
+That guard must never gate a successor start, because delivering an earlier wake awaits the supervision branch's settlement, which routinely takes minutes: gating on it leaves the home with no watcher at all for the whole wait, which the PID-strict turn-end guard then correctly reports as supervision off.
 It confirms the handling handoff against that successor before scheduling the follow-up, retries once against the current generation and successor, and treats a failed confirmation as a restoration failure: it classifies the error, retires a successor that is no longer alive, and surfaces exactly one typed message.
 A failed confirmation is never swallowed.
 It waits at most one readiness timeout per attempt, then sends TERM and waits a bounded retirement confirmation before the next lock-verified exponential retry.

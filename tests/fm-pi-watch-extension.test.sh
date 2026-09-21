@@ -2314,7 +2314,11 @@ if (previous.prompts.length !== 0) {
 }
 await waitFor(() => liveArms().length === 1 && armRows().length >= 2, "old-session successor");
 writeFileSync(process.env.FM_TRIGGER_FILE, "replacement-successor actionable outcome\n");
-await waitFor(() => liveArms().length === 0, "mid-delivery successor actionable close");
+// That successor's actionable close lands while the branch still holds the
+// earlier wake, so its replacement must be restored immediately instead of
+// waiting for that delivery to settle: the home is otherwise left with no
+// watcher for the whole settlement.
+await waitFor(() => liveArms().length === 1 && armRows().length >= 3, "restored successor for the mid-delivery actionable close");
 
 await previous.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
 await waitFor(() => liveArms().length === 0, "retired old-session successor");
@@ -2692,6 +2696,103 @@ EOF
   expect_code 0 "$status" "Pi must retry a verified successor that failed during wake delivery"
   [ -z "$out" ] || fail "Pi successor-dies-mid-delivery test printed output: $out"
   pass "Pi retries a verified successor that failed during wake delivery once that delivery settles"
+}
+
+# An ACTIONABLE close that arrives while an earlier wake is still being
+# delivered must still restore the singleton successor immediately. The
+# delivery pipeline's own single-flight flag must never gate continuity:
+# deliverActionableWake awaits the branch settlement, and a branch turn can
+# take minutes. Gating on it leaves the home with no watcher at all for that
+# whole window, which is exactly what the PID-strict turn-end guard then
+# reports as supervision off.
+test_pi_actionable_close_restores_successor_during_blocked_delivery() {
+  local repo home plugin log stop out status
+  repo="$TMP_ROOT/pi-actionable-during-delivery-root"
+  home="$TMP_ROOT/pi-actionable-during-delivery-home"
+  log="$TMP_ROOT/pi-actionable-during-delivery.log"
+  stop="$TMP_ROOT/pi-actionable-during-delivery.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'confirmed=%s\n' "$2" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=chain-%s\n' "$$" "$count"
+if [ "$count" -eq 1 ]; then
+  printf 'signal: first close\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  printf 'signal: second close while the first wake is still being delivered\n'
+  exit 0
+fi
+trap 'exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+let releaseBranch = () => {};
+const branchSettlement = new Promise((resolve) => {
+  releaseBranch = resolve;
+});
+let branchAccepted = false;
+let tool = null;
+const pi = {
+  on() {},
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async () => {},
+  events: {
+    on() {},
+    emit(event, data) {
+      if (event !== "fm-branch-supervision:dispatch") return;
+      branchAccepted = true;
+      data.accept(branchSettlement);
+    },
+  },
+};
+const arms = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").split("\n").filter((row) => row.startsWith("arm=")).length
+  : 0;
+async function waitFor(pred, label) {
+  for (let i = 0; i < 500; i += 1) {
+    if (pred()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.FM_HOME}/state/during-delivery.meta`, "project=/projects/during-delivery\nwindow=fm-during-delivery\n");
+writeFileSync(`${process.env.FM_HOME}/state/.wake-queue`, "1\t1\tsignal\tduring-delivery.status\tsignal: first close\n");
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("initial-arm", {}, undefined, undefined, {});
+await waitFor(() => branchAccepted, "branch accepted the first wake behind a verified successor");
+if (arms() !== 2) throw new Error(`expected the verified successor before delivery, got ${arms()} arms`);
+// The successor closes actionably while the branch still holds the first wake.
+await waitFor(() => arms() === 3, "a successor restored for the actionable close during delivery");
+releaseBranch();
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (arms() !== 3) throw new Error(`the restored successor was not single-flight: ${arms()} arms`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+process.exit(0);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi must restore a successor for an actionable close during wake delivery"
+  [ -z "$out" ] || fail "Pi actionable-close-during-delivery test printed output: $out"
+  pass "Pi restores a successor for an actionable close while an earlier wake is still being delivered"
 }
 
 test_pi_late_retiring_actionable_reaches_replacement() {
@@ -4100,6 +4201,7 @@ test_pi_session_replacement_carries_inflight_actionable_close
 test_pi_streaming_followup_is_replayed_after_replacement
 test_pi_streaming_time_delivery_keeps_the_successor_chain
 test_pi_successor_failure_during_delivery_is_retried_after_delivery
+test_pi_actionable_close_restores_successor_during_blocked_delivery
 test_pi_late_retiring_actionable_reaches_replacement
 test_pi_replacement_tokens_are_process_unique
 test_pi_replacement_persistence_failure_stops_arm_child

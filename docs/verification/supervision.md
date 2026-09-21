@@ -508,6 +508,9 @@ Plain Pi and pi-signed share the same tracked `.pi/extensions/fm-primary-pi-watc
 On 2026-09-02 the same suite, the strict typecheck, and the credential-free real-SDK guard were rerun against `@earendil-works/pi-coding-agent` 0.84.4 after the extension stopped waiting for `before_agent_start` before settling a main delivery; [`runtime-backends.md`](runtime-backends.md#2026-09-02-streaming-time-watcher-delivery) owns the exact commands and output.
 Observed guarantee: a wake delivered while main was streaming was followed by a verified successor and by delivery of the next actionable close, a replacement replayed only the follow-up Pi had not consumed, an exhausted restoration delivered its typed failure without launching an arm past the retry bound, and a verified successor that failed while a branch settlement still held its wake took the ordinary bounded retry once that delivery settled.
 
+On 2026-09-21 the same suite and the strict typecheck were rerun after Pi's successor restoration was decoupled from the wake-delivery pipeline's single-flight guard; [`runtime-backends.md`](runtime-backends.md#2026-09-21-actionable-close-restoration-during-delivery) owns the exact commands and output.
+Observed guarantee: an actionable close that lands while an earlier wake is still being delivered restores its successor immediately, so a branch settlement held open for minutes never leaves the generation with no watcher, and the delivery pipeline adopts that same restoration instead of starting a second one.
+
 The once-per-generation recovery bound and immediate handling-successor poll were verified on 2026-08-21 with the tracked Pi extension, real watcher processes, and an isolated home.
 The regression forced handling confirmation to fail, observed one recovery follow-up across the former repeat window, confirmed the successor remained live, and then proved a separate handling successor durably queued a crew event within the bounded poll window.
 

@@ -1972,6 +1972,26 @@ It proved that a follow-up the extension sends while main is streaming raises no
 The portable regression drives the same shape with a fake main that never raises `before_agent_start` while streaming, then proves a replacement replays only the follow-up Pi had not consumed and that an exhausted restoration delivers its typed failure without launching a further arm.
 A second regression holds a branch settlement open while the verified successor exits with a failure, and proves that failure takes the ordinary bounded retry once the delivery settles rather than leaving the generation with no watcher and no retry.
 
+### 2026-09-21 actionable-close restoration during delivery
+
+The focused watcher suite and the strict typecheck were run on Linux 6.8.0-139-generic x86_64, Node v26.7.0, TypeScript 7.0.2, against the npm `@earendil-works/pi-coding-agent` 0.86.1 package selected with `FM_PI_PACKAGE_DIR`, after Pi's successor restoration became single-flight per session generation and independent of the wake-delivery pipeline's own `restoring` guard.
+No credential was read, no request left the machine, and the active Pi session was not changed.
+
+```sh
+bin/fm-test-run.sh tests/fm-pi-watch-extension.test.sh
+FM_PI_PACKAGE_DIR=<pi-0.86.1 package> bash tests/fm-pi-primary-types.test.sh
+```
+
+```text
+ok - Pi restores a successor for an actionable close while an earlier wake is still being delivered
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 0.86.1
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=49012
+```
+
+A branch settlement held open is the ordinary shape of a delivered wake, so the third regression in that suite holds one open while the verified successor exits with an ACTIONABLE close.
+Gating restoration on the delivery pipeline left the generation with no watcher and no successor for the whole settlement, which the PID-strict turn-end guard then reports as supervision off, so that regression failed with `timeout waiting for a successor restored for the actionable close during delivery` until the restoration was decoupled.
+The delivery pipeline adopts the same restoration, so Option B ordering and the single-successor bound both still hold.
+
 ### 2026-09-04 off-thread supervision outcome delivery
 
 The real-TUI responsiveness guard, focused extension suite, store suite, and strict typecheck were run on macOS 26.5.0 arm64, Node v24.13.1, tmux 3.6a, against the signed Pi launcher 0.82.0 for the TUI arms and the npm `@earendil-works/pi-coding-agent` 0.81.1 package for the typecheck.
