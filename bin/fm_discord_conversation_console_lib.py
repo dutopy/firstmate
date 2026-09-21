@@ -333,12 +333,17 @@ CARD_ANSWER_TIMEOUT_SECONDS = 120.0
 # delivery append no second wake.
 CARD_WAKE_SOURCE = "discord-card"
 CARD_WAKE_TIMEOUT_SECONDS = 30.0
-# One bounded reminder for a held card left unanswered. The delay is the
-# documented window a card stays silent; after it, exactly one reminder is
-# attempted per card - never a loop - and the scan itself runs at most once
-# per bounded interval from the permanent-connection loop.
-CARD_NUDGE_DELAY_SECONDS = 24 * 60 * 60.0
-CARD_NUDGE_SCAN_INTERVAL_SECONDS = 600.0
+# One bounded escalation for a held card left unanswered in its originating
+# conversation. The delay is the documented window the card stays only there;
+# after it, the same durable card identity is mirrored once into the dedicated
+# #blocages channel - never a loop - and the scan itself runs at most once per
+# bounded interval from the permanent-connection loop.
+CARD_ESCALATION_DELAY_SECONDS = 24 * 60 * 60.0
+CARD_ESCALATION_SCAN_INTERVAL_SECONDS = 600.0
+# The dedicated channel an unanswered card is mirrored into. The config's
+# cards.escalation_channel_id overrides it; a home that leaves it unset records
+# an honest delivery gap instead of guessing a channel.
+DEFAULT_CARD_ESCALATION_CHANNEL_ID = "1548332678233718807"
 MAX_CARD_INTERACTION_RECORDS = 5000
 
 # The latency journal. One bounded record per captured captain request records
@@ -445,6 +450,24 @@ def env_float(name: str, value: Any, field: str) -> float:
     return float(value)
 
 
+def card_delay_seconds(value: Any) -> float:
+    """Resolve the card escalation delay, allowing zero for focused tests.
+
+    The configured value is the default; FM_CONSOLE_CARD_ESCALATION_DELAY
+    overrides it so a test can make every posted card immediately eligible.
+    """
+    override = os.environ.get("FM_CONSOLE_CARD_ESCALATION_DELAY")
+    candidate: Any = override if override is not None else value
+    if isinstance(candidate, str):
+        try:
+            candidate = float(candidate)
+        except ValueError as exc:
+            raise FMError("cards.escalation_delay_seconds must be a number") from exc
+    if isinstance(candidate, bool) or not isinstance(candidate, (int, float)) or candidate < 0:
+        raise FMError("cards.escalation_delay_seconds must be zero or a positive number")
+    return float(candidate)
+
+
 class ConsoleChannel:
     def __init__(self, raw: Dict[str, Any], index: int):
         label = raw.get("label")
@@ -523,6 +546,18 @@ class ConsoleConfig:
         self.live_polling_enabled = fwl.bool_from_path(raw, ["live.polling", "approvals.live_polling", "live_polling"], False)
         self.live_posting_enabled = fwl.bool_from_path(raw, ["live.posting", "approvals.live_posting", "live_posting"], False)
         self.live_gateway_enabled = fwl.bool_from_path(raw, ["live.gateway", "approvals.live_gateway", "live_gateway"], False)
+        cards = raw.get("cards") if isinstance(raw.get("cards"), dict) else {}
+        self.card_escalation_channel_id = (
+            fwl.validate_snowflake(
+                cards.get("escalation_channel_id") or os.environ.get("FM_CONSOLE_CARD_ESCALATION_CHANNEL"),
+                "cards.escalation_channel_id",
+                required=False,
+            )
+            or ""
+        )
+        self.card_escalation_delay_seconds = card_delay_seconds(
+            cards.get("escalation_delay_seconds", CARD_ESCALATION_DELAY_SECONDS)
+        )
         mirror = raw.get("mirror") if isinstance(raw.get("mirror"), dict) else {}
         self.mirror_enabled = fwl.bool_from_path(raw, ["mirror.enabled", "mirror_enabled"], False)
         self.mirror_channel_id = (
@@ -797,6 +832,10 @@ def sample_config() -> Dict[str, Any]:
             "enabled": False,
             "channel_id": "444444444444444441",
             "max_chars": DEFAULT_MIRROR_MAX_CHARS,
+        },
+        "cards": {
+            "escalation_channel_id": DEFAULT_CARD_ESCALATION_CHANNEL_ID,
+            "escalation_delay_seconds": CARD_ESCALATION_DELAY_SECONDS,
         },
         "fast_path": {
             "enabled": False,
@@ -3504,36 +3543,75 @@ def require_captain_held(env: "fwl.Env", task_id: str) -> None:
         raise FMError(card_hold_refusal(task_id, code, output))
 
 
-def card_nudge_delay_seconds() -> float:
-    """The bounded delay before a held card's single reminder.
+def card_spec_from_card(card: Dict[str, Any]) -> Dict[str, Any]:
+    """The renderable subset of a stored card record."""
+    return {
+        "body": str(card.get("body") or ""),
+        "fallback_hint": str(card.get("fallback_hint") or ""),
+        "options": card.get("options") if isinstance(card.get("options"), list) else [],
+    }
 
-    The default is CARD_NUDGE_DELAY_SECONDS; FM_CONSOLE_CARD_NUDGE_DELAY
-    overrides it for focused tests only.
+
+def card_surfaces(card: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """Every (channel_id, message_id) a card identity is currently posted to.
+
+    The originating conversation's surface is always first; the escalation
+    mirror, when it landed, is second. Both carry the same card id and custom
+    ids, so a press on either resolves the one durable card.
     """
-    override = os.environ.get("FM_CONSOLE_CARD_NUDGE_DELAY")
-    if override:
-        try:
-            parsed = float(override)
-            if parsed >= 0:
-                return parsed
-        except ValueError:
-            pass
-    return CARD_NUDGE_DELAY_SECONDS
+    surfaces: List[Tuple[str, str]] = []
+    channel_id = str(card.get("channel_id") or "")
+    message_id = str(card.get("message_id") or "")
+    if channel_id and message_id:
+        surfaces.append((channel_id, message_id))
+    escalation = card.get("escalation") if isinstance(card.get("escalation"), dict) else {}
+    if escalation.get("delivered"):
+        mirror_channel = str(escalation.get("channel_id") or "")
+        mirror_message = str(escalation.get("message_id") or "")
+        if mirror_channel and mirror_message and (mirror_channel, mirror_message) not in surfaces:
+            surfaces.append((mirror_channel, mirror_message))
+    return surfaces
 
 
-def run_card_nudges(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient") -> Dict[str, int]:
-    """Run one bounded reminder pass over open, unanswered task cards.
+def card_matches_surface(card: Dict[str, Any], guild_id: str, channel_id: str, message_id: str) -> bool:
+    """Whether a press came from one of a card's recorded surfaces.
 
-    A card that has been open past the nudge delay while its task is still an
-    open captain call receives at most one reminder attempt, ever: the attempt
-    is recorded on the card whether it is delivered or not, so a broken
-    gateway can never spin. A card that is answered, already nudged, too young,
-    or whose task is no longer an open captain call receives none. A failed or
-    undeliverable attempt is recorded as a visible delivery gap, never
-    silently.
+    The originating surface also checks the guild id; the escalation mirror is
+    matched on its channel and message, which is enough because the card id in
+    the custom id and the captain-only check already bind the press.
     """
-    stats = {"scanned": 0, "nudged": 0, "skipped": 0, "failed": 0}
-    delay = card_nudge_delay_seconds()
+    if (
+        str(card.get("channel_id") or "") == channel_id
+        and str(card.get("message_id") or "") == message_id
+        and str(card.get("guild_id") or "") == guild_id
+    ):
+        return True
+    return (channel_id, message_id) in card_surfaces(card)
+
+
+def card_payload(card: Dict[str, Any], suffix: str = "", disabled: bool = False) -> Dict[str, Any]:
+    """The rendered card message body used for every edit of one card identity."""
+    spec = card_spec_from_card(card)
+    return {
+        "content": render_card_content(spec, suffix),
+        "components": card_components(spec, str(card.get("card_id") or ""), disabled=disabled),
+        "allowed_mentions": {"parse": []},
+    }
+
+
+def run_card_escalations(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient") -> Dict[str, int]:
+    """Run one bounded escalation pass over open, unanswered task cards.
+
+    A card left unanswered past the configured delay while its task is still an
+    open captain call is mirrored once into the dedicated #blocages channel,
+    carrying the same durable card identity and custom ids, so a press on either
+    surface resolves the one card. The single attempt is recorded on the card
+    whether it lands or not, so a broken gateway can never spin; answered,
+    closed, already-escalated, and too-young cards get none. A failed or
+    undeliverable mirror is recorded as a visible delivery gap, never silently.
+    """
+    stats = {"scanned": 0, "escalated": 0, "skipped": 0, "failed": 0}
+    delay = cfg.card_escalation_delay_seconds
     now = time.time()
     for card in load_cards(env):
         if str(card.get("kind") or CARD_KIND_TASK) != CARD_KIND_TASK:
@@ -3541,7 +3619,7 @@ def run_card_nudges(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient
         if str(card.get("status") or "open") != "open":
             continue
         stats["scanned"] += 1
-        if isinstance(card.get("nudge"), dict):
+        if isinstance(card.get("escalation"), dict):
             stats["skipped"] += 1
             continue
         created = parse_discord_epoch(None, card.get("created_at"))
@@ -3552,58 +3630,63 @@ def run_card_nudges(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient
         try:
             require_captain_held(env, task_id)
         except FMError:
-            # The call is answered or closed; a reminder would press buttons
-            # that can no longer validate.
+            # The call is answered or closed; a mirror's buttons could no
+            # longer validate.
             stats["skipped"] += 1
             continue
-        channel_id = str(card.get("channel_id") or "")
-        delivered = False
-        if cfg.live_posting_enabled and channel_id:
-            try:
-                client.post_message(
-                    channel_id,
-                    "Relance (une seule) : la carte pour la tache %s attend toujours une reponse." % task_id,
-                    [],
-                )
-                delivered = True
-            except FMError as exc:
-                record_delivery_gap(
-                    env, "card-nudge", f"card nudge for task {task_id} failed: {client.redact(str(exc))}"
-                )
-        else:
+        target = str(cfg.card_escalation_channel_id or "")
+        escalation: Dict[str, Any] = {"at": fwl.utc_now(), "delivered": False}
+        if not cfg.live_posting_enabled or not target:
+            reason = "posting unavailable" if not cfg.live_posting_enabled else "no #blocages channel configured"
+            escalation["reason"] = reason
             record_delivery_gap(
-                env, "card-nudge", f"card nudge for task {task_id} not delivered: posting unavailable"
+                env, "card-escalation", f"card escalation for task {task_id} not delivered: {reason}"
             )
+        else:
+            try:
+                spec = card_spec_from_card(card)
+                message_id = client.post_message(
+                    target,
+                    render_card_content(spec),
+                    card_components(spec, str(card.get("card_id") or "")),
+                )
+                escalation.update({"delivered": True, "channel_id": target, "message_id": message_id})
+            except FMError as exc:
+                reason = client.redact(str(exc))
+                escalation["reason"] = reason
+                record_delivery_gap(
+                    env, "card-escalation", f"card escalation for task {task_id} failed: {reason}"
+                )
         # The single attempt is consumed whether or not it landed, so a
-        # persistent failure can never turn into a nudge loop.
-        card["nudge"] = {"at": fwl.utc_now(), "delivered": delivered}
+        # persistent failure can never turn into an escalation loop.
+        card["escalation"] = escalation
         store_card(env, card)
-        stats["nudged" if delivered else "failed"] += 1
+        stats["escalated" if escalation["delivered"] else "failed"] += 1
     return stats
 
 
-def maybe_run_card_nudges(
+def maybe_run_card_escalations(
     env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", state: Dict[str, Any]
 ) -> None:
-    """Run the bounded nudge scan at most once per scan interval.
+    """Run the bounded escalation scan at most once per scan interval.
 
     Called from the permanent-connection loop, so an unanswered held card is
-    reminded without any manual step. A scan failure is recorded and never
-    kills the connection loop.
+    mirrored into #blocages without any manual step. A scan failure is recorded
+    and never kills the connection loop.
     """
     now = time.monotonic()
     try:
-        last = float(state.get("last_card_nudge_scan") or 0.0)
+        last = float(state.get("last_card_escalation_scan") or 0.0)
     except (TypeError, ValueError):
         last = 0.0
-    if now - last < CARD_NUDGE_SCAN_INTERVAL_SECONDS:
+    if now - last < CARD_ESCALATION_SCAN_INTERVAL_SECONDS:
         return
-    state["last_card_nudge_scan"] = now
+    state["last_card_escalation_scan"] = now
     try:
-        run_card_nudges(env, cfg, client)
+        run_card_escalations(env, cfg, client)
     except Exception as exc:  # noqa: BLE001 - the loop must survive any scan failure
         try:
-            record_delivery_gap(env, "card-nudge", f"card nudge scan failed: {exc}")
+            record_delivery_gap(env, "card-escalation", f"card escalation scan failed: {exc}")
         except Exception:  # noqa: BLE001
             pass
 
@@ -3869,20 +3952,41 @@ def card_ephemeral(client: "ConsoleClient", token: str, text: str) -> None:
     )
 
 
-def card_edit_original(client: "ConsoleClient", token: str, card: Dict[str, Any], suffix: str = "", disabled: bool = False) -> None:
-    spec = {
-        "body": str(card.get("body") or ""),
-        "fallback_hint": str(card.get("fallback_hint") or ""),
-        "options": card.get("options") if isinstance(card.get("options"), list) else [],
-    }
-    client.interaction_edit_original(
-        token,
-        {
-            "content": render_card_content(spec, suffix),
-            "components": card_components(spec, str(card.get("card_id") or ""), disabled=disabled),
-            "allowed_mentions": {"parse": []},
-        },
-    )
+def settle_card_surfaces(
+    env: "fwl.Env",
+    client: "ConsoleClient",
+    card: Dict[str, Any],
+    token: str,
+    pressed_channel_id: str,
+    pressed_message_id: str,
+    suffix: str = "",
+    disabled: bool = False,
+) -> None:
+    """Reflect one card's resolved state on every surface it was posted to.
+
+    The pressed surface is edited through the interaction webhook, which is the
+    only way to update the message a deferred component interaction refers to.
+    The escalation mirror, if it landed, is edited through the ordinary message
+    endpoint so both surfaces show the same recorded answer and disabled
+    buttons. A mirror edit failure is recorded as a delivery gap rather than
+    swallowed, and never blocks the interaction's own edit.
+    """
+    payload = card_payload(card, suffix, disabled)
+    try:
+        client.interaction_edit_original(token, payload)
+    except FMError:
+        pass
+    for channel_id, message_id in card_surfaces(card):
+        if channel_id == pressed_channel_id and message_id == pressed_message_id:
+            continue
+        try:
+            client.edit_message(channel_id, message_id, payload)
+        except FMError as exc:
+            record_delivery_gap(
+                env,
+                "card-escalation",
+                f"card mirror edit for {card.get('card_id')} failed: {client.redact(str(exc))}",
+            )
 
 
 def handle_card_interaction(
@@ -3963,11 +4067,7 @@ def handle_card_interaction(
     if not isinstance(card, dict):
         refuse("refused", "unknown-card")
         return
-    if (
-        str(card.get("guild_id") or "") != guild_id
-        or str(card.get("channel_id") or "") != channel_id
-        or str(card.get("message_id") or "") != message_id
-    ):
+    if not card_matches_surface(card, guild_id, channel_id, message_id):
         refuse("refused", "card-mismatch")
         return
     options = card.get("options") if isinstance(card.get("options"), list) else []
@@ -3983,7 +4083,7 @@ def handle_card_interaction(
         if prior_status not in ("recorded", "settled"):
             record("settled", option_index=index)
         try:
-            card_edit_original(client, token, card, suffix=card_settled_suffix(card), disabled=True)
+            settle_card_surfaces(env, client, card, token, channel_id, message_id, suffix=card_settled_suffix(card), disabled=True)
         except FMError:
             pass
         return
@@ -4043,7 +4143,7 @@ def handle_card_interaction(
             pressed_fields["wake_error"] = client.redact(wake_error)[:500]
         record("recorded", **pressed_fields)
         try:
-            card_edit_original(client, token, card, suffix=card_answer_suffix(option), disabled=True)
+            settle_card_surfaces(env, client, card, token, channel_id, message_id, suffix=card_answer_suffix(option), disabled=True)
         except FMError:
             pass
         return
@@ -4052,7 +4152,7 @@ def handle_card_interaction(
     if code != 0:
         record("failed", option_index=index, reason=client.redact(output)[:500])
         try:
-            card_edit_original(client, token, card, suffix=CARD_FAILURE_SUFFIX, disabled=False)
+            settle_card_surfaces(env, client, card, token, channel_id, message_id, suffix=CARD_FAILURE_SUFFIX, disabled=False)
         except FMError:
             pass
         return
@@ -4076,7 +4176,7 @@ def handle_card_interaction(
         recorded_fields["wake_error"] = client.redact(wake_error)[:500]
     record("recorded", **recorded_fields)
     try:
-        card_edit_original(client, token, card, suffix=card_answer_suffix(option), disabled=True)
+        settle_card_surfaces(env, client, card, token, channel_id, message_id, suffix=card_answer_suffix(option), disabled=True)
     except FMError:
         pass
 
@@ -4136,6 +4236,15 @@ class ConsoleClient:
         if not message_id.isdigit():
             raise FMError("Discord did not return a usable message id for the reply")
         return message_id
+
+    def edit_message(self, channel_id: str, message_id: str, payload: Dict[str, Any]) -> None:
+        """Edit one already-posted message by its channel and message id.
+
+        Used to reflect a resolved card on its escalation mirror, which has no
+        interaction token; the pressed surface is edited through the interaction
+        webhook instead.
+        """
+        self.client.request("PATCH", f"/channels/{channel_id}/messages/{message_id}", payload)
 
     def typing(self, channel_id: str) -> None:
         """Emit the Discord typing indicator in one channel (best effort)."""
@@ -4863,7 +4972,7 @@ def run_gateway_daemon(
     fallback_noted = False
     started = time.monotonic()
     while True:
-        maybe_run_card_nudges(env, cfg, client, state)
+        maybe_run_card_escalations(env, cfg, client, state)
         try:
             reached = gateway_connect(env, cfg, client, state)
             if not reached:
@@ -5258,17 +5367,18 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     return 0
 
 
-def cmd_card_nudges(args: argparse.Namespace, env: "fwl.Env") -> int:
-    """Run one bounded reminder pass over open, unanswered held cards.
+def cmd_card_escalations(args: argparse.Namespace, env: "fwl.Env") -> int:
+    """Run one bounded escalation pass over open, unanswered held cards.
 
-    Each card past the nudge delay whose task is still held gets at most one
-    reminder attempt; answered, closed, already-nudged, and too-young cards
-    get none, and a failed attempt is recorded as a visible delivery gap.
+    Each card past the configured delay whose task is still held is mirrored
+    once into the dedicated #blocages channel with the same card identity;
+    answered, closed, already-escalated, and too-young cards get none, and a
+    failed attempt is recorded as a visible delivery gap.
     """
     cfg = ConsoleConfig.load(env, args.config)
     if args.dry_run:
-        delay = card_nudge_delay_seconds()
-        print("card nudge plan (no network).")
+        delay = cfg.card_escalation_delay_seconds
+        print("card escalation plan (no network).")
         for card in load_cards(env):
             if str(card.get("kind") or CARD_KIND_TASK) != CARD_KIND_TASK:
                 continue
@@ -5276,7 +5386,7 @@ def cmd_card_nudges(args: argparse.Namespace, env: "fwl.Env") -> int:
                 continue
             created = parse_discord_epoch(None, card.get("created_at"))
             eligible = (
-                not isinstance(card.get("nudge"), dict)
+                not isinstance(card.get("escalation"), dict)
                 and created is not None
                 and time.time() - created >= delay
             )
@@ -5290,9 +5400,10 @@ def cmd_card_nudges(args: argparse.Namespace, env: "fwl.Env") -> int:
                 )
             )
         return 0
-    stats = run_card_nudges(env, cfg, ConsoleClient(cfg, env))
+    stats = run_card_escalations(env, cfg, ConsoleClient(cfg, env))
     print(
-        "card nudges: scanned=%(scanned)s nudged=%(nudged)s failed=%(failed)s skipped=%(skipped)s" % stats
+        "card escalations: scanned=%(scanned)s escalated=%(escalated)s failed=%(failed)s skipped=%(skipped)s"
+        % stats
     )
     return 0
 
@@ -5746,10 +5857,10 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p.add_argument("--nonce")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_card)
-    p = sub.add_parser("card-nudges")
+    p = sub.add_parser("card-escalate")
     add_config_argument(p)
     p.add_argument("--dry-run", action="store_true")
-    p.set_defaults(func=cmd_card_nudges)
+    p.set_defaults(func=cmd_card_escalations)
     p = sub.add_parser("typing")
     add_config_argument(p)
     p.add_argument("--channel", required=True)

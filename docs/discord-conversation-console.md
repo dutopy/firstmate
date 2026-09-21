@@ -421,15 +421,24 @@ the task and a card for a call whose answer is already recorded. A publication
 failure never fails the hold: the call stays held and visible through the
 ordinary channels, and the failure is reported on stderr rather than swallowed.
 
-A held card left unanswered is reminded once, and only once. The permanent
-connection loop runs a bounded nudge scan at most once per ten minutes; a task
-card that has been open past 24 hours (`CARD_NUDGE_DELAY_SECONDS`) while its
-task is still an open captain call gets exactly one reminder message in its
-channel, and the single attempt is recorded on the card whether it is
-delivered or not, so a broken gateway can never spin. A card that is answered,
-already nudged, too young, or whose call is no longer open receives none, and
-a failed or undeliverable attempt is recorded as a visible delivery gap rather
-than retried. `card-nudges [--dry-run]` runs the same bounded pass by hand.
+A card always appears first in its originating conversation. A card left
+unanswered past the configured delay (`cards.escalation_delay_seconds`) while
+its task is still an open captain call is then mirrored once, and only once,
+into the dedicated #blocages channel (`cards.escalation_channel_id`), carrying
+the same durable card identity and custom ids rather than a new card or a bare
+reminder. The permanent connection loop runs this bounded scan at most once per
+ten minutes, and the single attempt is recorded on the card whether the mirror
+lands or not, so a broken gateway can never spin. A card that is answered,
+already mirrored, too young, or whose call is no longer open receives no mirror,
+and a failed or undeliverable mirror is recorded as a visible delivery gap
+rather than retried. `card-escalate [--dry-run]` runs the same bounded pass by
+hand.
+
+A press on either surface resolves the one durable card: the first answer wins,
+the interaction id keeps a redelivered press from recording a second answer,
+and both surfaces are edited to show the recorded answer with their buttons
+disabled. The escalation mirror's edit uses the ordinary message endpoint, while
+the pressed surface is edited through its interaction webhook.
 
 A press arrives as a gateway `INTERACTION_CREATE` dispatch of type
 `MESSAGE_COMPONENT`.
