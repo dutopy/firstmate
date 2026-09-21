@@ -85,6 +85,33 @@ On the same fake server and gateway:
 - `card` refuses while the permanent connection source is not registered, and its
   `--dry-run` prints the plan with no network call.
 
+## Interaction cards on the console reply
+
+`tests/fm-discord-card-auto-surface.test.sh` also proves the extension that
+carries a card for a reply interaction. On the same fake server, against a real
+held task:
+
+- the trigger mapping is enumerable: each of the five card-worthy interaction
+  shapes maps to its card type, and an ordinary answer maps to none;
+- `reply --card-file` posts the phone-friendly reply text and then the card in
+  the same conversation, and the stored card records the interaction's `type`;
+- a clarification, a projection choice, and a free request each carry their
+  card, and a replayed reply posts neither a second text nor a second card;
+- a card whose `type` is outside the mapping is refused before any post.
+
+```sh
+bash tests/fm-discord-card-auto-surface.test.sh
+```
+
+The interaction-card section prints:
+
+```
+ok - the trigger mapping is explicit and enumerable
+ok - a clarification, a projection choice, and a free request each carry their card
+ok - one reply carries at most one card, replay-safe
+ok - an interaction shape outside the trigger mapping produces no card
+```
+
 ## Live evidence and what remains
 
 The first real press against the pre-fix console failed in production: a guild

@@ -484,4 +484,92 @@ HELD=$(FM_HOME="$H" "$ROOT/bin/fm-captain-hold.sh" open fallback-hold-test >/dev
 assert_equals "held" "$HELD" "the call stays held and visible after the fallback"
 pass "a failed card publication leaves the call held and reports the fallback"
 
+# --- 7. the explicit trigger mapping owns which shapes produce a card --------
+TRIGGER=$(python3 - "$ROOT" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1] + "/bin")
+import fm_discord_conversation_console_lib as fmc
+
+expected = {
+    "decision": "decision",
+    "blocker": "blocker",
+    "clarification": "clarification",
+    "projection": "projection",
+    "free_request": "free_request",
+}
+ok = all(fmc.card_type_for_interaction(k) == v for k, v in expected.items())
+ok = ok and fmc.card_type_for_interaction("chat") is None
+ok = ok and fmc.card_type_for_interaction("") is None
+ok = ok and set(fmc.INTERACTION_CARD_TRIGGERS) == set(fmc.CARD_TYPES)
+print("ok" if ok else "bad")
+PY
+)
+assert_equals "ok" "$TRIGGER" "every card-worthy interaction maps to its card and an ordinary answer maps to none"
+pass "the trigger mapping is explicit and enumerable"
+
+# --- 8. a reply carries its card automatically, one per interaction ----------
+for SHAPE in clarification projection free_request; do
+  TASK="reply-$SHAPE-test"
+  cat > "$TMP_ROOT/card-$SHAPE.json" <<JSON
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "type": "$SHAPE",
+  "task_id": "$TASK",
+  "body": "Carte $SHAPE",
+  "fallback_hint": "Ou reponds directement dans la conversation.",
+  "options": [
+    {"label": "Oui", "action": "answer", "value": "Oui, $SHAPE."},
+    {"label": "En chat", "action": "chat"}
+  ]
+}
+JSON
+  printf 'Reponse %s' "$SHAPE" > "$TMP_ROOT/reply-$SHAPE.txt"
+  out=$(hold hold "$TASK" --title "Reply $SHAPE test" --reason "Choose the card option" --repo firstmate 2>&1) \
+    || fail "holding $TASK failed: $out"
+  out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:800000000000000001" --text-file "$TMP_ROOT/reply-$SHAPE.txt" \
+    --card-file "$TMP_ROOT/card-$SHAPE.json" 2>&1) \
+    || fail "reply with a $SHAPE card failed: $out"
+  assert_contains "$out" "replied in conversation $CH" "the $SHAPE reply text still posts"
+  assert_contains "$out" "card posted in conversation $CH" "the $SHAPE card accompanies the reply"
+  assert_equals "1" "$(posts_in_channel "$CH" "Reponse $SHAPE")" "the $SHAPE reply text posted once and was not replaced"
+  assert_equals "1" "$(posts_in_channel "$CH" "Carte $SHAPE")" "the $SHAPE card posted once alongside the reply"
+  RECORDED=$(python3 - "$H" "$TASK" <<'PY'
+import glob, json, sys
+for path in glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/*.json"):
+    record = json.load(open(path))
+    if record.get("task_id") == sys.argv[2]:
+        print(record.get("type") or "")
+        break
+PY
+)
+  assert_equals "$SHAPE" "$RECORDED" "the $SHAPE card records its interaction shape"
+done
+pass "a clarification, a projection choice, and a free request each carry their card"
+
+# A replayed reply mints no second reply and no second card.
+out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:800000000000000001" --text-file "$TMP_ROOT/reply-projection.txt" \
+  --card-file "$TMP_ROOT/card-projection.json" 2>&1) \
+  || fail "the replayed reply failed: $out"
+assert_contains "$out" "receipt exists for nonce" "a replayed reply posts no second text"
+assert_contains "$out" "card exists for nonce" "a replayed reply mints no second card"
+assert_equals "1" "$(posts_in_channel "$CH" "Carte projection")" "the replay posted no second card message"
+pass "one reply carries at most one card, replay-safe"
+
+# An interaction shape outside the trigger mapping is refused before any post.
+cat > "$TMP_ROOT/card-unknown.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "type": "nonsense",
+  "task_id": "reply-clarification-test",
+  "body": "Carte inconnue",
+  "options": [{"label": "Oui", "action": "answer", "value": "oui"}]
+}
+JSON
+out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:801000000000000001" --text-file "$TMP_ROOT/reply-clarification.txt" \
+  --card-file "$TMP_ROOT/card-unknown.json" 2>&1) \
+  && fail "an unknown interaction shape was accepted" || true
+assert_contains "$out" "card.type must be one of" "an interaction shape outside the mapping is refused"
+assert_equals "0" "$(posts_in_channel "$CH" "Carte inconnue")" "the refused card posted nothing"
+pass "an interaction shape outside the trigger mapping produces no card"
+
 echo "all fm-discord-card-auto-surface tests passed"

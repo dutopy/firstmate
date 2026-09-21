@@ -14,7 +14,7 @@
 #   fm-discord-conversation-console.sh connect [--config <json>] [--once] [--max-seconds <n>]
 #   fm-discord-conversation-console.sh reply [--config <json>] --text-file <f>
 #       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
-#       [--nonce <n>] [--dry-run]
+#       [--card-file <f>] [--task-id <id>] [--nonce <n>] [--dry-run]
 #   fm-discord-conversation-console.sh mirror [--config <json>] --text-file <f>
 #       --item-key <durable item identity> [--tag captain|main] [--channel <id>] [--dry-run]
 #   fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
@@ -50,6 +50,13 @@
 # refuses unless the permanent connection is registered, because polling cannot
 # receive an interaction, and unless the card's task is still an open captain
 # call, so every button on a posted card can validate.
+#
+# `reply` can carry the card for the interaction it answers: `--card-file` posts
+# the card through that same guarded path, in the same conversation, immediately
+# after the reply text. The reply text always posts; the card never replaces it.
+# A card is posted for a decision, a blocker, a clarification question, a
+# projection choice, or a free request, and the card's identity is keyed to the
+# reply, so a replayed reply mints no second card.
 #
 # `card-escalate` runs one bounded escalation pass over open, unanswered cards:
 # a card open past the configured delay (cards.escalation_delay_seconds) while

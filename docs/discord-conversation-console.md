@@ -374,6 +374,7 @@ The card file is local JSON owned by the caller:
 ```json
 {
   "schema": "fm-discord-conversation-console.card.v1",
+  "type": "decision",
   "task_id": "the-held-task",
   "body": "The body the captain reads.",
   "fallback_hint": "Or answer directly in the conversation.",
@@ -387,12 +388,35 @@ The card file is local JSON owned by the caller:
 ```
 
 The caller supplies every word; the card path never invents an option from prose.
+`type` names the captain interaction the card carries and is one of `decision`,
+`blocker`, `clarification`, `projection`, or `free_request` (default `decision`).
 `body` and `fallback_hint` together stay inside `bounds.reply_max_chars`, `options`
 carries one to five entries, each `label` is unique, an `answer` or `release`
 option requires its exact `value`, and a `later` option requires an `until` date.
 An optional `style` picks the button colour (1 primary, 2 secondary, 3 success, 4
 danger), defaulting to primary for an answer, success for a release, and secondary
 otherwise.
+
+### Which interactions produce a card
+
+Every captain interaction that supports a card carries one; an ordinary answer
+carries none.
+The trigger mapping is explicit and lives in one place,
+`INTERACTION_CARD_TRIGGERS` in `bin/fm_discord_conversation_console_lib.py`:
+
+| interaction shape | card it produces |
+| ----------------- | ---------------- |
+| `decision`        | `decision`       |
+| `blocker`         | `blocker`        |
+| `clarification`   | `clarification`  |
+| `projection`      | `projection`     |
+| `free_request`    | `free_request`   |
+
+A shape absent from the mapping produces no card, so a new card-worthy
+interaction is a deliberate edit to that table, and a card file whose `type` is
+not one of the five is refused before any post.
+The mapping is data, not scattered call sites, so it can be asserted directly in
+tests.
 
 Posting needs `live.posting` and `live.gateway`, and refuses while the permanent
 connection source is not registered, because a bounded poll cannot receive an
@@ -420,6 +444,28 @@ held call. The posting path's own guards still refuse a second open card for
 the task and a card for a call whose answer is already recorded. A publication
 failure never fails the hold: the call stays held and visible through the
 ordinary channels, and the failure is reported on stderr rather than swallowed.
+
+A reply can carry the card for the interaction it answers, so a clarification
+question, a projection choice, or a free request arrives with its card instead of
+waiting for a separate manual step:
+
+```sh
+bin/fm-discord-conversation-console.sh reply [--config <json>] --text-file <file>
+    (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
+    --card-file <json> [--task-id <id>]
+```
+
+The reply text always posts, and the card is posted through the same guarded card
+path in the same conversation immediately after it; the card never replaces the
+phone-friendly text answer.
+The card's identity is keyed to the reply anchor and its content, so a replayed
+reply posts neither a second text nor a second card, and the existing one-open-card
+and captain-held guards still apply.
+The card's declared `type` must be one of the trigger-mapping shapes above; a
+reply with no `--card-file`, or a card whose `type` is outside the mapping,
+posts no card.
+The console's captain-inbox note tells Firstmate to attach the card for these
+interactions, so the captain never has to ask for one.
 
 A card always appears first in its originating conversation. A card left
 unanswered past the configured delay (`cards.escalation_delay_seconds`) while

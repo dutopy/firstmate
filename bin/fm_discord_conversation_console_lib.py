@@ -46,6 +46,16 @@ permanent connection is registered, because a bounded poll cannot receive an
 interaction, and while its task is still an open captain call, so a posted card
 is one whose every button can validate.
 
+The console reply can carry the card for the interaction it answers. The
+``reply`` command's optional ``--card-file`` posts the card through that same
+guarded path, in the same conversation, immediately after the reply text, so a
+clarification question, a projection choice, a free request, a decision, or a
+blocker arrives with its card and the captain settles it with one press. The
+reply text always posts and the card never replaces it, the card's identity is
+keyed to the reply so a replayed reply mints no second card, and the trigger
+mapping (``INTERACTION_CARD_TRIGGERS``) is the single owner of which interaction
+shapes produce a card.
+
 The same card machinery carries the captain's confirmation of an uncertain
 transcription. When two readings of a captain voice message disagree, the
 console posts the uncertain reading as a card whose three buttons are existing
@@ -75,7 +85,7 @@ Usage (via bin/fm-discord-conversation-console.sh):
     fm-discord-conversation-console.sh connect [--config <json>] [--once] [--max-seconds <n>]
     fm-discord-conversation-console.sh reply [--config <json>] --text-file <f>
         (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
-        [--nonce <n>] [--dry-run]
+        [--card-file <f>] [--task-id <id>] [--nonce <n>] [--dry-run]
     fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
         (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
         [--nonce <n>] [--dry-run]
@@ -293,6 +303,22 @@ CARD_ACTIONS = ("answer", "release", "later", "chat")
 CARD_KIND_TASK = "task"
 CARD_KIND_TRANSCRIPT = "transcript"
 CARD_KINDS = (CARD_KIND_TASK, CARD_KIND_TRANSCRIPT)
+# The captain-interaction shapes a card can carry, and the explicit trigger
+# mapping from a shape to the card it produces. Every shape in this mapping
+# produces exactly one card; a shape absent from it produces none, so carding a
+# new interaction is a deliberate edit here rather than an implicit side effect.
+# The five shapes the console cards are a held decision, a blocker, a
+# clarification question, a projection choice, and a free request. A card always
+# accompanies the interaction's console reply; it never replaces the reply text.
+CARD_TYPES = ("decision", "blocker", "clarification", "projection", "free_request")
+DEFAULT_CARD_TYPE = "decision"
+INTERACTION_CARD_TRIGGERS = {
+    "decision": "decision",
+    "blocker": "blocker",
+    "clarification": "clarification",
+    "projection": "projection",
+    "free_request": "free_request",
+}
 # The uncertain reading's confirmation card maps its three buttons onto the
 # existing card actions rather than inventing a fourth: the reading as heard is
 # the answer, the correction is the free-form chat option, and the discard is
@@ -1780,6 +1806,14 @@ def note_body(event: Dict[str, Any]) -> str:
         "answer with: bin/fm-discord-conversation-console.sh reply --request-id "
         f"{event.get('request_id')} --text-file <answer-file>"
     )
+    # A captain interaction that supports a card carries one alongside its reply,
+    # so the captain can settle it with one press instead of a typed sentence. The
+    # reply text always posts; the card is additional and never replaces it.
+    lines.append(
+        "if this answer is a decision, a blocker, a clarification question, a projection choice, "
+        "or a free request, attach its card with --card-file <card-file> so the captain can answer "
+        "with one press; the reply text still posts unchanged"
+    )
     # Captain chat is read on a phone, so the answer itself must be short: a few
     # sentences of outcome, not a report. This constrains length rather than
     # forcing it, and the reply command above is still the only reply path.
@@ -3243,6 +3277,17 @@ def card_id_for(nonce: str) -> str:
     return fwl.sha256_text(nonce)[:CARD_ID_HEX_CHARS]
 
 
+def card_type_for_interaction(shape: str) -> Optional[str]:
+    """The card type one captain-interaction shape produces, or None.
+
+    The single owner of the trigger mapping: a shape named in
+    ``INTERACTION_CARD_TRIGGERS`` produces that card type, and every other shape
+    produces no card. Keeping it a data table makes the mapping inspectable and
+    testable instead of scattered through call sites.
+    """
+    return INTERACTION_CARD_TRIGGERS.get(str(shape or "").strip().lower())
+
+
 def _card_text(value: Any, field: str, max_chars: int, required: bool = True) -> str:
     if value is None and not required:
         return ""
@@ -3277,6 +3322,9 @@ def parse_card_spec(raw: Dict[str, Any], max_chars: int = DEFAULT_REPLY_MAX_CHAR
     kind = raw.get("kind", CARD_KIND_TASK)
     if kind not in CARD_KINDS:
         raise FMError(f"card.kind must be one of: {', '.join(CARD_KINDS)}")
+    card_type = str(raw.get("type") or DEFAULT_CARD_TYPE).strip().lower()
+    if card_type not in CARD_TYPES:
+        raise FMError(f"card.type must be one of: {', '.join(CARD_TYPES)}")
     task_id = ""
     request_id = ""
     if kind == CARD_KIND_TRANSCRIPT:
@@ -3327,6 +3375,7 @@ def parse_card_spec(raw: Dict[str, Any], max_chars: int = DEFAULT_REPLY_MAX_CHAR
         raise FMError(f"the rendered card is longer than the {max_chars} character reply bound")
     return {
         "kind": kind,
+        "type": card_type,
         "task_id": task_id,
         "request_id": request_id,
         "body": body,
@@ -5143,6 +5192,25 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
     if message_id:
         target["message_id"] = message_id
     receipt = fwl.base_receipt("reply", ADAPTER, target, digest)
+    # The card that accompanies this reply, when the interaction supports one.
+    # Its identity is keyed to the reply anchor and the card content, so a
+    # replayed reply converges on the one card instead of minting a second one.
+    card_spec = None
+    card_nonce = ""
+    if getattr(args, "card_file", None):
+        card_file = Path(args.card_file).expanduser()
+        if not card_file.is_absolute():
+            card_file = (Path.cwd() / card_file).resolve()
+        card_spec = parse_card_spec(card_spec_with_overrides(fwl.read_json(card_file), args), cfg.reply_max_chars)
+        if card_spec["kind"] != CARD_KIND_TASK:
+            raise FMError("reply --card-file must name a task card; the uncertain-reading card is posted by the console itself")
+        if card_type_for_interaction(card_spec.get("type")) is None:
+            raise FMError("no card trigger for interaction %r" % card_spec.get("type"))
+        card_nonce = "reply-card:%s:%s:%s" % (
+            anchor,
+            card_spec["task_id"],
+            fwl.sha256_text(json.dumps(card_spec, sort_keys=True))[:CARD_ID_HEX_CHARS],
+        )
     if args.dry_run:
         print("Discord conversation reply plan (no network).")
         print(f"destination thread/channel: {channel_id}")
@@ -5151,6 +5219,12 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"nonce: {nonce}")
         print(f"rendered reply ({len(text)} chars, bound {cfg.reply_max_chars}):")
         print(text)
+        if card_spec is not None:
+            print(f"accompanying card: {card_spec.get('type') or DEFAULT_CARD_TYPE} for task {card_spec['task_id']}")
+            print(f"card id: {card_id_for(card_nonce)}")
+            for index, option in enumerate(card_spec["options"]):
+                detail = option.get("value") or option.get("until") or ""
+                print(f"  [{index}] {option['label']} -> {option['action']}" + (f" ({detail})" if detail else ""))
         print("dry-run only; no Discord post was made.")
         return 0
     if not cfg.live_posting_enabled:
@@ -5165,6 +5239,8 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         if args.request_id:
             update_latency(env, args.request_id, answered_at=time.time(), answer_message_id=str(existing.get("discord_message_id") or ""))
         print(f"receipt exists for nonce {nonce}; no second delivery")
+        if card_spec is not None:
+            post_reply_card(env, cfg, card_spec, guild_id, channel_id, card_nonce)
         return 0
     client = ConsoleClient(cfg, env)
     try:
@@ -5178,7 +5254,34 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         update_latency(env, args.request_id, answered_at=time.time(), answer_message_id=discord_message_id)
     print(fwl.record_receipt(env, nonce, receipt, discord_message_id))
     print(f"replied in conversation {channel_id}")
+    if card_spec is not None:
+        post_reply_card(env, cfg, card_spec, guild_id, channel_id, card_nonce)
     return 0
+
+
+def post_reply_card(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    spec: Dict[str, Any],
+    guild_id: str,
+    channel_id: str,
+    nonce: str,
+) -> None:
+    """Post the card a console reply carries; a card failure never fails the reply.
+
+    The phone-friendly reply text has already landed, so a refused or failed
+    card is reported on stderr and the reply stands, exactly as a hold keeps its
+    call when its card cannot be published.
+    """
+    try:
+        card_id, card_message_id = post_card(env, cfg, spec, guild_id, channel_id, nonce)
+    except FMError as exc:
+        print(f"fm-discord-conversation-console: the reply card was not published: {exc}", file=sys.stderr)
+        return
+    if card_message_id:
+        print(f"card posted in conversation {channel_id}: {card_id}")
+    else:
+        print(f"card exists for nonce {nonce}; no second delivery")
 
 
 def cmd_mirror(args: argparse.Namespace, env: "fwl.Env") -> int:
@@ -5278,12 +5381,80 @@ def card_spec_with_overrides(raw: Dict[str, Any], args: argparse.Namespace) -> D
     return updated
 
 
+def post_card(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    spec: Dict[str, Any],
+    guild_id: str,
+    channel_id: str,
+    nonce: str,
+) -> Tuple[str, str]:
+    """Post one validated task card through the one guarded card path.
+
+    Shared by the ``card`` command and by the card a console reply carries, so
+    both use the same hold guard, the same one-open-card guard, the same
+    nonce-keyed dedup identity, and the same store. Returns ``(card_id,
+    message_id)``; an already-delivered card returns an empty ``message_id`` and
+    posts nothing. Raises FMError for every refusal, so a caller that must not
+    fail on a card (the reply path) can keep its reply and report the card
+    failure separately.
+    """
+    card_id = card_id_for(nonce)
+    content = render_card_content(spec)
+    components = card_components(spec, card_id)
+    existing = load_card(env, card_id)
+    if isinstance(existing, dict) and existing.get("message_id"):
+        return card_id, ""
+    open_card = open_card_for_task(env, spec["task_id"])
+    if isinstance(open_card, dict) and str(open_card.get("card_id") or "") != card_id:
+        raise FMError(
+            "an open card already exists for task %s (card %s); that card must be answered before a new one"
+            % (spec["task_id"], open_card.get("card_id"))
+        )
+    if not cfg.live_posting_enabled:
+        raise FMError("live posting is disabled; enable live.posting in the conversation console config")
+    if not cfg.live_gateway_enabled:
+        raise FMError("action cards need the permanent connection; enable live.gateway in the conversation console config")
+    if not (env.state / "procevent" / f"{GATEWAY_SOURCE_ID}.source").is_file():
+        raise FMError(
+            "the permanent connection is not registered, so a posted card could never receive a press; run start first"
+        )
+    # First line of defence: a card is only posted while its task is still an
+    # open captain call, so the recorded hold state - not the card's prose -
+    # decides whether a press could ever validate.
+    require_captain_held(env, spec["task_id"])
+    client = ConsoleClient(cfg, env)
+    try:
+        message_id = client.post_message(channel_id, content, components)
+    except FMError as exc:
+        raise FMError(client.redact(str(exc))) from exc
+    card = {
+        "schema": CARD_SCHEMA,
+        "kind": spec["kind"],
+        "type": spec.get("type") or DEFAULT_CARD_TYPE,
+        "card_id": card_id,
+        "nonce": nonce,
+        "task_id": spec["task_id"],
+        "guild_id": guild_id,
+        "channel_id": channel_id,
+        "message_id": message_id,
+        "body": spec["body"],
+        "fallback_hint": spec["fallback_hint"],
+        "options": spec["options"],
+        "status": "open",
+        "created_at": fwl.utc_now(),
+    }
+    store_card(env, card)
+    return card_id, message_id
+
+
 def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     """Post one captain-facing card with labelled option buttons.
 
     The caller supplies the body and every option; the card path never invents an
-    option from prose. The posted card's task id, option set, and message id are
-    stored durably so a later press can be resolved and shown on that message.
+    option from prose. The posted card's task id, interaction type, option set,
+    and message id are stored durably so a later press can be resolved and shown
+    on that message.
     """
     cfg = ConsoleConfig.load(env, args.config)
     guild_id, channel_id, _message_id = resolve_target(cfg, env, args.request_id, args.thread, args.channel)
@@ -5301,7 +5472,6 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     )
     card_id = card_id_for(nonce)
     content = render_card_content(spec)
-    components = card_components(spec, card_id)
     existing = load_card(env, card_id)
     if isinstance(existing, dict) and existing.get("message_id"):
         print(f"card exists for nonce {nonce}; no second delivery")
@@ -5317,6 +5487,7 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(f"destination conversation: {channel_id}")
         print(f"card id: {card_id}")
         print(f"task: {spec['task_id']}")
+        print(f"interaction type: {spec.get('type') or DEFAULT_CARD_TYPE}")
         print(f"nonce: {nonce}")
         print(f"live posting: {'on' if cfg.live_posting_enabled else 'off'}")
         print(f"permanent connection: {'on' if cfg.live_gateway_enabled else 'off'}")
@@ -5328,40 +5499,11 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
         print(content)
         print("dry-run only; no Discord post was made.")
         return 0
-    if not cfg.live_posting_enabled:
-        raise FMError("live posting is disabled; enable live.posting in the conversation console config")
-    if not cfg.live_gateway_enabled:
-        raise FMError("action cards need the permanent connection; enable live.gateway in the conversation console config")
-    if not (env.state / "procevent" / f"{GATEWAY_SOURCE_ID}.source").is_file():
-        raise FMError(
-            "the permanent connection is not registered, so a posted card could never receive a press; run start first"
-        )
-    # First line of defence: a card is only posted while its task is still an
-    # open captain call, so the recorded hold state - not the card's prose -
-    # decides whether a press could ever validate.
-    require_captain_held(env, spec["task_id"])
-    client = ConsoleClient(cfg, env)
     try:
-        message_id = client.post_message(channel_id, content, components)
+        _card_id, message_id = post_card(env, cfg, spec, guild_id, channel_id, nonce)
     except FMError as exc:
-        print(f"fm-discord-conversation-console: {client.redact(str(exc))}", file=sys.stderr)
+        print(f"fm-discord-conversation-console: {exc}", file=sys.stderr)
         return 1
-    card = {
-        "schema": CARD_SCHEMA,
-        "kind": spec["kind"],
-        "card_id": card_id,
-        "nonce": nonce,
-        "task_id": spec["task_id"],
-        "guild_id": guild_id,
-        "channel_id": channel_id,
-        "message_id": message_id,
-        "body": spec["body"],
-        "fallback_hint": spec["fallback_hint"],
-        "options": spec["options"],
-        "status": "open",
-        "created_at": fwl.utc_now(),
-    }
-    store_card(env, card)
     print(f"card posted in conversation {channel_id}: {card_id}")
     print(f"card url: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}")
     return 0
@@ -5835,6 +5977,8 @@ def build_tool_parser() -> argparse.ArgumentParser:
     target.add_argument("--thread")
     target.add_argument("--channel")
     p.add_argument("--text-file", required=True)
+    p.add_argument("--card-file")
+    p.add_argument("--task-id")
     p.add_argument("--nonce")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_reply)
