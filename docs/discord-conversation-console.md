@@ -366,7 +366,7 @@ Post one with:
 ```sh
 bin/fm-discord-conversation-console.sh card [--config <json>] --card-file <json>
     (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
-    [--nonce <n>] [--dry-run]
+    [--task-id <id>] [--nonce <n>] [--dry-run]
 ```
 
 The card file is local JSON owned by the caller:
@@ -409,6 +409,28 @@ The posted card's task id, option set, body, and message id are stored durably
 under `cards/` in the console state, keyed by a card id derived from the nonce, so
 a replay with the same nonce posts no second card.
 
+Opening a captain call can also publish its card in the same act:
+`bin/fm-captain-hold.sh hold <task-id> ... --card-file <json>` (plus one
+`--card-request-id`, `--card-thread`, or `--card-channel` target) posts the
+card through this same card path, so a held call surfaces its card with no
+manual step. The card's body and options are entirely the caller's file,
+while the command line's task id is what the card binds to (passed through as
+`card --task-id`), so a reused card file can never link the card to the wrong
+held call. The posting path's own guards still refuse a second open card for
+the task and a card for a call whose answer is already recorded. A publication
+failure never fails the hold: the call stays held and visible through the
+ordinary channels, and the failure is reported on stderr rather than swallowed.
+
+A held card left unanswered is reminded once, and only once. The permanent
+connection loop runs a bounded nudge scan at most once per ten minutes; a task
+card that has been open past 24 hours (`CARD_NUDGE_DELAY_SECONDS`) while its
+task is still an open captain call gets exactly one reminder message in its
+channel, and the single attempt is recorded on the card whether it is
+delivered or not, so a broken gateway can never spin. A card that is answered,
+already nudged, too young, or whose call is no longer open receives none, and
+a failed or undeliverable attempt is recorded as a visible delivery gap rather
+than retried. `card-nudges [--dry-run]` runs the same bounded pass by hand.
+
 A press arrives as a gateway `INTERACTION_CREATE` dispatch of type
 `MESSAGE_COMPONENT`.
 The console also posts one card of its own, with the same record store, press
@@ -437,6 +459,12 @@ A recorded option feeds the same keyed-answer intake a typed reply uses:
 `bin/fm-captain-hold.sh answer <task-id> --decision-file <file>` for `answer` (with
 `--release` for `release`), and `bin/fm-captain-hold.sh hold <task-id> --reason ...
 --until <date>` for `later`.
+The two decisive actions are deliberately different: an `answer` button writes the
+captain's exact words and closes the call, while a `release` button only lifts the
+hold so already-authorized work continues - it is a liberation, not a
+work-closing answer. The intake enforces the same distinction and refuses the
+inverse error: a recorded release cannot be replayed as a close, and a recorded
+answer cannot be replayed as a release.
 The card is then edited to show the recorded answer and its buttons are disabled;
 a failed intake leaves the buttons enabled and says so, so the captain can retry.
 The press-time intake is the second line of defence behind the posting hold

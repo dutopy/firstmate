@@ -333,6 +333,12 @@ CARD_ANSWER_TIMEOUT_SECONDS = 120.0
 # delivery append no second wake.
 CARD_WAKE_SOURCE = "discord-card"
 CARD_WAKE_TIMEOUT_SECONDS = 30.0
+# One bounded reminder for a held card left unanswered. The delay is the
+# documented window a card stays silent; after it, exactly one reminder is
+# attempted per card - never a loop - and the scan itself runs at most once
+# per bounded interval from the permanent-connection loop.
+CARD_NUDGE_DELAY_SECONDS = 24 * 60 * 60.0
+CARD_NUDGE_SCAN_INTERVAL_SECONDS = 600.0
 MAX_CARD_INTERACTION_RECORDS = 5000
 
 # The latency journal. One bounded record per captured captain request records
@@ -3498,6 +3504,110 @@ def require_captain_held(env: "fwl.Env", task_id: str) -> None:
         raise FMError(card_hold_refusal(task_id, code, output))
 
 
+def card_nudge_delay_seconds() -> float:
+    """The bounded delay before a held card's single reminder.
+
+    The default is CARD_NUDGE_DELAY_SECONDS; FM_CONSOLE_CARD_NUDGE_DELAY
+    overrides it for focused tests only.
+    """
+    override = os.environ.get("FM_CONSOLE_CARD_NUDGE_DELAY")
+    if override:
+        try:
+            parsed = float(override)
+            if parsed >= 0:
+                return parsed
+        except ValueError:
+            pass
+    return CARD_NUDGE_DELAY_SECONDS
+
+
+def run_card_nudges(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient") -> Dict[str, int]:
+    """Run one bounded reminder pass over open, unanswered task cards.
+
+    A card that has been open past the nudge delay while its task is still an
+    open captain call receives at most one reminder attempt, ever: the attempt
+    is recorded on the card whether it is delivered or not, so a broken
+    gateway can never spin. A card that is answered, already nudged, too young,
+    or whose task is no longer an open captain call receives none. A failed or
+    undeliverable attempt is recorded as a visible delivery gap, never
+    silently.
+    """
+    stats = {"scanned": 0, "nudged": 0, "skipped": 0, "failed": 0}
+    delay = card_nudge_delay_seconds()
+    now = time.time()
+    for card in load_cards(env):
+        if str(card.get("kind") or CARD_KIND_TASK) != CARD_KIND_TASK:
+            continue
+        if str(card.get("status") or "open") != "open":
+            continue
+        stats["scanned"] += 1
+        if isinstance(card.get("nudge"), dict):
+            stats["skipped"] += 1
+            continue
+        created = parse_discord_epoch(None, card.get("created_at"))
+        if created is None or now - created < delay:
+            stats["skipped"] += 1
+            continue
+        task_id = str(card.get("task_id") or "")
+        try:
+            require_captain_held(env, task_id)
+        except FMError:
+            # The call is answered or closed; a reminder would press buttons
+            # that can no longer validate.
+            stats["skipped"] += 1
+            continue
+        channel_id = str(card.get("channel_id") or "")
+        delivered = False
+        if cfg.live_posting_enabled and channel_id:
+            try:
+                client.post_message(
+                    channel_id,
+                    "Relance (une seule) : la carte pour la tache %s attend toujours une reponse." % task_id,
+                    [],
+                )
+                delivered = True
+            except FMError as exc:
+                record_delivery_gap(
+                    env, "card-nudge", f"card nudge for task {task_id} failed: {client.redact(str(exc))}"
+                )
+        else:
+            record_delivery_gap(
+                env, "card-nudge", f"card nudge for task {task_id} not delivered: posting unavailable"
+            )
+        # The single attempt is consumed whether or not it landed, so a
+        # persistent failure can never turn into a nudge loop.
+        card["nudge"] = {"at": fwl.utc_now(), "delivered": delivered}
+        store_card(env, card)
+        stats["nudged" if delivered else "failed"] += 1
+    return stats
+
+
+def maybe_run_card_nudges(
+    env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient", state: Dict[str, Any]
+) -> None:
+    """Run the bounded nudge scan at most once per scan interval.
+
+    Called from the permanent-connection loop, so an unanswered held card is
+    reminded without any manual step. A scan failure is recorded and never
+    kills the connection loop.
+    """
+    now = time.monotonic()
+    try:
+        last = float(state.get("last_card_nudge_scan") or 0.0)
+    except (TypeError, ValueError):
+        last = 0.0
+    if now - last < CARD_NUDGE_SCAN_INTERVAL_SECONDS:
+        return
+    state["last_card_nudge_scan"] = now
+    try:
+        run_card_nudges(env, cfg, client)
+    except Exception as exc:  # noqa: BLE001 - the loop must survive any scan failure
+        try:
+            record_delivery_gap(env, "card-nudge", f"card nudge scan failed: {exc}")
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def card_wake_body(task_id: str, option: Dict[str, Any]) -> str:
     """The single durable wake line a validated card press appends.
 
@@ -4753,6 +4863,7 @@ def run_gateway_daemon(
     fallback_noted = False
     started = time.monotonic()
     while True:
+        maybe_run_card_nudges(env, cfg, client, state)
         try:
             reached = gateway_connect(env, cfg, client, state)
             if not reached:
@@ -5036,6 +5147,28 @@ def cmd_mirror(args: argparse.Namespace, env: "fwl.Env") -> int:
     return 0
 
 
+def card_spec_with_overrides(raw: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    """Apply the caller's explicit task binding to a card file's definition.
+
+    The command line's ``--task-id`` is authoritative for a task card: the hold
+    wrapper passes the id of the call it is opening, so a reused card file can
+    never bind a second call's card to the wrong held task. Body, labels, and
+    values still come entirely from the file; only the binding is overridden.
+    """
+    override = str(getattr(args, "task_id", "") or "")
+    if not override:
+        return raw
+    if not isinstance(raw, dict):
+        raise FMError("the card file must be a JSON object")
+    if str(raw.get("kind") or CARD_KIND_TASK) != CARD_KIND_TASK:
+        return raw
+    if not fwl.TASK_ID_RE.fullmatch(override):
+        raise FMError("--task-id must be a privacy-safe task id")
+    updated = dict(raw)
+    updated["task_id"] = override
+    return updated
+
+
 def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     """Post one captain-facing card with labelled option buttons.
 
@@ -5048,7 +5181,7 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     card_file = Path(args.card_file).expanduser()
     if not card_file.is_absolute():
         card_file = (Path.cwd() / card_file).resolve()
-    spec = parse_card_spec(fwl.read_json(card_file), cfg.reply_max_chars)
+    spec = parse_card_spec(card_spec_with_overrides(fwl.read_json(card_file), args), cfg.reply_max_chars)
     if spec["kind"] != CARD_KIND_TASK:
         raise FMError(
             "the card command posts task cards; an uncertain-transcription confirmation card is "
@@ -5122,6 +5255,45 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     store_card(env, card)
     print(f"card posted in conversation {channel_id}: {card_id}")
     print(f"card url: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}")
+    return 0
+
+
+def cmd_card_nudges(args: argparse.Namespace, env: "fwl.Env") -> int:
+    """Run one bounded reminder pass over open, unanswered held cards.
+
+    Each card past the nudge delay whose task is still held gets at most one
+    reminder attempt; answered, closed, already-nudged, and too-young cards
+    get none, and a failed attempt is recorded as a visible delivery gap.
+    """
+    cfg = ConsoleConfig.load(env, args.config)
+    if args.dry_run:
+        delay = card_nudge_delay_seconds()
+        print("card nudge plan (no network).")
+        for card in load_cards(env):
+            if str(card.get("kind") or CARD_KIND_TASK) != CARD_KIND_TASK:
+                continue
+            if str(card.get("status") or "open") != "open":
+                continue
+            created = parse_discord_epoch(None, card.get("created_at"))
+            eligible = (
+                not isinstance(card.get("nudge"), dict)
+                and created is not None
+                and time.time() - created >= delay
+            )
+            print(
+                "  card %s task %s age%s: %s"
+                % (
+                    card.get("card_id"),
+                    card.get("task_id"),
+                    "" if created is None else " %ds" % int(time.time() - created),
+                    "eligible" if eligible else "not eligible",
+                )
+            )
+        return 0
+    stats = run_card_nudges(env, cfg, ConsoleClient(cfg, env))
+    print(
+        "card nudges: scanned=%(scanned)s nudged=%(nudged)s failed=%(failed)s skipped=%(skipped)s" % stats
+    )
     return 0
 
 
@@ -5570,9 +5742,14 @@ def build_tool_parser() -> argparse.ArgumentParser:
     target.add_argument("--thread")
     target.add_argument("--channel")
     p.add_argument("--card-file", required=True)
+    p.add_argument("--task-id")
     p.add_argument("--nonce")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_card)
+    p = sub.add_parser("card-nudges")
+    add_config_argument(p)
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_card_nudges)
     p = sub.add_parser("typing")
     add_config_argument(p)
     p.add_argument("--channel", required=True)

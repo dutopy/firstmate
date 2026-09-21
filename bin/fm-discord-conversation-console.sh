@@ -19,7 +19,8 @@
 #       --item-key <durable item identity> [--tag captain|main] [--channel <id>] [--dry-run]
 #   fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
 #       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
-#       [--nonce <n>] [--dry-run]
+#       [--task-id <id>] [--nonce <n>] [--dry-run]
+#   fm-discord-conversation-console.sh card-nudges [--config <json>] [--dry-run]
 #   fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
 #       [--interval <n>] [--max-seconds <n>] [--stop]
 #   fm-discord-conversation-console.sh status [--config <json>]
@@ -49,6 +50,15 @@
 # refuses unless the permanent connection is registered, because polling cannot
 # receive an interaction, and unless the card's task is still an open captain
 # call, so every button on a posted card can validate.
+#
+# `card-nudges` runs one bounded reminder pass over open, unanswered cards: a
+# card open past 24 hours (CARD_NUDGE_DELAY_SECONDS) while its task is still an
+# open captain call receives at most one reminder attempt, ever, recorded on
+# the card whether it lands or not; answered, closed, already-nudged, and
+# too-young cards receive none. The permanent-connection loop runs the same
+# scan at most once per ten minutes, so an unanswered held card is reminded
+# without any manual step, and a failed attempt is recorded as a visible
+# delivery gap rather than retried in a loop.
 #
 # The console also posts one card of its own: an uncertain voice transcription is
 # posted as a confirmation card whose three buttons are the existing card actions

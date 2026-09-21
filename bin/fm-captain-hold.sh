@@ -22,6 +22,7 @@
 # Usage:
 #   fm-captain-hold.sh hold <task-id> --reason <reason> \
 #     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--until YYYY-MM-DD]
+#     [--card-file <json> (--card-request-id <id> | --card-thread <id> | --card-channel <id>)]
 #   fm-captain-hold.sh answer <task-id> --decision-file <path> [--release]
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
 #   fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
@@ -46,6 +47,17 @@
 # A task already closed is refused rather than reopened. `--until` records the
 # captain's own deferral date through `tasks-axi hold --until`, so a "revisit
 # later" answer is stored as a date instead of a live card.
+#
+# `--card-file` publishes the captain-facing Discord action card for the call
+# in the same act of holding it, so no held call waits for a manual card step.
+# The card's body and options are entirely the caller's file - this never
+# invents an option from prose - while the command line's task id is what the
+# card is bound to, so a reused file can never link a card to the wrong call.
+# One --card-* target flag names where it goes. The posting path itself still
+# refuses a second open card for the same task and a card for a call whose
+# answer is already recorded. A publication failure never fails the hold: the
+# call stays held and visible through the ordinary channels, and the failure is
+# reported on stderr rather than swallowed.
 #
 # `answer` records the captain's exact words and resolves the call in the same
 # act. It requires a non-empty captain decision file of at most 8192 bytes and
@@ -873,6 +885,7 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how>"
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
   local existing_hold_kind='' existing_held='' preserve_hold_set=0
+  local card_file='' card_request_id='' card_thread='' card_channel=''
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -882,6 +895,10 @@ command_hold() {
       --repo) shift; repo=${1:-} ;;
       --origin) shift; origin=${1:-} ;;
       --until) shift; until=${1:-} ;;
+      --card-file) shift; card_file=${1:-} ;;
+      --card-request-id) shift; card_request_id=${1:-} ;;
+      --card-thread) shift; card_thread=${1:-} ;;
+      --card-channel) shift; card_channel=${1:-} ;;
       *) usage >&2; exit 2 ;;
     esac
     shift
@@ -961,7 +978,41 @@ command_hold() {
   [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id lost its hold-set stamp while being held"
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason"
+  if [ -n "$card_file" ]; then
+    publish_hold_card "$id" "$occurrence" "$card_file" "$card_request_id" "$card_thread" "$card_channel"
+  fi
   printf '%s\n' "$id"
+}
+
+# Publish the captain-facing Discord card for a just-opened captain call through
+# the console's guarded card path. The call's own header owns the fallback
+# contract.
+publish_hold_card() {  # <task-id> <occurrence> <card-file> <request-id> <thread> <channel>
+  local id=$1 occurrence=$2 file=$3 request_id=$4 thread=$5 channel=$6
+  local -a target=()
+  local out
+  if [ -n "$request_id" ]; then target=(--request-id "$request_id")
+  elif [ -n "$thread" ]; then target=(--thread "$thread")
+  elif [ -n "$channel" ]; then target=(--channel "$channel")
+  else
+    printf 'fm-captain-hold: warning: no --card-request-id, --card-thread, or --card-channel; card for %s not published\n' "$id" >&2
+    return 0
+  fi
+  if [ ! -f "$file" ]; then
+    printf 'fm-captain-hold: warning: card file %s not found; card for %s not published\n' "$file" "$id" >&2
+    return 0
+  fi
+  # The command line's task id is authoritative, so a reused card file can never
+  # bind a second task's card to the wrong held call; the per-occurrence nonce
+  # keeps an exact hold replay a no-op while letting a re-held call surface a
+  # fresh card after its earlier answer.
+  if out=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-discord-conversation-console.sh" card \
+      "${target[@]}" --card-file "$file" --task-id "$id" --nonce "hold:$id:$occurrence" 2>&1); then
+    printf '%s\n' "$out"
+  else
+    printf 'fm-captain-hold: warning: the Discord card for %s could not be published; the call stays held: %s\n' "$id" "$out" >&2
+  fi
+  return 0
 }
 
 # Record a resolution block beneath any leading active hold-set stamp,
