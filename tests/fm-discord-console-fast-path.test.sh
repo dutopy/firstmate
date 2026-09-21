@@ -539,4 +539,57 @@ rc=$?
 assert_contains "$out" "at least one visible sign" "the refusal names the missing visible activity"
 pass "disabling both the acknowledgement and typing is refused"
 
+# --- 13. the decision record preserves the classifier's real verdict --------
+# A legitimate classifier full turn must keep its own verdict, confidence,
+# reason, and flag, and must never be recorded as "classifier unavailable or
+# refused"; only a genuinely unavailable or unreadable classifier gets that.
+start_typesafe full_turn 0.93
+make_home h9 on
+CFG9="$H/config/discord-conversation-console.json"
+out=$(dc listen --config "$CFG9" 2>&1) || fail "fidelity full-turn listen failed: $out"
+assert_contains "$out" "captured=" "the fidelity full-turn listen captures"
+python3 - "$H" <<'PY' || fail "classifier full-turn record shape check failed"
+import json, os, sys
+home = sys.argv[1]
+dir_ = os.path.join(home, "state", "discord-workspace", "conversation-console", "fast-path", "decisions")
+files = os.listdir(dir_)
+assert files, "a full turn must write a decision record"
+for name in files:
+    record = json.load(open(os.path.join(dir_, name)))
+    assert record["path"] == "full_turn", record
+    verdict = record["verdict"]
+    assert verdict["verdict"] == "full_turn", f"the classifier's own verdict must be kept: {verdict}"
+    assert verdict["confidence"] == 0.93, f"the classifier's confidence must be kept: {verdict}"
+    assert verdict["flag"] == "full_turn", f"the classifier's flag must be kept: {verdict}"
+    reason = verdict["reason"]
+    assert isinstance(reason, str) and reason, f"the classifier's reason must be kept: {verdict}"
+    assert reason != "classifier unavailable or refused", f"a served full turn must not read as an outage: {verdict}"
+PY
+pass "a served classifier full turn keeps its verdict, confidence, reason, and flag"
+
+make_home h10 on
+CFG10="$H/config/discord-conversation-console.json"
+python3 - "$CFG10" "$TMP_ROOT/broken-classifier" <<'PY'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+cfg["fast_path"]["classifier_command"] = sys.argv[2]
+json.dump(cfg, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
+out=$(dc listen --config "$CFG10" 2>&1) || fail "fidelity unavailable listen failed: $out"
+python3 - "$H" <<'PY' || fail "unavailable-classifier record shape check failed"
+import json, os, sys
+home = sys.argv[1]
+dir_ = os.path.join(home, "state", "discord-workspace", "conversation-console", "fast-path", "decisions")
+files = os.listdir(dir_)
+assert files, "an unavailable-classifier full turn must still write a decision record"
+for name in files:
+    record = json.load(open(os.path.join(dir_, name)))
+    assert record["path"] == "full_turn", record
+    verdict = record["verdict"]
+    assert verdict == {"verdict": "full_turn", "confidence": None, "reason": "classifier unavailable or refused"}, (
+        f"only an unavailable classifier reads as an outage: {verdict}"
+    )
+PY
+pass "only an unavailable classifier is recorded as classifier unavailable or refused"
+
 printf '# all fm-discord-console-fast-path tests passed\n'

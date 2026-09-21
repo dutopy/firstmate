@@ -145,6 +145,10 @@ malformed verdict, low confidence, unbuildable answer, or failed post sends the
 message to the full firstmate turn through the same durable external-id capture.
 The fast path never guesses and never answers a message it cannot state from the
 records.
+The decision record keeps that distinction: a classifier full turn is recorded
+with the classifier's own verdict, confidence, reason, and flag, while the
+literal reason `classifier unavailable or refused` is reserved for a classifier
+that was missing, failed, timed out, or emitted an unreadable verdict.
 
 Idempotence is by request id.
 The acknowledgement, the fast answer, and the decision each have a durable record

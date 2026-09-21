@@ -1957,7 +1957,16 @@ def build_fast_answer(env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any
 
 
 def classify_console_route(env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Ask Jev whether this message is a record-backed fast answer; None means full turn."""
+    """Ask Jev whether this message is a record-backed fast answer.
+
+    Returns the classifier's verdict record whenever the classifier ran and
+    emitted one readable verdict - including a legitimate full_turn verdict
+    with its own reason and confidence. None is reserved for "the classifier
+    was unavailable or its output was unreadable": a missing classifier file,
+    a failed or timed-out command, or output that is not one JSON object. The
+    caller records that distinction verbatim instead of collapsing every
+    full turn into an unavailable classifier.
+    """
     if not cfg.fast_path_classifier.is_file():
         return None
     payload = json.dumps(
@@ -1983,8 +1992,6 @@ def classify_console_route(env: "fwl.Env", cfg: "ConsoleConfig", event: Dict[str
     except json.JSONDecodeError:
         return None
     if not isinstance(verdict, dict):
-        return None
-    if verdict.get("verdict") != "fast_answer" or verdict.get("flag") != "answer_from_records":
         return None
     return verdict
 
@@ -2766,10 +2773,15 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
     new_decision = decision is None
     if decision is None:
         verdict = classify_console_route(env, cfg, event)
+        fast = (
+            verdict is not None
+            and verdict.get("verdict") == "fast_answer"
+            and verdict.get("flag") == "answer_from_records"
+        )
         answer_text = ""
-        if verdict is not None and cfg.fast_path_answers_enabled:
+        if fast and cfg.fast_path_answers_enabled:
             answer_text = build_fast_answer(env, cfg, event) or ""
-        if verdict is not None and answer_text:
+        if fast and answer_text:
             decision = {
                 "path": "fast_answer",
                 "answer_text": answer_text,
@@ -2780,15 +2792,25 @@ def route_text_event(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClien
                 },
             }
         else:
+            # Keep the classifier's real verdict when it produced one, so the
+            # record can tell "the classifier routed the full turn" apart from
+            # "the classifier was unavailable or its output was unreadable".
+            if verdict is None:
+                recorded_verdict: Dict[str, Any] = {
+                    "verdict": "full_turn",
+                    "confidence": None,
+                    "reason": "classifier unavailable or refused",
+                }
+            else:
+                recorded_verdict = {
+                    key: verdict.get(key)
+                    for key in ("verdict", "confidence", "reason", "flag")
+                }
+                recorded_verdict["reason"] = recorded_verdict.get("reason") or "the classifier routed the full turn"
             decision = {
                 "path": "full_turn",
                 "answer_text": "",
-                "verdict": {
-                    "verdict": "full_turn",
-                    "confidence": verdict.get("confidence") if isinstance(verdict, dict) else None,
-                    "reason": (verdict.get("reason") if isinstance(verdict, dict) else "classifier unavailable or refused")
-                    or "classifier unavailable or refused",
-                },
+                "verdict": recorded_verdict,
             }
         store_fast_path_record(env, "decisions", request_id, decision)
     path = str(decision.get("path") or "full_turn")
