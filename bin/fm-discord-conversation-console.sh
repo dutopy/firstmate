@@ -19,8 +19,7 @@
 #       --item-key <durable item identity> [--tag captain|main] [--channel <id>] [--dry-run]
 #   fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
 #       (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
-#       [--task-id <id>] [--nonce <n>] [--dry-run]
-#   fm-discord-conversation-console.sh card-escalate [--config <json>] [--dry-run]
+#       --nonce <n> [--task-id <id>] [--dry-run]
 #   fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
 #       [--interval <n>] [--max-seconds <n>] [--stop]
 #   fm-discord-conversation-console.sh status [--config <json>]
@@ -49,26 +48,27 @@
 # keyed-answer intake a typed reply uses (bin/fm-captain-hold.sh). The card path
 # refuses unless the permanent connection is registered, because polling cannot
 # receive an interaction, and unless the card's task is still an open captain
-# call, so every button on a posted card can validate.
+# call, so every button on a posted card can validate. `--nonce` is required:
+# it is the card's exact durable identity, never derived from the card's
+# content, so a reused card file can never reuse an old call's card.
 #
 # `reply` can carry the card for the interaction it answers: `--card-file` posts
 # the card through that same guarded path, in the same conversation, immediately
 # after the reply text. The reply text always posts; the card never replaces it.
-# A card is posted for a decision, a blocker, a clarification question, a
-# projection choice, or a free request, and the card's identity is keyed to the
-# reply, so a replayed reply mints no second card.
+# The card is mandatory for every captain decision: a reply that poses a captain
+# decision question (a line ending in a question mark, outside a code block and
+# not a quotation) without `--card-file` is refused rather than posted silently,
+# and an ordinary reply that asks nothing is never refused.
 #
-# `card-escalate` runs one bounded escalation pass over open, unanswered cards:
-# a card open past the configured delay (cards.escalation_delay_seconds) while
-# its task is still an open captain call is mirrored once into the dedicated
-# #blocages channel (cards.escalation_channel_id) with the same durable card
-# identity and buttons, so a press on either surface resolves the one card. The
-# single attempt is recorded on the card whether it lands or not; answered,
-# closed, already-escalated, and too-young cards receive none. The
-# permanent-connection loop runs the same scan at most once per ten minutes, so
-# an unanswered held card is mirrored without any manual step, and a failed or
-# undeliverable attempt is recorded as a visible delivery gap rather than
-# retried in a loop.
+# A card open past the configured delay (cards.escalation_delay_seconds) while
+# its task is still an open captain call is mirrored by the permanent-connection
+# loop into the dedicated #blocages channel (cards.escalation_channel_id) with
+# the same durable card identity and buttons, so a press on either surface
+# resolves the one card. A failed mirror is retried on later scans up to a
+# bounded ceiling and then recorded terminally, never a loop and never a second
+# mirror. There is no manual escalation command: the automatic scan is the only
+# front door. A "later" press keeps the call held and re-surfaces the same card
+# on its date.
 #
 # The console also posts one card of its own: an uncertain voice transcription is
 # posted as a confirmation card whose three buttons are the existing card actions

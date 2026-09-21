@@ -366,7 +366,7 @@ Post one with:
 ```sh
 bin/fm-discord-conversation-console.sh card [--config <json>] --card-file <json>
     (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
-    [--task-id <id>] [--nonce <n>] [--dry-run]
+    --nonce <n> [--task-id <id>] [--dry-run]
 ```
 
 The card file is local JSON owned by the caller:
@@ -432,6 +432,12 @@ before a new one is posted for the same task.
 The posted card's task id, option set, body, and message id are stored durably
 under `cards/` in the console state, keyed by a card id derived from the nonce, so
 a replay with the same nonce posts no second card.
+The nonce is the card's exact durable identity and is never derived from the
+card's content: `card` requires `--nonce`, `hold` passes one identity per hold
+occurrence, and `reply` derives one from the reply anchor and the card.
+A card id that already belongs to a different card (a different nonce, kind, or
+task) is refused rather than silently reused, so an old choice can never be
+replayed against a new call.
 
 Opening a captain call can also publish its card in the same act:
 `bin/fm-captain-hold.sh hold <task-id> ... --card-file <json>` (plus one
@@ -461,24 +467,52 @@ phone-friendly text answer.
 The card's identity is keyed to the reply anchor and its content, so a replayed
 reply posts neither a second text nor a second card, and the existing one-open-card
 and captain-held guards still apply.
-The card's declared `type` must be one of the trigger-mapping shapes above; a
-reply with no `--card-file`, or a card whose `type` is outside the mapping,
-posts no card.
-The console's captain-inbox note tells Firstmate to attach the card for these
-interactions, so the captain never has to ask for one.
+The card's declared `type` must be one of the trigger-mapping shapes above.
 
-A card always appears first in its originating conversation. A card left
-unanswered past the configured delay (`cards.escalation_delay_seconds`) while
-its task is still an open captain call is then mirrored once, and only once,
-into the dedicated #blocages channel (`cards.escalation_channel_id`), carrying
-the same durable card identity and custom ids rather than a new card or a bare
-reminder. The permanent connection loop runs this bounded scan at most once per
-ten minutes, and the single attempt is recorded on the card whether the mirror
-lands or not, so a broken gateway can never spin. A card that is answered,
-already mirrored, too young, or whose call is no longer open receives no mirror,
-and a failed or undeliverable mirror is recorded as a visible delivery gap
-rather than retried. `card-escalate [--dry-run]` runs the same bounded pass by
-hand.
+### The card is mandatory for every captain decision
+
+A reply that poses a captain decision must carry its card; it is refused before
+anything posts when it does not, so a decision never goes out silently.
+The rule is deterministic and model-free, owned by `reply_decision_question` in
+`bin/fm_discord_conversation_console_lib.py`: a reply poses a captain decision
+when one of its rendered lines is a captain question - the stripped line ends in
+a question mark (a trailing bold marker is allowed), is outside a fenced code
+block, and is neither a bare URL nor a quotation (a line opening with `>`, a
+straight quote, or a French guillemet).
+An ordinary reply that asks nothing is never refused and needs no card.
+The card attached to a decision reply is validated before the text posts, so a
+decision cannot slip out cardless because its card would have been refused; a
+network failure after the text has posted is still reported on stderr without
+failing the reply.
+The console's captain-inbox note tells Firstmate to attach the card for these
+interactions, and the console now refuses the reply that omits it, so the
+captain never has to ask for one.
+
+A card always appears first in its originating conversation.
+A card left unanswered past the configured delay
+(`cards.escalation_delay_seconds`) while its task is still an open captain call
+is then mirrored into the dedicated #blocages channel
+(`cards.escalation_channel_id`), carrying the same durable card identity and
+custom ids rather than a new card or a bare reminder.
+The permanent connection loop runs this bounded scan at most once per ten
+minutes; it is the only escalation front door, because the manually callable
+`card-escalate` command is removed.
+A mirror that fails on a transient Discord error is retried on later scans up to
+`CARD_ESCALATION_MAX_ATTEMPTS` (three) and then recorded terminally, so a broken
+gateway can never spin and a card never receives a second mirror once one lands.
+A card that is answered, already mirrored, too young, deferred, or whose call is
+no longer open receives no mirror, and every failed attempt is recorded as a
+visible delivery gap.
+
+A `later` press is a deferral, not a closure.
+The call stays held through its recorded `until` date, and the same card identity
+is re-surfaced on that date by editing its original message back to live buttons
+with a nudge suffix; it then becomes an ordinary open card again and can be
+answered or escalated.
+The re-surface edit is retried on later scans up to the same bounded ceiling and
+then recorded terminally, so a broken message endpoint can never spin.
+A deferred card is never escalated before its date, and the captain's choice is
+never silently closed.
 
 A press on either surface resolves the one durable card: the first answer wins,
 the interaction id keeps a redelivered press from recording a second answer,

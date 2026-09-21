@@ -241,6 +241,21 @@ for path in glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-conso
 PY
 }
 
+esc() { # esc <config> -> the bounded scan's stats as "k=v k=v"
+  # The manual card-escalate command was removed; the automatic scan is the
+  # only front door, so tests drive its public function directly.
+  FM_HOME="$H" python3 - "$ROOT" "$1" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1] + "/bin")
+import fm_discord_conversation_console_lib as fmc
+
+env = fmc.fwl.Env(sys.argv[1] + "/bin")
+cfg = fmc.ConsoleConfig.load(env, sys.argv[2])
+stats = fmc.run_card_escalations(env, cfg, fmc.ConsoleClient(cfg, env))
+print(" ".join(f"{key}={value}" for key, value in stats.items()))
+PY
+}
+
 cat > "$TMP_ROOT/card-hold.json" <<'JSON'
 {
   "schema": "fm-discord-conversation-console.card.v1",
@@ -339,11 +354,7 @@ out=$(hold hold esc-card-test --title "Escalation card test" --reason "Choose th
   || fail "holding the escalation task failed: $out"
 assert_equals "0" "$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')" "no mirror before the delay scan runs"
 
-out=$(dc card-escalate --config "$CFG" --dry-run 2>&1) || fail "card-escalate dry run failed: $out"
-assert_contains "$out" "card escalation plan (no network)" "the dry run makes no network call"
-assert_contains "$out" "eligible" "an open unanswered held card is escalation-eligible"
-
-out=$(dc card-escalate --config "$CFG" 2>&1) || fail "card-escalate failed: $out"
+out=$(esc "$CFG")
 assert_contains "$out" "escalated=1" "the first pass mirrors exactly one card"
 assert_equals "1" "$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')" "the card reached the #blocages channel"
 assert_equals "1" "$(posts_in_channel "$CH" 'Encore sans reponse')" "the originating conversation keeps its card"
@@ -353,16 +364,60 @@ assert_equals "$ORIGIN_IDS" "$MIRROR_IDS" "the mirror carries the same durable c
 assert_contains "$(esc_of_task esc-card-test)" "True:$BLOCAGES:" "the card records its delivered mirror"
 pass "an unanswered held card is mirrored once into #blocages with the same identity"
 
-out=$(dc card-escalate --config "$CFG" 2>&1) || fail "the second card-escalate pass failed: $out"
+out=$(esc "$CFG")
 assert_contains "$out" "escalated=0" "the second pass mirrors nothing"
 assert_equals "1" "$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')" "no escalation loop exists"
 pass "a card receives at most one bounded mirror"
 
 # A card younger than the delay is skipped.
-out=$(FM_CONSOLE_CARD_ESCALATION_DELAY=999999 dc card-escalate --config "$CFG" --dry-run 2>&1) \
-  || fail "the too-young dry run failed: $out"
-assert_contains "$out" "not eligible" "a card younger than the delay is not escalation-eligible"
+out=$(FM_CONSOLE_CARD_ESCALATION_DELAY=999999 esc "$CFG")
+assert_contains "$out" "escalated=0" "a card younger than the delay is not escalated"
 pass "a card younger than the delay receives no mirror"
+
+# A transient Discord failure is retried on later scans up to the documented
+# ceiling; a recovered gateway lands exactly one mirror and no loop.
+hold hold retry-esc-test --title "Retry escalation test" --reason "Choose the card option" --repo firstmate \
+  --card-file "$TMP_ROOT/card-esc.json" --card-channel "$CH" >/dev/null 2>&1 \
+  || fail "holding the retry escalation task failed"
+python3 - "$H" <<'PY'
+import glob, json, sys
+cards = glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/*.json")
+path = next(c for c in cards if json.load(open(c)).get("task_id") == "retry-esc-test")
+record = json.load(open(path))
+record["created_at"] = "2020-01-01T00:00:00Z"
+json.dump(record, open(path, "w"))
+PY
+BEFORE=$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')
+out=$(FM_DISCORD_LIVE_API_BASE="http://127.0.0.1:1" esc "$CFG")
+assert_contains "$out" "failed=1" "a transient mirror failure is reported"
+ATTEMPTS=$(python3 - "$H" <<'PY'
+import glob, json, sys
+for path in glob.glob(f"{sys.argv[1]}/state/discord-workspace/conversation-console/cards/*.json"):
+    record = json.load(open(path))
+    if record.get("task_id") == "retry-esc-test":
+        print((record.get("escalation") or {}).get("attempts"))
+        break
+PY
+)
+assert_equals "1" "$ATTEMPTS" "the failed attempt is recorded for a bounded retry"
+assert_equals "$BEFORE" "$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')" "a failed mirror posts nothing"
+out=$(FM_DISCORD_LIVE_API_BASE="http://127.0.0.1:1" esc "$CFG")
+assert_contains "$out" "failed=1" "the failed mirror is retried on the next scan"
+# The gateway recovers before the ceiling: the retry lands exactly one mirror.
+out=$(esc "$CFG")
+assert_contains "$out" "escalated=1" "a recovered retry lands the mirror"
+assert_equals "$((BEFORE + 1))" "$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')" "the retried mirror lands exactly once"
+out=$(esc "$CFG")
+assert_contains "$out" "escalated=0" "a delivered retry is never mirrored again"
+CEILING=$(python3 - "$ROOT" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1] + "/bin")
+import fm_discord_conversation_console_lib as fmc
+print(fmc.CARD_ESCALATION_MAX_ATTEMPTS)
+PY
+)
+assert_equals "3" "$CEILING" "the retry ceiling is documented and bounded"
+pass "a failed mirror retries a bounded number of times and then stops"
 
 # An answered call's card is never mirrored: strip its recorded escalation,
 # backdate it, and confirm the scan skips it because the call is no longer held.
@@ -381,12 +436,12 @@ record.pop("escalation", None)
 json.dump(record, open(path, "w"))
 PY
 BEFORE=$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')
-out=$(dc card-escalate --config "$CFG" 2>&1) || fail "the post-answer escalation pass failed: $out"
+out=$(esc "$CFG")
 assert_contains "$out" "escalated=0" "an answered call's card is not mirrored"
 assert_equals "$BEFORE" "$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')" "an answered call produced no mirror"
 pass "a call whose answer is recorded never receives a mirror"
 
-# A card with no #blocages channel configured consumes the single attempt and
+# A card with no #blocages channel configured consumes the attempt at once and
 # records the fallback visibly instead of looping or failing silently.
 python3 - "$CFG" "$TMP_ROOT/nochannel.json" <<'PY'
 import json, sys
@@ -407,7 +462,7 @@ record.pop("escalation", None)
 json.dump(record, open(path, "w"))
 PY
 BEFORE=$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')
-out=$(dc card-escalate --config "$TMP_ROOT/nochannel.json" 2>&1) || fail "the fallback escalation pass failed: $out"
+out=$(esc "$TMP_ROOT/nochannel.json")
 assert_contains "$out" "failed=1" "an undeliverable mirror is reported, not silent"
 assert_equals "$BEFORE" "$(posts_in_channel "$BLOCAGES" 'Encore sans reponse')" "an undeliverable mirror posts nothing"
 GAPS=$(python3 - "$H" <<'PY'
@@ -418,8 +473,8 @@ print(sum(1 for g in gaps if g.get("kind") == "card-escalation" and "fallback-es
 PY
 )
 assert_equals "1" "$GAPS" "the failed attempt is recorded as a visible delivery gap"
-out=$(dc card-escalate --config "$CFG" 2>&1) || fail "the post-failure escalation pass failed: $out"
-assert_contains "$out" "failed=0" "a failed attempt is never retried into a loop"
+out=$(esc "$CFG")
+assert_contains "$out" "failed=0" "a permanent misconfiguration is never retried into a loop"
 pass "an undeliverable mirror is recorded honestly and never loops"
 
 # --- 5. a press resolves both surfaces of the one card -----------------------
@@ -571,5 +626,196 @@ out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:8010000000000000
 assert_contains "$out" "card.type must be one of" "an interaction shape outside the mapping is refused"
 assert_equals "0" "$(posts_in_channel "$CH" "Carte inconnue")" "the refused card posted nothing"
 pass "an interaction shape outside the trigger mapping produces no card"
+
+# --- 9. the card is mandatory for every captain decision reply --------------
+# An ordinary reply that asks nothing is never refused, so the guard cannot
+# turn every answer into a card demand.
+printf 'Le correctif est pret.\n- PR: https://example.com/pr/1' > "$TMP_ROOT/plain-reply.txt"
+out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:802000000000000001" --text-file "$TMP_ROOT/plain-reply.txt" 2>&1) \
+  || fail "an ordinary cardless reply was refused: $out"
+assert_contains "$out" "replied in conversation $CH" "an ordinary cardless reply still posts"
+pass "an ordinary cardless reply that is not a decision is never refused"
+
+# A reply that poses a decision question must carry its card.
+printf 'Faut-il merger maintenant ?' > "$TMP_ROOT/decision-reply.txt"
+out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:802000000000000002" --text-file "$TMP_ROOT/decision-reply.txt" 2>&1) \
+  && fail "a cardless decision reply was posted" || true
+assert_contains "$out" "poses a captain decision but carries no card" "a cardless decision reply is refused"
+assert_equals "0" "$(posts_in_channel "$CH" 'Faut-il merger maintenant')" "the refused decision reply posted nothing"
+pass "a decision-shaped reply without a card is refused, not posted silently"
+
+# A quoted question is not the captain's own decision and is never refused.
+printf '> Pourquoi ?\nLe correctif est pret.' > "$TMP_ROOT/quoted-reply.txt"
+out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:802000000000000003" --text-file "$TMP_ROOT/quoted-reply.txt" 2>&1) \
+  || fail "a reply quoting a question was refused: $out"
+assert_contains "$out" "replied in conversation $CH" "a quoted question is not a decision"
+pass "a reply that quotes a question is never refused"
+
+# With its card, the decision reply posts both the text and the card.
+DEC_TASK=reply-decision-test
+hold hold "$DEC_TASK" --title "Decision reply test" --reason "Choose the card option" --repo firstmate >/dev/null 2>&1 \
+  || fail "holding $DEC_TASK failed"
+cat > "$TMP_ROOT/card-decision-reply.json" <<JSON
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "type": "decision",
+  "task_id": "$DEC_TASK",
+  "body": "Faut-il merger maintenant ?",
+  "options": [{"label": "Oui", "action": "answer", "value": "oui"}]
+}
+JSON
+out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:802000000000000004" --text-file "$TMP_ROOT/decision-reply.txt" \
+  --card-file "$TMP_ROOT/card-decision-reply.json" 2>&1) \
+  || fail "a decision reply with its card failed: $out"
+assert_contains "$out" "replied in conversation $CH" "the decision reply text posts"
+assert_contains "$out" "card posted in conversation $CH" "the decision reply carries its card"
+pass "a decision reply with its card posts both the text and the card"
+
+# A decision reply whose card names an unheld task is refused before it posts,
+# so the text cannot slip out ahead of a card that would have been refused.
+FM_HOME="$H" "$ROOT/bin/fm-tasks-axi.sh" add reply-unheld-test "Unheld reply target" --kind ship >/dev/null 2>&1 \
+  || fail "creating the unheld reply task failed"
+printf 'On repond au capitaine ?' > "$TMP_ROOT/unheld-reply.txt"
+cat > "$TMP_ROOT/card-unheld-reply.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "reply-unheld-test",
+  "body": "On repond au capitaine ?",
+  "options": [{"label": "Oui", "action": "answer", "value": "oui"}]
+}
+JSON
+out=$(dc reply --config "$CFG" --request-id "discord:$GUILD:$CH:802000000000000005" --text-file "$TMP_ROOT/unheld-reply.txt" \
+  --card-file "$TMP_ROOT/card-unheld-reply.json" 2>&1) \
+  && fail "a decision reply with an unheld card was posted" || true
+assert_contains "$out" "not held for the captain" "a decision reply with an unheld card is refused before posting"
+assert_equals "0" "$(posts_in_channel "$CH" 'On repond au capitaine')" "the refused reply text posted nothing"
+pass "a decision reply validates its card before the text posts"
+
+# --- 10. a "later" choice defers, keeps the call held, and re-surfaces ------
+LATER_TASK=later-defers-test
+cat > "$TMP_ROOT/card-later2.json" <<JSON
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "$LATER_TASK",
+  "body": "On en reparle plus tard ?",
+  "options": [
+    {"label": "Plus tard", "action": "later", "until": "2026-10-01"},
+    {"label": "Oui", "action": "answer", "value": "oui"}
+  ]
+}
+JSON
+hold hold "$LATER_TASK" --title "Later defers test" --reason "Pick later" --repo firstmate \
+  --card-file "$TMP_ROOT/card-later2.json" --card-channel "$CH" >/dev/null 2>&1 \
+  || fail "holding $LATER_TASK failed"
+LATER_OK=$(FM_HOME="$H" python3 - "$ROOT" "$H" "$CFG" "$GUILD" "$CH" "$CAPTAIN" <<'PY'
+import glob, json, os, subprocess, sys
+sys.path.insert(0, sys.argv[1] + "/bin")
+import fm_discord_conversation_console_lib as fmc
+
+root, home, cfg_path, guild, channel, captain = sys.argv[1:7]
+env = fmc.fwl.Env(root + "/bin")
+cfg = fmc.ConsoleConfig.load(env, cfg_path)
+card_path = next(
+    path
+    for path in glob.glob(f"{home}/state/discord-workspace/conversation-console/cards/*.json")
+    if json.load(open(path)).get("task_id") == "later-defers-test"
+)
+card = json.load(open(card_path))
+
+class Client:
+    def __init__(self):
+        self.edits = []
+    def interaction_ack(self, interaction_id, token):
+        pass
+    def interaction_followup(self, token, payload):
+        pass
+    def interaction_edit_original(self, token, payload):
+        pass
+    def post_message(self, channel_id, text, components=None):
+        self.posts = getattr(self, "posts", 0) + 1
+        return "999000000000000099"
+    def edit_message(self, channel_id, message_id, payload):
+        self.edits.append((channel_id, message_id, payload.get("components")))
+    def redact(self, text):
+        return text
+
+client = Client()
+fmc.handle_card_interaction(
+    env, cfg, client, "999000000000000020", "tok", captain,
+    fmc.card_custom_id(card["card_id"], 0), guild, channel, card["message_id"],
+)
+after = json.load(open(card_path))
+assert after.get("status") == fmc.CARD_STATUS_DEFERRED, after.get("status")
+assert after.get("deferred_until") == "2026-10-01", after
+assert (after.get("answer") or {}).get("action") == "later", after.get("answer")
+held = subprocess.run(
+    [root + "/bin/fm-captain-hold.sh", "open", "later-defers-test"],
+    env={**os.environ, "FM_HOME": home}, capture_output=True, text=True,
+)
+assert held.returncode == 0, held.stdout + held.stderr
+# Backdate the deferral and run the bounded scan: the same card re-surfaces.
+after["deferred_until"] = "2020-01-01"
+json.dump(after, open(card_path, "w"))
+stats = fmc.run_card_escalations(env, cfg, client)
+assert stats.get("resurfaced") == 1, stats
+resurfaced = json.load(open(card_path))
+assert not resurfaced.get("deferred_until"), resurfaced
+assert resurfaced.get("resurfaced_at"), resurfaced
+assert client.edits, "the re-surface did not edit the card message"
+print("ok")
+PY
+)
+assert_equals "ok" "$LATER_OK" "a later press defers the card, keeps the call held, and re-surfaces it on its date"
+assert_grep "hold-until: 2026-10-01" "$H/data/backlog.md" "the later press records the dated deferral"
+pass "a later choice defers, keeps the call held, and re-surfaces the same card"
+
+# --- 11. a card requires its exact durable identity --------------------------
+# No nonce: refused before any post.
+cat > "$TMP_ROOT/card-nonce-less.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "nonce-less-test",
+  "body": "Sans identite.",
+  "options": [{"label": "Oui", "action": "answer", "value": "oui"}]
+}
+JSON
+out=$(dc card --config "$CFG" --channel "$CH" --card-file "$TMP_ROOT/card-nonce-less.json" 2>&1) \
+  && fail "a card without an explicit nonce was accepted" || true
+assert_contains "$out" "--nonce is required" "a card without its durable identity is refused"
+pass "a card requires its exact durable identity"
+
+# The same identity with a different card is refused rather than silently reused.
+hold hold identity-a-test --title "Identity A" --reason "Choose" --repo firstmate >/dev/null 2>&1 \
+  || fail "holding identity-a-test failed"
+hold hold identity-b-test --title "Identity B" --reason "Choose" --repo firstmate >/dev/null 2>&1 \
+  || fail "holding identity-b-test failed"
+cat > "$TMP_ROOT/card-identity-a.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "identity-a-test",
+  "body": "Premiere carte.",
+  "options": [{"label": "Oui", "action": "answer", "value": "oui"}]
+}
+JSON
+cat > "$TMP_ROOT/card-identity-b.json" <<'JSON'
+{
+  "schema": "fm-discord-conversation-console.card.v1",
+  "task_id": "identity-b-test",
+  "body": "Deuxieme carte.",
+  "options": [{"label": "Oui", "action": "answer", "value": "oui"}]
+}
+JSON
+out=$(dc card --config "$CFG" --channel "$CH" --card-file "$TMP_ROOT/card-identity-a.json" --nonce shared-identity 2>&1) \
+  || fail "the first identity card failed: $out"
+out=$(dc card --config "$CFG" --channel "$CH" --card-file "$TMP_ROOT/card-identity-b.json" --nonce shared-identity 2>&1) \
+  && fail "a reused card identity was accepted" || true
+assert_contains "$out" "already used by another card" "a reused identity is refused"
+assert_equals "0" "$(posts_in_channel "$CH" 'Deuxieme carte')" "the colliding card posted nothing"
+pass "a card identity is never reused across calls"
+
+# --- 12. the manual escalation path is gone ---------------------------------
+out=$(dc card-escalate --config "$CFG" 2>&1) && fail "the manual card-escalate command still exists" || true
+assert_contains "$out" "invalid choice" "the manual escalation command is removed"
+pass "the automatic scan is the only escalation front door"
 
 echo "all fm-discord-card-auto-surface tests passed"

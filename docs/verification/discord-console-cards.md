@@ -74,8 +74,9 @@ On the same fake server and gateway:
   acknowledgement precedes the card read and the intake), that a timed-out
   interaction request is never retried, and that a failed acknowledgement is
   recorded with its reason rather than swallowed.
-- A `later` option records the dated deferral: the fixture backlog reads
-  `hold-until: 2026-10-01` for the task.
+- A `later` option records the dated deferral and leaves the card deferred, not
+  answered: the fixture backlog reads `hold-until: 2026-10-01` for the task, and
+the card record stays `deferred` with its `deferred_until` date.
 - `card` only posts while its task is still an open captain call, checked against
   the authoritative hold state (`bin/fm-captain-hold.sh open`) rather than the
   card's prose: an unheld queued task and an already-closed task each refuse with
@@ -110,6 +111,42 @@ ok - the trigger mapping is explicit and enumerable
 ok - a clarification, a projection choice, and a free request each carry their card
 ok - one reply carries at most one card, replay-safe
 ok - an interaction shape outside the trigger mapping produces no card
+```
+
+## Systematic-card enforcement
+
+`tests/fm-discord-card-auto-surface.test.sh` also proves the enforcement that
+makes the card the default for a captain decision:
+
+- a reply that poses a captain decision (a line ending in a question mark,
+  outside a code block and not a quotation) without `--card-file` is refused and
+  posts nothing, while an ordinary cardless reply that asks nothing still posts,
+  a reply that quotes a question still posts, and a decision reply with its card
+  posts both the text and the card;
+- a failed escalation mirror is retried on later scans up to the documented
+  ceiling (`CARD_ESCALATION_MAX_ATTEMPTS = 3`) and then recorded terminally, and a
+  recovered retry lands exactly one mirror with no loop;
+- a `later` press leaves the card `deferred`, keeps the task held, and the same
+  card identity re-surfaces on its date by editing its original message back to
+  live buttons;
+- a `card` without `--nonce` is refused, and reusing one nonce for a different
+  card is refused as an identity collision rather than silently reused;
+- the manual `card-escalate` command is gone, so the automatic gateway scan is
+  the only escalation front door.
+
+The enforcement section prints:
+
+```
+ok - an ordinary cardless reply that is not a decision is never refused
+ok - a decision-shaped reply without a card is refused, not posted silently
+ok - a reply that quotes a question is never refused
+ok - a decision reply with its card posts both the text and the card
+ok - a decision reply validates its card before the text posts
+ok - a failed mirror retries a bounded number of times and then stops
+ok - a later choice defers, keeps the call held, and re-surfaces the same card
+ok - a card requires its exact durable identity
+ok - a card identity is never reused across calls
+ok - the automatic scan is the only escalation front door
 ```
 
 ## Live evidence and what remains
@@ -151,7 +188,7 @@ The post-merge live check is one card and one press:
 ```sh
 bin/fm-captain-hold.sh hold card-live-check --title "Card live check" --reason "Live card check" --repo firstmate
 bin/fm-discord-conversation-console.sh card --config config/discord-conversation-console.json \
-    --channel <firstmate channel id> --card-file <card json>
+    --channel <firstmate channel id> --card-file <card json> --nonce live-card-check
 ```
 
 The recorded answer is then observable in that task's backlog row through

@@ -88,7 +88,7 @@ Usage (via bin/fm-discord-conversation-console.sh):
         [--card-file <f>] [--task-id <id>] [--nonce <n>] [--dry-run]
     fm-discord-conversation-console.sh card [--config <json>] --card-file <f>
         (--request-id <discord:guild:channel:message> | --thread <id> | --channel <id>)
-        [--nonce <n>] [--dry-run]
+        --nonce <n> [--task-id <id>] [--dry-run]
     fm-discord-conversation-console.sh typing [--config <json>] --channel <id>
         [--interval <n>] [--max-seconds <n>] [--stop]
     fm-discord-conversation-console.sh status [--config <json>]
@@ -136,8 +136,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 _spec = importlib.util.spec_from_file_location("fwl", SCRIPT_DIR / "fm_discord_workspace_lib.py")
-fwl = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(fwl)
+# Reuse a workspace module another loader already registered, then register this
+# one, so the console and the Discord client share a single FMError family and
+# every ``except FMError`` catches the client's own DiscordError too.
+if "fwl" in sys.modules:
+    fwl = sys.modules["fwl"]
+else:
+    fwl = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(fwl)
+    sys.modules["fwl"] = fwl
 
 _live_spec = importlib.util.spec_from_file_location("fm_discord_live", SCRIPT_DIR / "fm_discord_live.py")
 live = importlib.util.module_from_spec(_live_spec)
@@ -319,6 +326,12 @@ INTERACTION_CARD_TRIGGERS = {
     "projection": "projection",
     "free_request": "free_request",
 }
+# A card's lifecycle. ``open`` is an unanswered card; ``answered`` is settled
+# and never re-surfaced; ``deferred`` records a "later" press that keeps the
+# call held and re-surfaces the same card on its date instead of closing it.
+CARD_STATUS_OPEN = "open"
+CARD_STATUS_ANSWERED = "answered"
+CARD_STATUS_DEFERRED = "deferred"
 # The uncertain reading's confirmation card maps its three buttons onto the
 # existing card actions rather than inventing a fourth: the reading as heard is
 # the answer, the correction is the free-form chat option, and the discard is
@@ -366,6 +379,21 @@ CARD_WAKE_TIMEOUT_SECONDS = 30.0
 # bounded interval from the permanent-connection loop.
 CARD_ESCALATION_DELAY_SECONDS = 24 * 60 * 60.0
 CARD_ESCALATION_SCAN_INTERVAL_SECONDS = 600.0
+# A failed escalation is retried on later scans up to this ceiling, then
+# recorded terminally: bounded, never an escalation loop, and the single
+# successful attempt is the only mirror a card ever receives.
+CARD_ESCALATION_MAX_ATTEMPTS = 3
+# The suffix a deferred card carries when it re-surfaces on its date.
+CARD_RESURFACE_SUFFIX = "**C'est l'heure de d\u00e9cider**"
+# The reply decision guard. A rendered reply poses a captain decision when one
+# of its lines is a captain question: the stripped line ends in a question mark
+# (a trailing bold marker is allowed), outside a fenced code block, and is
+# neither a bare URL nor a quoted line. The rule is deterministic and
+# model-free; a reply with no such line is an ordinary answer and never
+# requires a card. Keeping it a pure function makes it the single owner of the
+# rule and directly testable.
+REPLY_QUESTION_TAIL_RE = re.compile(r"\?\*{0,2}$")
+REPLY_URL_LINE_RE = re.compile(r"^https?://\S+$")
 # The dedicated channel an unanswered card is mirrored into. The config's
 # cards.escalation_channel_id overrides it; a home that leaves it unset records
 # an honest delivery gap instead of guessing a channel.
@@ -1812,7 +1840,8 @@ def note_body(event: Dict[str, Any]) -> str:
     lines.append(
         "if this answer is a decision, a blocker, a clarification question, a projection choice, "
         "or a free request, attach its card with --card-file <card-file> so the captain can answer "
-        "with one press; the reply text still posts unchanged"
+        "with one press; the console refuses a decision-shaped reply that carries no card, so this "
+        "is mandatory for a decision, and the reply text still posts unchanged"
     )
     # Captain chat is read on a phone, so the answer itself must be short: a few
     # sentences of outcome, not a report. This constrains length rather than
@@ -3288,6 +3317,37 @@ def card_type_for_interaction(shape: str) -> Optional[str]:
     return INTERACTION_CARD_TRIGGERS.get(str(shape or "").strip().lower())
 
 
+def reply_decision_question(text: str) -> bool:
+    """True when a rendered reply poses a captain decision question.
+
+    The single owner of the reply decision guard's rule. A reply poses a
+    captain decision when one of its rendered lines is a captain question: the
+    stripped line ends in a question mark (allowing a trailing bold marker),
+    is outside a fenced code block, and is neither a bare URL nor a quotation
+    (a line opening with ``>``, a straight quote, or a French guillemet).
+    Everything else is an ordinary answer, so a cardless reply that asks
+    nothing is never refused. The rule is deliberately conservative: it never
+    guesses at meaning, only at a question the captain is meant to answer.
+    """
+    if not isinstance(text, str):
+        return False
+    fenced = False
+    for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw_line.strip()
+        if line.startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced or not line:
+            continue
+        if line.startswith((">", '"', "\u00ab")):
+            continue
+        if REPLY_URL_LINE_RE.match(line):
+            continue
+        if REPLY_QUESTION_TAIL_RE.search(line):
+            return True
+    return False
+
+
 def _card_text(value: Any, field: str, max_chars: int, required: bool = True) -> str:
     if value is None and not required:
         return ""
@@ -3648,29 +3708,89 @@ def card_payload(card: Dict[str, Any], suffix: str = "", disabled: bool = False)
     }
 
 
-def run_card_escalations(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient") -> Dict[str, int]:
-    """Run one bounded escalation pass over open, unanswered task cards.
+def resurface_deferred_card(env: "fwl.Env", client: "ConsoleClient", card: Dict[str, Any]) -> bool:
+    """Re-activate one deferred card on its date by editing its original message.
 
-    A card left unanswered past the configured delay while its task is still an
-    open captain call is mirrored once into the dedicated #blocages channel,
-    carrying the same durable card identity and custom ids, so a press on either
-    surface resolves the one card. The single attempt is recorded on the card
-    whether it lands or not, so a broken gateway can never spin; answered,
-    closed, already-escalated, and too-young cards get none. A failed or
-    undeliverable mirror is recorded as a visible delivery gap, never silently.
+    A "later" press keeps the call held and disables the card's buttons; on the
+    recorded date the same card identity is brought back with enabled buttons
+    and a nudge suffix, so the call re-surfaces instead of closing silently.
+    The edit is retried on later scans up to the shared ceiling, then recorded
+    terminally so a broken message endpoint can never spin.
     """
-    stats = {"scanned": 0, "escalated": 0, "skipped": 0, "failed": 0}
+    attempts = int(card.get("resurface_attempts") or 0) + 1
+    card["resurface_attempts"] = attempts
+    try:
+        client.edit_message(
+            str(card.get("channel_id") or ""),
+            str(card.get("message_id") or ""),
+            card_payload(card, CARD_RESURFACE_SUFFIX, disabled=False),
+        )
+    except FMError as exc:
+        reason = client.redact(str(exc))
+        if attempts >= CARD_ESCALATION_MAX_ATTEMPTS:
+            card["deferred_until"] = ""
+            card["resurface_exhausted"] = True
+            record_delivery_gap(
+                env,
+                "card-resurface",
+                f"deferred card for task {card.get('task_id')} gave up re-surfacing after {attempts} attempts: {reason}",
+            )
+        store_card(env, card)
+        return False
+    card["deferred_until"] = ""
+    card["resurfaced_at"] = fwl.utc_now()
+    card["resurface_attempts"] = 0
+    card["status"] = CARD_STATUS_OPEN
+    store_card(env, card)
+    return True
+
+
+def run_card_escalations(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleClient") -> Dict[str, int]:
+    """Run one bounded scan over open task cards.
+
+    The scan has two bounded jobs. A card deferred by a "later" press whose
+    date has arrived re-surfaces on its original message with its buttons live
+    again. An open card left unanswered past the configured delay while its
+    task is still an open captain call is mirrored into the dedicated #blocages
+    channel, carrying the same durable card identity and custom ids, so a press
+    on either surface resolves the one card. A failed mirror is retried on
+    later scans up to ``CARD_ESCALATION_MAX_ATTEMPTS`` and then recorded
+    terminally: bounded, never a loop, and never a second mirror once one
+    lands. Answered, closed, too-young, and exhausted cards get no mirror, a
+    deferred card is never escalated before its date, and every failure is
+    recorded as a visible delivery gap.
+    """
+    stats = {"scanned": 0, "escalated": 0, "resurfaced": 0, "skipped": 0, "failed": 0}
     delay = cfg.card_escalation_delay_seconds
     now = time.time()
+    today = time.strftime("%Y-%m-%d", time.gmtime(now))
     for card in load_cards(env):
         if str(card.get("kind") or CARD_KIND_TASK) != CARD_KIND_TASK:
             continue
-        if str(card.get("status") or "open") != "open":
+        status = str(card.get("status") or CARD_STATUS_OPEN)
+        if status not in (CARD_STATUS_OPEN, CARD_STATUS_DEFERRED):
             continue
         stats["scanned"] += 1
-        if isinstance(card.get("escalation"), dict):
-            stats["skipped"] += 1
-            continue
+        # A deferred card re-surfaces once on its date, then is an ordinary
+        # open card again; it is never escalated before that date.
+        deferred_until = str(card.get("deferred_until") or "")
+        if status == CARD_STATUS_DEFERRED or deferred_until:
+            if deferred_until and deferred_until <= today:
+                if resurface_deferred_card(env, client, card):
+                    stats["resurfaced"] += 1
+                    status = CARD_STATUS_OPEN
+            deferred_until = str(card.get("deferred_until") or "")
+            if status == CARD_STATUS_DEFERRED or deferred_until:
+                stats["skipped"] += 1
+                continue
+        escalation = card.get("escalation") if isinstance(card.get("escalation"), dict) else None
+        if escalation is not None:
+            if escalation.get("delivered") or escalation.get("exhausted"):
+                stats["skipped"] += 1
+                continue
+            if int(escalation.get("attempts") or 0) >= CARD_ESCALATION_MAX_ATTEMPTS:
+                stats["skipped"] += 1
+                continue
         created = parse_discord_epoch(None, card.get("created_at"))
         if created is None or now - created < delay:
             stats["skipped"] += 1
@@ -3684,10 +3804,14 @@ def run_card_escalations(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleC
             stats["skipped"] += 1
             continue
         target = str(cfg.card_escalation_channel_id or "")
-        escalation: Dict[str, Any] = {"at": fwl.utc_now(), "delivered": False}
+        attempts = int((escalation or {}).get("attempts") or 0) + 1
+        escalation = dict(escalation or {})
+        escalation.update({"attempts": attempts, "last_attempt_at": fwl.utc_now()})
         if not cfg.live_posting_enabled or not target:
+            # A misconfiguration is not transient, so it is consumed at once
+            # rather than retried: the visible delivery gap is the whole answer.
             reason = "posting unavailable" if not cfg.live_posting_enabled else "no #blocages channel configured"
-            escalation["reason"] = reason
+            escalation.update({"delivered": False, "reason": reason, "attempts": CARD_ESCALATION_MAX_ATTEMPTS, "exhausted": True})
             record_delivery_gap(
                 env, "card-escalation", f"card escalation for task {task_id} not delivered: {reason}"
             )
@@ -3699,18 +3823,23 @@ def run_card_escalations(env: "fwl.Env", cfg: "ConsoleConfig", client: "ConsoleC
                     render_card_content(spec),
                     card_components(spec, str(card.get("card_id") or "")),
                 )
-                escalation.update({"delivered": True, "channel_id": target, "message_id": message_id})
+                escalation.update({"delivered": True, "channel_id": target, "message_id": message_id, "reason": ""})
             except FMError as exc:
                 reason = client.redact(str(exc))
                 escalation["reason"] = reason
                 record_delivery_gap(
                     env, "card-escalation", f"card escalation for task {task_id} failed: {reason}"
                 )
-        # The single attempt is consumed whether or not it landed, so a
-        # persistent failure can never turn into an escalation loop.
+                if attempts >= CARD_ESCALATION_MAX_ATTEMPTS:
+                    escalation["exhausted"] = True
+                    record_delivery_gap(
+                        env,
+                        "card-escalation",
+                        f"card escalation for task {task_id} gave up after {attempts} attempts",
+                    )
         card["escalation"] = escalation
         store_card(env, card)
-        stats["escalated" if escalation["delivered"] else "failed"] += 1
+        stats["escalated" if escalation.get("delivered") else "failed"] += 1
     return stats
 
 
@@ -4205,16 +4334,24 @@ def handle_card_interaction(
         except FMError:
             pass
         return
-    card["status"] = "answered"
+    action = str(option.get("action") or "")
     card["answer"] = {
         "option_index": index,
         "label": str(option.get("label") or ""),
-        "action": str(option.get("action") or ""),
+        "action": action,
         "value": str(option.get("value") or ""),
         "until": str(option.get("until") or ""),
         "user_id": user_id,
         "answered_at": fwl.utc_now(),
     }
+    if action == "later":
+        # A "later" choice is a deferral, not a closure: the call stays held
+        # through its recorded date, and this same card re-surfaces then
+        # instead of being settled forever.
+        card["status"] = CARD_STATUS_DEFERRED
+        card["deferred_until"] = str(option.get("until") or "")
+    else:
+        card["status"] = CARD_STATUS_ANSWERED
     store_card(env, card)
     # Announce the recorded answer through the captain-inbox seam before the
     # "recorded" marker, so an interrupted press cannot lose the wake; the
@@ -5185,6 +5322,16 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
     text = render_captain_reply(text, cfg.reply_max_chars)
     if not text:
         raise FMError("the answer is empty after rendering")
+    card_file_arg = getattr(args, "card_file", None)
+    # The card is mandatory for every captain decision: a reply that poses a
+    # decision question without one must not go out silently. The rule is owned
+    # by reply_decision_question and is deliberately conservative, so an
+    # ordinary cardless reply that asks nothing is never refused.
+    if not card_file_arg and reply_decision_question(text):
+        raise FMError(
+            "this reply poses a captain decision but carries no card; attach the decision's card "
+            "with --card-file so the captain can answer with one press"
+        )
     digest = fwl.sha256_text(text)
     anchor = args.request_id or f"discord:{guild_id}:{channel_id}:{message_id or '0'}"
     nonce = args.nonce or f"reply:{anchor}:{digest}"
@@ -5197,8 +5344,8 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
     # replayed reply converges on the one card instead of minting a second one.
     card_spec = None
     card_nonce = ""
-    if getattr(args, "card_file", None):
-        card_file = Path(args.card_file).expanduser()
+    if card_file_arg:
+        card_file = Path(card_file_arg).expanduser()
         if not card_file.is_absolute():
             card_file = (Path.cwd() / card_file).resolve()
         card_spec = parse_card_spec(card_spec_with_overrides(fwl.read_json(card_file), args), cfg.reply_max_chars)
@@ -5242,6 +5389,12 @@ def cmd_reply(args: argparse.Namespace, env: "fwl.Env") -> int:
         if card_spec is not None:
             post_reply_card(env, cfg, card_spec, guild_id, channel_id, card_nonce)
         return 0
+    if card_spec is not None:
+        # Validate the card can be published before the text posts, so a
+        # decision reply never goes out cardless because its card would have
+        # been refused. The actual post below still reports a network failure
+        # on stderr without failing the already-posted text.
+        prepare_card_publication(env, cfg, card_spec, card_nonce)
     client = ConsoleClient(cfg, env)
     try:
         discord_message_id = client.post_message(channel_id, text)
@@ -5381,30 +5534,44 @@ def card_spec_with_overrides(raw: Dict[str, Any], args: argparse.Namespace) -> D
     return updated
 
 
-def post_card(
-    env: "fwl.Env",
-    cfg: "ConsoleConfig",
-    spec: Dict[str, Any],
-    guild_id: str,
-    channel_id: str,
-    nonce: str,
-) -> Tuple[str, str]:
-    """Post one validated task card through the one guarded card path.
+def card_identity_matches(existing: Dict[str, Any], spec: Dict[str, Any], nonce: str) -> bool:
+    """Whether a stored card is the exact card this identity names.
 
-    Shared by the ``card`` command and by the card a console reply carries, so
-    both use the same hold guard, the same one-open-card guard, the same
-    nonce-keyed dedup identity, and the same store. Returns ``(card_id,
-    message_id)``; an already-delivered card returns an empty ``message_id`` and
-    posts nothing. Raises FMError for every refusal, so a caller that must not
-    fail on a card (the reply path) can keep its reply and report the card
-    failure separately.
+    A card id is a hash of its nonce, so a nonce collision could otherwise let
+    a second call silently reuse an old card. The stored record must carry the
+    same nonce, kind, and task id; anything else is refused rather than reused.
     """
+    return (
+        str(existing.get("nonce") or "") == str(nonce or "")
+        and str(existing.get("kind") or CARD_KIND_TASK) == str(spec.get("kind") or CARD_KIND_TASK)
+        and str(existing.get("task_id") or "") == str(spec.get("task_id") or "")
+    )
+
+
+def prepare_card_publication(
+    env: "fwl.Env", cfg: "ConsoleConfig", spec: Dict[str, Any], nonce: str
+) -> Tuple[str, bool]:
+    """Validate a task card can be posted without any network call.
+
+    Returns ``(card_id, already_delivered)``. Every refusal raises FMError, so
+    a caller that must not post a cardless decision (the reply path) can fail
+    before it posts anything, while a caller that posts anyway shares exactly
+    the same guards. The exact durable identity is checked first, so an
+    existing record is only treated as this card when its nonce, kind, and task
+    match; a collision is refused rather than silently reused.
+    """
+    nonce = str(nonce or "").strip()
+    if not nonce:
+        raise FMError("a card needs its exact durable identity; the nonce must not be empty")
     card_id = card_id_for(nonce)
-    content = render_card_content(spec)
-    components = card_components(spec, card_id)
     existing = load_card(env, card_id)
     if isinstance(existing, dict) and existing.get("message_id"):
-        return card_id, ""
+        if not card_identity_matches(existing, spec, nonce):
+            raise FMError(
+                "card identity %s is already used by another card; every card needs its own exact durable identity"
+                % card_id
+            )
+        return card_id, True
     open_card = open_card_for_task(env, spec["task_id"])
     if isinstance(open_card, dict) and str(open_card.get("card_id") or "") != card_id:
         raise FMError(
@@ -5423,6 +5590,32 @@ def post_card(
     # open captain call, so the recorded hold state - not the card's prose -
     # decides whether a press could ever validate.
     require_captain_held(env, spec["task_id"])
+    return card_id, False
+
+
+def post_card(
+    env: "fwl.Env",
+    cfg: "ConsoleConfig",
+    spec: Dict[str, Any],
+    guild_id: str,
+    channel_id: str,
+    nonce: str,
+) -> Tuple[str, str]:
+    """Post one validated task card through the one guarded card path.
+
+    Shared by the ``card`` command and by the card a console reply carries, so
+    both use the same hold guard, the same one-open-card guard, the same
+    nonce-keyed dedup identity, and the same store. Returns ``(card_id,
+    message_id)``; an already-delivered card returns an empty ``message_id`` and
+    posts nothing. Raises FMError for every refusal, so a caller that must not
+    fail on a card (the reply path) can keep its reply and report the card
+    failure separately.
+    """
+    card_id, already_delivered = prepare_card_publication(env, cfg, spec, nonce)
+    if already_delivered:
+        return card_id, ""
+    content = render_card_content(spec)
+    components = card_components(spec, card_id)
     client = ConsoleClient(cfg, env)
     try:
         message_id = client.post_message(channel_id, content, components)
@@ -5433,7 +5626,7 @@ def post_card(
         "kind": spec["kind"],
         "type": spec.get("type") or DEFAULT_CARD_TYPE,
         "card_id": card_id,
-        "nonce": nonce,
+        "nonce": str(nonce),
         "task_id": spec["task_id"],
         "guild_id": guild_id,
         "channel_id": channel_id,
@@ -5441,7 +5634,7 @@ def post_card(
         "body": spec["body"],
         "fallback_hint": spec["fallback_hint"],
         "options": spec["options"],
-        "status": "open",
+        "status": CARD_STATUS_OPEN,
         "created_at": fwl.utc_now(),
     }
     store_card(env, card)
@@ -5467,21 +5660,16 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
             "the card command posts task cards; an uncertain-transcription confirmation card is "
             "posted by the console itself when the reading arrives"
         )
-    nonce = args.nonce or (
-        "card:%s:%s" % (spec["task_id"], fwl.sha256_text(json.dumps(spec, sort_keys=True))[:CARD_ID_HEX_CHARS])
-    )
+    # The nonce IS the card's exact durable identity, so it is never derived
+    # from the card's content: a reused card file would otherwise mint the same
+    # id and silently reuse an old call's card.
+    nonce = str(args.nonce or "").strip()
+    if not nonce:
+        raise FMError(
+            "--nonce is required: it is the card's exact durable identity and is never derived from its content"
+        )
     card_id = card_id_for(nonce)
     content = render_card_content(spec)
-    existing = load_card(env, card_id)
-    if isinstance(existing, dict) and existing.get("message_id"):
-        print(f"card exists for nonce {nonce}; no second delivery")
-        return 0
-    open_card = open_card_for_task(env, spec["task_id"])
-    if isinstance(open_card, dict) and str(open_card.get("card_id") or "") != card_id:
-        raise FMError(
-            "an open card already exists for task %s (card %s); that card must be answered before a new one"
-            % (spec["task_id"], open_card.get("card_id"))
-        )
     if args.dry_run:
         print("Discord action card plan (no network).")
         print(f"destination conversation: {channel_id}")
@@ -5504,49 +5692,11 @@ def cmd_card(args: argparse.Namespace, env: "fwl.Env") -> int:
     except FMError as exc:
         print(f"fm-discord-conversation-console: {exc}", file=sys.stderr)
         return 1
+    if not message_id:
+        print(f"card exists for nonce {nonce}; no second delivery")
+        return 0
     print(f"card posted in conversation {channel_id}: {card_id}")
     print(f"card url: https://discord.com/channels/{guild_id}/{channel_id}/{message_id}")
-    return 0
-
-
-def cmd_card_escalations(args: argparse.Namespace, env: "fwl.Env") -> int:
-    """Run one bounded escalation pass over open, unanswered held cards.
-
-    Each card past the configured delay whose task is still held is mirrored
-    once into the dedicated #blocages channel with the same card identity;
-    answered, closed, already-escalated, and too-young cards get none, and a
-    failed attempt is recorded as a visible delivery gap.
-    """
-    cfg = ConsoleConfig.load(env, args.config)
-    if args.dry_run:
-        delay = cfg.card_escalation_delay_seconds
-        print("card escalation plan (no network).")
-        for card in load_cards(env):
-            if str(card.get("kind") or CARD_KIND_TASK) != CARD_KIND_TASK:
-                continue
-            if str(card.get("status") or "open") != "open":
-                continue
-            created = parse_discord_epoch(None, card.get("created_at"))
-            eligible = (
-                not isinstance(card.get("escalation"), dict)
-                and created is not None
-                and time.time() - created >= delay
-            )
-            print(
-                "  card %s task %s age%s: %s"
-                % (
-                    card.get("card_id"),
-                    card.get("task_id"),
-                    "" if created is None else " %ds" % int(time.time() - created),
-                    "eligible" if eligible else "not eligible",
-                )
-            )
-        return 0
-    stats = run_card_escalations(env, cfg, ConsoleClient(cfg, env))
-    print(
-        "card escalations: scanned=%(scanned)s escalated=%(escalated)s failed=%(failed)s skipped=%(skipped)s"
-        % stats
-    )
     return 0
 
 
@@ -6001,10 +6151,6 @@ def build_tool_parser() -> argparse.ArgumentParser:
     p.add_argument("--nonce")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_card)
-    p = sub.add_parser("card-escalate")
-    add_config_argument(p)
-    p.add_argument("--dry-run", action="store_true")
-    p.set_defaults(func=cmd_card_escalations)
     p = sub.add_parser("typing")
     add_config_argument(p)
     p.add_argument("--channel", required=True)

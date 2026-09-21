@@ -42,8 +42,15 @@ from typing import Any, Dict, List, Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 _spec = importlib.util.spec_from_file_location("fwl", SCRIPT_DIR / "fm_discord_workspace_lib.py")
-fwl = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(fwl)
+# Reuse an already-loaded workspace module when one is registered, so every
+# module in one process shares a single FMError family; otherwise a
+# DiscordError raised here would not be caught by a caller's ``except FMError``.
+if "fwl" in sys.modules:
+    fwl = sys.modules["fwl"]
+else:
+    fwl = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(fwl)
+    sys.modules["fwl"] = fwl
 
 FMError = fwl.FMError
 API_BASE_DEFAULT = "https://discord.com/api/v10"
