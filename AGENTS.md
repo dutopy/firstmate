@@ -328,6 +328,13 @@ Serialize only for a true semantic dependency, shared mutable external state, in
 Write the task-specific brief under section 11 before spawning.
 Fill the task subsections according to section 11.
 
+### The correction ladder
+
+A repeated correction moves up the correction ladder - the codebase itself, then static analysis or a check, then a rule or skill, then this contract, and only last a human-review note - and never becomes another instruction line in a brief: when the same correction is needed a second time, the second instance must land at a stronger layer than the first, and anything that lands at the weakest layer twice is a defect in the environment rather than in the worker.
+The ladder sets the intake question for any project-facing task: does this add a second way to do something the project already does one way, and does the shortcut stay the right path?
+A yes is an architecture decision, not a task.
+Both rules were distilled from a private fleet study of an external agent-delivery talk; its evidence is kept in this home's private data directory.
+
 ### Dispatch and supervision handoff
 
 Spawn only through `bin/fm-spawn.sh` after the profile and backend checks in section 4.
