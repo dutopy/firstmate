@@ -1,0 +1,36 @@
+Public CLI exercised: bin/fm-fleet-snapshot.sh --contribution-input
+Small-output compatibility: exact byte-for-byte match with base commit
+small_output_sha256=2284111320cecdd547be2932a40592852ece99935a3875466beac287efc9ffab
+small_backlog_records=3
+small_tasks=1
+ARG_MAX=2097152
+large_backlog_bytes=5137010
+large_backlog_exceeds_ARG_MAX=true
+historical_base_exit=0
+historical_base_output_bytes=0
+historical_base_valid_json=false
+historical_base_stderr=bin/.fm-fleet-snapshot-base-live-test.sh: line 1991: /usr/bin/jq: Argument list too long 
+current_exit=0
+current_stderr=
+current_output_bytes=20823315
+current_valid_json=true
+current_record_count=11000
+current_unique_record_ids=11000
+current_first_id=rec-000001
+current_last_id=rec-011000
+current_tasks=1
+
+Large contribution-task transport scenario
+ARG_MAX=2097152
+historical_base_exit=0
+historical_base_valid_json=false
+historical_base_stderr=bin/.fm-fleet-snapshot-base-live-test.sh: line 1991: /usr/bin/jq: Argument list too long 
+current_exit=0
+current_stderr=
+current_output_bytes=2404750
+current_output_exceeds_ARG_MAX=true
+current_task_count=24
+current_unique_task_ids=24
+current_first_task=task-01
+current_last_task=task-24
+current_task_payloads_complete=true
