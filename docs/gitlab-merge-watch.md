@@ -253,7 +253,7 @@ error: refusing to merge https://gitlab.com/KarotKris/gitlab-merge-watch-fixture
   - the head pipeline ran at "none", not at the current head 66b8a6777bea5e291d7fa2fc20c42ad7686f6bc8
 ```
 
-The remaining refusal conditions, and the merge itself, are covered by `tests/fm-pr-merge.test.sh` against fixtures.
+The remaining refusal conditions, the merge itself, and the patch-identity comparison are covered by `tests/fm-pr-merge.test.sh` against fixtures rather than live.
 The conflict, unresolved-discussion, and running-pipeline conditions were additionally exercised against real merge requests on a private instance; those runs cannot be reproduced here, so their identifiers stay out of this record.
 The merge itself is not exercised against any live merge request, in either direction: `glab mr merge` has no dry run, so a live success path would mean merging someone's work to produce evidence.
 
@@ -273,3 +273,8 @@ It is optional by design, and the other consumers already treat it that way: `bi
 The merge path does not record one either, and deliberately does not depend on one.
 A rebase moves the head and leaves any recorded value stale, so a merge decided from metadata can verify a commit that no longer exists.
 Reading the head live at merge time, reporting a recorded value that disagrees, and binding the merge to what was actually verified is what closes that gap.
+
+The recorded patch identity (`pr_patch_id=`) is a different value, and it is the one the merge path does compare.
+`bin/fm-pr-check.sh` records it on the ready report as the stable `git patch-id` of the merge request's base-to-head diff, and `bin/fm-pr-merge.sh` recomputes it live at merge time and refuses when the two differ.
+A rebase that changes no patch content keeps that identity, so an ordinary rebase still merges, while a force-push that changes the patch must be re-validated and recorded again before it can.
+An identity the ready report could not resolve is not recorded at all, and a task with none merges as before.

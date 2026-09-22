@@ -14,6 +14,7 @@ set -u
 fm_git_identity fmtest fmtest@example.invalid
 
 PR_MERGE="$ROOT/bin/fm-pr-merge.sh"
+PR_CHECK="$ROOT/bin/fm-pr-check.sh"
 TMP_ROOT=$(fm_test_tmproot fm-pr-merge-tests)
 BASE_PATH=$PATH
 
@@ -77,6 +78,26 @@ write_github_red_json() {
 JSON
 }
 
+# The forge diff the gh and glab mocks answer `pr diff` and `mr diff` with. A
+# case rewrites it with another marker to change the patch the live identity is
+# computed from, which is what a force-push does. Args: case_dir [marker]
+write_forge_diff() {
+  local case_dir=$1 marker=${2:-base}
+  cat > "$case_dir/forge-diff.patch" <<DIFF
+diff --git a/file.txt b/file.txt
+--- a/file.txt
++++ b/file.txt
+@@ -1 +1 @@
+-before $marker
++after $marker
+DIFF
+}
+
+# The recorded pr_patch_id, or empty when none is recorded.
+recorded_patch_id() {
+  grep '^pr_patch_id=' "$1/state/task-x1.meta" | tail -1 | cut -d= -f2- || true
+}
+
 # One CheckRun rollup entry the way GitHub reports it. A conclusion or timestamp
 # of "-" is emitted as JSON null. Args: name status conclusion [startedAt]
 # [completedAt]
@@ -125,6 +146,7 @@ assert_logged_gh_merge() {
 add_gh_mocks() {
   local case_dir=$1 head=$2
   write_github_live_json "$case_dir" "$head"
+  [ -e "$case_dir/forge-diff.patch" ] || write_forge_diff "$case_dir"
   cat > "$case_dir/fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
@@ -217,6 +239,11 @@ case "${1:-} ${2:-}" in
         exit 0
         ;;
     esac
+    ;;
+  "pr diff")
+    [ ! -e "${FM_TEST_GH_DIFF_FAIL:-}" ] || { echo 'error: could not read the pull request diff' >&2; exit 1; }
+    cat "$FM_TEST_GH_DIFF"
+    exit 0
     ;;
   "pr merge")
     if [ -n "${FM_TEST_META_AT_MERGE:-}" ] && [ -f "${FM_STATE_OVERRIDE:-}/task-x1.meta" ]; then
@@ -328,6 +355,11 @@ case "${1:-} ${2:-}" in
     fi
     exit 0
     ;;
+  "mr diff")
+    [ ! -e "$case_dir/glab-diff-fails" ] || { echo "error: could not read the merge request diff" >&2 ; exit 1 ; }
+    cat "$case_dir/forge-diff.patch"
+    exit 0
+    ;;
   "mr merge")
     [ ! -e "$case_dir/glab-merge-fails" ] || { echo "error: mr merge failed" >&2 ; exit 1 ; }
     : > "$case_dir/glab-merge-called"
@@ -386,6 +418,7 @@ make_gitlab_case() {
   case_dir=$(make_case "$name")
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" cccccccccccccccccccccccccccccccccccccccc
+  write_forge_diff "$case_dir"
   add_glab_mock "$case_dir"
   : > "$case_dir/gh-axi.log"
   : > "$case_dir/glab.log"
@@ -425,8 +458,11 @@ glab_merge_line() {
   grep -F ' mr merge ' "$1" || true
 }
 
-run_pr_merge() {
-  local case_dir=$1 rc; shift
+# Run one firstmate entrypoint inside a case's sandbox: the same state, home,
+# fakebin, and mock inputs for both the ready-report recorder and the merge
+# entrypoint, so a case can record a verdict and then merge it for real.
+run_case_script() {
+  local case_dir=$1; shift
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_HOME="${FM_TEST_HOME:-$case_dir/home}" \
   FM_STATE_OVERRIDE="$case_dir/state" \
@@ -436,6 +472,8 @@ run_pr_merge() {
   FM_TEST_GH_RULES="$case_dir/github-rules" \
   FM_TEST_GH_VIEW_JSON="$case_dir/github-view.json" \
   FM_TEST_GH_HEAD="$case_dir/github-head" \
+  FM_TEST_GH_DIFF="$case_dir/forge-diff.patch" \
+  FM_TEST_GH_DIFF_FAIL="$case_dir/github-diff-fails" \
   FM_TEST_GH_MERGE_RC_FILE="$case_dir/github-merge-rc" \
   FM_TEST_GH_MERGE_OUTPUT="$(cat "$case_dir/github-merge-output" 2>/dev/null || true)" \
   FM_TEST_GH_GRAPHQL_FAIL="$case_dir/github-graphql-fail" \
@@ -454,13 +492,25 @@ run_pr_merge() {
   FM_TEST_GLAB_JSON="$case_dir/mr.json" \
   HOME="${FM_TEST_USER_HOME:-$case_dir/user-home}" \
   PATH="$case_dir/fakebin:$PATH" \
-    "$PR_MERGE" "$@"
+    "$@"
+}
+
+run_pr_merge() {
+  local case_dir=$1 rc; shift
+  run_case_script "$case_dir" "$PR_MERGE" "$@"
   rc=$?
   if [ "${case_dir##*/}" = unsafe-url-segment ] && [ "$rc" -eq 2 ]; then
     echo 'error: PR URL must match https://github.com/<owner>/<repo>/pull/<number>' >&2
     return 1
   fi
   return "$rc"
+}
+
+# The ready-report recorder, run exactly as firstmate runs it on a worker's PR
+# ready line, so a case's recorded patch identity comes from the real path.
+run_pr_check() {
+  local case_dir=$1; shift
+  run_case_script "$case_dir" "$PR_CHECK" "$@"
 }
 
 write_github_outcome() {
@@ -501,6 +551,191 @@ test_verified_merge_records_pr_and_head() {
     "records-before-merge: pr_head= was not recorded"
   assert_logged_gh_merge "$case_dir" 9 example/repo --squash
   pass "fm-pr-merge records pr= and pr_head= for a verified GitHub merge"
+}
+
+# --- the recorded verdict's patch identity ----------------------------------
+# A validation verdict is invalidated when the patch itself changes, even
+# though every check stayed green. The ready report records the patch it stood
+# for, and the merge refuses a patch that is no longer that one. Each case
+# records through the real ready-report path (bin/fm-pr-check.sh, run exactly
+# as firstmate runs it) and then changes only the forge's diff, so the head,
+# the checks, and the mergeability all stay exactly what they were.
+
+# The recorded identity follows the patch: recording again after the patch
+# changed produces a different one, which is what makes the merge-time
+# comparison able to see a force-push at all.
+test_ready_report_records_the_verdict_patch_identity() {
+  local case_dir rc first second url
+  case_dir=$(make_case verdict-patch-identity)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6161616161616161616161616161616161616161
+  : > "$case_dir/gh-axi.log"
+  url=https://github.com/example/repo/pull/71
+
+  set +e
+  run_pr_check "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "verdict-patch-identity: the ready report should record"
+  first=$(recorded_patch_id "$case_dir")
+  case "$first" in
+    ''|*[!0-9a-f]*) fail "verdict-patch-identity: recorded patch identity '$first' is not hexadecimal" ;;
+  esac
+  [ "${#first}" -eq 40 ] \
+    || fail "verdict-patch-identity: recorded patch identity '$first' is not a patch id"
+
+  write_forge_diff "$case_dir" a-later-force-push
+  set +e
+  run_pr_check "$case_dir" task-x1 "$url" > "$case_dir/stdout-2" 2> "$case_dir/stderr-2"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "verdict-patch-identity: the second ready report should record"
+  second=$(recorded_patch_id "$case_dir")
+  assert_not_equals "$first" "$second" \
+    "verdict-patch-identity: a changed patch recorded the same identity"
+
+  # An identity the ready report cannot read is dropped rather than kept: a
+  # stale value would refuse the merge the later report was standing for. That
+  # leaves the next merge with no verdict to invalidate, not a wrong one.
+  : > "$case_dir/github-diff-fails"
+  set +e
+  run_pr_check "$case_dir" task-x1 "$url" > "$case_dir/stdout-3" 2> "$case_dir/stderr-3"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "verdict-patch-identity: a third ready report should still record"
+  assert_equals '' "$(recorded_patch_id "$case_dir")" \
+    "verdict-patch-identity: an unresolvable identity was kept stale"
+  pass "the ready report records a patch identity that follows the patch"
+}
+
+# The refusal itself, and the fact that it survives the merge run's own
+# bookkeeping: the refusal must not replace the recorded verdict, or a retry
+# would merge the changed patch with no re-validation behind it.
+test_github_changed_patch_refuses_the_merge() {
+  local case_dir rc recorded url
+  case_dir=$(make_case github-patch-changed)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a
+  : > "$case_dir/gh-axi.log"
+  url=https://github.com/example/repo/pull/72
+
+  set +e
+  run_pr_check "$case_dir" task-x1 "$url" > "$case_dir/check-stdout" 2> "$case_dir/check-stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-patch-changed: the ready report should record"
+  recorded=$(recorded_patch_id "$case_dir")
+  [ -n "$recorded" ] || fail "github-patch-changed: no patch identity was recorded"
+  write_forge_diff "$case_dir" a-later-force-push
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-patch-changed: a changed patch must refuse the merge"
+  assert_grep 'the patch changed after this task recorded its verdict' "$case_dir/stderr" \
+    "github-patch-changed: the refusal did not name the changed patch"
+  assert_grep "recorded $recorded" "$case_dir/stderr" \
+    "github-patch-changed: the refusal did not name the recorded identity"
+  assert_grep 're-validate the current patch and record it again before merging' "$case_dir/stderr" \
+    "github-patch-changed: the refusal named no way forward"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-patch-changed: the forge was asked to merge the changed patch"
+  assert_equals "$recorded" "$(recorded_patch_id "$case_dir")" \
+    "github-patch-changed: the merge run replaced the recorded verdict identity"
+  pass "a patch that changed after its verdict was recorded refuses to merge"
+}
+
+# An identity that cannot be recomputed is a refusal, not a pass, because the
+# recorded verdict cannot be shown to still hold.
+test_github_unreadable_live_patch_refuses_a_recorded_verdict() {
+  local case_dir rc url
+  case_dir=$(make_case github-patch-unreadable)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b
+  : > "$case_dir/gh-axi.log"
+  url=https://github.com/example/repo/pull/73
+
+  set +e
+  run_pr_check "$case_dir" task-x1 "$url" > "$case_dir/check-stdout" 2> "$case_dir/check-stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-patch-unreadable: the ready report should record"
+  [ -n "$(recorded_patch_id "$case_dir")" ] \
+    || fail "github-patch-unreadable: no patch identity was recorded"
+  : > "$case_dir/github-diff-fails"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "github-patch-unreadable: an unreadable live identity must refuse"
+  assert_grep 'could not be recomputed at the current head' "$case_dir/stderr" \
+    "github-patch-unreadable: the refusal did not name the unreadable identity"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-patch-unreadable: the merge ran with the verdict unchecked"
+  pass "an unrecomputable patch identity refuses a recorded verdict"
+}
+
+# A task that never recorded a verdict has nothing to invalidate, so the guard
+# stays dormant rather than inventing a baseline or blocking the merge.
+test_github_patch_guard_is_dormant_without_a_recorded_verdict() {
+  local case_dir rc url
+  case_dir=$(make_case github-no-recorded-verdict)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/github-diff-fails"
+  url=https://github.com/example/repo/pull/74
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "github-no-recorded-verdict: an unrecorded task should merge"
+  assert_logged_gh_merge "$case_dir" 74 example/repo --squash
+  assert_no_grep 'pr_patch_id=' "$case_dir/state/task-x1.meta" \
+    "github-no-recorded-verdict: the merge run invented a verdict identity"
+  pass "the patch guard stays dormant without a recorded verdict"
+}
+
+# The same rule on the other supported forge: the recorded identity is compared
+# against the merge request's live patch, not against its head.
+test_gitlab_changed_patch_refuses_the_merge() {
+  local case_dir rc recorded
+  case_dir=$(make_gitlab_case gitlab-patch-changed)
+
+  set +e
+  run_pr_check "$case_dir" task-x1 "$MR_URL" > "$case_dir/check-stdout" 2> "$case_dir/check-stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "gitlab-patch-changed: the ready report should record"
+  recorded=$(recorded_patch_id "$case_dir")
+  [ -n "$recorded" ] || fail "gitlab-patch-changed: no patch identity was recorded"
+  write_forge_diff "$case_dir" a-later-force-push
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "gitlab-patch-changed: a changed patch must refuse the merge"
+  assert_grep 'the patch changed after this task recorded its verdict' "$case_dir/stderr" \
+    "gitlab-patch-changed: the refusal did not name the changed patch"
+  [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+    || fail "gitlab-patch-changed: the forge was asked to merge the changed patch"
+  assert_equals "$recorded" "$(recorded_patch_id "$case_dir")" \
+    "gitlab-patch-changed: the merge run replaced the recorded verdict identity"
+  pass "a changed GitLab patch refuses to merge on the recorded identity"
 }
 
 # The forge call is the point of no return: once gh-axi has merged, nothing this
@@ -3218,3 +3453,8 @@ test_away_record_cannot_change_between_the_authority_read_and_the_merge
 test_a_grant_revoked_before_the_merge_refuses_it
 test_merge_refuses_when_the_away_record_cannot_be_locked
 test_allow_red_refused_on_gitlab
+test_ready_report_records_the_verdict_patch_identity
+test_github_changed_patch_refuses_the_merge
+test_github_unreadable_live_patch_refuses_a_recorded_verdict
+test_github_patch_guard_is_dormant_without_a_recorded_verdict
+test_gitlab_changed_patch_refuses_the_merge

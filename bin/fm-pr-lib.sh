@@ -217,6 +217,49 @@ fm_pr_head_valid() {
   [[ "$head" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]]
 }
 
+fm_pr_patch_id_valid() {
+  local id=${1-}
+  local LC_ALL=C
+  [[ "$id" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]]
+}
+
+# The base...head patch identity of one pull or merge request: the stable
+# `git patch-id` value of the forge's own diff, which is the base...head diff
+# restricted to the merge base. `--stable` keeps the identity independent of
+# line numbers, hunk order, and commit SHAs, so a rebase, or a base advance that
+# changes no patch content, keeps the same identity while any content change
+# produces a different one.
+#
+# Prints nothing and returns nonzero when the diff or the identity cannot be
+# read, so a caller records no identity rather than a wrong one; a caller that
+# must have the live identity treats that as the refusal it is.
+#
+# A forge diff carries no commit headers, so its identity is one line; only the
+# first is read, and the same command answers identically at record and merge
+# time whatever the forge emits.
+#
+fm_pr_live_patch_id() {  # <provider> <host> <path> <number>
+  local provider=$1 host=$2 path=$3 number=$4 diff='' id=''
+  case "$provider" in
+    github)
+      # A raw gh remainder, like the branch-rules read in bin/fm-pr-merge.sh:
+      # gh-axi renders this patch inside its own output structure as one escaped
+      # scalar, which cannot be piped into `git patch-id`.
+      command -v gh >/dev/null 2>&1 || return 1
+      diff=$(gh pr diff "$number" --repo "$path" 2>/dev/null) || return 1
+      ;;
+    gitlab)
+      command -v glab >/dev/null 2>&1 || return 1
+      diff=$(GITLAB_HOST="$host" glab mr diff "$number" -R "https://$host/$path" --raw 2>/dev/null) || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  [ -n "$diff" ] || return 1
+  id=$(printf '%s\n' "$diff" | git patch-id --stable 2>/dev/null | awk 'NR == 1 { print $1 }') || return 1
+  fm_pr_patch_id_valid "$id" || return 1
+  printf '%s\n' "$id"
+}
+
 fm_pr_file_mode() {
   if [ "$(uname)" = Darwin ]; then
     /usr/bin/stat -f %Lp "$1" 2>/dev/null
@@ -327,6 +370,12 @@ fm_pr_metadata_identity_parse() {
         if [ "$seen_pr" -eq 1 ]; then
           value=${line#pr_head=}
           fm_pr_head_valid "$value" || post_pr_invalid=1
+        fi
+        ;;
+      pr_patch_id=*)
+        if [ "$seen_pr" -eq 1 ]; then
+          value=${line#pr_patch_id=}
+          fm_pr_patch_id_valid "$value" || post_pr_invalid=1
         fi
         ;;
       x_request=*|x_request_ts=*|x_followups=*|x_platform=*|x_reply_max_chars=*)

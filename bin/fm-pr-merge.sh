@@ -65,6 +65,31 @@
 # recorded value stale. Reading that state needs glab and jq, and either one
 # absent stops the merge before any state is recorded.
 #
+# Neither forge path can land a patch on evidence recorded for another head.
+# The GitHub read takes the pull request's headRefOid and its check rollup from
+# one GraphQL response, and that rollup is the head ref's own: GitHub documents
+# it as check and status rollup information for the PR's head ref, and it
+# matches the last commit's rollup exactly on multi-commit pull requests, so an
+# earlier head's green runs cannot appear as the current head's evidence.
+# GitLab requires the head pipeline's sha to equal the live head, and a push
+# that lands between the live read and either forge command fails the merge
+# because the verified head is bound into that command.
+#
+# What a live head read cannot see is a patch that changed before the merge and
+# is green on its own merits: checks at the new head are re-established live, so
+# a force-push that rewrites the head and leaves the checks green would
+# otherwise land a patch that no validation covered. A recorded patch identity
+# closes that: bin/fm-pr-check.sh records the ready report's patch as
+# pr_patch_id=, and this script recomputes the live identity at merge time -
+# never trusting the recorded value - and refuses when the two differ, so a
+# changed patch is re-validated and recorded again before it can merge. No
+# recorded value is ever authority here; a task that recorded no identity has no
+# verdict to invalidate and merges as before. The identity is read before this
+# script's own recording step, which carries it forward rather than replacing
+# it, so re-running this merge cannot clear its own refusal, and neither
+# --attended-override nor --allow-red skips the comparison. A live identity that
+# cannot be recomputed refuses rather than being skipped.
+#
 # Before either forge merge, the task's existing per-task control lock
 # serializes the captain-hold check through the forge command. A still-held or
 # unreadable row refuses before that command, so a captain approval must be
@@ -390,6 +415,12 @@ RECORDED_HEAD=
 if [ "$PROVIDER" = gitlab ]; then
   RECORDED_HEAD=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
 fi
+
+# The patch identity the ready report recorded for this task, read before that
+# same rewrite for the same reason: the merge path's recording call carries it
+# forward, and require_unchanged_recorded_patch recomputes the live identity
+# after the forge state has been verified.
+RECORDED_PATCH_ID=$(grep '^pr_patch_id=' "$META" | tail -1 | cut -d= -f2- || true)
 
 # Pre-merge conditions for a GitLab merge request, read from one live view of
 # the merge request. Sets FM_PR_MERGE_HEAD to the verified head on success and
@@ -876,7 +907,12 @@ METHODS
 }
 
 record_pr_metadata() {
-  if ! "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"; then
+  # FM_PR_CHECK_MERGE marks this invocation as bookkeeping rather than a ready
+  # report, so the recording step re-records pr= and arms the poll without
+  # claiming a verdict: the patch identity the task recorded is carried forward
+  # rather than replaced, which is what keeps a patch-change refusal from being
+  # cleared by re-running the merge that hit it.
+  if ! FM_PR_CHECK_MERGE=1 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"; then
     return 1
   fi
   grep -qxF "pr=$URL" "$META" || {
@@ -999,6 +1035,34 @@ refuse_github_queue_while_away() {
   [ "$FM_PR_GITHUB_QUEUE_STATUS" = none ] && return 0
   echo "error: GitHub merge refused while away because the base branch's merge-queue state does not prove an immediate merge; nothing was handed to the forge" >&2
   return 2
+}
+
+# Refuse when the patch this task was reported ready with is no longer the
+# patch the forge would merge. The recorded value is only the baseline; the
+# identity compared against it is recomputed live here. A task with no recorded
+# identity has no verdict to invalidate and merges as before, while an
+# unreadable baseline and a live identity that cannot be read are both refusals
+# rather than passes.
+require_unchanged_recorded_patch() {
+  local live
+  [ -n "$RECORDED_PATCH_ID" ] || return 0
+  if ! fm_pr_patch_id_valid "$RECORDED_PATCH_ID"; then
+    printf 'error: refusing to merge %s: the recorded patch identity "%s" is not a patch id\n' \
+      "$URL" "$RECORDED_PATCH_ID" >&2
+    return 1
+  fi
+  if ! live=$(fm_pr_live_patch_id "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER"); then
+    printf 'error: refusing to merge %s: the patch identity recorded for this task could not be recomputed at the current head\n' \
+      "$URL" >&2
+    return 1
+  fi
+  [ "$live" = "$RECORDED_PATCH_ID" ] && return 0
+  printf 'error: refusing to merge %s: the patch changed after this task recorded its verdict\n' \
+    "$URL" >&2
+  printf 'error:   recorded %s\n' "$RECORDED_PATCH_ID" >&2
+  printf 'error:   current  %s\n' "$live" >&2
+  printf 'error: re-validate the current patch and record it again before merging\n' >&2
+  return 1
 }
 
 require_recorded_pr_identity() {
@@ -1161,6 +1225,7 @@ case "$PROVIDER" in
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable || exit 1
+    require_unchanged_recorded_patch || exit 1
     # The away record is locked first, so this last presence and authority read
     # and the forge command below share one live-owner critical section.
     hold_away_record_for_merge || exit 1
@@ -1218,6 +1283,7 @@ case "$PROVIDER" in
     ;;
   gitlab)
     gitlab_verify_mergeable || exit 1
+    require_unchanged_recorded_patch || exit 1
     # --sha binds the merge to the head this run verified, so a push that lands
     # in between is refused by GitLab instead of merged unverified. --yes only
     # skips the interactive confirmation, which no supervised run can answer;

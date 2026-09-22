@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
-# Record a PR-ready task: store one validated canonical pr=<url> and the forge's
-# exact pr_head=<sha> when available, then atomically arm a static merge poll.
+# Record a PR-ready task: store one validated canonical pr=<url>, the forge's
+# exact pr_head=<sha> when available, and the patch identity of the diff that
+# verdict stands for, then atomically arm a static merge poll.
+#
+# pr_patch_id= is the stable `git patch-id` of the pull or merge request's
+# base...head diff; bin/fm-pr-lib.sh's fm_pr_live_patch_id owns how it is read.
+# Only this ready-report path records it. bin/fm-pr-merge.sh recomputes it live
+# and refuses to merge when it no longer matches, so a force-push that changes
+# the patch while the checks stay green cannot land a patch nobody validated.
+# When the merge path invokes this script itself (FM_PR_CHECK_MERGE=1, which is
+# bookkeeping rather than a verdict) it carries any recorded identity forward
+# unchanged, so that recording step cannot clear a patch-change refusal. An
+# identity this path cannot resolve is dropped rather than kept stale: the next
+# merge then has no verdict to invalidate instead of a wrong one to enforce.
 # The watcher check source is byte-for-byte bin/fm-pr-poll.sh; task and PR data
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
@@ -91,6 +103,16 @@ if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh-axi
   fi
 fi
 
+# The patch identity this recording will carry. Unlike pr_head it needs only
+# the forge CLI, not the task worktree. A ready report reads it live here,
+# before the metadata lock, because no lock is ever held over a forge call; the
+# merge path instead carries the recorded value forward, and reads it under the
+# lock below so a concurrent ready report's re-record cannot be undone.
+PR_PATCH_ID=
+if [ "${FM_PR_CHECK_MERGE:-}" != 1 ]; then
+  PR_PATCH_ID=$(fm_pr_live_patch_id "$PROVIDER" "$HOST" "$PROJECT_PATH" "$NUMBER" || true)
+fi
+
 META_TMP=
 META_LOCK=
 META_LOCK_HELD=0
@@ -121,15 +143,20 @@ META_LOCK_HELD=1
 META_DEVICE=$(fm_pr_file_device "$META") || exit 1
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ "$META_DEVICE" = "$STATE_DEVICE" ] || { echo "error: task metadata is unavailable" >&2; exit 1; }
+if [ "${FM_PR_CHECK_MERGE:-}" = 1 ]; then
+  PR_PATCH_ID=$(grep '^pr_patch_id=' "$META" | tail -1 | cut -d= -f2- || true)
+  fm_pr_patch_id_valid "$PR_PATCH_ID" || PR_PATCH_ID=
+fi
 META_TMP=$(mktemp "$STATE/.fm-pr-meta.XXXXXX") || exit 1
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
-    pr=*|pr_head=*) ;;
+    pr=*|pr_head=*|pr_patch_id=*) ;;
     *) printf '%s\n' "$line" >> "$META_TMP" || exit 1 ;;
   esac
 done < "$META"
 printf 'pr=%s\n' "$URL" >> "$META_TMP" || exit 1
 [ -z "$PR_HEAD" ] || printf 'pr_head=%s\n' "$PR_HEAD" >> "$META_TMP" || exit 1
+[ -z "$PR_PATCH_ID" ] || printf 'pr_patch_id=%s\n' "$PR_PATCH_ID" >> "$META_TMP" || exit 1
 chmod 0600 "$META_TMP" || exit 1
 fm_pr_private_file_valid "$META_TMP" 600 "$STATE_DEVICE" || exit 1
 fm_pr_metadata_identity_parse "$META_TMP" || exit 1
