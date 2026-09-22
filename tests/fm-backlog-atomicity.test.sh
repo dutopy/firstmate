@@ -2549,6 +2549,37 @@ test_same_home_state_override_remains_supported() {
   pass "same-home state overrides remain supported"
 }
 
+test_publication_resolves_a_present_state_root_without_perl() (
+  # The remote secondmate launch resolves the secondmate home's state directory
+  # from a minimal worker environment while the code root supplies FM_HOME, so
+  # the authorized root and FM_HOME are two different roots. The resolver shells
+  # out to perl; when that interpreter is unavailable or dies, publication must
+  # still canonicalize a directory that plainly exists instead of reporting it
+  # unresolvable. A failing perl reproduces the observed remote refusal
+  # hermetically, with no lane and no host involved.
+  local case_dir home_root state_root fakebin src out
+  case_dir="$TMP_ROOT/publication-path-resolver"
+  home_root="$case_dir/firstmate"
+  state_root="$case_dir/firstmate-homes/folium-imac-firstmate/state/parent-route"
+  mkdir -p "$home_root" "$state_root"
+  fakebin=$(fm_fakebin "$case_dir")
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$fakebin/perl"
+  chmod +x "$fakebin/perl"
+  src="$state_root/.probe.meta.spawn.1"
+  : > "$src"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home_root" bash -c '
+    # shellcheck source=/dev/null
+    . "$1"
+    [ "$(fm_backlog_canonical_existing "$2")" = "$2" ] \
+      || { echo "canonical mismatch for $2"; exit 1; }
+    fm_backlog_record_publish "$3" "$2/probe.meta" "task record" "$2" \
+      || { echo "$FM_BACKLOG_TRANSITION_ERROR"; exit 1; }
+  ' _ "$ROOT/bin/fm-backlog-transition-lib.sh" "$state_root" "$src" 2>&1) \
+    || fail "publication refused a present state root when perl failed: $out"
+  assert_present "$state_root/probe.meta" "publication did not write the task record"
+  pass "record publication resolves a present state root when the perl path resolver fails"
+)
+
 test_bootstrap_refuses_a_symlinked_state_directory_before_reconciliation() {
   local case_dir foreign_case home foreign_state id out rc=0
   id=atomic-bootstrap-symlink-state-b11
@@ -3074,6 +3105,7 @@ test_recovery_rejects_a_legacy_close_without_an_incarnation
 test_bootstrap_rechecks_worker_record_boundary_after_locking
 test_lifecycle_refuses_ancestor_symlinks_outside_home_roots
 test_same_home_state_override_remains_supported
+test_publication_resolves_a_present_state_root_without_perl
 test_bootstrap_refuses_a_symlinked_state_directory_before_reconciliation
 test_bootstrap_stops_when_data_disappears_before_reconciliation
 test_bootstrap_addressing_exemptions_remain_nonfatal

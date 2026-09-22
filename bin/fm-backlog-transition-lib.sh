@@ -670,12 +670,68 @@ fm_backlog_retain() {  # <data-dir> <id> [flag...]
   fm_backlog_mutate "$authorized_data" reopen "$id"
 }
 
+# Canonicalize <path> to the form realpath(3) returns: symlinks resolved, the
+# path absolute, and every component but the final one required to exist. The
+# perl helper is the exact realpath implementation; when it is unavailable or
+# fails - a missing interpreter, a transient fork/exec failure, or a
+# resource-starved dlopen on a host whose launch environment is minimal - the
+# interpreter-free fallback below keeps a directory that plainly exists from
+# being reported as unresolvable. fm_backlog_record_parent_authorized treats a
+# failure here as "the path does not exist", so an interpreter hiccup must never
+# refuse the publication of a present home or state directory.
+#
+# The fallback only runs when perl produced no usable answer, so a working perl
+# host keeps byte-identical behavior; the two agree for every existing directory
+# and file, including a broken final symlink whose target's parent exists.
 fm_backlog_canonical_existing() {
-  LC_ALL=C perl -MCwd=realpath -e '
+  local path=$1 resolved
+  [ -n "$path" ] || return 1
+  if resolved=$(LC_ALL=C perl -MCwd=realpath -e '
     my $resolved = realpath($ARGV[0]);
     exit 1 unless defined $resolved;
     print $resolved;
-  ' "$1" 2>/dev/null
+  ' "$path" 2>/dev/null) && [ -n "$resolved" ]; then
+    printf '%s\n' "$resolved"
+    return 0
+  fi
+  fm_backlog_canonical_existing_native "$path"
+}
+
+# Interpreter-free realpath. It follows a final symlink chain with a bounded
+# depth and resolves the parent physically, so it matches realpath(3) for every
+# existing directory and file. A symlink loop or a missing intermediate
+# component is refused exactly as realpath refuses it.
+fm_backlog_canonical_existing_native() {
+  local path=$1 parent base resolved target depth=0
+  case "$path" in
+    /*) ;;
+    *) path=$PWD/$path ;;
+  esac
+  while :; do
+    while [ "${path%/}" != "$path" ] && [ "$path" != / ]; do path=${path%/}; done
+    [ "$path" != / ] || { printf '/\n'; return 0; }
+    parent=${path%/*}
+    [ -n "$parent" ] || parent=/
+    base=${path##*/}
+    case "$base" in
+      . | ..)
+        resolved=$(CDPATH='' cd -- "$path" 2>/dev/null && pwd -P) || return 1
+        printf '%s\n' "$resolved"
+        return 0
+        ;;
+    esac
+    resolved=$(CDPATH='' cd -- "$parent" 2>/dev/null && pwd -P) || return 1
+    path=${resolved%/}/$base
+    [ -L "$path" ] || break
+    depth=$((depth + 1))
+    [ "$depth" -le 40 ] || return 1
+    target=$(readlink "$path") || return 1
+    case "$target" in
+      /*) path=$target ;;
+      *) path=${resolved%/}/$target ;;
+    esac
+  done
+  printf '%s\n' "$path"
 }
 
 fm_backlog_record_parent_authorized() {  # <path> <label> <root> [parent-only]
