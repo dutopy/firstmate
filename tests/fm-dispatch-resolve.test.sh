@@ -678,6 +678,24 @@ assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-h
 assert_absent "$LOG/argv" "the class array needs no model request"
 pass "a class profile array resolves through the same gates and argmax"
 
+# The selected model follows the current quota snapshot, but only within the class set.
+CLASS_ALTERNATE_QUOTA="$TMP_ROOT/class-alternate-quota.json"
+write_quota "$CLASS_ALTERNATE_QUOTA" -0.9
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$CLASS_ALTERNATE_QUOTA" run code out err "$BRIEF" --class standard_impl
+assert_contains "$out" "  profile: --harness 'codex' --model 'gpt-5.6-sol'" "a fresh quota snapshot changes the selected model within the declared reasoning class"
+assert_contains "$out" 'candidate: codex:gpt-5.6-sol' "the class's codex candidate remains in the candidate set"
+assert_contains "$out" 'candidate: cursor:cursor-grok-4.6-high' "the class's cursor candidate remains in the candidate set"
+assert_not_contains "$out" 'candidate: claude:fable' "quota selection cannot escape the declared class profile set"
+assert_absent "$LOG/argv" "a changed quota snapshot does not add a Jev model-selection request"
+pass "class model selection stays within class profiles and follows the current quota snapshot"
+
+# The middle effort is operative too, not just the low/high endpoints.
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class standard_impl --effort medium
+assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-high' --effort 'medium'" "the ordinary-task effort reaches the class-selected model"
+pass "medium class effort reaches the quota-selected class profile"
+
 # --effort fills a chosen profile with no effort and replaces a class profile pin.
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class standard_impl --effort high
