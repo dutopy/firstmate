@@ -466,6 +466,8 @@ This section is the single owner of the canonical schema and its per-field seman
 Per rule, `when` and `use` are required; the top-level `rules` array itself may be absent or empty for a default-only configuration.
 Both `use` and the optional top-level `default` accept either one profile object or a non-empty array of profile objects.
 The optional top-level `classes` object maps each intelligence class named by [the class router](jev-class-router.md) - `volume_cheap`, `standard_impl`, and `hard_reasoning` - to the profile set that class dispatches through, and its values accept the same object-or-array profile forms as `default`.
+For automatic class dispatch, Jev's `low`, `medium`, or `high` effort is applied after quota selects a class profile, so a legacy `effort` field in a class profile is ignored; remove those pins to keep the configuration unambiguous.
+An explicit per-task `fm-spawn.sh --effort` overrides the classifier, while efforts on rule and default profiles remain unchanged on fallback routes.
 The class vocabulary is closed and owned by `bin/fm-jev-class.sh`; any other key is reported as an unknown class, and `bin/fm-jev-class.sh --profiles` performs that lookup in code so no script matches natural-language rules to reach a class profile set.
 `quota-array-dispatch` remains the sole availability and economics gate for whichever profile set is selected, and the class router's precedence above `rules` and `default` is owned by [the class-router contract](jev-class-router.md).
 The single-object form stays fully backward-compatible, and every profile needs `harness`.

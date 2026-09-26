@@ -15,9 +15,10 @@
 #   undeclared class (or a config without the key) falls through to the rule
 #   match, which is the documented precedence: an explicit captain instruction,
 #   then a confident Jev class, then the best-fit rule, then default, then the
-#   static harness. --effort carries the class stage's second answer and is
-#   emitted only for a chosen profile that declares no effort of its own, which
-#   is the same precedence at profile level.
+#   static harness. --effort carries the class stage's second answer and
+#   overrides an effort pinned on a class profile; a direct fm-spawn.sh
+#   --effort remains the per-task override. Without --effort, the profile's own
+#   value is retained.
 #
 # Opt-in gate: TYPESAFE_API_KEY non-empty in this process environment, else a
 #   TYPESAFE_API_KEY= line in $FM_HOME/.env read with fmx_env_get, the same
@@ -448,13 +449,13 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg cla
     else
       ($elig | max_by(.spendPriority)) as $best |
       ([$elig[] | select(.spendPriority == $best.spendPriority)] | length) as $ties |
-      (if $forced_effort != "" and $best.profile.effort == null
+      (if $forced_effort != "" and $class_value != null
        then {effort_applied: $forced_effort}
        else {} end) as $effort_fill |
       if $ties > 1 then $ev + {status: "escalate", reason: "genuine spendPriority tie", note: $sel.note, candidates: $cands}
       else $ev + {status: "clear", note: $sel.note, candidates: $cands, chosen: ($best + $effort_fill)}
         + (if ($effort_fill | length) > 0 then
-             {effort_note: "effort \($forced_effort) applied because the chosen profile declares none"}
+             {effort_note: "class effort \($forced_effort) overrides any effort declared on the chosen class profile"}
            else {} end)
         + (if ($unranked | length) > 0 then
              {unranked_note: "\($unranked | length) eligible candidate(s) unranked (\([$unranked[].provider] | unique | join(", ")))"}
@@ -484,8 +485,8 @@ TEXT=$(jq -r '
       + "  -> " + (if .unranked then "eligible, unranked: \(.reason | flat): disclosed uncertainty" elif .eligible then "eligible" else "not eligible: \(.reason | flat)" end)),
   (if .chosen then "  profile: --harness \(.chosen.profile.harness | shell_arg)"
       + (if .chosen.profile.model then " --model \(.chosen.profile.model | shell_arg)" else "" end)
-      + (if .chosen.profile.effort then " --effort \(.chosen.profile.effort | shell_arg)"
-         elif .chosen.effort_applied then " --effort \(.chosen.effort_applied | shell_arg)"
+      + (if .chosen.effort_applied then " --effort \(.chosen.effort_applied | shell_arg)"
+         elif .chosen.profile.effort then " --effort \(.chosen.profile.effort | shell_arg)"
          else "" end) else empty end)' <<<"$RESULT") || emit_error "output rendering failed"
 printf '%s\n' "$TEXT"
 exit 0

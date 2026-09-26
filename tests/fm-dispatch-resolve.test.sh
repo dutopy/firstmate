@@ -678,16 +678,16 @@ assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-h
 assert_absent "$LOG/argv" "the class array needs no model request"
 pass "a class profile array resolves through the same gates and argmax"
 
-# --effort fills a chosen profile that declares none, and loses to a declared one.
+# --effort fills a chosen profile with no effort and replaces a class profile pin.
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class standard_impl --effort high
 assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-high' --effort 'high'" "--effort fills a profile that declares none"
-assert_contains "$out" 'note: effort high applied because the chosen profile declares none' "the applied effort is disclosed"
+assert_contains "$out" 'note: class effort high overrides any effort declared on the chosen class profile' "the applied effort is disclosed"
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class hard_reasoning --effort low
-assert_contains "$out" "  profile: --harness 'claude' --model 'fable' --effort 'xhigh'" "a declared profile effort wins over --effort"
-assert_not_contains "$out" "--effort 'low'" "the supplied effort never replaces a declared one"
-pass "--effort is the class default and a declared profile effort wins"
+assert_contains "$out" "  profile: --harness 'claude' --model 'fable' --effort 'low'" "the classifier effort overrides a pinned class-profile effort"
+assert_contains "$out" "--effort 'low'" "the supplied class effort reaches the selected profile"
+pass "class-stage effort overrides a profile pin while preserving the profile when no effort is supplied"
 
 # A class whose only candidate fails a declared floor escalates without a profile.
 printf '%s\n' '{"classes":{"volume_cheap":{"harness":"claude","model":"fable","floor":{"scope":"model:fable","min_percent":50}}},"rules":[],"default":{"harness":"codex","model":"gpt-5.6-sol"}}' > "$RULES"

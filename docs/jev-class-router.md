@@ -49,8 +49,8 @@ From strongest to weakest, the intake resolves a dispatch route in this order:
 4. The configured `default`.
 5. The static `config/crew-harness` fallback.
 
-A declared `effort` on a chosen profile, and every floor, approval gate, and eligibility rule the availability stage applies, still win over the classifier's effort for that route.
-The effort answer is the default for the class when the chosen profile does not state one, which the intake path applies in code when the class stage supplies `--effort`.
+Every floor, approval gate, and eligibility rule the availability stage applies still governs the route, while the classifier's `low`, `medium`, or `high` effort applies to the selected class profile even if that profile declares a different effort.
+An explicit per-task `fm-spawn.sh --effort` overrides the classifier's choice.
 An effort the chosen harness does not accept is dropped from the launch flags by `fm-spawn.sh` rather than launched.
 
 ## Fail-safe boundary

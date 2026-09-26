@@ -85,7 +85,7 @@ enable_dispatch_profile() {
 # so a test can tell which stage resolved the spawn.
 enable_typed_dispatch_profile() {
   local home=$1
-  printf '%s\n' '{"classes":{"volume_cheap":{"harness":"pi","model":"zai/glm-5.3-flash","provider":"zai"}},"rules":[{"when":"A simple bug fix with a stated root cause.","use":{"harness":"codex","model":"gpt-5.6-sol","effort":"high"}}],"default":{"harness":"codex","model":"gpt-5.6-sol","effort":"medium"}}' \
+  printf '%s\n' '{"classes":{"volume_cheap":{"harness":"pi","model":"zai/glm-5.3-flash","effort":"high","provider":"zai"}},"rules":[{"when":"A simple bug fix with a stated root cause.","use":{"harness":"codex","model":"gpt-5.6-sol","effort":"high"}}],"default":{"harness":"codex","model":"gpt-5.6-sol","effort":"medium"}}' \
     > "$home/config/crew-dispatch.json"
 }
 
