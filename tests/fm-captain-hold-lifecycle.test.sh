@@ -417,6 +417,34 @@ migrated from data/backlog.md id herald-retire-decision-github-delete on 2026-09
   pass "verify resolves a captain hold migrated to a beads row with a marker note"
 }
 
+# Inventory repair removes only an erroneous origin self-entry when the
+# matching status decision and an independently held captain-call task exist.
+{
+  home=$(make_home inventory-repair)
+  run_captain "$home" hold real-open-call --title "Choose Folium attribution" \
+    --reason "captain attribution choice remains open" --repo sample >/dev/null \
+    || fail "could not create fixture captain call"
+  printf '%s\n' 'needs-decision [key=real-open-call]: choose attribution' > "$home/state/audit.status"
+  printf '%s\n' 'decisions_reviewed=1' 'decision_keys=audit' > "$home/state/audit.meta"
+  mkdir -p "$home/data/audit"
+  printf '%s\n' 'audit report retained' > "$home/data/audit/report.md"
+  run_captain "$home" repair-inventory audit audit real-open-call >/dev/null \
+    || fail "guarded inventory repair failed"
+  assert_no_grep 'decision_keys=audit' "$home/state/audit.meta" "erroneous self-entry survived repair"
+  assert_no_grep 'decision_keys=real-open-call' "$home/state/audit.meta" "repair added the open call to the origin inventory"
+  run_captain "$home" open real-open-call >/dev/null \
+    || fail "repair disturbed the real captain-held call"
+  assert_grep 'needs-decision [key=real-open-call]' "$home/state/audit.status" "open call wording was altered"
+  assert_grep 'audit report retained' "$home/data/audit/report.md" "report was altered"
+  if run_captain "$home" repair-inventory audit unrelated real-open-call >/dev/null 2>&1; then
+    fail "repair accepted a mismatched erroneous identity"
+  fi
+  if run_captain "$home" repair-inventory audit audit real-open-call >/dev/null 2>&1; then
+    fail "repair accepted an inventory that no longer records the erroneous entry"
+  fi
+  pass "inventory repair removes only the proven erroneous self-entry and preserves the open call and report"
+}
+
 # A tasks-axi stub that knows ONLY the row ids it is given. The real
 # beads-capable tasks-axi resolves a bare legacy id onto its prefixed row
 # itself, answering before any migration lookup runs; against this stub the
