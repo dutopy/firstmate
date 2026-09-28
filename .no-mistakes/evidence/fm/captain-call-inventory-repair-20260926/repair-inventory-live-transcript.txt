@@ -1,0 +1,365 @@
+=== setup: finished audit workspace whose inventory wrongly records itself; Folium call open ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh hold folium-coauthor-attribution --title Choose Folium co-author attribution --reason captain has not answered the attribution choice --repo sample
+folium-coauthor-attribution
+[exit 0]
+
+--- meta before
+window=firstmate:fm-coauthor-line-audit
+worktree=/tmp/fm-repair-live.LKSfJE/home/projects/missing-coauthor-line-audit
+project=/tmp/fm-repair-live.LKSfJE/home/projects/sample
+harness=codex
+kind=scout
+mode=scout
+spawn_gen=fixture-coauthor-line-audit
+decisions_reviewed=1
+decision_keys=coauthor-line-audit
+
+=== S1: verify blocks teardown before repair ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh verify coauthor-line-audit
+fm-captain-hold: no captain-held task coauthor-line-audit and no migrated hold for it in this home's configured backlog (data directory /tmp/fm-repair-live.LKSfJE/home/data); the nearest legacy identity coauthor-line-audit-decision-coauthor-line-audit also resolves to nothing
+[exit 1]
+
+=== S1b: non-forced teardown refuses before repair ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-teardown.sh coauthor-line-audit
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+[exit 3]
+
+=== ADV: too few args ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit
+fm-captain-hold.sh - deterministic mechanics for tasks held for the captain.
+
+The semantic policy is owned once by
+.agents/skills/captain-hold-lifecycle/SKILL.md. This script never reads
+report, visual-review, chat, or terminal prose to guess whether the captain
+owes an answer. The invoking agent decides what is genuinely waiting on the
+captain; this script supplies guarded creation, a durable record of what the
+captain actually said, the investigation completion gate, and the one
+keyed-answer intake every channel feeds.
+
+There is no separate decision type. A captain call is an ordinary backlog
+task held for the captain through this script's mandatory `hold` subcommand,
+and its identity is simply the task id. Older installs created derived
+`<origin>-decision-<key>` identities through bin/fm-decision-hold.sh; those
+rows are already plain task ids, so they keep working here unchanged, and
+the legacy inputs noted below resolve them without a migration.
+All backlog reads and mutations address the active home's configured data
+directory the way bin/fm-backlog-transition-lib.sh does, which keeps main-home
+and secondmate-home ownership aligned with the work that discovered the call.
+
+Usage:
+  fm-captain-hold.sh hold <task-id> --reason <reason> \
+    [--title <title>] [--repo <repo>] [--origin <origin-id>] [--until YYYY-MM-DD]
+    [--card-file <json> (--card-request-id <id> | --card-thread <id> | --card-channel <id>)]
+  fm-captain-hold.sh answer <task-id> --decision-file <path> [--release]
+  fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
+  fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
+  fm-captain-hold.sh bind <source-id> [<legacy-origin> | --any-origin]
+  fm-captain-hold.sh unbind <source-id>
+  fm-captain-hold.sh binding <source-id>
+  fm-captain-hold.sh complete <origin-id> (--none | <task-id>...)
+  fm-captain-hold.sh repair-inventory <origin-id> <erroneous-task-id> <open-call-task-id>
+  fm-captain-hold.sh verify <origin-id>
+  fm-captain-hold.sh open <task-id> [--identity] [--distinguish-absent]
+  fm-captain-hold.sh diverged
+  fm-captain-hold.sh reconcile list
+  fm-captain-hold.sh reconcile close <task-id> --evidence-file <path>
+  fm-captain-hold.sh reconcile note <task-id> --note-file <path>
+
+`hold` places an existing task under an active captain hold, or creates the
+task first when no work item exists to hold (--title required to create; the
+optional --origin records provenance in the new task's body and supplies the
+default repo from that origin's metadata). Prefer holding the work item the
+question gates over minting a new row. The command records a UTC `Captain
+hold set:` timestamp in the task body: repeating an active hold preserves the
+existing timestamp, while re-holding released work starts a new lifecycle.
+A task already closed is refused rather than reopened. `--until` records the
+captain's own deferral date through `tasks-axi hold --until`, so a "revisit
+later" answer is stored as a date instead of a live card.
+
+`--card-file` publishes the captain-facing Discord action card for the call
+in the same act of holding it, so no held call waits for a manual card step.
+The card's body and options are entirely the caller's file - this never
+invents an option from prose - while the command line's task id is what the
+card is bound to, so a reused file can never link a card to the wrong call.
+One --card-* target flag names where it goes. The posting path itself still
+refuses a second open card for the same task and a card for a call whose
+answer is already recorded. A publication failure never fails the hold: the
+call stays held and visible through the ordinary channels, and the failure is
+reported on stderr rather than swallowed.
+
+`answer` records the captain's exact words and resolves the call in the same
+act. It requires a non-empty captain decision file of at most 8192 bytes and
+writes a resolution block while preserving the leading hold-set stamp until
+the close succeeds (the previous body is preserved and archived through
+tasks-axi --archive-body). It closes a question with `tasks-axi done` - or,
+with `--release`, lifts the hold with `tasks-axi unhold` so a captain-gated
+WORK item resumes without closing - and restores resolution-first body
+ordering. An exact retry also completes unfinished ordering normalization and
+is idempotent only when its requested close mode
+matches the newest record; a changed decision or a mode mismatch is rejected.
+A re-held task may record a new answer on top. On a task already closed outside this script,
+`answer` records the missing resolution block (the old `repair` path) only
+when the task still carries the captain-hold provenance tasks-axi preserves
+through a close, so an ordinary finished task cannot be dressed up as an
+answered captain call. A hold that expired by date (`--until` in the past) is
+still answerable: the surviving hold annotations, not tasks-axi's live
+`held:` bit, prove the captain owned it.
+
+ONE KEYED-ANSWER INTAKE, FED BY EVERY CHANNEL.
+"A keyed answer resolves its matching captain-held task" is a single
+capability, owned here and nowhere else. `answers` reads
+`<task-id>\t<answer>\t<label>[\t<mode>]` lines on stdin and resolves each named
+task through the very same `answer` path above, so every guard applies
+identically no matter which channel the answer arrived on. The key IS the
+task id - no identity arithmetic. The optional fourth field selects the close:
+empty or `done` completes the task, `release` lifts the hold so held work
+resumes; anything else is skipped. A key that names no task, a task that is
+not held for the captain, or a task already closed is reported as `skipped:`
+and feeds nothing. A replayed delivery whose answer digest and requested
+close mode both match the newest record is reported `closed:` and is a no-op;
+a mode mismatch is skipped. The command exits nonzero when any key was
+skipped. `--source` is provenance text recorded in the
+durable decision, never a behavior switch: this command has no per-channel
+branch and no knowledge of chat, review decks, or any transport.
+Legacy input: an optional positional origin (or a stored concrete-origin
+binding) makes a key that names no task fall back to the old
+`<origin>-decision-<key>` identity, so an in-flight pre-collapse channel
+keeps closing its rows; `--any-origin` and the stored `(any)` marker mean
+what an absent origin means and are accepted for the same reason.
+
+RECONCILE IS RESERVED AT THIS INTAKE, NOT FILTERED IN A CHANNEL.
+The exact answer value `reconcile` means "go re-check reality", never "the
+captain answered". `answers` matches it before it reads the close mode,
+visibly refuses it, and never passes it to `answer`, so no channel and no
+card-declared mode can turn it into a close, release, or request. A separate
+`reconcile-requests` intake verifies a captured source's binding before it
+records a durable request under `state/reconcile-requests/`.
+
+`reconcile` is the verify-then-decide half. Both outcomes require the pending
+request created by the captain's board selection. `close` is the moot outcome:
+it requires the evidence that made the call moot, writes a `reconciled` resolution record
+under a `Reconciliation evidence:` label so it can never read as the
+captain's words, and closes the task. `note` is the still-active outcome: it
+appends one dated `Captain hold reconciled:` note and leaves the hold in
+place. A normal answer also retires the request because the call is settled.
+`list` is the read-only enumeration.
+docs/captain-hold-lifecycle.md owns the semantics.
+
+A channel's ONLY job is to turn whatever it received into those keyed lines
+and pipe them here. It must never map keys to tasks, build decision records,
+choose a close mode beyond what its card declared, or close anything itself.
+
+`bind`, `unbind`, and `binding` record that a captured-answer SOURCE feeds
+this intake, for any channel whose answers arrive detached from their origin
+(a process-event source id, for example). The binding is a private record
+under `state/decision-bindings/`; a source with no binding feeds nothing, so
+this whole path is opt-in per source and an unbound source behaves as if it
+did not exist. `bind` deliberately does not require the source to exist yet,
+so a channel can be bound BEFORE it is armed. The optional second argument
+exists only for legacy pre-collapse records and callers: a concrete origin is
+stored verbatim and used as the composition fallback above, and
+`--any-origin` stores the same `(any)` marker a plain `bind <source-id>`
+stores. `binding` prints the stored value verbatim and `answers` accepts it,
+so the process-event runner's feed seam is unchanged.
+
+`complete` is the shared investigation and visual-review completion gate.
+It attests, in the origin task's metadata, the reviewed inventory of
+captain-held tasks that carry the origin's unresolved captain calls.
+`--none` is an explicit semantic attestation that the just-reviewed surface
+has no unresolved captain call, and is refused while the origin still has an
+open keyed status decision. With a non-empty inventory, every listed task is
+verified durable (actively captain-held, or closed with a recorded answer,
+whether the answered row is still live or the Done archive pruned it),
+the inventory is unioned idempotently into the metadata, and every still-open
+keyed status decision is transferred to its durable owner with a
+`captain-held [key=...]` status close naming the inventory. Later review
+passes may add ids. A post-teardown visual review can complete against the
+surviving report and tasks without recreating task state.
+`repair-inventory` is the narrow correction for a recorded inventory that
+mistakenly names the origin itself: it removes that one self-entry from the
+origin's metadata when, and only when, the named erroneous id is exactly the
+origin id, a reviewed inventory records it, and the other named task is still
+an actively captain-held call matching an open keyed decision on the origin's
+status. It never adds an entry, never touches the open call's wording or any
+surviving report, and refuses a mismatched identity, a missing entry, an
+already-answered or unrelated call, or unreviewed or unsafe metadata.
+Repair alone does not unblock teardown: the open keyed decision still fails
+`verify` until `complete <origin-id> <open-call-task-id>` records the call.
+`verify` is read-only and is called by scout teardown, so teardown cannot
+erase a source before this gate has succeeded: every recorded inventory
+entry must still be durable and no keyed status decision may be open.
+Metadata compatibility: the attestation keeps the historical
+`decisions_reviewed=1` and `decision_keys=` keys, and an inventory entry that
+names no existing task resolves through the legacy `<origin>-decision-<entry>`
+identity, so pre-collapse metadata written by fm-decision-hold.sh verifies
+unchanged. An entry that exists as a task id is always that task. On the
+Beads backend an attested legacy markdown id that resolves to no task is
+accepted through the migrated row fm-hold-migration produced, found by the
+authoritative evidence first: a row whose notes carry the marker line
+"migrated from data/backlog.md id <legacy id>", alone or followed by
+" on <date>". Only when no row carries that line is the legacy id tried under
+the configured beads prefix, and that name-only guess is accepted solely for
+a single row still held for the captain; two such rows refuse rather than
+attest, and `complete` names each prefix-resolved row beside its attested
+legacy id so the guess stays auditable.
+
+`open` is the read-only predicate a mechanical closer asks before it may
+retire a task's row: is this task still an open captain call? Exit 0 means it
+is (not Done, hold kind captain), 1 means it is not, and 2 means the answer
+could not be established, so a caller that must never close a live call can
+treat "cannot tell" as its own case instead of as a no. With
+`--distinguish-absent`, an absent local task returns 3 instead of 1; a home
+with no backlog file counts as absent, because it records no captain calls.
+It prints nothing on these predicate results and mutates nothing, unless
+`--identity` asks it to print this call's
+LIFECYCLE identity, which it does on an exit 0 only. That identity - the
+hold-set stamp and the count of recorded answers - is what distinguishes two
+successive calls on one task id: re-holding released work starts a new
+lifecycle without necessarily touching the task's status log, so a consumer
+that bounds repeated work per call cannot use the task id alone.
+bin/fm-teardown.sh asks it before its automatic
+backlog close and, on 0, returns the row to Queued with its deliverable
+recorded instead (bin/fm-backlog-transition-lib.sh owns that transition), so
+holding the very work item a question gates is safe; only `answer` with the
+captain's words or evidence-backed `reconcile close` closes the call.
+bin/fm-watch.sh asks it when an ordinary
+crew task reaches a due stale alarm - its open backlog hold need not appear in
+the task's last status line - and on a 0 bounds repeated alarms from new pane
+hashes for the decision.
+
+`diverged` is the read-only guard over the seam between the two records of
+one captain call. See "record divergence" beside command_diverged below.
+
+Resolution records: the block written into the body names this script, the
+decision digest, and a `Resolution mode:` of answered, released, repaired, or
+reconciled. Records written by the retired fm-decision-hold.sh (routed,
+declined, answered, repaired) are recognized everywhere a record is read, so
+nothing already closed needs rewriting.
+
+Parent channel: inside a secondmate home a task held for the captain, and its
+answer, are captain-facing facts the moment they are recorded, so `hold`
+publishes `needs-decision [key=captain-hold-<task>-<n>]` and `answer` (and
+`answers`) the matching `resolved` line on the parent channel through
+bin/fm-parent-channel-lib.sh, whether or not the mate model appends anything.
+<n> is the count of resolution records the body already carries plus one, so
+a released and re-held task opens and closes a distinct parent decision with
+no new persisted state, and an exact retry republishes the same line, which
+the channel deduplicates. A main home has no channel and publishes nothing.
+The hold or answer is already durable in the backlog, so a channel that
+cannot be written is reported as `actionable:` on stderr rather than undoing
+the record; bin/fm-inactive-reconcile.sh's diagnostics name a broken binding.
+[exit 2]
+
+=== ADV: mismatched erroneous id ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory coauthor-line-audit other-task folium-coauthor-attribution
+fm-captain-hold: repair only permits removing the origin's own erroneous entry
+[exit 1]
+
+=== ADV: real call == origin ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit coauthor-line-audit
+fm-captain-hold: real captain call must differ from origin
+[exit 1]
+
+=== ADV: real call not captain-held ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit not-a-held-task
+fm-captain-hold: named task is not an active captain-held call
+[exit 1]
+
+--- meta unchanged after refusals
+decision_keys=coauthor-line-audit
+
+=== S2: repair-inventory ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+repaired: removed erroneous self-entry from coauthor-line-audit inventory; open call folium-coauthor-attribution remains untouched
+next: fm-captain-hold.sh complete coauthor-line-audit folium-coauthor-attribution records the open call before verify can pass
+[exit 0]
+
+--- meta after repair
+window=firstmate:fm-coauthor-line-audit
+worktree=/tmp/fm-repair-live.LKSfJE/home/projects/missing-coauthor-line-audit
+project=/tmp/fm-repair-live.LKSfJE/home/projects/sample
+harness=codex
+kind=scout
+mode=scout
+spawn_gen=fixture-coauthor-line-audit
+decisions_reviewed=1
+decision_keys=coauthor-line-audit
+decision_keys=
+
+=== S3: Folium call still open, wording+report unchanged ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh open folium-coauthor-attribution
+[exit 0]
+
+  title: Choose Folium co-author attribution
+  state: queued
+  hold_kind: captain
+
+status wording unchanged
+report unchanged
+
+=== ADV: repeat repair (already repaired) ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: erroneous entry is not recorded
+[exit 1]
+
+=== S4: verify still blocks until complete ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh verify coauthor-line-audit
+fm-captain-hold: open captain decision coauthor-line-audit/folium-coauthor-attribution is not transferred to the captain-held inventory; re-run complete
+[exit 1]
+
+=== S5: follow printed next step ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh complete coauthor-line-audit folium-coauthor-attribution
+complete: coauthor-line-audit captain-call inventory reviewed (folium-coauthor-attribution)
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh verify coauthor-line-audit
+verified: coauthor-line-audit captain-call inventory
+[exit 0]
+
+=== S6: non-forced teardown removes workspace, keeps report, Folium call stays open ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-teardown.sh coauthor-line-audit
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+[exit 3]
+
+/tmp/fm-repair-live.LKSfJE/home/state/coauthor-line-audit.meta
+/tmp/fm-repair-live.LKSfJE/home/data/coauthor-line-audit/report.md
+# Co-author line audit
+
+Findings retained.
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh open folium-coauthor-attribution
+[exit 0]
+
+  state: queued
+  hold_kind: captain
+=== ADV: dotted origin literal + two decision_keys lines ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory a.b a.b other-open
+repaired: removed erroneous self-entry from a.b inventory; open call other-open remains untouched
+next: fm-captain-hold.sh complete a.b other-open records the open call before verify can pass
+[exit 0]
+
+decisions_reviewed=1
+decision_keys=
+decision_keys=a.b,axb
+decision_keys=axb
+
+=== ADV: unreviewed meta ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory u u other-open
+fm-captain-hold: origin inventory has not been reviewed
+[exit 1]
+
+=== ADV: no matching open decision on origin status ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory n n other-open
+fm-captain-hold: origin has no matching open decision for the named real call
+[exit 1]
+
+=== ADV: symlinked meta ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory s s other-open
+fm-captain-hold: origin metadata is absent or unsafe
+[exit 1]
+
+=== ADV: answered (closed) call ===
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh repair-inventory c c closed-call
+fm-captain-hold: named task is not an active captain-held call
+[exit 1]
+
+decision_keys=c

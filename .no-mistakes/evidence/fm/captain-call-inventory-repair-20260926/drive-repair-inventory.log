@@ -1,0 +1,124 @@
+=============== S1 happy path: repair -> complete -> teardown ===============
+--- before: teardown must refuse (self-entry + open decision)
+$ td /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy coauthor-line-audit
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-captain-hold: captain-held task coauthor-line-audit is neither held for the captain nor closed with a recorded captain answer
+REFUSED: scout task coauthor-line-audit has not passed the captain-call completion gate.
+Inventory its report and any visual review through bin/fm-captain-hold.sh before teardown.
+[exit=1]
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy verify coauthor-line-audit
+fm-captain-hold: captain-held task coauthor-line-audit is neither held for the captain nor closed with a recorded captain answer
+[exit=1]
+--- repair
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+repaired: removed erroneous self-entry from coauthor-line-audit inventory; open call folium-coauthor-attribution remains untouched
+next: fm-captain-hold.sh complete coauthor-line-audit folium-coauthor-attribution records the open call before verify can pass
+[exit=0]
+--- meta decision_keys lines after repair:
+decision_keys=coauthor-line-audit
+decision_keys=
+--- verify after repair alone (expected still fail: open decision)
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy verify coauthor-line-audit
+fm-captain-hold: open captain decision coauthor-line-audit/folium-coauthor-attribution is not transferred to the captain-held inventory; re-run complete
+[exit=1]
+--- run the printed next step
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy complete coauthor-line-audit folium-coauthor-attribution
+complete: coauthor-line-audit captain-call inventory reviewed (folium-coauthor-attribution)
+[exit=0]
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy verify coauthor-line-audit
+verified: coauthor-line-audit captain-call inventory
+[exit=0]
+--- teardown now
+$ td /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy coauthor-line-audit
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown coauthor-line-audit complete (window firstmate:fm-coauthor-line-audit, worktree /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy/projects/missing-coauthor-line-audit)
+Backlog: coauthor-line-audit is closed in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+[exit=0]
+--- after teardown: origin meta present? 
+ls: /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy/state/coauthor-line-audit.meta: No such file or directory
+--- report kept:
+# Co-author line audit
+
+Finished. Folium attribution choice is the captain call.
+--- Folium call still open/held:
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/happy open folium-coauthor-attribution
+[exit=0]
+task:
+  id: folium-coauthor-attribution
+  title: Choose Folium co-author attribution
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: yes
+  hold_reason: captain attribution choice pending
+  hold_kind: captain
+  hold_until: "-"
+  kind: captain
+  repo: sample
+  priority: "-"
+  created: 2026-09-28
+  closed: "-"
+--- Bearings Captain's Call:
+[{"id":"folium-coauthor-attribution","verb":"captain-hold"}]
+
+=============== S2 adversarial refusals ===============
+--- erroneous id != origin
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/adv repair-inventory coauthor-line-audit folium-coauthor-attribution folium-coauthor-attribution
+fm-captain-hold: repair only permits removing the origin's own erroneous entry
+[exit=1]
+--- real call == origin
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/adv repair-inventory coauthor-line-audit coauthor-line-audit coauthor-line-audit
+fm-captain-hold: real captain call must differ from origin
+[exit=1]
+--- named call not captain-held
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/adv repair-inventory coauthor-line-audit coauthor-line-audit plain-task
+fm-captain-hold: named task is not an active captain-held call
+[exit=1]
+--- held call with no matching open decision on origin
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/adv repair-inventory coauthor-line-audit coauthor-line-audit unrelated-call
+fm-captain-hold: origin has no matching open decision for the named real call
+[exit=1]
+--- path traversal slug
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/adv repair-inventory ../x ../x folium-coauthor-attribution
+fm-captain-hold: origin-id must be a non-empty privacy-safe slug: ../x
+[exit=1]
+--- wrong arg count
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/adv repair-inventory coauthor-line-audit coauthor-line-audit
+/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M3MWGMBV9MKMG31PCQWHMP28/bin/fm-captain-hold.sh: line 1824: $3: unbound variable
+[exit=0]
+META UNCHANGED after all refusals
+--- unreviewed meta
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/unrev repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: origin inventory has not been reviewed
+[exit=1]
+--- symlinked meta
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/symlink repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: origin metadata is absent or unsafe
+[exit=1]
+--- already-answered call
+answered exit=0
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/answered repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: named task is not an active captain-held call
+[exit=1]
+decision_keys=coauthor-line-audit
+--- second repair after success (idempotence refusal)
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/twice repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: erroneous entry is not recorded
+[exit=1]
+--- real call already in inventory
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/both repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: real call is already in inventory
+[exit=1]
+decision_keys=coauthor-line-audit,folium-coauthor-attribution
+--- dotted origin + multiple keys lines
+$ cap /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-repair-live.jFhdsW/dotted repair-inventory au.dit au.dit folium-coauthor-attribution
+repaired: removed erroneous self-entry from au.dit inventory; open call folium-coauthor-attribution remains untouched
+next: fm-captain-hold.sh complete au.dit folium-coauthor-attribution records the open call before verify can pass
+[exit=0]
+decision_keys=auxdit
