@@ -436,6 +436,9 @@ migrated from data/backlog.md id herald-retire-decision-github-delete on 2026-09
     || fail "repair disturbed the real captain-held call"
   assert_grep 'needs-decision [key=real-open-call]' "$home/state/audit.status" "open call wording was altered"
   assert_grep 'audit report retained' "$home/data/audit/report.md" "report was altered"
+  rc=0
+  run_captain "$home" repair-inventory audit audit >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "repair with too few arguments exited $rc instead of usage exit 2"
   if run_captain "$home" repair-inventory audit unrelated real-open-call >/dev/null 2>&1; then
     fail "repair accepted a mismatched erroneous identity"
   fi

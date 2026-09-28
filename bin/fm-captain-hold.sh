@@ -1821,7 +1821,7 @@ EOF
 # Correct only a proven self-entry: the origin's own id was accidentally
 # recorded as a held call, while the named real call remains actively held.
 command_repair_inventory() {
-  local origin=$1 erroneous=$2 real=$3 meta reviewed keys new_keys open
+  local origin=${1:-} erroneous=${2:-} real=${3:-} meta reviewed keys new_keys open
   [ "$#" -eq 3 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   validate_slug erroneous-task-id "$erroneous"
