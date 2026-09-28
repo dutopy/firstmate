@@ -160,6 +160,9 @@ case "${1:-} ${2:-}" in
     esac
     emit "$response"
     ;;
+  "api /repos"*)
+    emit '{"head":{"sha":"1111111111111111111111111111111111111111"}}'
+    ;;
 esac
 SH
   chmod +x "$home/fakebin/gh" "$home/fakebin/gh-axi"
