@@ -1,0 +1,32 @@
+=== PR #8: fixed fm_pr_gh_axi_graphql (--full) ===
+{"state":"OPEN","merged":false,"mergeable":"MERGEABLE","mergeStateStatus":"UNSTABLE","headRefOid":"6f619b48982b362e88197258e144c9c23482f57c","checks":14,"bytes":2199}
+  Lint: COMPLETED FAILURE
+  PR must be raised via no-mistakes: COMPLETED SUCCESS
+  Test coverage guard: COMPLETED FAILURE
+  Behavior portable parallel 1: COMPLETED FAILURE
+  Behavior portable parallel 2: COMPLETED FAILURE
+  Behavior portable serial 1: COMPLETED FAILURE
+  Behavior portable serial 2: COMPLETED SUCCESS
+  Behavior portable serial 3: COMPLETED FAILURE
+  Behavior portable serial 4: COMPLETED FAILURE
+  Behavior portable serial 5: COMPLETED FAILURE
+  Behavior tests (Herdr): COMPLETED SUCCESS
+  Stock macOS Bash snapshot compatibility: COMPLETED FAILURE
+  Repo invariants: COMPLETED SUCCESS
+  Behavior timing aggregate: COMPLETED SUCCESS
+=== PR #7: fixed fm_pr_gh_axi_graphql (--full) ===
+{"state":"MERGED","merged":true,"mergeable":"UNKNOWN","mergeStateStatus":"UNKNOWN","headRefOid":"9c948079601c8952c7294b9b2362d8f71b2ff0db","checks":14,"bytes":2197}
+  Lint: COMPLETED SUCCESS
+  PR must be raised via no-mistakes: COMPLETED SUCCESS
+  Test coverage guard: COMPLETED SUCCESS
+  Behavior portable parallel 1: COMPLETED SUCCESS
+  Behavior portable parallel 2: COMPLETED SUCCESS
+  Behavior portable serial 1: COMPLETED SUCCESS
+  Behavior portable serial 2: COMPLETED SUCCESS
+  Behavior portable serial 3: COMPLETED SUCCESS
+  Behavior portable serial 4: COMPLETED SUCCESS
+  Behavior portable serial 5: COMPLETED SUCCESS
+  Behavior tests (Herdr): COMPLETED SUCCESS
+  Stock macOS Bash snapshot compatibility: COMPLETED SUCCESS
+  Repo invariants: COMPLETED SUCCESS
+  Behavior timing aggregate: COMPLETED SUCCESS

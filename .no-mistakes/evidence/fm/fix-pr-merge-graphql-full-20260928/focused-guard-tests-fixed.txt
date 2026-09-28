@@ -1,0 +1,5 @@
+ok - fm-pr-merge reads an oversized check rollup fully, keeping the head pin and the refusal
+ok - fm-pr-merge refuses red GitHub checks and waives only a named --allow-red check
+ok - fm-pr-merge merges when a failed check run was replaced by a passing re-run
+ok - a patch that changed after its verdict was recorded refuses to merge
+ok - an unrecomputable patch identity refuses a recorded verdict

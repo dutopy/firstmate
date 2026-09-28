@@ -1,0 +1,10 @@
+=== PR #8: base-commit fm_pr_gh_axi_graphql (no --full) ===
+READ FAILED rc=1 (guard would refuse: checks unreadable)
+--- raw gh-axi output tail without --full:
+dGFibGUgc2VyaWFsIDUiLCJzdGFydGVkQXQiOiIyMDI2LTA5LTI4VDIwOjA3OjEwWiIsInN0YXR1cyI6IkNPTVBMRVRFRCJ9LHsiX190eXBlbmFtZSI6IkNoZWNrUnVuIiwiY29uY2x1c2lvbiI6IlNVQ0NFU1MiLCJuYW1lIjoiQmVoYXZpb3Ig... (truncated)
+
+=== PR #7: base-commit fm_pr_gh_axi_graphql (no --full) ===
+READ FAILED rc=1 (guard would refuse: checks unreadable)
+--- raw gh-axi output tail without --full:
+dGFibGUgc2VyaWFsIDUiLCJzdGFydGVkQXQiOiIyMDI2LTA5LTI4VDE4OjI2OjA5WiIsInN0YXR1cyI6IkNPTVBMRVRFRCJ9LHsiX190eXBlbmFtZSI6IkNoZWNrUnVuIiwiY29uY2x1c2lvbiI6IlNVQ0NFU1MiLCJuYW1lIjoiQmVoYXZpb3Ig... (truncated)
+
