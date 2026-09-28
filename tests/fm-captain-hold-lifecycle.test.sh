@@ -430,8 +430,8 @@ migrated from data/backlog.md id herald-retire-decision-github-delete on 2026-09
   printf '%s\n' 'audit report retained' > "$home/data/audit/report.md"
   run_captain "$home" repair-inventory audit audit real-open-call >/dev/null \
     || fail "guarded inventory repair failed"
-  assert_no_grep 'decision_keys=audit' "$home/state/audit.meta" "erroneous self-entry survived repair"
-  assert_no_grep 'decision_keys=real-open-call' "$home/state/audit.meta" "repair added the open call to the origin inventory"
+  [ "$(grep '^decision_keys=' "$home/state/audit.meta" | tail -1)" = 'decision_keys=' ] \
+    || fail "erroneous self-entry survived repair or the open call was added: $(cat "$home/state/audit.meta")"
   run_captain "$home" open real-open-call >/dev/null \
     || fail "repair disturbed the real captain-held call"
   assert_grep 'needs-decision [key=real-open-call]' "$home/state/audit.status" "open call wording was altered"
@@ -453,11 +453,11 @@ migrated from data/backlog.md id herald-retire-decision-github-delete on 2026-09
     --reason "captain attribution choice remains open" --repo sample >/dev/null \
     || fail "could not create fixture captain call"
   printf '%s\n' 'needs-decision [key=real-open-call]: choose attribution' > "$home/state/au.dit.status"
-  printf '%s\n' 'decisions_reviewed=1' 'decision_keys=au.dit,auxdit' > "$home/state/au.dit.meta"
+  printf '%s\n' 'decisions_reviewed=1' 'decision_keys=' 'decision_keys=au.dit,auxdit' > "$home/state/au.dit.meta"
   out=$(run_captain "$home" repair-inventory au.dit au.dit real-open-call) \
     || fail "guarded inventory repair of a dotted origin failed"
-  assert_grep 'decision_keys=auxdit' "$home/state/au.dit.meta" "repair removed a sibling entry matched by the regex dot"
-  assert_no_grep 'au.dit,' "$home/state/au.dit.meta" "dotted self-entry survived repair"
+  [ "$(grep '^decision_keys=' "$home/state/au.dit.meta" | tail -1)" = 'decision_keys=auxdit' ] \
+    || fail "repair did not leave the literal sibling entry as the authoritative last inventory: $(cat "$home/state/au.dit.meta")"
   case "$out" in
     *"complete au.dit real-open-call"*) ;;
     *) fail "repair did not name the follow-up complete step: $out" ;;

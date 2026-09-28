@@ -1821,7 +1821,7 @@ EOF
 # Correct only a proven self-entry: the origin's own id was accidentally
 # recorded as a held call, while the named real call remains actively held.
 command_repair_inventory() {
-  local origin=$1 erroneous=$2 real=$3 meta reviewed keys new_keys open tmp
+  local origin=$1 erroneous=$2 real=$3 meta reviewed keys new_keys open
   [ "$#" -eq 3 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   validate_slug erroneous-task-id "$erroneous"
@@ -1845,10 +1845,7 @@ command_repair_inventory() {
   list_has_line "$(printf '%s\n' "$keys" | tr ',' '\n')" "$erroneous" || fail "inventory changed during repair"
   list_has_line "$(printf '%s\n' "$keys" | tr ',' '\n')" "$real" && fail "real call is already in inventory"
   new_keys=$(printf '%s\n' "$keys" | tr ',' '\n' | grep -vxF -- "$erroneous" | paste -sd, -)
-  tmp=$(mktemp "${meta}.repair.XXXXXX") || fail "cannot stage repaired metadata"
-  awk -v v="$new_keys" 'BEGIN{done=0} /^decision_keys=/ {if (!done++) print "decision_keys=" v; next} {print} END{if (!done) print "decision_keys=" v}' "$meta" > "$tmp"
-  chmod 600 "$tmp"
-  mv "$tmp" "$meta"
+  printf 'decision_keys=%s\n' "$new_keys" >> "$meta"
   printf 'repaired: removed erroneous self-entry from %s inventory; open call %s remains untouched\n' "$origin" "$real"
   printf 'next: fm-captain-hold.sh complete %s %s records the open call before verify can pass\n' "$origin" "$real"
 }
