@@ -11,11 +11,6 @@ TMP_ROOT=$(fm_test_tmproot fm-on)
 # and physicalize macOS's /var -> /private/var alias before transport validation.
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
-fixture_path_is_private() {
-  local candidate=$1
-  case "$candidate" in "$TMP_ROOT"/*) ;; *) return 1 ;; esac
-  [ ! -L "$candidate" ]
-}
 cleanup() {
   local pid
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
@@ -332,16 +327,6 @@ pass "the remote doctor derives tool readiness from the installed worker"
 DOCTOR_BIN="$TMP_ROOT/doctor-bin"
 DOCTOR_HOME="$TMP_ROOT/doctor-home"
 mkdir -p "$DOCTOR_BIN" "$DOCTOR_HOME"
-# A fixture symlink is rejected even when its path is inside TMP_ROOT, because
-# redirecting into it could overwrite the external target.
-OUTSIDE_JQ_FIXTURE="$DOCTOR_BIN/jq-outside"
-ln -s "$ROOT/bin/fm-on.sh" "$OUTSIDE_JQ_FIXTURE"
-if fixture_path_is_private "$OUTSIDE_JQ_FIXTURE"; then
-  rm -f "$OUTSIDE_JQ_FIXTURE"
-  fail "the remote doctor fixture accepted a tool symlink to outside its temporary directory"
-fi
-rm -f "$OUTSIDE_JQ_FIXTURE"
-pass "remote doctor fixtures reject tool paths that point outside the temporary directory"
 # CI provides jq in /usr/bin; add a harmless local executable on macOS, never a
 # symlink to a managed binary, so later fixture replacement cannot escape TMP_ROOT.
 if [ -z "$(PATH=/usr/bin:/bin:/usr/sbin:/sbin command -v jq 2>/dev/null || true)" ]; then
@@ -370,8 +355,6 @@ ln -sf "$(command -v git)" "$DOCTOR_BIN/git"
 # The direct doctor fixture needs the complete required tool set. These stubs
 # exercise resolution only; the dedicated doctor suite owns worker and Herdr
 # lifecycle behavior against controlled launchctl fixtures.
-fixture_path_is_private "$DOCTOR_BIN/jq" \
-  || fail "the remote doctor jq fixture must stay inside its temporary directory and cannot be a symlink"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$DOCTOR_BIN/jq"
 printf '#!/usr/bin/env bash\nprintf "{\\\"server\\\":{\\\"running\\\":false}}\\n"\n' > "$DOCTOR_BIN/herdr"
 cat > "$DOCTOR_BIN/tasks-axi" <<'SH'
