@@ -1,0 +1,21 @@
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+repaired: removed erroneous self-entry from coauthor-line-audit inventory; open call folium-coauthor-attribution remains untouched
+next: fm-captain-hold.sh complete coauthor-line-audit folium-coauthor-attribution records the open call before verify can pass
+[exit 0]
+$ fm-captain-hold.sh complete coauthor-line-audit folium-coauthor-attribution
+complete: coauthor-line-audit captain-call inventory reviewed (folium-coauthor-attribution)
+[exit 0]
+--- meta:
+decisions_reviewed=1
+decision_keys=coauthor-line-audit
+decision_keys=
+decisions_reviewed=1
+decision_keys=folium-coauthor-attribution
+$ fm-captain-hold.sh verify coauthor-line-audit
+verified: coauthor-line-audit captain-call inventory
+[exit 0]
+--- Folium call still open after complete+verify:
+$ fm-captain-hold.sh open folium-coauthor-attribution
+[exit 0]
+--- report:
+# report

@@ -1,0 +1,87 @@
+=== Setup: real open Folium attribution captain call; audit meta wrongly lists itself
+$ fm-captain-hold.sh hold folium-coauthor-attribution --title Choose Folium co-author attribution --reason captain attribution choice remains open --repo folium
+folium-coauthor-attribution
+[exit 0]
+--- meta before:
+decisions_reviewed=1
+decision_keys=
+decision_keys=coauthor-line-audit
+
+=== S1 verify before repair (teardown gate)
+$ fm-captain-hold.sh verify coauthor-line-audit
+fm-captain-hold: no captain-held task coauthor-line-audit and no migrated hold for it in this home's configured backlog (data directory /tmp/fm-repair-live.2nIo1C/data); the nearest legacy identity coauthor-line-audit-decision-coauthor-line-audit also resolves to nothing
+[exit 1]
+
+=== S2 adversarial: erroneous id != origin
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit some-other-task folium-coauthor-attribution
+fm-captain-hold: repair only permits removing the origin's own erroneous entry
+[exit 1]
+
+=== S3 adversarial: real call == origin
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit coauthor-line-audit
+fm-captain-hold: real captain call must differ from origin
+[exit 1]
+
+=== S4 adversarial: named call is not captain-held
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit not-a-held-task
+fm-captain-hold: named task is not an active captain-held call
+[exit 1]
+
+=== S5 adversarial: no matching open decision on status
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit other-held
+fm-captain-hold: origin has no matching open decision for the named real call
+[exit 1]
+
+--- meta unchanged after refusals:
+decisions_reviewed=1
+decision_keys=
+decision_keys=coauthor-line-audit
+
+=== S6 adversarial: unreviewed inventory
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: origin inventory has not been reviewed
+[exit 1]
+
+=== S7 adversarial: symlinked meta
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: origin metadata is absent or unsafe
+[exit 1]
+
+=== S8 happy path repair
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+repaired: removed erroneous self-entry from coauthor-line-audit inventory; open call folium-coauthor-attribution remains untouched
+next: fm-captain-hold.sh complete coauthor-line-audit folium-coauthor-attribution records the open call before verify can pass
+[exit 0]
+--- meta after:
+decisions_reviewed=1
+decision_keys=
+decision_keys=coauthor-line-audit
+decision_keys=
+--- status after (Folium call wording):
+done: audit finished
+needs-decision [key=folium-coauthor-attribution]: choose Folium co-author attribution
+--- report after:
+# coauthor-line-audit report: 12 commits audited
+--- real call still open:
+$ fm-captain-hold.sh open folium-coauthor-attribution
+[exit 0]
+
+=== S9 re-run repair (entry already gone)
+$ fm-captain-hold.sh repair-inventory coauthor-line-audit coauthor-line-audit folium-coauthor-attribution
+fm-captain-hold: erroneous entry is not recorded
+[exit 1]
+
+=== S10 verify after repair (still blocked by open Folium decision -> teardown refused)
+$ fm-captain-hold.sh verify coauthor-line-audit
+fm-captain-hold: open captain decision coauthor-line-audit/folium-coauthor-attribution is not transferred to the captain-held inventory; re-run complete
+[exit 1]
+
+=== S11 dotted slug: literal match keeps sibling
+$ fm-captain-hold.sh repair-inventory co.audit co.audit folium-coauthor-attribution
+repaired: removed erroneous self-entry from co.audit inventory; open call folium-coauthor-attribution remains untouched
+next: fm-captain-hold.sh complete co.audit folium-coauthor-attribution records the open call before verify can pass
+[exit 0]
+--- meta after:
+decisions_reviewed=1
+decision_keys=co.audit,coxaudit
+decision_keys=coxaudit
