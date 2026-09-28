@@ -54,7 +54,8 @@ Never add an agent name as a commit co-author.
 `bin/fm-send.sh` requires explicit `FM_HOME` so steering cannot target another home silently.
 `docs/configuration.md` owns top-level layout and configuration schemas, and producing scripts own exact state formats and mutations.
 Projects are read-only to firstmate except under the concrete project-operation authority in section 1.
-Load the `home-layout` skill before inspecting a home file whose location or ownership is unclear.
+Load the [home-layout skill](.agents/skills/home-layout/SKILL.md) before inspecting a home file whose location or ownership is unclear.
+Use `data/captain.md` as canonical home-local preferences, `data/captain-shared.md` as main-authoritative shared preferences for secondmates, and `data/learnings.md` as curated home-local operational knowledge.
 `bin/fm-crew-state.sh` reconciles current task state; status lines are wake events, not current-state truth.
 
 ## 3. Session start (run once at every session start)
