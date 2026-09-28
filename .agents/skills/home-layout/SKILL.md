@@ -119,5 +119,3 @@ state/               runtime records and signals; gitignored
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
 .no-mistakes/        local validation state and evidence; gitignored
 ```
-
-
