@@ -1,0 +1,16 @@
+(host /usr/local/bin/bash 5.3.9 segfaults on $(VAR=x cmd); harness run under stock /bin/bash 3.2.57(1)-release via PATH shim)
+=== target lib (fix present) ===
+ok - fm-pr-merge reads a plan-gated 403 on branch rules as no merge queue, not unreadable
+ok - away merge proceeds on a plan-gated 403 because that repository cannot have a merge queue
+ok - fm-pr-merge reads an oversized check rollup fully, keeping the head pin and the refusal
+SELECTED-TEST-FINISHED
+exit=
+=== base lib (--full removed: regression reproduction) ===
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: could not read the GitHub pull request state before merging
+exit=
+--- git status:

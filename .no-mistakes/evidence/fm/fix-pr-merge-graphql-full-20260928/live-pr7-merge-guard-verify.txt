@@ -1,0 +1,8 @@
+=== base lib: github_verify_mergeable (live, read-only, no merge) ===
+error: could not read the GitHub pull request state before merging
+rc=1 FM_PR_MERGE_HEAD= base=
+outcome-read rc=0 merged=false queued=false
+=== target lib: github_verify_mergeable (live, read-only, no merge) ===
+verified: https://github.com/dutopy/firstmate/pull/7 is open and mergeable, with every required check green at head 9c948079601c8952c7294b9b2362d8f71b2ff0db
+rc=0 FM_PR_MERGE_HEAD=9c948079601c8952c7294b9b2362d8f71b2ff0db base=main
+outcome-read rc=0 merged=false queued=false

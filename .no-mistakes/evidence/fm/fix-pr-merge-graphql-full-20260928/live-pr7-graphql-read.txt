@@ -1,0 +1,5 @@
+=== base (/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/tmp.BcU94p9lUg/base-lib.sh) ===
+rc=1 bytes=0
+=== target (bin/fm-pr-lib.sh) ===
+rc=0 bytes=2135
+{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"9c948079601c8952c7294b9b2362d8f71b2ff0db","baseRefName":"main","checks":14,"names":["Lint=SUCCESS","PR must be raised via no-mistakes=SUCCESS","Test coverage guard=SUCCESS","Behavior portable parallel 1=SUCCESS","Behavior portable parallel 2=SUCCESS","Behavior portable serial 1=SUCCESS","Behavior portable serial 2=SUCCESS","Behavior portable serial 3=SUCCESS","Behavior portable serial 4=SUCCESS","Behavior portable serial 5=SUCCESS","Behavior tests (Herdr)=SUCCESS","Stock macOS Bash snapshot compatibility=SUCCESS","Repo invariants=SUCCESS","Behavior timing aggregate=SUCCESS"]}

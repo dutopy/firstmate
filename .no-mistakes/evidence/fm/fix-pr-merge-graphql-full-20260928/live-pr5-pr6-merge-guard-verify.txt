@@ -1,0 +1,18 @@
+=== target lib: PR 5 ===
+error: refusing to merge https://github.com/dutopy/firstmate/pull/5
+  - mergeable is "CONFLICTING", not MERGEABLE
+  - mergeStateStatus is DIRTY (conflicts)
+rc=1
+=== target lib: PR 6 ===
+error: refusing to merge https://github.com/dutopy/firstmate/pull/6
+  - check 'Behavior portable parallel 1' is not green
+  - check 'Behavior portable parallel 2' is not green
+  - check 'Behavior portable serial 1' is not green
+  - check 'Behavior portable serial 3' is not green
+  - check 'Behavior portable serial 4' is not green
+  - check 'Behavior portable serial 5' is not green
+  - check 'Lint' is not green
+  - check 'Stock macOS Bash snapshot compatibility' is not green
+  - check 'Test coverage guard' is not green
+error: these checks are not green: Behavior portable parallel 1, Behavior portable parallel 2, Behavior portable serial 1, Behavior portable serial 3, Behavior portable serial 4, Behavior portable serial 5, Lint, Stock macOS Bash snapshot compatibility, Test coverage guard
+rc=1
