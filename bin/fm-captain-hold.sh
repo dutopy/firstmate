@@ -156,6 +156,8 @@
 # status. It never adds an entry, never touches the open call's wording or any
 # surviving report, and refuses a mismatched identity, a missing entry, an
 # already-answered or unrelated call, or unreviewed or unsafe metadata.
+# Repair alone does not unblock teardown: the open keyed decision still fails
+# `verify` until `complete <origin-id> <open-call-task-id>` records the call.
 # `verify` is read-only and is called by scout teardown, so teardown cannot
 # erase a source before this gate has succeeded: every recorded inventory
 # entry must still be durable and no keyed status decision may be open.
@@ -1842,12 +1844,13 @@ command_repair_inventory() {
   keys=$(meta_value "$meta" decision_keys)
   list_has_line "$(printf '%s\n' "$keys" | tr ',' '\n')" "$erroneous" || fail "inventory changed during repair"
   list_has_line "$(printf '%s\n' "$keys" | tr ',' '\n')" "$real" && fail "real call is already in inventory"
-  new_keys=$(printf '%s\n' "$keys" | tr ',' '\n' | grep -v -x "$erroneous" | paste -sd, -)
+  new_keys=$(printf '%s\n' "$keys" | tr ',' '\n' | grep -vxF -- "$erroneous" | paste -sd, -)
   tmp=$(mktemp "${meta}.repair.XXXXXX") || fail "cannot stage repaired metadata"
   awk -v v="$new_keys" 'BEGIN{done=0} /^decision_keys=/ {if (!done++) print "decision_keys=" v; next} {print} END{if (!done) print "decision_keys=" v}' "$meta" > "$tmp"
   chmod 600 "$tmp"
   mv "$tmp" "$meta"
   printf 'repaired: removed erroneous self-entry from %s inventory; open call %s remains untouched\n' "$origin" "$real"
+  printf 'next: fm-captain-hold.sh complete %s %s records the open call before verify can pass\n' "$origin" "$real"
 }
 
 command_verify() {

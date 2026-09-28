@@ -445,6 +445,26 @@ migrated from data/backlog.md id herald-retire-decision-github-delete on 2026-09
   pass "inventory repair removes only the proven erroneous self-entry and preserves the open call and report"
 }
 
+# A dotted origin id is matched literally, so a sibling entry the regex dot
+# would also match survives the repair.
+{
+  home=$(make_home inventory-repair-dotted)
+  run_captain "$home" hold real-open-call --title "Choose Folium attribution" \
+    --reason "captain attribution choice remains open" --repo sample >/dev/null \
+    || fail "could not create fixture captain call"
+  printf '%s\n' 'needs-decision [key=real-open-call]: choose attribution' > "$home/state/au.dit.status"
+  printf '%s\n' 'decisions_reviewed=1' 'decision_keys=au.dit,auxdit' > "$home/state/au.dit.meta"
+  out=$(run_captain "$home" repair-inventory au.dit au.dit real-open-call) \
+    || fail "guarded inventory repair of a dotted origin failed"
+  assert_grep 'decision_keys=auxdit' "$home/state/au.dit.meta" "repair removed a sibling entry matched by the regex dot"
+  assert_no_grep 'au.dit,' "$home/state/au.dit.meta" "dotted self-entry survived repair"
+  case "$out" in
+    *"complete au.dit real-open-call"*) ;;
+    *) fail "repair did not name the follow-up complete step: $out" ;;
+  esac
+  pass "inventory repair matches a dotted origin id literally and names the follow-up complete step"
+}
+
 # A tasks-axi stub that knows ONLY the row ids it is given. The real
 # beads-capable tasks-axi resolves a bare legacy id onto its prefixed row
 # itself, answering before any migration lookup runs; against this stub the
