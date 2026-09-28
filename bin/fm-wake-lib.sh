@@ -1452,6 +1452,7 @@ fm_treehouse_slot_reconciled_state() {  # <worktree> <task-id>
   if [ "$found" -eq 1 ]; then
     FM_TREEHOUSE_SLOT_RECONCILED=named
   else
+    # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
     FM_TREEHOUSE_SLOT_RECONCILED=absent
   fi
 }

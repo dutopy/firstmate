@@ -211,7 +211,12 @@ function collectDialog(entries: readonly unknown[], start: number): { items: Mir
 
 type MirrorCollection = { file: string; index: number; items: MirrorItem[]; exhausted: boolean; seed: number | null };
 
-function collectItems(sessionManager: SessionManager, anchor: MirrorCursor | null): MirrorCollection {
+// The mirror only reads the session, so it accepts the read-only view an
+// extension context supplies (`ctx.sessionManager`) rather than the full
+// SessionManager, which that context deliberately does not expose.
+type MirrorSessionManager = Pick<SessionManager, "getEntries" | "getSessionFile">;
+
+function collectItems(sessionManager: MirrorSessionManager, anchor: MirrorCursor | null): MirrorCollection {
   const file = sessionManager.getSessionFile() ?? "";
   const entries = sessionManager.getEntries();
   const cursor = readCursor();

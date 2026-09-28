@@ -40,9 +40,12 @@ def projected($input; $saved; $now; $max_age):
     | ([$input.backlog.records[]? | select(.structured and
          (.id == $k.task or ((.links // []) | index($k.url)) != null))
          | select(.hold_bucket == "live")] | first) as $hold
-    | ([$input.tasks[]? | select(.id == $k.task and .pr.url == $k.url)
-       | {head:(.pr.head | select(. != null and . != "")), merge_authority:(.merge_authority // "unknown")}] | first) as $task
-    | ($task.head // null) as $recorded_head
+    | ([$input.tasks[]? | select(.id == $k.task and .pr.url == $k.url)] | first) as $task
+    # The recorded head and the merge authority are read independently: an
+    # absent or empty recorded head is normal (nothing has read the forge
+    # since the PR was registered) and must never take the authority with it.
+    | ($task.pr.head // "") as $task_head
+    | (if ($task_head | type) == "string" and $task_head != "" then $task_head else null end) as $recorded_head
     | ($task.merge_authority // "unknown") as $merge_authority
     | ($record.observation // {}) as $o
     | (if $record.error == null and $record.observation != null and ($o.head | sha) then $o.head else null end) as $observed_head

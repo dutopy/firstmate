@@ -2220,7 +2220,10 @@ while :; do
 done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_MARKER_ROOT="$marker_root" FM_TRIGGER_FILE="$trigger" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
+  # The script body is staged in a file rather than a heredoc inside $( ):
+  # stock Bash 3.2 cannot parse a heredoc inside a command substitution whose
+  # body holds an unbalanced quote, which the JS comments here contain.
+  cat > "$TMP_ROOT/pi-session-replacement-handoff.mjs" <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2372,7 +2375,7 @@ if (liveArms().length !== 1) {
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
 EOF
-)
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_MARKER_ROOT="$marker_root" FM_TRIGGER_FILE="$trigger" FM_STOP_FILE="$stop" node --input-type=module < "$TMP_ROOT/pi-session-replacement-handoff.mjs" 2>&1)
   status=$?
   expect_code 0 "$status" "Pi session replacement must auto-arm and carry an in-flight actionable close"
   [ -z "$out" ] || fail "Pi session-replacement handoff test printed output: $out"

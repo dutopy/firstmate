@@ -1218,7 +1218,10 @@ test_pi_extension_ladder_restarts_on_captain_message_and_healthy_verdict() {
   home=$PI_FIXTURE_HOME
   ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
   exit_file="$home/guard-exit"
-  out=$(PLUGIN="$ext" FM_HOME="$home" FM_PI_TURNEND_FOLLOWUP_CEILING=2 FM_GUARD_EXIT_FILE="$exit_file" node --input-type=module 2>&1 <<'EOF'
+  # The script body is staged in a file rather than a heredoc inside $( ):
+  # stock Bash 3.2 cannot parse a heredoc inside a command substitution whose
+  # body holds an unbalanced quote, which the JS comments here contain.
+  cat > "$TMP_ROOT/pi-ladder-restart.mjs" <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1265,7 +1268,7 @@ if (prompts !== 4) throw new Error(`ladder did not restart after recovery: ${pro
 const record = readFileSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`, "utf8");
 if (!/count=1/.test(record)) throw new Error(`restarted ladder did not start from one: ${record}`);
 EOF
-)
+  out=$(PLUGIN="$ext" FM_HOME="$home" FM_PI_TURNEND_FOLLOWUP_CEILING=2 FM_GUARD_EXIT_FILE="$exit_file" node --input-type=module < "$TMP_ROOT/pi-ladder-restart.mjs" 2>&1)
   status=$?
   expect_code 0 "$status" "Pi ladder must restart on a captain message and on a healthy guard verdict"
   [ -z "$out" ] || fail "Pi ladder restart test printed output: $out"
