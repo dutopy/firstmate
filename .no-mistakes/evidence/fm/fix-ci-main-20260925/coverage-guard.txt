@@ -1,0 +1,12 @@
+## base 76d9e32: /bin/bash bin/fm-test-run.sh --check-coverage
+fm-test-run: coverage guard: 35 of 205 portable serial scripts have no measured duration hint (max 15%)
+fm-test-run: refresh the hints from a green run's timing artifacts: docs/fm-test-portable-shards.md
+tests/fm-backlog-read-bound.test.sh
+tests/fm-bearings-board-lavish-live-e2e.test.sh
+...
+rc=1
+
+## HEAD 006dfaf
+FM_TEST_COVERAGE ok total=245 parallel=24 parallel_max_ms=417163 parallel_imbalance_ms=2894 parallel_unhinted=0 serial=205 serial_shards=5 serial_unhinted=0 herdr=16
+rc=0 (5/5 repeated runs rc=0)
+note: Homebrew bash 5.3.9 on this host segfaults (139) intermittently on BOTH base and HEAD; host-only.

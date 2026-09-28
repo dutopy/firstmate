@@ -1,0 +1,20 @@
+# test_released_merge_passes_the_entrypoint_and_lands alone, under stock /bin/bash 3.2.57 (PATH shim), jq 1.6
+# The earlier 'unreadable spawn generation' refusal was a host-only crash: Homebrew bash 5.3.9 segfaults (rc=139) in $(ps ...) command substitution, on base and HEAD alike.
+## base 76d9e32
+not ok - the released merge was refused: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: could not read the GitHub pull request state before merging
+rc=1
+## HEAD 006dfaf
+ok - a released merge passes the guarded entrypoint and remains recently landed
+--- gh-axi calls:
+api /repos/sample/sample/pulls/32 --jq .head.sha | @json
+api POST /graphql --input - --jq (
+      .data.repository.pullRequest
+      | {state, isDraft, mergeable, mergeStateStatus, headRefOid, baseRefName,
+         statusCheckRollup: ((.statusCheckRollup.contexts.nodes) // [])}
+    ) | tojson | @base64 | @json
+api POST /graphql --input - --jq (.data.repository.pullRequest | {state, merged, isInMergeQueue, baseRefName}) | tojson 
+--- pr_head records:
+rc=0
+## tests/fm-on.test.sh under bash 3.2 (host has no /usr/bin/jq, so the stub-jq branch runs)
+base ok=6 rc=0; HEAD ok=6 rc=0

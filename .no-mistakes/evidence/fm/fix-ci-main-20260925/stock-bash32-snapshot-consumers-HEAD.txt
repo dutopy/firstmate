@@ -1,0 +1,5 @@
+bash=3.2.57(1)-release jq=jq-1.6 tasks-axi=0.2.6 (CI pins tasks-axi 0.2.5; runner jq differs)
+fm-fleet-snapshot-view: ok=18 (CI expects 18)
+fm-bearings-snapshot: ok=59 (CI expects 59)
+public-followup bash32 register: ok=1 (CI expects 1)
+ok - first register succeeds with an empty lock list under /bin/bash

@@ -1,0 +1,11 @@
+# fm-contributions.sh issue observation jq program (extracted verbatim), label=ready-for-pr, jq jq-1.6
+## base
+jq: error: syntax error, unexpected label, expecting IDENT or __loc__ (Unix shell quoting issues?) at <top-level>, line 3:
+        ready:any($c.labels[]; (.name | ascii_downcase) == ($label | ascii_downcase)),                                                             
+jq: error: syntax error, unexpected label, expecting IDENT or __loc__ (Unix shell quoting issues?) at <top-level>, line 8:
+          + [$timeline[0][] | .[] | select(.event == "labeled" and (.label.name | ascii_downcase) == ($label | ascii_downcase))                                                                                                       
+jq: 2 compile errors
+rc=3
+## HEAD
+{"state":"open","head":null,"ready":true,"checks":[],"reviews":[],"events":[{"token":"ready-for-pr:88","type":"ready-for-pr","source":"https://github.com/o/r/issues/3","head":null,"body":"filed issue reached ready-for-pr"}]}
+rc=0

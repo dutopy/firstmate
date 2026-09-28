@@ -1,0 +1,8 @@
+tsc Version 5.9.3; pi package 0.87.1
+## base 76d9e32: tests/fm-pi-primary-types.test.sh
+../../../var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-pi-primary-types.FCeM6Q/fm-discord-session-mirror.ts(322,32): error TS2345: Argument of type 'ReadonlySessionManager' is not assignable to parameter of type 'SessionManager'.
+rc=
+
+## HEAD 006dfaf
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 0.87.1
+rc=

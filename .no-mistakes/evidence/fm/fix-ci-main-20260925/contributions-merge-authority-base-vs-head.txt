@@ -1,0 +1,61 @@
+# fm-contributions.jq projected(): green fresh PRs; t1=yolo no pr.head, t2=yolo empty pr.head, t3=no authority (control)
+## base 76d9e32
+[
+  {
+    "url": "https://github.com/o/r/pull/7",
+    "tasks": [
+      "t1"
+    ],
+    "actor": "captain",
+    "reason": "checks green; merge approval needed",
+    "head": "0123456789abcdef0123456789abcdef01234567"
+  },
+  {
+    "url": "https://github.com/o/r/pull/8",
+    "tasks": [
+      "t2"
+    ],
+    "actor": "captain",
+    "reason": "checks green; merge approval needed",
+    "head": "0123456789abcdef0123456789abcdef01234567"
+  },
+  {
+    "url": "https://github.com/o/r/pull/9",
+    "tasks": [
+      "t3"
+    ],
+    "actor": "captain",
+    "reason": "checks green; merge approval needed",
+    "head": "0123456789abcdef0123456789abcdef01234567"
+  }
+]
+## HEAD 006dfaf
+[
+  {
+    "url": "https://github.com/o/r/pull/7",
+    "tasks": [
+      "t1"
+    ],
+    "actor": "fleet",
+    "reason": "checks green; merge is authorized by delivery posture",
+    "head": "0123456789abcdef0123456789abcdef01234567"
+  },
+  {
+    "url": "https://github.com/o/r/pull/8",
+    "tasks": [
+      "t2"
+    ],
+    "actor": "fleet",
+    "reason": "checks green; merge is authorized by delivery posture",
+    "head": "0123456789abcdef0123456789abcdef01234567"
+  },
+  {
+    "url": "https://github.com/o/r/pull/9",
+    "tasks": [
+      "t3"
+    ],
+    "actor": "captain",
+    "reason": "checks green; merge approval needed",
+    "head": "0123456789abcdef0123456789abcdef01234567"
+  }
+]

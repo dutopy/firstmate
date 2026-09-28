@@ -1,0 +1,15 @@
+# Sequential base(76d9e32) vs HEAD(006dfaf) on macOS host (jq 1.6, BSD userland) — CI runs these on ubuntu
+fm-contributions [base] rc=1 ok=1 notok=37 first: not ok - published deliveries must report actors and measured coverage: {
+fm-contributions [head] rc=1 ok=1 notok=37 first: not ok - published deliveries must report actors and measured coverage: {
+fm-discord-workspace-concurrency [base] rc=1 ok=0 notok=1 first: not ok - expected exactly one receipt recorded, got: 
+fm-discord-workspace-concurrency [head] rc=1 ok=0 notok=1 first: not ok - expected exactly one receipt recorded, got: 
+fm-session-start [base] rc=1 ok=0 notok=1 first: not ok - a locked session start did not publish the home summary ledger
+fm-session-start [head] rc=1 ok=0 notok=1 first: not ok - a locked session start did not publish the home summary ledger
+fm-test-run [base] rc=1 ok=4 notok=1 first: not ok - the runner must refuse the primary checkout under a task marker
+fm-test-run [head] rc=1 ok=4 notok=1 first: not ok - the runner must refuse the primary checkout under a task marker
+fm-discord-live [base] rc=1 ok=0 notok=1 first: not ok - fake Discord server did not start
+fm-discord-live [head] rc=1 ok=0 notok=1 first: not ok - fake Discord server did not start
+fm-captain-hold-lifecycle [base] rc=1 ok=0 notok=1 first: not ok - the pre-policy omission shape was not reproduced: {
+fm-captain-hold-lifecycle [head] rc=1 ok=0 notok=1 first: not ok - the pre-policy omission shape was not reproduced: {
+fm-pr-check-security [base] rc=1 ok=1 notok=1 first: not ok - could not prepare a GitLab poll
+fm-pr-check-security [head] rc=1 ok=1 notok=1 first: not ok - could not prepare a GitLab poll

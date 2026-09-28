@@ -1,0 +1,6 @@
+## base: test_released_merge_passes_the_entrypoint_and_lands only
+not ok - the released merge was refused: error: PR merge refused: unreadable spawn generation in task record /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-captain-hold.hoZTJh/released-merge-entrypoint/state/sample-released-merge.meta
+rc=
+## head: test_released_merge_passes_the_entrypoint_and_lands only
+not ok - the released merge was refused: error: PR merge refused: unreadable spawn generation in task record /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-captain-hold.L0Lppd/released-merge-entrypoint/state/sample-released-merge.meta
+rc=

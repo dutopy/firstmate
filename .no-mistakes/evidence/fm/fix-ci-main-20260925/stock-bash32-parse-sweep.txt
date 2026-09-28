@@ -1,0 +1,11 @@
+## base 76d9e32 (stock /bin/bash 3.2.57(1)-release)
+/tmp/nm-base-parse.sh: line 2223: unexpected EOF while looking for matching `)'
+/tmp/nm-base-parse.sh: line 4225: syntax error: unexpected end of file
+tests/fm-pi-watch-extension.test.sh: base parse rc=
+/tmp/nm-base-parse.sh: line 2091: syntax error near unexpected token `;;'
+/tmp/nm-base-parse.sh: line 2091: `    0:0|0:2|2:0) : ;;'
+tests/fm-turnend-guard.test.sh: base parse rc=
+## target HEAD 006dfaf: full CI sweep over bin/fm-lint.sh --list-files
+parsed 12 files with /bin/bash 3.2, parse_fail=0
+## HEAD: sweep over ALL tracked *.sh (superset of CI inventory)
+parsed 457 tracked .sh files with /bin/bash 3.2.57, parse_fail=0
