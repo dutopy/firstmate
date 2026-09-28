@@ -21,7 +21,7 @@ THREAD=888888888888888881
 dl() { FM_HOME="$H" "$ROOT/bin/fm-discord-live.sh" "$@"; }
 
 start_server() { # start_server <world-file> <port-file> <guild-id>
-  setsid python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "/tmp/livekeep/fake-server.log" 2>&1 <<'PY' &
+  setsid python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "$TMP_ROOT/fake-server.log" 2>&1 <<'PY' &
 import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -201,7 +201,6 @@ WORLD="$TMP_ROOT/world.json"
 PORT_FILE="$TMP_ROOT/port"
 printf '{"features":["COMMUNITY"],"channels":[],"threads":{},"messages":{},"creates":0,"posts":0,"counter":900000000000000000}\n' > "$WORLD"
 start_server "$WORLD" "$PORT_FILE" "$GUILD"
-echo "$$" > /tmp/livekeep/test-pid
 PORT=$(cat "$PORT_FILE")
 export FM_DISCORD_LIVE_API_BASE="http://127.0.0.1:$PORT"
 export FM_DISCORD_LIVE_SOPS="$TMP_ROOT/fake-sops"

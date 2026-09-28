@@ -1964,7 +1964,7 @@ heartbeat_scan_finds_actionable() {
 # queue still sleeps the whole budget, byte-for-byte the old `sleep POLL`.
 wake_wait_poll() {  # <budget-seconds>
   local budget=$1 waited=0 before after
-  case "$budget" in ''|*[!0-9]*) budget=$POLL ;; esac
+  case "$budget" in ''|*[!0-9]*) budget=1 ;; esac
   [ "$budget" -ge 1 ] || budget=1
   before=$(cat "$STATE/.wake-queue.seq" 2>/dev/null || echo 0)
   while [ "$waited" -lt "$budget" ]; do

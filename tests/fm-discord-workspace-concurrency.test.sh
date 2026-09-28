@@ -28,7 +28,11 @@ try:
     elif mode == "artifact":
         print(fwl.write_artifact_record(env, key, payload))
     elif mode == "tasklink":
-        print(fwl.write_same_or_refuse(fwl.task_link_path(env, key), payload, "task link"))
+        # cmd_link_task performs its task-link write inside state_transaction,
+        # which is where the serialization under test actually lives; call it the
+        # same way here so the concurrent workers contend for the real lock.
+        with fwl.state_transaction(env):
+            print(fwl.write_same_or_refuse(fwl.task_link_path(env, key), payload, "task link"))
 except fwl.FMError as exc:
     print("FMError:", exc)
 PY

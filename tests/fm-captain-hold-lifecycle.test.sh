@@ -120,8 +120,49 @@ SH
   cat > "$home/fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
+jq_expr=''
+prev=''
+for arg in "$@"; do
+  [ "$prev" != --jq ] || jq_expr=$arg
+  prev=$arg
+done
+# Emulate gh-axi's transport: the script's selectors end in @json, so gh-axi
+# prints a JSON string literal that the caller parses with a final jq -r '.'.
+emit() {
+  local gh_out
+  gh_out=$(printf '%s' "$1" | jq -r "$jq_expr") || return 1
+  printf '%s' "$gh_out" | jq -r '.'
+}
 case "${1:-} ${2:-}" in
-  "pr view") printf 'pull_request:\n  number: %s\n  state: merged\n' "${3:-}" ;;
+  "pr view")
+    printf 'pull_request:\n  number: %s\n  state: merged\n' "${3:-}"
+    ;;
+  "api POST")
+    body=$(cat)
+    # A GraphQL selection set answers only the fields it names, so pin the set
+    # every caller selects: a query that drops one must fail loudly rather than
+    # return null and let a degraded view stand in for the real read.
+    for field in state merged isDraft mergeable mergeStateStatus headRefOid baseRefName isInMergeQueue statusCheckRollup; do
+      case "$body" in
+        *"$field"*) ;;
+        *) printf 'fake gh-axi: GraphQL query omits %s\n' "$field" >&2; exit 3 ;;
+      esac
+    done
+    case "$jq_expr" in
+      *statusCheckRollup*)
+        # Pre-merge verify: the live pull-request view in a GraphQL shape.
+        response=$(jq -cn '{data:{repository:{pullRequest:{state:"OPEN",isDraft:false,mergeable:"MERGEABLE",mergeStateStatus:"CLEAN",headRefOid:"1111111111111111111111111111111111111111",baseRefName:"main",isInMergeQueue:false,merged:false,statusCheckRollup:{contexts:{nodes:[{__typename:"CheckRun",name:"ci",status:"COMPLETED",conclusion:"SUCCESS"}]}}}}}}') || exit 1
+        ;;
+      *)
+        # Post-merge outcome read.
+        response=$(jq -cn '{data:{repository:{pullRequest:{state:"MERGED",merged:true,isInMergeQueue:false,baseRefName:"main"}}}}') || exit 1
+        ;;
+    esac
+    emit "$response"
+    ;;
+  "api /repos"*)
+    emit '{"head":{"sha":"1111111111111111111111111111111111111111"}}'
+    ;;
 esac
 SH
   chmod +x "$home/fakebin/gh" "$home/fakebin/gh-axi"
@@ -642,7 +683,10 @@ case "${1:-}" in
       '  hold_kind: captain'
     if [ -f "@HOME@/last-body" ]; then
       printf '%s' '  body: '
-      perl -MJSON::PP -e 'local $/; print encode_json(<STDIN>)' < "@HOME@/last-body"
+      # PERL_BADLANG=0 keeps perl's own locale warning off stderr: the read that
+      # parses this output captures stderr with stdout, so that warning would
+      # land inside the body line and read as a missing hold-set stamp.
+      PERL_BADLANG=0 perl -MJSON::PP -e 'local $/; print encode_json(<STDIN>)' < "@HOME@/last-body"
       printf '\n'
     else
       printf '%s\n' '  body: ""'

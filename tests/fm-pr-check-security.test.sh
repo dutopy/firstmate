@@ -869,13 +869,15 @@ SH
     [ "$i" -lt 100 ] || fail "atomic publication did not reach staged check"
 
     set +e
-    FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+    LC_ALL=C PERL_BADLANG=0 FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" \
+      > "$dir/watch.out" 2> "$dir/watch.err"
     rc=$?
     set -e
     wait "$direct_pid" || fail "concurrent direct arming failed"
-    [ "$rc" -eq 0 ] || fail "concurrent watcher did not complete"
+    [ "$rc" -eq 0 ] || fail "concurrent watcher did not complete: $(cat "$dir/watch.err")"
     grep -q '^check: .*: merged$' "$dir/watch.out" || fail "concurrent watcher never saw complete poll"
-    [ ! -s "$dir/watch.err" ] || fail "concurrent watcher observed a partial artifact error"
+    [ ! -s "$dir/watch.err" ] \
+      || fail "concurrent watcher reported a partial artifact error: $(cat "$dir/watch.err")"
     if [ -e "$dir/home/state/task-a.check.sh" ]; then
       cmp -s "$POLL" "$dir/home/state/task-a.check.sh" || fail "concurrent publication check bytes changed"
       [ "$(file_mode "$dir/home/state/task-a.check.sh")" = 600 ] || fail "concurrent check mode was not private"

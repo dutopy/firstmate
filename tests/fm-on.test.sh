@@ -327,6 +327,12 @@ pass "the remote doctor derives tool readiness from the installed worker"
 DOCTOR_BIN="$TMP_ROOT/doctor-bin"
 DOCTOR_HOME="$TMP_ROOT/doctor-home"
 mkdir -p "$DOCTOR_BIN" "$DOCTOR_HOME"
+# CI provides jq in /usr/bin; add a harmless local executable on macOS, never a
+# symlink to a managed binary, so later fixture replacement cannot escape TMP_ROOT.
+if [ -z "$(PATH=/usr/bin:/bin:/usr/sbin:/sbin command -v jq 2>/dev/null || true)" ]; then
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$DOCTOR_BIN/jq"
+  chmod +x "$DOCTOR_BIN/jq"
+fi
 ln -sf "$(command -v bash)" "$DOCTOR_BIN/bash"
 # Report a non-darwin host so this file keeps testing tool resolution alone and
 # never reads or writes the real account's launch agents.
