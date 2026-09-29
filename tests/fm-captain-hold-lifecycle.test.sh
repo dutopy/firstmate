@@ -417,6 +417,57 @@ migrated from data/backlog.md id herald-retire-decision-github-delete on 2026-09
   pass "verify resolves a captain hold migrated to a beads row with a marker note"
 }
 
+# Inventory repair removes only an erroneous origin self-entry when the
+# matching status decision and an independently held captain-call task exist.
+{
+  home=$(make_home inventory-repair)
+  run_captain "$home" hold real-open-call --title "Choose Folium attribution" \
+    --reason "captain attribution choice remains open" --repo sample >/dev/null \
+    || fail "could not create fixture captain call"
+  printf '%s\n' 'needs-decision [key=real-open-call]: choose attribution' > "$home/state/audit.status"
+  printf '%s\n' 'decisions_reviewed=1' 'decision_keys=audit' > "$home/state/audit.meta"
+  mkdir -p "$home/data/audit"
+  printf '%s\n' 'audit report retained' > "$home/data/audit/report.md"
+  run_captain "$home" repair-inventory audit audit real-open-call >/dev/null \
+    || fail "guarded inventory repair failed"
+  [ "$(grep '^decision_keys=' "$home/state/audit.meta" | tail -1)" = 'decision_keys=' ] \
+    || fail "erroneous self-entry survived repair or the open call was added: $(cat "$home/state/audit.meta")"
+  run_captain "$home" open real-open-call >/dev/null \
+    || fail "repair disturbed the real captain-held call"
+  assert_grep 'needs-decision [key=real-open-call]' "$home/state/audit.status" "open call wording was altered"
+  assert_grep 'audit report retained' "$home/data/audit/report.md" "report was altered"
+  rc=0
+  run_captain "$home" repair-inventory audit audit >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "repair with too few arguments exited $rc instead of usage exit 2"
+  if run_captain "$home" repair-inventory audit unrelated real-open-call >/dev/null 2>&1; then
+    fail "repair accepted a mismatched erroneous identity"
+  fi
+  if run_captain "$home" repair-inventory audit audit real-open-call >/dev/null 2>&1; then
+    fail "repair accepted an inventory that no longer records the erroneous entry"
+  fi
+  pass "inventory repair removes only the proven erroneous self-entry and preserves the open call and report"
+}
+
+# A dotted origin id is matched literally, so a sibling entry the regex dot
+# would also match survives the repair.
+{
+  home=$(make_home inventory-repair-dotted)
+  run_captain "$home" hold real-open-call --title "Choose Folium attribution" \
+    --reason "captain attribution choice remains open" --repo sample >/dev/null \
+    || fail "could not create fixture captain call"
+  printf '%s\n' 'needs-decision [key=real-open-call]: choose attribution' > "$home/state/au.dit.status"
+  printf '%s\n' 'decisions_reviewed=1' 'decision_keys=' 'decision_keys=au.dit,auxdit' > "$home/state/au.dit.meta"
+  out=$(run_captain "$home" repair-inventory au.dit au.dit real-open-call) \
+    || fail "guarded inventory repair of a dotted origin failed"
+  [ "$(grep '^decision_keys=' "$home/state/au.dit.meta" | tail -1)" = 'decision_keys=auxdit' ] \
+    || fail "repair did not leave the literal sibling entry as the authoritative last inventory: $(cat "$home/state/au.dit.meta")"
+  case "$out" in
+    *"complete au.dit real-open-call"*) ;;
+    *) fail "repair did not name the follow-up complete step: $out" ;;
+  esac
+  pass "inventory repair matches a dotted origin id literally and names the follow-up complete step"
+}
+
 # A tasks-axi stub that knows ONLY the row ids it is given. The real
 # beads-capable tasks-axi resolves a bare legacy id onto its prefixed row
 # itself, answering before any migration lookup runs; against this stub the

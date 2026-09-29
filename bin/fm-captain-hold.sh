@@ -30,6 +30,7 @@
 #   fm-captain-hold.sh unbind <source-id>
 #   fm-captain-hold.sh binding <source-id>
 #   fm-captain-hold.sh complete <origin-id> (--none | <task-id>...)
+#   fm-captain-hold.sh repair-inventory <origin-id> <erroneous-task-id> <open-call-task-id>
 #   fm-captain-hold.sh verify <origin-id>
 #   fm-captain-hold.sh open <task-id> [--identity] [--distinguish-absent]
 #   fm-captain-hold.sh diverged
@@ -147,6 +148,16 @@
 # `captain-held [key=...]` status close naming the inventory. Later review
 # passes may add ids. A post-teardown visual review can complete against the
 # surviving report and tasks without recreating task state.
+# `repair-inventory` is the narrow correction for a recorded inventory that
+# mistakenly names the origin itself: it removes that one self-entry from the
+# origin's metadata when, and only when, the named erroneous id is exactly the
+# origin id, a reviewed inventory records it, and the other named task is still
+# an actively captain-held call matching an open keyed decision on the origin's
+# status. It never adds an entry, never touches the open call's wording or any
+# surviving report, and refuses a mismatched identity, a missing entry, an
+# already-answered or unrelated call, or unreviewed or unsafe metadata.
+# Repair alone does not unblock teardown: the open keyed decision still fails
+# `verify` until `complete <origin-id> <open-call-task-id>` records the call.
 # `verify` is read-only and is called by scout teardown, so teardown cannot
 # erase a source before this gate has succeeded: every recorded inventory
 # entry must still be durable and no keyed status decision may be open.
@@ -1807,6 +1818,38 @@ EOF
     "${attested_by_prefix:+ [attested through the configured prefix: $attested_by_prefix]}"
 }
 
+# Correct only a proven self-entry: the origin's own id was accidentally
+# recorded as a held call, while the named real call remains actively held.
+command_repair_inventory() {
+  local origin=${1:-} erroneous=${2:-} real=${3:-} meta reviewed keys new_keys open
+  [ "$#" -eq 3 ] || { usage >&2; exit 2; }
+  validate_slug origin-id "$origin"
+  validate_slug erroneous-task-id "$erroneous"
+  validate_slug open-call-task-id "$real"
+  [ "$erroneous" = "$origin" ] || fail "repair only permits removing the origin's own erroneous entry"
+  meta="$STATE/$origin.meta"
+  [ -f "$meta" ] && [ ! -L "$meta" ] || fail "origin metadata is absent or unsafe"
+  reviewed=$(meta_value "$meta" decisions_reviewed)
+  [ "$reviewed" = 1 ] || fail "origin inventory has not been reviewed"
+  keys=$(meta_value "$meta" decision_keys)
+  list_has_line "$(printf '%s\n' "$keys" | tr ',' '\n')" "$erroneous" || fail "erroneous entry is not recorded"
+  [ "$real" != "$origin" ] || fail "real captain call must differ from origin"
+  command_open "$real" || fail "named task is not an active captain-held call"
+  open=$(status_open_decisions "$STATE/$origin.status")
+  printf '%s\n' "$open" | awk -F '\t' -v k="$real" '$1 == k { found=1 } END { exit !found }' \
+    || fail "origin has no matching open decision for the named real call"
+  CAPTAIN_META_LOCK=$(fm_meta_lock_path "$meta") || fail "could not resolve task metadata lock"
+  fm_lock_acquire_wait "$CAPTAIN_META_LOCK"
+  CAPTAIN_META_LOCK_HELD=1
+  keys=$(meta_value "$meta" decision_keys)
+  list_has_line "$(printf '%s\n' "$keys" | tr ',' '\n')" "$erroneous" || fail "inventory changed during repair"
+  list_has_line "$(printf '%s\n' "$keys" | tr ',' '\n')" "$real" && fail "real call is already in inventory"
+  new_keys=$(printf '%s\n' "$keys" | tr ',' '\n' | grep -vxF -- "$erroneous" | paste -sd, -)
+  printf 'decision_keys=%s\n' "$new_keys" >> "$meta"
+  printf 'repaired: removed erroneous self-entry from %s inventory; open call %s remains untouched\n' "$origin" "$real"
+  printf 'next: fm-captain-hold.sh complete %s %s records the open call before verify can pass\n' "$origin" "$real"
+}
+
 command_verify() {
   local origin=${1:-} meta reviewed keys entry key open resolved
   [ "$#" -eq 1 ] || { usage >&2; exit 2; }
@@ -2038,6 +2081,7 @@ case "${1:-}" in
   unbind) shift; command_unbind "$@" ;;
   binding) shift; command_binding "$@" ;;
   complete) shift; command_complete "$@" ;;
+  repair-inventory) shift; command_repair_inventory "$@" ;;
   verify) shift; command_verify "$@" ;;
   open) shift; command_open "$@" ;;
   diverged) shift; command_diverged "$@" ;;
