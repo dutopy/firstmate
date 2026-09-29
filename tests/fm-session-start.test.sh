@@ -37,7 +37,11 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 SESSION_START="$ROOT/bin/fm-session-start.sh"
-BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+JQ_BIN=$(command -v jq || true)
+[ -n "$JQ_BIN" ] || fail "jq is required for session-start fixtures and assertions"
+JQ_VERSION=$("$JQ_BIN" --version) || fail "could not read jq version"
+case "$JQ_VERSION" in jq-[0-9]*) ;; *) fail "unexpected jq version output: $JQ_VERSION" ;; esac
+BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:$(dirname "$JQ_BIN")
 TMP_ROOT=$(fm_test_tmproot fm-session-start-tests)
 SESSION_START_TEST_HARNESS_PID=$$
 SESSION_START_SECOND_MATE_ID="fmtest-sm-${TMP_ROOT##*.}"
@@ -599,10 +603,15 @@ EOF
   mate="$w/secondmate-$id"
   log="$w/herdr.log"
   state="$w/herdr.state"
+  mkdir -p "$root/data"
+  printf '%s\n' "$id" > "$root/.fm-secondmate-home"
+  printf '# Firstmate\n' > "$root/AGENTS.md"
+  printf 'Second mate charter.\n' > "$root/data/charter.md"
+  printf '%s\n' '/config/*' '/state/*' '/projects/*' > "$root/.gitignore"
+  git -C "$root" add AGENTS.md .fm-secondmate-home .gitignore data/charter.md
+  git -C "$root" -c user.name=fmtest -c user.email=fmtest@example.invalid commit -q -m 'seed test Firstmate checkout'
+  git clone -q "$root" "$mate"
   mkdir -p "$mate/bin" "$mate/data" "$mate/state" "$mate/config" "$mate/projects"
-  printf '%s\n' "$id" > "$mate/.fm-secondmate-home"
-  printf '# Firstmate\n' > "$mate/AGENTS.md"
-  printf 'Second mate charter.\n' > "$mate/data/charter.md"
   printf '%s\n' herdr > "$home/config/backend"
   printf '%s\n' pi > "$home/config/secondmate-harness"
   printf '%s\n' manual > "$home/config/backlog-backend"
