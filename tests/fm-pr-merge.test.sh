@@ -151,18 +151,27 @@ add_gh_mocks() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
 jq_expr=''
+full=0
 prev=''
 for arg in "$@"; do
   [ "$prev" != --jq ] || jq_expr=$arg
+  [ "$arg" != --full ] || full=1
   prev=$arg
 done
 # Emulate gh-axi's transport: gh prints jq -r output, gh-axi JSON-parses it and
 # prints a resulting string verbatim. The script's selectors end in @json, so
 # the gh output is a JSON string literal and the final `jq -r .` is the parse.
+# gh-axi also truncates any rendered value past a few kilobytes unless --full is
+# given and appends a marker that corrupts the base64 payload, so reproduce that
+# here: a read that forgets --full then fails in the test exactly as it did live.
 emit() {
-  local gh_out
+  local gh_out value
   gh_out=$(printf '%s' "$1" | jq -r "$jq_expr") || return 1
-  printf '%s' "$gh_out" | jq -r '.'
+  value=$(printf '%s' "$gh_out" | jq -r '.') || return 1
+  if [ "$full" -eq 0 ] && [ "${#value}" -gt 2000 ]; then
+    value="${value:0:2000} (truncated)"
+  fi
+  printf '%s\n' "$value"
 }
 case "${1:-} ${2:-}" in
   "pr view")
@@ -2717,6 +2726,58 @@ test_backend_override_bypasses_unreadable_user_config() {
   pass "fm-pr-merge honors a backend override over an unreadable user configuration"
 }
 
+# A real pull request can carry a long check rollup, and gh-axi truncates a
+# rendered jq value past a few kilobytes unless --full is passed. The pre-merge
+# read must request complete values or it decodes a corrupted payload and
+# refuses a mergeable pull request it should accept. Drive a rollup well past
+# that boundary through both the accepted and the red refusal path, so removing
+# --full from the read fails this test in both directions.
+test_oversized_check_rollup_reads_fully() {
+  local case_dir rc head entries i
+  head=efefefefefefefefefefefefefefefefefefefef
+
+  # Enough named runs and legacy contexts that the encoded rollup clears
+  # gh-axi's truncation boundary by a wide margin.
+  entries=()
+  for i in $(seq 1 24); do
+    entries+=("$(check_run "build-$i" COMPLETED SUCCESS 2026-01-01T00:00:01Z)")
+  done
+  for i in $(seq 1 6); do
+    entries+=("$(status_context "legacy-$i" SUCCESS)")
+  done
+
+  case_dir=$(make_case github-oversized-rollup)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "${entries[@]}"
+
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/95 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "github-oversized-rollup: a fully readable rollup must merge"$'\n'"$(cat "$case_dir/stderr")"
+  assert_grep "pr_head=$head" "$case_dir/state/task-x1.meta" \
+    "github-oversized-rollup: the verified head was not pinned"
+  assert_logged_gh_merge "$case_dir" 95 example/repo --squash
+
+  # The same oversized rollup with one red run must still refuse and name it.
+  case_dir=$(make_case github-oversized-red)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "${entries[@]}" \
+    "$(check_run e2e COMPLETED FAILURE 2026-01-01T00:00:09Z)"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/96 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "github-oversized-red: a red run in an oversized rollup must refuse"
+  assert_grep "check 'e2e' is not green" "$case_dir/stderr" \
+    "github-oversized-red: the red check was not named"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-oversized-red: gh pr merge ran on a red oversized rollup"
+  pass "fm-pr-merge reads an oversized check rollup fully, keeping the head pin and the refusal"
+}
+
 test_github_red_checks_refuse_and_allow_red_waives_named() {
   local case_dir rc head
   head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -3432,6 +3493,7 @@ test_unreadable_user_backend_config_refuses_the_merge
 test_untraversable_user_backend_config_directory_refuses_the_merge
 test_absent_user_backend_config_directory_and_backlog_still_merge
 test_backend_override_bypasses_unreadable_user_config
+test_oversized_check_rollup_reads_fully
 test_github_red_checks_refuse_and_allow_red_waives_named
 test_superseded_failed_check_run_no_longer_refuses
 test_check_runs_never_supersede_status_contexts

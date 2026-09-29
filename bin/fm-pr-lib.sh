@@ -917,8 +917,12 @@ fm_pr_base64_decode() {  # <base64-text>
 # inside a JSON string literal gh-axi passes through verbatim: <selector> runs
 # on the GraphQL response, `tojson | @base64 | @json` makes the selected object
 # a single safe token, and this function decodes it back to JSON for the
-# existing jq consumers. Prints the selected JSON value and fails when gh-axi
-# or base64 is absent, the request fails, or the response carries no data.
+# existing jq consumers. `--full` is required: gh-axi truncates any selected
+# value past a small size by default and appends a marker that corrupts the
+# base64, so a realistic check rollup decodes to nothing and the merge guard
+# refuses to read checks it should accept. Prints the selected JSON value and
+# fails when gh-axi or base64 is absent, the request fails, or the response
+# carries no data.
 # The query is the single definition of the pull-request fields every GitHub
 # read in this repository needs; each caller selects its own subset.
 fm_pr_gh_axi_graphql() {  # <owner> <repo> <number> <jq-selector>
@@ -933,7 +937,7 @@ fm_pr_gh_axi_graphql() {  # <owner> <repo> <number> <jq-selector>
   # depends on to distinguish a landed pull request from a queued or open one.
   query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isDraft mergeable mergeStateStatus headRefOid baseRefName isInMergeQueue statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion startedAt} ... on StatusContext{context state}}}}}}}'
   body="{\"query\":\"$query\",\"variables\":{\"owner\":\"$owner\",\"repo\":\"$repo\",\"number\":$number}}"
-  encoded=$(printf '%s' "$body" | gh-axi api POST /graphql --input - \
+  encoded=$(printf '%s' "$body" | gh-axi api POST /graphql --input - --full \
     --jq "($selector) | tojson | @base64 | @json" 2>/dev/null) || return 1
   [ -n "$encoded" ] || return 1
   decoded=$(fm_pr_base64_decode "$encoded") || return 1
