@@ -10,7 +10,7 @@ metadata:
 
 # Home layout and state inventory
 
-This skill contains the detailed operational-home inventory formerly kept in `AGENTS.md` section 2.
+This skill owns the detailed operational-home inventory; `AGENTS.md` section 2 keeps only the routing rules.
 
 ## Operational-home inventory
 
