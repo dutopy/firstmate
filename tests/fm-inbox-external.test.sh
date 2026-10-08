@@ -162,11 +162,7 @@ assert_contains "$recovered" "queued $orphan_id" "handled note recovers its orig
 pass "handled note recovery does not requeue processed work"
 
 rm "$map3"
-python3 - "$HOME3/state/inbox/handled/$orphan_id.note" "$HOME3/state/inbox/second-id.note" <<'PY'
-import pathlib, sys
-data = pathlib.Path(sys.argv[1]).read_text()
-pathlib.Path(sys.argv[2]).write_text("id=second-id\n" + data.split("\n", 1)[1])
-PY
+cp "$HOME3/state/inbox/handled/$orphan_id.note" "$HOME3/state/inbox/$orphan_id.note"
 ambiguous_status=0
 FM_HOME="$HOME3" "$ROOT/bin/fm-inbox.sh" note \
   --source fred --external-id annotation-crash-note-01 - \
@@ -174,6 +170,16 @@ FM_HOME="$HOME3" "$ROOT/bin/fm-inbox.sh" note \
 [ "$ambiguous_status" -ne 0 ] || fail "ambiguous published identities were silently selected"
 [ "$(note_count_for "$HOME3")" = 1 ] || fail "ambiguous recovery added another note"
 pass "ambiguous external identities refuse without another publication"
+
+HOME4="$TMP_ROOT/home4"
+mkdir -p "$HOME4/state/inbox/handled" "$HOME4/data"
+ln -s /nonexistent "$HOME4/state/inbox/handled/decoy.note"
+printf 'id=decoy2\nexternal_source=fred\nexternal_id=fresh-id-01\n--\nother\n' > "$HOME4/state/inbox/decoy2.note"
+fresh=$(FM_HOME="$HOME4" "$ROOT/bin/fm-inbox.sh" note \
+  --source fred --external-id fresh-id-01 - <<< 'Fresh body.')
+assert_contains "$fresh" "queued ext-" "fresh external id publishes under its digest-derived note id"
+[ -f "$HOME4/state/inbox/$(printf '%s' "$fresh" | sed -n '1s/^queued //p').note" ] || fail "digest-derived note was not published"
+pass "fresh external ids do not scan unrelated pending or handled notes"
 
 python3 - "$ROOT" "$TMP_ROOT" <<'PY'
 import concurrent.futures, os, pathlib, subprocess, sys

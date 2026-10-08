@@ -307,19 +307,11 @@ try:
     else:
         matches = []
         for parent in (inbox, inbox / "handled"):
-            for path in parent.glob("*.note"):
-                if path.is_symlink():
-                    raise ValueError("unsafe published external note candidate")
-                try:
-                    with path.open("rb") as handle:
-                        header = handle.read(65536).partition(b"\n--\n")[0]
-                    lines = header.split(b"\n")
-                except FileNotFoundError:
-                    continue  # drain may have moved the note to handled.
-                if (("external_source=" + source).encode() in lines
-                        and ("external_id=" + external_id).encode() in lines):
-                    note(path)
-                    matches.append(path)
+            path = parent / ("ext-" + mapping.stem + ".note")
+            if path.exists() or path.is_symlink():
+                if note(path) is None:
+                    raise ValueError("external note id belongs to another identity")
+                matches.append(path)
         if len(matches) > 1:
             raise ValueError("external note identity is ambiguous")
         existing = matches[0].stem if matches else "-"
@@ -377,11 +369,11 @@ rewrite_external_map_announced() {  # <map-path> <0|1>
   mv "$tmp" "$map" && sync_external_file "$map"
 }
 
-queue_note_file() {  # <source> <body> <extra>
-  local source=$1 body=$2 extra=${3:-} tmp id staging_name
+queue_note_file() {  # <source> <body> <extra> [fixed-id]
+  local source=$1 body=$2 extra=${3:-} id=${4:-} tmp staging_name
   tmp=$(mktemp "$INBOX/.staging-XXXXXX")
   staging_name=$(basename "$tmp")
-  id="$(date +%s)-${staging_name#.staging-}"
+  [ -n "$id" ] || id="$(date +%s)-${staging_name#.staging-}"
   {
     printf 'id=%s\n' "$id"
     printf 'at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -463,7 +455,7 @@ queue_note() {
     extra="${extra}${extra:+$'\n'}external_source=$source
 external_id=$external_id
 payload_sha256=$payload_digest"
-    id=$(queue_note_file "$source" "$body" "$extra")
+    id=$(queue_note_file "$source" "$body" "$extra" "ext-$(basename "$map" .map)")
     sync_external_file "$INBOX/$id.note" || die_locked "cannot persist external inbox note"
     write_external_map "$map" "$source" "$external_id" "$id" "$payload_digest" \
       "$summary" 0 "$metadata_dst" || die_locked "cannot publish external inbox map"
