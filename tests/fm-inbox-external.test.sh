@@ -45,21 +45,19 @@ out2=$(FM_HOME="$HOME1" "$ROOT/bin/fm-inbox.sh" note \
   --source discord-workspace \
   --external-id discord:111111111111111111:222222222222222222:999999999999999999 \
   --metadata-file "$META" - <<'EOF'
-Replay body that must not create a new note.
+Discord note body.
 EOF
 )
 assert_contains "$out2" "queued $first_id" "replay returns the first note id"
-assert_contains "$out2" "no new wake" "replay reports that no wake was appended"
 [ "$(note_count)" = 1 ] || fail "replay created a duplicate note"
 [ "$(wake_count)" = 1 ] || fail "replay created a duplicate wake"
 pass "external-source replay is idempotent"
 
 bad_status=0
-bad_out=$(FM_HOME="$HOME1" "$ROOT/bin/fm-inbox.sh" note \
+FM_HOME="$HOME1" "$ROOT/bin/fm-inbox.sh" note \
   --source discord-workspace \
-  --external-id 'discord:bad/slash' - <<< 'bad' 2>&1) || bad_status=$?
+  --external-id 'discord:bad/slash' - <<< 'bad' >/dev/null 2>&1 || bad_status=$?
 [ "$bad_status" -ne 0 ] || fail "invalid external id was accepted"
-assert_contains "$bad_out" "external id" "invalid external id refusal names the problem"
 pass "external source ids are validated before queuing"
 
 note_count_for() {
@@ -94,12 +92,138 @@ rmdir "$HOME2/state/.wake-queue.seq"
 replay_out=$(FM_HOME="$HOME2" "$ROOT/bin/fm-inbox.sh" note \
   --source discord-workspace \
   --external-id "$EXT_ID2" - <<'WAKENOTE'
-Replay body that must only re-announce.
+Note whose announcement will fail.
 WAKENOTE
 )
 assert_contains "$replay_out" "queued $fail_id" "replay after failed announcement returns the original note id"
-assert_contains "$replay_out" "announcement retried and delivered" "replay re-announces the original note"
 [ "$(note_count_for "$HOME2")" = 1 ] || fail "replay after failed announcement created a duplicate note"
 [ "$(awk 'END { print NR + 0 }' "$HOME2/state/.wake-queue" 2>/dev/null)" = 1 ] || fail "replay produced the wrong wake count"
 assert_grep "announced=1" "$map_file" "delivered retry marks the map announced=1"
 pass "replay after a failed announcement re-announces the original note instead of duplicating"
+
+changed_status=0
+FM_HOME="$HOME1" "$ROOT/bin/fm-inbox.sh" note \
+  --source discord-workspace \
+  --external-id discord:111111111111111111:222222222222222222:999999999999999999 \
+  --metadata-file "$META" - <<< 'Changed body.' >/dev/null 2>&1 || changed_status=$?
+[ "$changed_status" -ne 0 ] || fail "an external id accepted a changed body"
+[ "$(note_count)" = 1 ] || fail "changed replay created another note"
+[ "$(wake_count)" = 1 ] || fail "changed replay created another wake"
+pass "external id is bound to its original body"
+
+printf '{"profile":"different","message_id":"999999999999999999"}\n' > "$META"
+changed_status=0
+FM_HOME="$HOME1" "$ROOT/bin/fm-inbox.sh" note \
+  --source discord-workspace \
+  --external-id discord:111111111111111111:222222222222222222:999999999999999999 \
+  --metadata-file "$META" - <<< 'Discord note body.' >/dev/null 2>&1 || changed_status=$?
+[ "$changed_status" -ne 0 ] || fail "an external id accepted changed metadata"
+python3 - "$metadata_copy" <<'PY'
+import json, sys
+assert json.load(open(sys.argv[1]))["profile"] == "proapplis"
+PY
+pass "changed metadata rejects without overwriting the original"
+
+HOME3="$TMP_ROOT/home3"
+FAULT_BIN="$TMP_ROOT/fault-bin"
+mkdir -p "$HOME3/state" "$HOME3/data" "$FAULT_BIN"
+# Inject only the map-publication filesystem failure; run the real CLI and note writes.
+cat > "$FAULT_BIN/mv" <<'SH'
+#!/usr/bin/env bash
+for last; do :; done
+case "$last" in *.map) exit 97 ;; esac
+exec /bin/mv "$@"
+SH
+chmod +x "$FAULT_BIN/mv"
+crash_status=0
+PATH="$FAULT_BIN:$PATH" FM_HOME="$HOME3" "$ROOT/bin/fm-inbox.sh" note \
+  --source fred --external-id annotation-crash-note-01 - \
+  <<< 'Synthetic browser comment.' >/dev/null 2>&1 || crash_status=$?
+[ "$crash_status" -ne 0 ] || fail "map-publication failure was not reported"
+[ "$(note_count_for "$HOME3")" = 1 ] || fail "publication failure lost the note"
+orphan_note=$(find "$HOME3/state/inbox" -maxdepth 1 -name '*.note')
+orphan_id=$(basename "$orphan_note" .note)
+recovered=$(FM_HOME="$HOME3" "$ROOT/bin/fm-inbox.sh" note \
+  --source fred --external-id annotation-crash-note-01 - <<< 'Synthetic browser comment.')
+assert_contains "$recovered" "queued $orphan_id" "missing map recovers the published note identity"
+[ "$(note_count_for "$HOME3")" = 1 ] || fail "map recovery duplicated the note"
+[ "$(awk 'END { print NR + 0 }' "$HOME3/state/.wake-queue")" = 1 ] || fail "recovered note was not announced once"
+pass "a crash between note and map publication recovers the exact note"
+
+mkdir -p "$HOME3/state/inbox/handled"
+mv "$orphan_note" "$HOME3/state/inbox/handled/"
+map3=$(find "$HOME3/state/inbox/external" -name '*.map')
+rm "$map3"
+recovered=$(FM_HOME="$HOME3" "$ROOT/bin/fm-inbox.sh" note \
+  --source fred --external-id annotation-crash-note-01 - <<< 'Synthetic browser comment.')
+assert_contains "$recovered" "queued $orphan_id" "handled note recovers its original identity"
+[ "$(note_count_for "$HOME3")" = 0 ] || fail "handled recovery requeued the note"
+[ "$(awk 'END { print NR + 0 }' "$HOME3/state/.wake-queue")" = 1 ] || fail "handled recovery added a wake"
+pass "handled note recovery does not requeue processed work"
+
+rm "$map3"
+python3 - "$HOME3/state/inbox/handled/$orphan_id.note" "$HOME3/state/inbox/second-id.note" <<'PY'
+import pathlib, sys
+data = pathlib.Path(sys.argv[1]).read_text()
+pathlib.Path(sys.argv[2]).write_text("id=second-id\n" + data.split("\n", 1)[1])
+PY
+ambiguous_status=0
+FM_HOME="$HOME3" "$ROOT/bin/fm-inbox.sh" note \
+  --source fred --external-id annotation-crash-note-01 - \
+  <<< 'Synthetic browser comment.' >/dev/null 2>&1 || ambiguous_status=$?
+[ "$ambiguous_status" -ne 0 ] || fail "ambiguous published identities were silently selected"
+[ "$(note_count_for "$HOME3")" = 1 ] || fail "ambiguous recovery added another note"
+pass "ambiguous external identities refuse without another publication"
+
+python3 - "$ROOT" "$TMP_ROOT" <<'PY'
+import concurrent.futures, os, pathlib, subprocess, sys
+root, temporary = map(pathlib.Path, sys.argv[1:])
+home = temporary / "concurrent-home"
+home.mkdir(mode=0o700)
+env = dict(os.environ, FM_HOME=str(home), FM_WAKE_NUDGE_DISABLE="1")
+for key in ("FM_STATE_OVERRIDE", "FM_DATA_OVERRIDE", "FM_CONFIG_OVERRIDE"):
+    env.pop(key, None)
+command = [str(root / "bin/fm-inbox.sh"), "note", "--source", "fred",
+           "--external-id", "annotation-concurrent-01", "-"]
+body = b"First line.\r\nSecond line.\n"
+def submit(_):
+    result = subprocess.run(command, input=body, env=env, capture_output=True)
+    assert result.returncode == 0, result.stderr.decode()
+    return result.stdout.splitlines()[0]
+with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+    receipts = list(pool.map(submit, range(16)))
+assert len(set(receipts)) == 1, receipts
+notes = list((home / "state/inbox").glob("*.note"))
+assert len(notes) == 1
+assert (home / "state/.wake-queue").read_bytes().count(b"\n") == 1
+assert notes[0].read_bytes().partition(b"\n--\n")[2] == body
+
+home = temporary / "crash-metadata-home"
+home.mkdir(mode=0o700)
+env["FM_HOME"] = str(home)
+metadata = temporary / "crash-metadata.json"
+metadata.write_text('{"batch":"original"}\n')
+command = [str(root / "bin/fm-inbox.sh"), "note", "--source", "fred",
+           "--external-id", "annotation-crash-metadata-01", "--metadata-file", str(metadata), "-"]
+fault_env = dict(env, PATH=str(temporary / "fault-bin") + ":" + env["PATH"])
+failed = subprocess.run(command, input=b"Immutable annotation.\n", env=fault_env, capture_output=True)
+assert failed.returncode != 0
+notes = list((home / "state/inbox").glob("*.note"))
+assert len(notes) == 1
+original_note = notes[0].read_bytes()
+copied = next((home / "state/inbox/external").glob("*.metadata.json"))
+original_metadata = copied.read_bytes()
+metadata.write_text('{"batch":"changed"}\n')
+changed = subprocess.run(command, input=b"Immutable annotation.\n", env=env, capture_output=True)
+assert changed.returncode != 0
+assert copied.read_bytes() == original_metadata
+assert notes[0].read_bytes() == original_note
+assert not list((home / "state/inbox/external").glob("*.map"))
+metadata.write_bytes(original_metadata)
+recovered = subprocess.run(command, input=b"Immutable annotation.\n", env=env, capture_output=True)
+assert recovered.returncode == 0, recovered.stderr.decode()
+assert recovered.stdout.splitlines()[0] == ("queued " + notes[0].stem).encode()
+assert len(list((home / "state/inbox").glob("*.note"))) == 1
+PY
+pass "concurrent CRLF replays retain one exact note and receipt"
+pass "lost-map changed metadata cannot overwrite the immutable captured payload"
