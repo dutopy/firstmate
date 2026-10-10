@@ -1,0 +1,3 @@
+ok - claude ship, scout and secondmate launches force the advisor tool off for every ambient value and allowlist posture
+ok - non-claude launches do not carry the claude advisor control
+ok - claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store
