@@ -28,6 +28,11 @@
 #   first in the private launch-brief overlay, including the exact task-owned
 #   steering inbox. This never rewrites a project's instruction files or a
 #   secondmate's charter.
+#   A ship or scout spawn on a treehouse-backed runtime (every backend except
+#   orca) waits up to FM_SPAWN_ISOLATION_WAIT_SECS (default 60, 1-3600) for
+#   `treehouse get` to move the pane into an isolated worktree. If the allocator
+#   itself fails (for example a full pool) the spawn stops at once, reporting its
+#   exit status and the last pane lines, rather than reporting a timeout.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is
@@ -429,6 +434,18 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+# Bounded wait for `treehouse get` to enter an isolated worktree; a set value
+# that is not a positive integer up to an hour is refused before any side effect.
+FM_SPAWN_ISOLATION_WAIT_SECS=${FM_SPAWN_ISOLATION_WAIT_SECS:-60}
+case "$FM_SPAWN_ISOLATION_WAIT_SECS" in
+  '' | *[!0-9]* | 0*)
+    echo "error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '$FM_SPAWN_ISOLATION_WAIT_SECS'" >&2
+    exit 1 ;;
+esac
+if [ "${#FM_SPAWN_ISOLATION_WAIT_SECS}" -gt 4 ] || [ "$FM_SPAWN_ISOLATION_WAIT_SECS" -gt 3600 ]; then
+  echo "error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '$FM_SPAWN_ISOLATION_WAIT_SECS'" >&2
+  exit 1
+fi
 # shellcheck source=bin/fm-config-inherit-lib.sh
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
 if ! LAUNCH_ENV_ENABLED=$(fm_config_source_present "$CONFIG/launch-env-allowlist"); then
@@ -3587,7 +3604,15 @@ if [ "$RELAUNCH" -eq 1 ]; then
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
+  # The allocator's own exit status is the structural evidence of a refusal:
+  # a failed `treehouse get` writes it to a result file named for this attempt,
+  # so the echoed command line, stale scrollback, and a previous attempt can
+  # never be mistaken for this attempt's failure. A successful get stays in its
+  # subshell and writes nothing; only the isolated-cwd guard accepts success.
+  get_result="$STATE/.$ID.treehouse-get.$$.${RANDOM:-0}.result"
+  rm -f -- "$get_result"
+  get_result_quoted=${get_result//\'/\'\\\'\'}
+  spawn_send_text_line "$WT_TARGET" "treehouse get || printf '%s\\n' \"\$?\" > '$get_result_quoted'"
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
@@ -3624,7 +3649,17 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   candidate=""
   last_seen=""
   last_reason="the pane reported no path"
-  for _ in $(seq 1 60); do
+  get_failed=""
+  for _ in $(seq 1 "$FM_SPAWN_ISOLATION_WAIT_SECS"); do
+    if [ -s "$get_result" ]; then
+      get_failed=$(head -n 1 -- "$get_result" 2>/dev/null || true)
+      case "$get_failed" in '' | *[!0-9]*) get_failed="" ;; esac
+      # A non-zero status before any isolated read is the allocator refusing.
+      if [ -n "$get_failed" ] && [ "$get_failed" != 0 ] && [ -z "$candidate" ]; then
+        break
+      fi
+      get_failed=""
+    fi
     p=$(spawn_current_path "$WT_TARGET" || true)
     [ -z "$p" ] || last_seen="$p"
     if [ -n "$p" ] && spawn_worktree_isolated "$p"; then
@@ -3641,8 +3676,16 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     fi
     sleep 1
   done
+  rm -f -- "$get_result"
+  if [ -z "$WT" ] && [ -n "$get_failed" ]; then
+    # Bounded tail of the pane, minus our own echoed command, so the allocator's
+    # message (for example a full pool) reaches the operator instead of a bare timeout.
+    get_tail=$(fm_backend_capture "$BACKEND" "$T" 12 "$W" 2>/dev/null | grep -v -F -- "$get_result_quoted" | grep -v '^[[:space:]]*$' | tail -n 5 | cut -c1-200 || true)
+    echo "error: treehouse get failed (exit $get_failed) without entering an isolated worktree; spawning project '$PROJ_ABS'; last pane lines: ${get_tail:-none}; inspect window $T" >&2
+    exit 1
+  fi
   if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter an isolated worktree within 60s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); inspect window $T" >&2
+    echo "error: treehouse get did not enter an isolated worktree within ${FM_SPAWN_ISOLATION_WAIT_SECS}s (set FM_SPAWN_ISOLATION_WAIT_SECS to change this wait) (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); inspect window $T" >&2
     exit 1
   fi
 
