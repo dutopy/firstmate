@@ -24,10 +24,12 @@ import { appendFileSync, readFileSync, realpathSync, readlinkSync, statSync, lst
 import { fileURLToPath } from "node:url";
 import { Lexer, splitProgram, commandPosition } from "./fm-arm-command-policy.mjs";
 
+const SYSTEM_PREFIXES = ["/usr/", "/bin/", "/sbin/", "/opt/", "/etc/", "/Library/", "/System/", "/Applications/", "/nix/", "/snap/"];
 const MAX_DEPTH = 10;
 const MAX_SCRIPT_BYTES = 1024 * 1024;
-const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash"]);
-const INTERPRETERS = new Set(["python", "python2", "python3", "node", "nodejs", "bun", "deno", "ruby", "perl", "php", "lua", "osascript", "awk", "gawk", "mawk", "tclsh", "Rscript"]);
+const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh", "pwsh", "powershell"]);
+const INTERPRETER_NAME = /^(?:python[0-9.]*|pypy[0-9.]*|node(?:js)?|bun|deno|tsx|ts-node|ruby[0-9.]*|perl[0-9.]*|php[0-9.]*|lua[0-9.]*|luajit|osascript|n?awk|gawk|mawk|tclsh[0-9.]*|expect|Rscript|julia|groovy|jshell|swift)$/;
+const isInterpreter = (name) => INTERPRETER_NAME.test(name);
 const KEYWORDS_PREFIX = new Set(["if", "then", "else", "elif", "while", "until", "do", "!", "time", "{", "}"]);
 const KEYWORDS_SKIP = new Set(["fi", "done", "esac", "for", "case", "select", "in"]);
 const DANGER_RAW = /(?:pkill|killall|\bkill\b|\brm\b|xargs|-delete|unlink|rmtree|rimraf|rm_rf|rmSync|os\.kill|process\.kill|fuser|tmux|herdr|launchctl)/;
@@ -199,7 +201,7 @@ function lexWords(text) {
 
 // Value of a word when it can be proven without running anything, else null.
 function wordValue(word, st) {
-  if (word.subs.length > 0) return null;
+  if (word.subs.length > 0 || word.value.includes("\u0001")) return null;
   if (word.literal) return word.value;
   let unresolved = false;
   const value = word.value.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (whole, name) => {
@@ -324,7 +326,7 @@ function checkFind(args, st, ctx) {
     const name = basename(cmd[0]?.value || "");
     if (name === "kill" || name === "pkill" || name === "killall") deny("KILL_XARGS", `find -exec ${name} feeds PIDs the guard cannot prove`);
     if (name === "rm") destructive = true;
-    if (SHELLS.has(name) || INTERPRETERS.has(name)) {
+    if (SHELLS.has(name) || isInterpreter(name)) {
       const pos = { words: cmd, index: 0, command: cmd[0] };
       dispatch(cmd, st, { ...ctx, embedded: true }, pos, { find: true });
     }
@@ -464,25 +466,19 @@ function scanCode(text, lang, st, ctx, depth, origin) {
 
 // ---------------------------------------------------------------- scripts
 
-// A script is "reviewed" only when it exists unchanged in the task's base: the
-// merge-base of the worker's HEAD with the default branch. A file the worker
-// added, edited, or committed itself is the worker's own code and is scanned
-// strictly, exactly like inline code.
+// A script is "reviewed" only when it exists unchanged in the task base: the
+// commit the worktree was at when fm-spawn launched the worker, carried in the
+// launch environment (FM_WORKER_GUARD_BASE). A branch or ref inside the
+// worker's own repository could be moved by the worker, so none is consulted;
+// without the variable no script is trusted. A file the worker added, edited,
+// or committed itself is therefore scanned strictly, like inline code.
 function isTrackedUnmodified(file, ctx) {
-  const git = (...args) => execFileSync("git", ["-C", ctx.roots.primary, ...args], { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
+  const base = process.env.FM_WORKER_GUARD_BASE || "";
+  if (!/^[0-9a-f]{7,64}$/.test(base)) return false;
   try {
-    let base = "";
-    for (const ref of ["refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master"]) {
-      try {
-        base = git("rev-parse", "--verify", "-q", `${ref}^{commit}`);
-        break;
-      } catch {}
-    }
-    if (!base) return false;
-    const mergeBase = git("merge-base", "HEAD", base);
     const relative = path.relative(ctx.roots.primary, file);
-    git("cat-file", "-e", `${mergeBase}:${relative}`);
-    execFileSync("git", ["-C", ctx.roots.primary, "diff", "--quiet", mergeBase, "--", relative], { stdio: "ignore" });
+    execFileSync("git", ["-C", ctx.roots.primary, "cat-file", "-e", `${base}:${relative}`], { stdio: "ignore" });
+    execFileSync("git", ["-C", ctx.roots.primary, "diff", "--quiet", base, "--", relative], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -509,7 +505,9 @@ function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
   if (virtual !== undefined) {
     text = virtual;
   } else {
-    if (!ctx.roots.contains(physical)) return; // not ours to read; see docs/worker-guard.md limits
+    // A script outside the copy is still worker-reachable code (/tmp, home);
+    // only installed system locations are trusted as other people's tools.
+    if (SYSTEM_PREFIXES.some((prefix) => physical.startsWith(prefix))) return;
     try {
       const stat = statSync(physical);
       if (!stat.isFile() || stat.size > MAX_SCRIPT_BYTES) return;
@@ -517,7 +515,7 @@ function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
     } catch {
       return;
     }
-    strict = !isTrackedUnmodified(physical, ctx);
+    strict = !(ctx.roots.contains(physical) && isTrackedUnmodified(physical, ctx));
   }
   const lang = hintLang || languageOf(physical, text);
   if (!lang) return;
@@ -584,7 +582,7 @@ function interpreterInvocation(name, args) {
     }
     if (v === "-m" || v === "-M") return { kind: "module", payload: null };
     if (v === "-") return { kind: "stdin", payload: null };
-    if (/^[-+]O$/.test(v) || (name.startsWith("python") && /^-W$/.test(v)) || (name === "node" && /^(?:-r|--require|--import|--loader)$/.test(v))) {
+    if (/^[-+]O$/.test(v) || (/^python/.test(name) && /^-W$/.test(v)) || (name === "node" && /^(?:-r|--require|--import|--loader)$/.test(v))) {
       i += 1;
       continue;
     }
@@ -596,11 +594,54 @@ function interpreterInvocation(name, args) {
 
 function langOfInterpreter(name) {
   if (SHELLS.has(name)) return "shell";
-  if (name.startsWith("python")) return "python";
-  if (name === "node" || name === "nodejs" || name === "bun" || name === "deno") return "node";
-  if (name === "ruby") return "ruby";
-  if (name === "perl") return "perl";
+  if (/^(?:python|pypy)/.test(name)) return "python";
+  if (/^(?:node|nodejs|bun|deno|tsx|ts-node)$/.test(name)) return "node";
+  if (/^ruby/.test(name)) return "ruby";
+  if (/^perl/.test(name)) return "perl";
   return "other";
+}
+
+// Substitutions inside inline code are limited to commands whose output is
+// fixed metadata the worker cannot shape: no file, environment, config, branch
+// name, directory listing, or argument text is ever echoed back, so the result
+// cannot spell a command word or a path.
+const FLAG_ONLY_READERS = new Set(["pwd", "whoami", "hostname", "nproc", "uname", "id"]);
+const REV_PARSE_ARGS = /^(?:--short(?:=\d+)?|--verify|--show-toplevel|--git-dir|--is-inside-work-tree|HEAD)$/;
+
+function readOnlySubstitution(content) {
+  const lexed = new Lexer(content).tokenize();
+  if (lexed.error) return false;
+  const program = splitProgram(lexed.tokens);
+  if (program.nodes.length === 0) return false;
+  for (const tokens of program.nodes) {
+    if (tokens.some((t) => t.type === "group" || t.type === "redir" || (t.type === "word" && t.subs.length > 0))) return false;
+    const words = tokens.filter((t) => t.type === "word");
+    const name = basename(words[0]?.value || "");
+    const args = words.slice(1).map((w) => w.value);
+    if (FLAG_ONLY_READERS.has(name)) {
+      if (!args.every((a) => /^-[A-Za-z]+$/.test(a))) return false;
+    } else if (name === "date") {
+      if (!args.every((a) => /^\+(?:%[A-Za-z][-:_ ]?)+$/.test(a) || /^-[uR]$/.test(a))) return false;
+    } else if (name === "git" && words[1]?.value === "rev-parse") {
+      if (!args.slice(1).every((a) => REV_PARSE_ARGS.test(a))) return false;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The payload text with a U+0001 marker where each substitution sat, so a
+// substitution that forms a command word is visible to the shell walk.
+const SUBSTITUTION_MARK = "\u0001";
+function payloadText(word) {
+  if (word.subs.length === 0) return word.value;
+  let text = word.value;
+  for (const sub of [...word.subs].sort((a, b) => b.at - a.at)) {
+    const at = Math.min(sub.at ?? text.length, text.length);
+    text = text.slice(0, at) + SUBSTITUTION_MARK + text.slice(at);
+  }
+  return text;
 }
 
 function runInline(text, lang, st, ctx, depth, origin) {
@@ -614,6 +655,9 @@ function runInline(text, lang, st, ctx, depth, origin) {
 function dispatch(rawWords, st, ctx, position, extra = {}) {
   let cw = unwrap(rawWords);
   if (cw.length === 0) return;
+  if (cw[0].value.includes(SUBSTITUTION_MARK)) {
+    deny("OPAQUE_EXEC", "a command word is produced by a substitution inside inline code, which the guard cannot read without running it");
+  }
   if (!cw[0].literal || cw[0].subs.length > 0) {
     const ref = cw[0].value.match(/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/);
     if (ref && st.vars.has(ref[1]) && cw[0].subs.length === 0) {
@@ -658,7 +702,11 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
   }
   if (name === "ssh" && !ctx.broadOnly) {
     const operands = args.filter((w) => !w.value.startsWith("-"));
-    if (operands.length > 1) analyzeShell(operands.slice(1).map((w) => w.value).join(" "), cloneState(st), { ...ctx, nested: true }, (ctx.depth ?? 0) + 1);
+    // Options with values (-p 22, -i key, -o X=Y) make the host position
+    // ambiguous, so every suffix of the operand list is read as a command.
+    for (let k = 1; k < operands.length; k += 1) {
+      analyzeShell(operands.slice(k).map((w) => w.value).join(" "), cloneState(st), { ...ctx, nested: true }, (ctx.depth ?? 0) + 1);
+    }
     return;
   }
   if (name === "git" && !ctx.broadOnly) {
@@ -671,12 +719,14 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     }
     return;
   }
-  if (name === "rsync" && !ctx.broadOnly && args.some((w) => /^--(?:delete|remove-source-files)/.test(w.value))) {
-    const operands = args.filter((w) => !w.value.startsWith("-"));
-    const destination = operands.at(-1);
-    const value = destination ? wordValue(destination, st) : null;
-    const abs = value && (path.isAbsolute(value) ? value : st.cwd ? path.join(st.cwd, value) : null);
-    if (!abs || !ctx.roots.contains(ctx.roots.physical(abs))) deny("RM_OUTSIDE", "rsync --delete outside your isolated copy removes files in another tree");
+  if (name === "rsync" && !ctx.broadOnly && args.some((w) => /^--(?:del|delete|delete-[a-z-]+|remove-source-files|remove-sent-files)(?:=|$)/.test(w.value))) {
+    // Which operand is the destination depends on option values, so with a
+    // delete flag every non-option word must resolve inside the copy.
+    for (const word of args.filter((w) => !w.value.startsWith("-"))) {
+      const value = wordValue(word, st);
+      const abs = value && !/^[^/]+:/.test(value) && (path.isAbsolute(value) ? value : st.cwd ? path.join(st.cwd, value) : null);
+      if (!abs || !ctx.roots.contains(ctx.roots.physical(abs))) deny("RM_OUTSIDE", `rsync --delete operand ${JSON.stringify(word.value)} is not provably inside your isolated copy`);
+    }
     return;
   }
   if (name === "xargs") {
@@ -700,22 +750,29 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     return checkFind(args, st, ctx);
   }
   if (name === "eval") {
-    const text = args.map((w) => w.value).join(" ");
+    for (const word of args) {
+      for (const sub of word.subs) {
+        if (!readOnlySubstitution(sub.content)) deny("OPAQUE_EXEC", `eval code is partly produced by $(${sub.content.slice(0, 60)}), which the guard cannot read without running it`);
+      }
+    }
+    const text = args.map((w) => payloadText(w)).join(" ");
     return runInline(text, "shell", st, ctx, ctx.depth ?? 0, "eval");
   }
   if (name === "source" || name === ".") {
     if (args[0]) scanScriptFile(args[0].value, st, ctx, ctx.depth ?? 0, "shell");
     return;
   }
-  if (SHELLS.has(name) || INTERPRETERS.has(name)) {
+  if (SHELLS.has(name) || isInterpreter(name)) {
     const lang = langOfInterpreter(name);
     const invocation = interpreterInvocation(name, args);
     if (invocation.kind === "inline") {
       if (!invocation.payload) return;
-      if (invocation.payload.subs.length > 0 && invocation.payload.value.trim() === "") {
-        deny("OPAQUE_EXEC", `${name} runs code produced entirely by a substitution, which the guard cannot read without running it`);
+      for (const sub of invocation.payload.subs) {
+        if (!readOnlySubstitution(sub.content)) {
+          deny("OPAQUE_EXEC", `${name} inline code is partly produced by $(${sub.content.slice(0, 60)}), which the guard cannot read without running it (only plain readers such as pwd, date, basename or git rev-parse are allowed inside inline code)`);
+        }
       }
-      return runInline(invocation.payload.value, lang, st, ctx, ctx.depth ?? 0, `${name} inline code`);
+      return runInline(payloadText(invocation.payload), lang, st, ctx, ctx.depth ?? 0, `${name} inline code`);
     }
     if (invocation.kind === "file") {
       const file = invocation.file;
@@ -731,7 +788,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
       if (position?.pipedFrom && bodies.length === 0) {
         const producer = position.pipedFrom;
         if (producer.literalText !== null) runInline(producer.literalText, lang, st, ctx, ctx.depth ?? 0, `${name} piped input`);
-        else if (name !== "awk" && name !== "gawk" && name !== "mawk") deny("OPAQUE_EXEC", `${name} executes piped input that is not a literal the guard can read`);
+        else if (!/^n?awk$|^gawk$|^mawk$/.test(name)) deny("OPAQUE_EXEC", `${name} executes piped input that is not a literal the guard can read`);
       }
     }
     return;

@@ -996,6 +996,7 @@ EOF
     | env "${guard_env[@]}" sh -c "$hook" >/dev/null 2>&1
   expect_code 0 "$?" "the launched hook must allow ordinary commands"
   assert_contains "$(cat "$env_file")" "FM_WORKER_GUARD_ROOT=$WT_DIR" "the guard identity must name this task's copy"
+  assert_contains "$(cat "$env_file")" "FM_WORKER_GUARD_BASE=$(git -C "$WT_DIR" rev-parse HEAD)" "the guard's trusted script base must be the commit the worktree was launched at"
   assert_contains "$(cat "$env_file")" "$id.worker-guard.log" "the denial audit trail must live under this task's state"
   pass "a claude task worker launch carries a hook that denies pkill and allows ordinary work"
 }

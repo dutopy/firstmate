@@ -293,6 +293,7 @@
 #     __WORKTREE__  absolute path to the task worktree
 #     __OMPGUARD__  quoted bin/fm-worker-guard-omp-ext.ts (omp task worker destructive-command guard extension)
 #     __GUARDCHECK__ quoted bin/fm-worker-guard-pretool-check.sh (claude task worker destructive-command guard)
+#     __GUARDBASE__ quoted commit the worktree was at at launch (the guard's trusted script base)
 #     __GUARDLOG__  quoted state/<task-id>.worker-guard.log (denial audit trail the guard appends; removed by teardown)
 #     __TASKTMP__   quoted task-owned scratch root /tmp/fm-<id> (an extra root the guard treats as the worker's own)
 #     __CURSORBIN__ resolved, cursor-verified executable for a cursor launch
@@ -1776,7 +1777,7 @@ launch_template() {
   # absent, so the hook's fail-closed stance never strands a started worker.
   claude)
     if [ "$kind" != secondmate ]; then
-      printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 FM_WORKER_GUARD_ROOT=__WORKTREE__ FM_WORKER_GUARD_EXTRA_ROOTS=__TASKTMP__ FM_WORKER_GUARD_LOG=__GUARDLOG__ FM_WORKER_GUARD_CHECK=__GUARDCHECK__ claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"\"$FM_WORKER_GUARD_CHECK\" --claude; c=$?; [ $c -eq 0 ] || { [ $c -eq 2 ] || echo \"worker-guard: guard unavailable (exit $c); tool call refused\" >&2; exit 2; }"}]}]}}'\'' '
+      printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 FM_WORKER_GUARD_ROOT=__WORKTREE__ FM_WORKER_GUARD_EXTRA_ROOTS=__TASKTMP__ FM_WORKER_GUARD_LOG=__GUARDLOG__ FM_WORKER_GUARD_BASE=__GUARDBASE__ FM_WORKER_GUARD_CHECK=__GUARDCHECK__ claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"\"$FM_WORKER_GUARD_CHECK\" --claude; c=$?; [ $c -eq 0 ] || { [ $c -eq 2 ] || echo \"worker-guard: guard unavailable (exit $c); tool call refused\" >&2; exit 2; }"}]}]}}'\'' '
     else
       printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'\'' '
     fi
@@ -1843,7 +1844,7 @@ launch_template() {
       # A task worker also loads the destructive-command guard extension
       # (docs/worker-guard.md) from the tracked bin/ copy, with the worker
       # identity fixed in the launch environment exactly as for claude.
-      printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS FM_OMP_HARNESS=omp OMP_SKIP_SETUP=1 FM_WORKER_GUARD_ROOT=__WORKTREE__ FM_WORKER_GUARD_EXTRA_ROOTS=__TASKTMP__ FM_WORKER_GUARD_LOG=__GUARDLOG__ __OMPBIN__ --config __OMPWORKERCFG__ --auto-approve --cwd __WORKTREE__'
+      printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS FM_OMP_HARNESS=omp OMP_SKIP_SETUP=1 FM_WORKER_GUARD_ROOT=__WORKTREE__ FM_WORKER_GUARD_EXTRA_ROOTS=__TASKTMP__ FM_WORKER_GUARD_LOG=__GUARDLOG__ FM_WORKER_GUARD_BASE=__GUARDBASE__ __OMPBIN__ --config __OMPWORKERCFG__ --auto-approve --cwd __WORKTREE__'
       printf '%s' ' __MODELFLAG____EFFORTFLAG__-e __OMPEXT__ -e __OMPGUARD__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     fi
     ;;
@@ -4409,6 +4410,7 @@ LAUNCH=${LAUNCH//__OMPWORKERCFG__/$sq_ompcfg}
 LAUNCH=${LAUNCH//__OMPGUARD__/$(shell_quote "$FM_ROOT/bin/fm-worker-guard-omp-ext.ts")}
 LAUNCH=${LAUNCH//__GUARDCHECK__/$(shell_quote "$FM_ROOT/bin/fm-worker-guard-pretool-check.sh")}
 LAUNCH=${LAUNCH//__TASKTMP__/$(shell_quote "$TASK_TMP")}
+LAUNCH=${LAUNCH//__GUARDBASE__/$(shell_quote "$(git -C "$WT" rev-parse HEAD 2>/dev/null || true)")}
 LAUNCH=${LAUNCH//__GUARDLOG__/$(shell_quote "$STATE_REAL/$ID.worker-guard.log")}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 case "$HARNESS" in

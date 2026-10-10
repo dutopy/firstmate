@@ -31,6 +31,10 @@ printf '#!/usr/bin/env bash\necho hello\nrm -rf "$TMPDIR/scratch"\n' >"$WT/ok.sh
 git -C "$WT" add ok.sh
 git -C "$WT" commit -q -m init
 git -C "$WT" checkout -q -b fm/worker
+# The trusted script base is launch state (fm-spawn exports the commit the
+# worktree was at), never a ref the worker could move.
+FM_WORKER_GUARD_BASE=$(git -C "$WT" rev-parse HEAD)
+export FM_WORKER_GUARD_BASE
 printf 'precious\n' >"$EVIL/keep/data"
 printf 'precious\n' >"$FOREIGN/keep/data"
 printf 'precious\n' >"$OTHER_WT/keep/data"
@@ -532,6 +536,51 @@ test_further_bypass_classes() {
   pass "wrappers, find -exec shells, bulk deletes, git clean, rsync --delete, ssh, parallel, substituted and process-substituted code are denied; in-copy forms stay allowed"
 }
 
+test_review_findings_regressions() {
+  local i=0 cmd
+  # A script outside the copy is still worker-reachable code.
+  printf '#!/usr/bin/env bash\npkill -f sleep\n' >"$TMP_ROOT/outside.sh"
+  assert_denied "script outside the copy with pkill" "bash $TMP_ROOT/outside.sh"
+  printf '#!/usr/bin/env bash\nrm -rf "$1"\n' >"$TMP_ROOT/outside-rm.sh"
+  assert_denied "script outside the copy deleting an unprovable argument" "bash $TMP_ROOT/outside-rm.sh $EVIL/keep"
+  # Versioned interpreter names are interpreters.
+  assert_denied "python3.12 inline kill" "python3.12 -c 'import os; os.kill($FOREIGN_PID, 9)'"
+  assert_denied "pypy3 inline kill" "pypy3 -c 'import os; os.kill($FOREIGN_PID, 9)'"
+  assert_denied "ruby3.3 inline kill" "ruby3.3 -e 'Process.kill(\"KILL\", $FOREIGN_PID)'"
+  assert_denied "ts-node inline kill" "tsx -e 'process.kill($FOREIGN_PID)'"
+  # ssh options with values must not hide the remote command.
+  assert_denied "ssh -p 22 host pkill" "ssh -p 22 localhost pkill -f sleep"
+  assert_denied "ssh -i key -o X=Y host pkill" "ssh -i k -o StrictHostKeyChecking=no localhost pkill -f sleep"
+  # rsync --delete: options after the operands must not hide the destination.
+  assert_denied "rsync --delete with a trailing option" "rsync -a --delete src/ $EVIL/keep/ --exclude x"
+  assert_denied "rsync --del short form" "rsync -a --del src/ $EVIL/keep/"
+  assert_denied "rsync --delete-after" "rsync -a --delete-after src/ $EVIL/keep/"
+  # A substitution may not build a command word inside inline code.
+  assert_denied "command word built from echo" 'bash -c "p$(echo kill) -f sleep"'
+  assert_denied "arguments built from a decoder" 'bash -c "$(echo a2lsbA== | base64 -d) -f x"'
+  assert_denied "eval of a substitution" 'eval "$(printf pkill) -f sleep"'
+  # Readers that can echo attacker-shaped text are not fixed metadata.
+  assert_denied "head of a file as code" 'bash -c "$(head -1 /etc/hosts)"'
+  assert_denied "basename building the command word" 'bash -c "$(basename /usr/bin/pkill) -f sleep"'
+  assert_denied "pwd as a path prefix of the command" 'bash -c "$(pwd)/payload.sh"'
+  assert_denied "printenv as code" 'bash -c "$(printenv CMD)"'
+  assert_denied "git config as code" 'bash -c "$(git config --get alias.x)"'
+  assert_denied "git branch name as code" 'bash -c "$(git rev-parse --abbrev-ref HEAD) -f x"'
+  assert_denied "date format text as a command word" 'bash -c "$(date +pkill) -f x"'
+  assert_allowed "a plain reader inside inline code" 'bash -c "cd $(pwd) && ls"'
+  assert_allowed "git rev-parse inside inline code" 'bash -c "echo $(git rev-parse --short HEAD)"'
+  # The trusted base is launch state: moving a branch cannot launder a script.
+  printf '#!/usr/bin/env bash\nrm -rf "$1"\n' >"$WT/launder.sh"
+  git -C "$WT" add launder.sh && git -C "$WT" commit -q -m "launder"
+  git -C "$WT" branch -f main HEAD
+  git -C "$WT" update-ref refs/remotes/origin/main HEAD
+  assert_denied "branch moved to include a deleting script" "bash launder.sh $EVIL/keep"
+  git -C "$WT" branch -f main "$FM_WORKER_GUARD_BASE"
+  git -C "$WT" update-ref -d refs/remotes/origin/main
+  assert_nothing_destroyed "review-finding regressions"
+  pass "scripts outside the copy, versioned interpreters, ssh options, rsync options, substituted command words, and a movable base ref are all covered"
+}
+
 test_fails_closed_never_leaks_a_non_blocking_exit() {
   local code out stub
   # The claude hook command exactly as the launch line carries it (consumer
@@ -596,6 +645,7 @@ test_extra_root_allowed
 test_transport_fails_closed
 test_cli_and_code_modes
 test_further_bypass_classes
+test_review_findings_regressions
 test_fails_closed_never_leaks_a_non_blocking_exit
 test_dead_pid_is_decided_by_the_kernel_not_ps
 test_xargs_rm_without_recursion_is_not_refused

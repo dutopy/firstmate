@@ -522,8 +522,14 @@ test_watch_extension_arms_and_delivers() {
   mkdir -p "$home/state"
   # The first arm child closes with one actionable reason; every successor
   # stays up, so exactly one wake exists to consume.
+  # The extension confirms a delivered wake by running the arm script with
+  # --handling-delivered through a SYNCHRONOUS spawn, which blocks omp's whole
+  # event loop until it exits. A fixture arm script must therefore answer that
+  # mode promptly, as the real one does, instead of treating it as another
+  # watcher cycle (the old fixture slept 30 seconds inside that spawn).
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+case "${1:-}" in --handling-delivered) exit 0 ;; esac
 printf 'watcher: started pid=%s (beacon 0s) recovery-generation=gen-1\n' "$$"
 if [ ! -e "${FM_HOME:?}/state/.e2e-fired" ]; then
   : > "$FM_HOME/state/.e2e-fired"
@@ -558,13 +564,21 @@ const marker = readFileSync(`${process.env.FM_HOME}/state/.omp-watch-extension-l
 if (marker[1] !== String(process.pid)) throw new Error("loaded marker must record the session pid");
 const again = await tool.execute();
 if (!/^watcher: unchanged - omp extension already owns an arm child/.test(again.content[0].text)) throw new Error(`redundant arm was not an ownership no-op: ${again.content[0].text}`);
-await new Promise((r) => setTimeout(r, 2500));
-if (sent.length !== 1) throw new Error(`expected one follow-up wake, saw ${sent.length}: ${JSON.stringify(sent)}`);
+// Wait for the delivery EVENT, not a guessed duration: the wake follows two
+// login-shell arm starts and the fixture's one-second close, so its timing
+// depends on host load. The 30-second bound only turns a wake that never
+// arrives into a failure; it is not a tuned window.
+for (let waited = 0; sent.length < 1 && waited < 30000; waited += 50) await new Promise((r) => setTimeout(r, 50));
+if (sent.length < 1) throw new Error("the actionable close was never delivered as a follow-up wake");
 if (!sent[0].m.startsWith("⁣FIRSTMATE_OP: v1 watcher: FIRSTMATE WATCHER WAKE: signal: omp-e2e done")) throw new Error(`unexpected wake text: ${sent[0].m}`);
 if (sent[0].o?.deliverAs !== "followUp") throw new Error("wake must be delivered as a follow-up");
 // The wake is consumed when omp starts the next run with that exact prompt.
 await handlers.get("before_agent_start")({ type: "before_agent_start", prompt: sent[0].m }, {});
 await handlers.get("session_shutdown")({}, {});
+// "Exactly once" is judged at a completed lifecycle: the wake has been
+// consumed and the awaited shutdown has settled the generation, so no further
+// delivery can occur.
+if (sent.length !== 1) throw new Error(`expected exactly one follow-up wake over the whole lifecycle, saw ${sent.length}: ${JSON.stringify(sent)}`);
 if (existsSync(`${process.env.FM_HOME}/state/extensions/omp-primary-watch/session-replacement-actionable.json`)) throw new Error("a consumed wake must not ride the replacement handoff");
 process.exit(0);
 EOF
