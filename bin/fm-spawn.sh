@@ -1776,7 +1776,7 @@ launch_template() {
   # absent, so the hook's fail-closed stance never strands a started worker.
   claude)
     if [ "$kind" != secondmate ]; then
-      printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 FM_WORKER_GUARD_ROOT=__WORKTREE__ FM_WORKER_GUARD_EXTRA_ROOTS=__TASKTMP__ FM_WORKER_GUARD_LOG=__GUARDLOG__ FM_WORKER_GUARD_CHECK=__GUARDCHECK__ claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"exec \"$FM_WORKER_GUARD_CHECK\" --claude"}]}]}}'\'' '
+      printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 FM_WORKER_GUARD_ROOT=__WORKTREE__ FM_WORKER_GUARD_EXTRA_ROOTS=__TASKTMP__ FM_WORKER_GUARD_LOG=__GUARDLOG__ FM_WORKER_GUARD_CHECK=__GUARDCHECK__ claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"\"$FM_WORKER_GUARD_CHECK\" --claude; c=$?; [ $c -eq 0 ] || { [ $c -eq 2 ] || echo \"worker-guard: guard unavailable (exit $c); tool call refused\" >&2; exit 2; }"}]}]}}'\'' '
     else
       printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ --settings '\''{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'\'' '
     fi

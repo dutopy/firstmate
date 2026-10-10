@@ -22,7 +22,8 @@
 #   ALLOW - exit 0, no output.
 #   DENY  - exit 2 and the reason on stderr; stdout stays empty.
 # Unlike the primary-checkout seatbelts this guard FAILS CLOSED: a missing
-# policy, missing Node, missing root, or unparsable payload denies. bin/fm-spawn.sh
+# policy, missing Node, missing root, unparsable payload, or a crashing policy
+# denies. bin/fm-spawn.sh
 # refuses to launch a worker whose prerequisites are absent, so closed never
 # means a worker that cannot start its day.
 set -u
@@ -64,4 +65,11 @@ if [ -n "${FM_WORKER_GUARD_EXTRA_ROOTS:-}" ]; then
 fi
 [ "$HAVE_INPUT" -eq 1 ] || ARGS+=(--stdin-json)
 
-exec node "$POLICY" "${ARGS[@]}"
+# Claude blocks only on exit 2; any other nonzero exit is a non-blocking error
+# and the tool would run anyway. Every outcome that is not a clean allow
+# therefore leaves as exit 2, including a node crash or a failed policy import.
+node "$POLICY" "${ARGS[@]}"
+rc=$?
+[ "$rc" -eq 0 ] && exit 0
+[ "$rc" -eq 2 ] || echo "worker-guard [CRASH]: the policy exited $rc; tool call refused. Append \`blocked: worker guard failed\` to your status file." >&2
+exit 2

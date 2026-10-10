@@ -2117,4 +2117,5 @@ Verified 2026-10-10 on Claude Code 2.1.296 and omp 18.5.1 on macOS.
 - omp: a `tool_call` handler returning `{ block: true, reason }` refuses the call, and the reason reaches the model.
   The handler also sees the `bash` call a `task` subagent makes, and omp's `eval` tool arrives as `{ language, code }`.
   `omp -p` waits on stdin, so a headless run needs `< /dev/null`.
+- Both harnesses reset the bash working directory to the session directory between tool calls (a `cd` in one call, `pwd` in the next), so the guard's relative-path resolution against the session `cwd` holds across calls.
 - Observed live: `pkill`, a foreign `kill`, `rm -rf` outside the copy, `bash -c`, python `os.kill`, `kill $(pgrep ...)`, omp `eval`, and an omp subagent `pkill` were refused, the test-owned foreign `sleep` and tree survived, the in-copy `touch` ran, and the model's own background PID kill was allowed and effective.

@@ -170,8 +170,13 @@ function processCommand(pid) {
 // Returns null when the PID is proven owned (or does not exist), else a denial detail.
 function ownershipProblem(pid, ctx) {
   if (pid <= 1) return `PID ${pid} is a system or process-group target`;
-  const table = processTable();
-  if (!table.has(pid)) return null; // dead: kill fails harmlessly
+  // "Dead" is decided by the kernel, never by a process listing that may be
+  // empty or unparsable: only ESRCH proves the PID is gone.
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    if (error?.code === "ESRCH") return null;
+  }
   const self = ctx.ownerPid;
   if (self && (pid === self || ancestors(self).includes(pid))) return `PID ${pid} is this worker's own agent or its supervisor chain`;
   if (self && ancestors(pid).includes(self)) return null;
@@ -321,7 +326,7 @@ function checkFind(args, st, ctx) {
     if (name === "rm") destructive = true;
     if (SHELLS.has(name) || INTERPRETERS.has(name)) {
       const pos = { words: cmd, index: 0, command: cmd[0] };
-      dispatch(cmd, st, ctx, pos, { find: true });
+      dispatch(cmd, st, { ...ctx, embedded: true }, pos, { find: true });
     }
   }
   if (!destructive) return;
@@ -447,6 +452,10 @@ function scanCode(text, lang, st, ctx, depth, origin) {
       }
     }
   }
+  if (ctx.strict && /\bos\.(?:remove|unlink|rmdir)\s*\(|\.unlink\s*\(|\.rmdir\s*\(|\bunlink\s*[(\w]|\bunlinkSync\s*\(/.test(text)
+      && /\bos\.(?:walk|listdir|scandir)\s*\(|\bglob\b|\biterdir\s*\(|\brglob\s*\(|\breaddirSync\s*\(|\bFile\.find\b/.test(text)) {
+    deny("BULK_DELETE_SCRIPT", `${origin} enumerates files and deletes them one by one, which is a recursive delete the guard cannot bound to your copy`);
+  }
   if (lang !== "shell") {
     const sub = { ...ctx, embedded: true };
     for (const piece of embeddedShellStrings(text)) analyzeShell(piece, cloneState(st), sub, depth + 1);
@@ -455,10 +464,25 @@ function scanCode(text, lang, st, ctx, depth, origin) {
 
 // ---------------------------------------------------------------- scripts
 
+// A script is "reviewed" only when it exists unchanged in the task's base: the
+// merge-base of the worker's HEAD with the default branch. A file the worker
+// added, edited, or committed itself is the worker's own code and is scanned
+// strictly, exactly like inline code.
 function isTrackedUnmodified(file, ctx) {
+  const git = (...args) => execFileSync("git", ["-C", ctx.roots.primary, ...args], { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
   try {
-    execFileSync("git", ["-C", ctx.roots.primary, "ls-files", "--error-unmatch", "--", file], { stdio: "ignore" });
-    execFileSync("git", ["-C", ctx.roots.primary, "diff", "--quiet", "HEAD", "--", file], { stdio: "ignore" });
+    let base = "";
+    for (const ref of ["refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master"]) {
+      try {
+        base = git("rev-parse", "--verify", "-q", `${ref}^{commit}`);
+        break;
+      } catch {}
+    }
+    if (!base) return false;
+    const mergeBase = git("merge-base", "HEAD", base);
+    const relative = path.relative(ctx.roots.primary, file);
+    git("cat-file", "-e", `${mergeBase}:${relative}`);
+    execFileSync("git", ["-C", ctx.roots.primary, "diff", "--quiet", mergeBase, "--", relative], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -519,7 +543,7 @@ function analyzeShellBroadOnly(text, st, ctx, depth) {
 
 // ---------------------------------------------------------------- dispatch
 
-const EXTRA_WRAPPERS = new Set(["nice", "ionice", "time", "setsid", "stdbuf", "caffeinate", "builtin", "doas", "chronic", "unbuffer", "arch", "script"]);
+const EXTRA_WRAPPERS = new Set(["busybox", "toybox", "nice", "ionice", "time", "setsid", "stdbuf", "caffeinate", "builtin", "doas", "chronic", "unbuffer", "arch", "script"]);
 
 function unwrap(cw) {
   let words = cw;
@@ -629,12 +653,38 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     }
     return checkKill(args, st, ctx);
   }
+  if (name === "parallel" && args.some((w) => /^(?:kill|pkill|killall)$/.test(w.value))) {
+    deny("KILL_XARGS", "parallel kill feeds the kill PIDs the guard cannot prove are yours");
+  }
+  if (name === "ssh" && !ctx.broadOnly) {
+    const operands = args.filter((w) => !w.value.startsWith("-"));
+    if (operands.length > 1) analyzeShell(operands.slice(1).map((w) => w.value).join(" "), cloneState(st), { ...ctx, nested: true }, (ctx.depth ?? 0) + 1);
+    return;
+  }
+  if (name === "git" && !ctx.broadOnly) {
+    const dirFlag = args.findIndex((w) => w.value === "-C");
+    const sub = args.slice(dirFlag === -1 ? 0 : dirFlag + 2).find((w) => !w.value.startsWith("-"));
+    if (sub?.value === "clean") {
+      const target = dirFlag === -1 ? st.cwd : wordValue(args[dirFlag + 1], st);
+      const base = target && (path.isAbsolute(target) ? target : st.cwd ? path.join(st.cwd, target) : null);
+      if (!base || !ctx.roots.contains(ctx.roots.physical(base))) deny("RM_OUTSIDE", "git clean outside your isolated copy deletes another tree's untracked files");
+    }
+    return;
+  }
+  if (name === "rsync" && !ctx.broadOnly && args.some((w) => /^--(?:delete|remove-source-files)/.test(w.value))) {
+    const operands = args.filter((w) => !w.value.startsWith("-"));
+    const destination = operands.at(-1);
+    const value = destination ? wordValue(destination, st) : null;
+    const abs = value && (path.isAbsolute(value) ? value : st.cwd ? path.join(st.cwd, value) : null);
+    if (!abs || !ctx.roots.contains(ctx.roots.physical(abs))) deny("RM_OUTSIDE", "rsync --delete outside your isolated copy removes files in another tree");
+    return;
+  }
   if (name === "xargs") {
     const inner = xargsInner(args);
     const innerName = basename(inner[0]?.value || "");
     if (/^(?:kill|pkill|killall)$/.test(innerName)) deny("KILL_XARGS", "xargs kill feeds the kill PIDs the guard cannot prove are yours");
     if (ctx.broadOnly) return;
-    if (innerName === "rm") deny("RM_UNPROVABLE", "xargs rm -r feeds deletions paths the guard cannot resolve before they run");
+    if (innerName === "rm" && recursiveFlag(inner.slice(1)).recursive) deny("RM_UNPROVABLE", "xargs rm -r feeds deletions paths the guard cannot resolve before they run");
     if (inner.length > 0) {
       const sub = { ...ctx, embedded: true };
       dispatch(inner, st, sub, position);
@@ -662,6 +712,9 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     const invocation = interpreterInvocation(name, args);
     if (invocation.kind === "inline") {
       if (!invocation.payload) return;
+      if (invocation.payload.subs.length > 0 && invocation.payload.value.trim() === "") {
+        deny("OPAQUE_EXEC", `${name} runs code produced entirely by a substitution, which the guard cannot read without running it`);
+      }
       return runInline(invocation.payload.value, lang, st, ctx, ctx.depth ?? 0, `${name} inline code`);
     }
     if (invocation.kind === "file") {
@@ -804,6 +857,13 @@ export function analyzeShell(text, st, ctx, depth = 0) {
         else st.vars.delete(m[1]);
       }
       continue;
+    }
+    if (/^(?:sh|bash|zsh|dash|ksh|ash|python\d*(?:\.\d+)?|node|nodejs|ruby|perl|php|lua|source|\.)$/.test(cmdName)) {
+      for (let t = 0; t + 1 < tokens.length; t += 1) {
+        if (tokens[t].type === "redir" && tokens[t].value === "<" && tokens[t + 1].type === "group" && tokens[t + 1].kind === "subshell") {
+          deny("OPAQUE_EXEC", `${cmdName} runs a script produced by a process substitution, which the guard cannot read without running it`);
+        }
+      }
     }
     const positionExtras = { stdinBodies: [], pipedFrom: null };
     for (const t of tokens) if (t.type === "redir" && typeof t.heredoc === "string" && t.fd === 0) positionExtras.stdinBodies.push(t.heredoc);

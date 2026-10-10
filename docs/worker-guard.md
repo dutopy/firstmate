@@ -39,8 +39,8 @@ The shell walk recurses into groups, substitutions, `-c` payloads, `eval` argume
 It tracks `cd`, literal variable assignments, and aliases within one command line.
 A script file the worker runs from inside its copy is read:
 
-- untracked or modified files are scanned strictly, exactly like inline code;
-- a tracked, unmodified file is held only to the definitive broad motifs (`pkill`, `killall`, `xargs kill`, `kill $(pgrep ...)`), so ordinary committed project scripts that clean their own temp variables keep working.
+- a file that is new, edited, or committed by the worker is scanned strictly, exactly like inline code;
+- a file identical to the task base (the merge-base of the worker's HEAD with the default branch) is reviewed project code and is held only to the definitive broad motifs (`pkill`, `killall`, `xargs kill`, `kill $(pgrep ...)`), so ordinary project scripts that clean their own temp variables keep working.
 
 Non-shell code is scanned statically for:
 
@@ -49,7 +49,10 @@ Non-shell code is scanned statically for:
 - `os.kill`/`process.kill`/`Process.kill`/`kill` on a literal foreign PID, a group, or a non-literal PID that is not the `.pid` of a process the same code started;
 - recursive deletion APIs on a literal path outside the copy, or a non-literal path;
 - shell strings and argument lists embedded in the code (`subprocess.run(["pkill", ...])`, `os.system("...")`, `child_process.execSync("...")`), which are analyzed as shell;
+- file enumeration (`os.walk`, `glob`, `listdir`, `iterdir`) next to per-file deletion, which is a recursive delete in disguise;
 - opaque construction (`exec`, `eval`, `compile`, `__import__`, `getattr(os, ...)`, `base64`, `ctypes.CDLL`) next to a process or filesystem capability.
+
+The shell walk also unwraps `busybox`, `nice`, `time`, `setsid` and similar wrappers, denies `-c` code produced entirely by a substitution and scripts produced by a process substitution (`bash <(curl ...)`), reads the remote command of `ssh`, and holds `git clean` and `rsync --delete` to the same inside-the-copy rule as `rm -r`.
 
 ## Enforcement limits
 
@@ -58,7 +61,9 @@ It does not claim to contain arbitrary dynamically generated code.
 What it deliberately refuses is opaque execution that sits next to a kill or delete capability.
 What it cannot see:
 
-- code reached only through an import, a plugin, a compiled binary, a package script (`npm run`, `make`), or a script outside the copy;
+- code reached only through an import, a plugin, a compiled binary, a package script (`npm run`, `make`), or a script outside the copy; a `pkill` or `rm -rf` placed in a `package.json` script or a Makefile runs unseen;
+- single-file deletes with no enumeration (`rm file`, `os.remove(path)`), deletion by other tools (`mv x /dev/null`, `trash`), and commands run on another host or container (`docker exec`);
+- the guard's own files and settings: a worker could edit `$FM_ROOT/bin` or the state directory with an editor tool if it left its copy, which the instructions forbid but no hook prevents;
 - paths and PIDs produced at run time by variables from the environment, files, or other processes;
 - a script changed between the guard reading it and the shell running it, and a PID recycled between the check and the signal (race windows are not closed);
 - Claude's other tools: the guard covers every tool whose input carries a `command` string (Bash, Monitor, and any future one) and omp's `bash` and `eval` tools including `task` subagent calls, but a worker can still delete files through an editor tool, and the other verified harnesses (codex, opencode, pi, grok, kimi, cursor, gemini, muse, rovo, agy) carry no guard.
@@ -67,7 +72,8 @@ A stronger layer that closes these limits is an operating-system sandbox per wor
 
 ## Fail posture
 
-The transport fails closed: a missing `node`, policy, worker root, or an unparsable hook payload denies the call.
+The transport fails closed: a missing `node`, policy, worker root, an unparsable hook payload, or a crashing policy denies the call, and the Claude hook command itself turns any outcome other than a clean allow, including an unset guard path, into exit 2, because Claude treats every other nonzero exit as a non-blocking error.
+A PID is "dead" only when the kernel says so (`kill -0` reports no such process), never because a process listing came back empty.
 `bin/fm-spawn.sh` refuses to launch a Claude or omp task worker when `node` or any guard file is absent, so closed never leaves a started worker unable to work.
 There is no escape variable: the worker identity lives in the launch environment, which the worker's own shell cannot change for its already running hook process.
 
@@ -91,7 +97,7 @@ A raw launch command carries none of this because its harness is unverified.
 - `kill $PID` where `$PID` came from a pidfile or an earlier call; read the PID, then kill the literal number after `ps -o pid,ppid,command -p <pid>` confirms it.
 - Killing a process the worker started with `setsid` or `nohup` from a directory outside its copy, once it has been reparented to PID 1.
 - Relative deletes after a `cd` whose target is a variable (the working directory becomes unknown).
-- Claude's bash tool persists its working directory across calls; the hook resolves relative paths against the `cwd` in the payload.
+- Relative paths resolve against the `cwd` the harness reports and against any `cd` earlier in the same command; both Claude 2.1.296 and omp 18.5.1 return to the session directory between bash calls (verified), so a `cd` in one call never affects the next.
 
 ## Rollout and rollback
 
