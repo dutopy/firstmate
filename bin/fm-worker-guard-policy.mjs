@@ -663,8 +663,8 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     if (ref && st.vars.has(ref[1]) && cw[0].subs.length === 0) {
       const expanded = lexWords(st.vars.get(ref[1]));
       if (expanded) cw = [...expanded, ...cw.slice(1)];
-    } else if (ctx.nested) {
-      deny("OPAQUE_EXEC", `command word ${JSON.stringify(cw[0].value)} inside nested or scripted code is built dynamically and cannot be inspected`);
+    } else if (ctx.nested || !ctx.broadOnly) {
+      deny("OPAQUE_EXEC", `command word ${JSON.stringify(cw[0].value)} is built dynamically and cannot be inspected`);
     } else {
       return;
     }

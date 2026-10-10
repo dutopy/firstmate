@@ -623,6 +623,17 @@ test_xargs_rm_without_recursion_is_not_refused() {
   pass "xargs rm is refused only when recursive"
 }
 
+test_dynamic_command_word_denied_at_top_level() {
+  assert_denied "split variable word" 'P=pk; ${P}ill -f chrome'
+  assert_denied "two variables form the word" 'a=pk; b=ill; $a$b -f x'
+  assert_denied "command substitution word" '$(echo pkill) -f chrome'
+  assert_denied "assigned substitution word" 'p=$(echo pkill); $p -f chrome'
+  assert_denied "unresolved variable word" '$UNKNOWN_TOOL -f chrome'
+  assert_allowed "whole tracked variable still resolves" 'P=echo; $P hello'
+  assert_allowed "variable as an argument" 'X=hello; echo $X $(pwd)'
+  pass "a command word the guard cannot read is refused at top level"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -649,6 +660,7 @@ test_review_findings_regressions
 test_fails_closed_never_leaks_a_non_blocking_exit
 test_dead_pid_is_decided_by_the_kernel_not_ps
 test_xargs_rm_without_recursion_is_not_refused
+test_dynamic_command_word_denied_at_top_level
 test_scripts_are_shellcheck_clean
 assert_nothing_destroyed "end of suite"
 pass "fm-worker-guard suite complete"
