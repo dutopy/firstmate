@@ -1,0 +1,17 @@
+# Live lab: real fm-spawn.sh (target f784de8) + real tmux (private socket) + real treehouse v3.1.0, scratch repos under /tmp/fmlab.3TRp
+## pool: max_trees=1 held by 'treehouse get --lease'
+Run "treehouse update" to update
+
+not in a git or jj repository: git rev-parse --show-toplevel: fatal: not a git repository (or any of the parent directories): .git
+## BASE cdd967c (reproduces incident)
+error: treehouse get did not enter an isolated worktree within 60s (last seen '/private/tmp/fmlab.3TRp/proj': it is the spawning project itself; spawning project '/tmp/fmlab.3TRp/proj'); inspect window firstmate:fm-lab-base-1
+EXIT=1
+./run-base.sh lab-base-1  1.53s user 3.43s system 5% cpu 1:22.63 total
+## NEW full pool: fail-fast ~4.9s, exit 1, allocator message surfaced (see transcript in run output earlier)
+## Valid/invalid wait: 0, abc, 3601, 99999, -5, 007x refused exit 1 before side effect; '' -> default
+## timeout path (fresh big repo, WAIT=1): 'within 1s (set FM_SPAWN_ISOLATION_WAIT_SECS...)' exit 1
+## success path (free slot, planted stale result file): spawned lab-ok-1 exit 0; stale file ignored; own result file removed
+## verbatim NEW full-pool output
+error: treehouse get failed (exit 1) without entering an isolated worktree; spawning project '/tmp/fmlab.3TRp/proj'; last pane lines: ... all 1 worktrees are in use or dirty (max_trees = 1). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml ...; inspect window firstmate:fm-lab-full-1
+EXIT=1 (4.9s) vs BASE: "did not enter an isolated worktree within 60s" EXIT=1 (1:22 total)
+## limits: tmux backend only (herdr not driven); NO_MISTAKES_GATE unset for lab child only; tests/fm-spawn-worktree-settle.test.sh could not run here (tests/fixtures.sh silently fails to load under this harness)

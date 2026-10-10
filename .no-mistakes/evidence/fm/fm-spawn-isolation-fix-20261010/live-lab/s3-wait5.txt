@@ -1,0 +1,4 @@
+warning: /tmp/fm-lab-iExYx1/home/data/lab-c/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: treehouse get did not enter an isolated worktree within 5s (set FM_SPAWN_ISOLATION_WAIT_SECS to change this wait) (last seen '/private/tmp/fm-lab-iExYx1/repo/.treehouse/repo-d47bf3/1/repo': it is an isolated worktree, but no second read agreed with it; spawning project '/tmp/fm-lab-iExYx1/repo'); inspect window firstmate:fm-lab-c
+exit=1
+./run.sh lab-c FM_SPAWN_ISOLATION_WAIT_SECS=5  0.61s user 1.31s system 22% cpu 8.630 total

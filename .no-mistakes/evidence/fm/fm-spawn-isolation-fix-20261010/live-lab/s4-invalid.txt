@@ -1,0 +1,16 @@
+== WAIT=0
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '0'
+exit=1
+windows        1 ->        1; meta: home-summary.json 
+== WAIT=abc
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got 'abc'
+exit=1
+windows        1 ->        1; meta: home-summary.json 
+== WAIT=5000
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '5000'
+exit=1
+windows        1 ->        1; meta: home-summary.json 
+== WAIT=-3
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '-3'
+exit=1
+windows        1 ->        1; meta: home-summary.json 

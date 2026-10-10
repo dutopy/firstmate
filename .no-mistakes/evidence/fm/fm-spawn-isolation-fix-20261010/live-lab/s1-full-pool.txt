@@ -1,0 +1,8 @@
+warning: /tmp/fm-lab-iExYx1/home/data/lab-b/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: treehouse get failed (exit 1) without entering an isolated worktree; spawning project '/tmp/fm-lab-iExYx1/repo'; last pane lines: A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+🌳 Setting up worktree...
+all 1 worktrees are in use or dirty (max_trees = 1). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml
+(base) pierre@Pierres-iMac-Pro repo %; inspect window firstmate:fm-lab-b
+exit=1
+./run.sh lab-b  0.60s user 1.39s system 21% cpu 9.302 total
