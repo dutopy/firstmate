@@ -684,14 +684,27 @@ test_security_review_bypasses_denied() {
   assert_denied "substitution after an ANSI-C quoted prefix" "bash -c \$'pk'\"\$(date +%Y)\"ill"
   assert_allowed "substitution as a plain quoted argument" 'bash -c "echo $(date +%Y)"'
 
-  if [ -n "${FM_TEST_WRITABLE_SYSTEM_DIR:-}" ] && [ -w "$FM_TEST_WRITABLE_SYSTEM_DIR" ]; then
-    local sys="$FM_TEST_WRITABLE_SYSTEM_DIR/fm-guard-test-$$.sh"
-    printf '#!/bin/sh\nkill 1\n' >"$sys"
-    assert_denied "user-writable system-prefix script is scanned" "bash $sys"
-    rm -f "$sys"
-  else
-    echo "skip - writable system prefix case (set FM_TEST_WRITABLE_SYSTEM_DIR to a user-writable dir under /usr, /opt or /Library)"
-  fi
+  local sysdir="$TMP_ROOT/fakesys"
+  mkdir -p "$sysdir"
+  printf '#!/bin/sh\nkill 1\n' >"$sysdir/writable.sh"
+  printf '#!/bin/sh\nkill 1\n' >"$sysdir/locked.sh"
+  chmod 444 "$sysdir/locked.sh"
+  chmod 555 "$sysdir"
+  FM_WORKER_GUARD_SYSTEM_PREFIXES="$sysdir" assert_allowed "script in a locked system prefix is trusted" "bash $sysdir/locked.sh"
+  chmod 755 "$sysdir"
+  FM_WORKER_GUARD_SYSTEM_PREFIXES="$sysdir" assert_denied "script in a user-writable system prefix is scanned" "bash $sysdir/writable.sh"
+  FM_WORKER_GUARD_SYSTEM_PREFIXES="$sysdir" assert_denied "locked file in a writable system dir is scanned" "bash $sysdir/locked.sh"
+
+  mkdir -p "$WT/bin"
+  printf '#!/bin/sh\necho pwned\n' >"$WT/bin/pwd"
+  chmod +x "$WT/bin/pwd"
+  assert_denied "PATH assignment shadows a reader" "PATH=\$PWD/bin:\$PATH python3 -c \"print('\$(pwd)')\""
+  assert_denied "env PATH shadows a reader" "env PATH=\$PWD/bin:\$PATH python3 -c \"print('\$(pwd)')\""
+  assert_denied "exported PATH shadows a reader" "export PATH=\$PWD/bin:\$PATH; python3 -c \"print('\$(pwd)')\""
+  rm -rf "$WT/bin"
+  assert_denied "mixed-quote concatenated pkill" "node -e 'require(\"child_process\").execSync(\"pk\"+'\"'\"'ill -f sleep'\"'\"')'"
+  assert_denied "implicit adjacent literal pkill" "python3 -c 'import subprocess; subprocess.run([\"pk\" \"ill\", \"-f\", \"sleep\"])'"
+  assert_allowed "adjacent literals that are not a kill" "python3 -c 'print(\"a\" \"b\", \"c\" + \"d\")'"
   assert_nothing_destroyed "security review bypasses"
   pass "shadowed readers, laundered base scripts, and unreconstructable substitutions are denied"
 }

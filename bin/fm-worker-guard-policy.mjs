@@ -25,7 +25,8 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Lexer, splitProgram, commandPosition } from "./fm-arm-command-policy.mjs";
 
-const SYSTEM_PREFIXES = ["/usr/", "/bin/", "/sbin/", "/opt/", "/etc/", "/Library/", "/System/", "/Applications/", "/nix/", "/snap/"];
+const extraSystemPrefixes = (process.env.FM_WORKER_GUARD_SYSTEM_PREFIXES || "").split(":").filter(Boolean).map((p) => (p.endsWith("/") ? p : `${p}/`));
+const SYSTEM_PREFIXES = ["/usr/", "/bin/", "/sbin/", "/opt/", "/etc/", "/Library/", "/System/", "/Applications/", "/nix/", "/snap/", ...extraSystemPrefixes];
 const MAX_DEPTH = 10;
 const MAX_SCRIPT_BYTES = 1024 * 1024;
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh", "pwsh", "powershell"]);
@@ -417,12 +418,12 @@ function embeddedShellStrings(text) {
   return out;
 }
 
-const STRING_CONCAT = /(["'])((?:[^"'\\\n]|\\.)*)\1\s*\+\s*\1((?:[^"'\\\n]|\\.)*)\1/;
+const STRING_CONCAT = /(["'])((?:[^"'\\\n]|\\.)*)\1(?:\s*\+\s*|\s+)(["'])((?:[^"'\\\n]|\\.)*)\3/;
 
 function foldConcatenation(text) {
   let folded = text;
   for (let guard = 0; guard < 64; guard += 1) {
-    const next = folded.replace(STRING_CONCAT, (_, quote, a, b) => `${quote}${a}${b}${quote}`);
+    const next = folded.replace(STRING_CONCAT, (_, quote, a, _quote, b) => `${quote}${a}${b}${quote}`);
     if (next === folded) break;
     folded = next;
   }
@@ -651,7 +652,7 @@ function readOnlySubstitution(content, st) {
     if (tokens.some((t) => t.type === "group" || t.type === "redir" || (t.type === "word" && t.subs.length > 0))) return false;
     const words = tokens.filter((t) => t.type === "word");
     const name = words[0]?.value || "";
-    if (name.includes("/") || st.aliases.has(name) || st.functions.has(name)) return false;
+    if (st.pathTouched || name.includes("/") || st.aliases.has(name) || st.functions.has(name)) return false;
     const args = words.slice(1).map((w) => w.value);
     if (FLAG_ONLY_READERS.has(name)) {
       if (!args.every((a) => /^-[A-Za-z]+$/.test(a))) return false;
@@ -890,6 +891,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     if (defined) st.functions.add(defined);
     const position = commandPosition(tokens);
     const words = position.words;
+    if (words.some((w) => /^PATH\+?=/.test(w.value))) st.pathTouched = true;
     for (const payload of position.wrapperPayloads) analyzeShell(payload, cloneState(st), ctx, depth + 1);
 
     // virtual files written by this very command line (heredoc / echo redirection)
@@ -995,6 +997,7 @@ export function decide(options) {
     aliases: new Map(),
     functions: new Set(),
     vfiles: new Map(),
+    pathTouched: false,
   };
   try {
     if (options.code !== undefined && options.code !== null) {
