@@ -634,6 +634,68 @@ test_dynamic_command_word_denied_at_top_level() {
   pass "a command word the guard cannot read is refused at top level"
 }
 
+test_indirect_pattern_kills_denied() {
+  local owned
+  assert_denied "trap pkill" 'trap "pkill -f sleep" EXIT'
+  assert_denied "trap kill of a foreign pid" "trap 'kill $FOREIGN_PID' EXIT"
+  assert_denied "trap with a split command word" 'trap "P=pk; \${P}ill -f sleep" EXIT'
+  assert_denied "node concatenated pkill" "node -e 'require(\"child_process\").execSync(\"pk\"+\"ill -f sleep\")'"
+  assert_denied "python concatenated argv pkill" "python3 -c 'import subprocess; subprocess.run([\"pk\"+\"ill\", \"-f\", \"sleep\"])'"
+  assert_denied "aliased os.kill" "python3 -c 'import os; k = os.kill; k($FOREIGN_PID, 9)'"
+  assert_denied "from os import kill" "python3 -c 'from os import kill; kill($FOREIGN_PID, 9)'"
+  assert_denied "aliased process.kill" "node -e 'const k = process.kill; k($FOREIGN_PID, 9)'"
+  start_cwd_owned
+  owned=$STARTED
+  assert_allowed "trap that only echoes" "trap 'echo bye' EXIT"
+  assert_allowed "trap that kills an owned literal pid" "trap 'kill $owned' EXIT"
+  assert_allowed "string concatenation that is not a kill" "python3 -c 'print(\"a\" + \"b\")'"
+  assert_allowed "direct os.kill of an owned literal pid" "python3 -c 'import os; os.kill($owned, 0)'"
+  alive "$FOREIGN_PID" || fail "denied forms must leave the foreign process alive"
+  assert_nothing_destroyed "indirect pattern kills"
+  pass "trap strings, concatenated pkill, and aliased kill primitives are denied; owned literal PIDs stay allowed"
+}
+
+test_security_review_bypasses_denied() {
+  local blob mal
+  printf '#!/bin/sh\necho pwned\n' >"$WT/pwd"
+  chmod +x "$WT/pwd"
+  assert_allowed "bare pwd reader stays allowed" "python3 -c \"print('\$(pwd)')\""
+  assert_denied "worker-made ./pwd as a reader" "python3 -c \"print('\$(./pwd)')\""
+  assert_denied "absolute-path reader" "python3 -c \"print('\$($WT/pwd)')\""
+  assert_denied "function shadows a reader" "id() { echo 1; }; python3 -c \"print('\$(id)')\""
+  assert_denied "function keyword shadows a reader" "function id { echo 1; }; python3 -c \"print('\$(id)')\""
+  assert_denied "alias shadows a reader" "alias pwd='echo x'; python3 -c \"print('\$(pwd)')\""
+  rm -f "$WT/pwd"
+
+  git -C "$WT" show "$FM_WORKER_GUARD_BASE:ok.sh" >"$WT/ok.sh"
+  assert_allowed "reviewed base script" "bash ok.sh"
+  printf '#!/usr/bin/env bash\nrm -rf "$VICTIM"\n' >"$WT/ok.sh"
+  assert_denied "modified base script" "bash ok.sh"
+  blob=$(git -C "$WT" rev-parse "$FM_WORKER_GUARD_BASE:ok.sh")
+  mal=$(git -C "$WT" hash-object -w "$WT/ok.sh")
+  git -C "$WT" replace "$blob" "$mal"
+  assert_denied "refs/replace laundering of the base script" "bash ok.sh"
+  git -C "$WT" replace -d "$blob" >/dev/null
+  git -C "$WT" show "$FM_WORKER_GUARD_BASE:ok.sh" >"$WT/ok.sh"
+  assert_allowed "base script allowed again once restored" "bash ok.sh"
+
+  assert_denied "substitution in a double-quoted command word" 'bash -c "$(date +%s)kill -f sleep"'
+  assert_denied "substitution inside a concatenated command word" "bash -c 'pk'\"\$(date +%Y)\"'ill -f sleep'"
+  assert_denied "substitution after an ANSI-C quoted prefix" "bash -c \$'pk'\"\$(date +%Y)\"ill"
+  assert_allowed "substitution as a plain quoted argument" 'bash -c "echo $(date +%Y)"'
+
+  if [ -n "${FM_TEST_WRITABLE_SYSTEM_DIR:-}" ] && [ -w "$FM_TEST_WRITABLE_SYSTEM_DIR" ]; then
+    local sys="$FM_TEST_WRITABLE_SYSTEM_DIR/fm-guard-test-$$.sh"
+    printf '#!/bin/sh\nkill 1\n' >"$sys"
+    assert_denied "user-writable system-prefix script is scanned" "bash $sys"
+    rm -f "$sys"
+  else
+    echo "skip - writable system prefix case (set FM_TEST_WRITABLE_SYSTEM_DIR to a user-writable dir under /usr, /opt or /Library)"
+  fi
+  assert_nothing_destroyed "security review bypasses"
+  pass "shadowed readers, laundered base scripts, and unreconstructable substitutions are denied"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -661,6 +723,8 @@ test_fails_closed_never_leaks_a_non_blocking_exit
 test_dead_pid_is_decided_by_the_kernel_not_ps
 test_xargs_rm_without_recursion_is_not_refused
 test_dynamic_command_word_denied_at_top_level
+test_indirect_pattern_kills_denied
+test_security_review_bypasses_denied
 test_scripts_are_shellcheck_clean
 assert_nothing_destroyed "end of suite"
 pass "fm-worker-guard suite complete"

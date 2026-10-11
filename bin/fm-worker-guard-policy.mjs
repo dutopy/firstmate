@@ -20,7 +20,8 @@
 //     interpreter's inline code (python, node, ruby, perl, ...).
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync, realpathSync, readlinkSync, statSync, lstatSync } from "node:fs";
+import { accessSync, appendFileSync, constants as fsConstants, readFileSync, realpathSync, readlinkSync, statSync, lstatSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Lexer, splitProgram, commandPosition } from "./fm-arm-command-policy.mjs";
 
@@ -190,7 +191,7 @@ function ownershipProblem(pid, ctx) {
 // ---------------------------------------------------------------- state
 
 function cloneState(st) {
-  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), vfiles: st.vfiles };
+  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), functions: new Set(st.functions), vfiles: st.vfiles };
 }
 
 function lexWords(text) {
@@ -416,7 +417,20 @@ function embeddedShellStrings(text) {
   return out;
 }
 
-function scanCode(text, lang, st, ctx, depth, origin) {
+const STRING_CONCAT = /(["'])((?:[^"'\\\n]|\\.)*)\1\s*\+\s*\1((?:[^"'\\\n]|\\.)*)\1/;
+
+function foldConcatenation(text) {
+  let folded = text;
+  for (let guard = 0; guard < 64; guard += 1) {
+    const next = folded.replace(STRING_CONCAT, (_, quote, a, b) => `${quote}${a}${b}${quote}`);
+    if (next === folded) break;
+    folded = next;
+  }
+  return folded;
+}
+
+function scanCode(rawText, lang, st, ctx, depth, origin) {
+  const text = foldConcatenation(rawText);
   if (BROAD_NAMES.test(text)) deny("BROAD_KILL_SCRIPT", `${origin} calls pkill/killall, which match processes by name or pattern across every worker`);
   if (KILL_PRIMITIVE.test(text) && ENUMERATION.test(text)) {
     deny("BROAD_KILL_SCRIPT", `${origin} enumerates processes and kills them; that pattern can hit other workers' processes`);
@@ -433,6 +447,9 @@ function scanCode(text, lang, st, ctx, depth, origin) {
     if (problem) deny("KILL_FOREIGN", `${origin}: ${problem}`);
   }
   if (ctx.strict) {
+    if (/\b(?:os\.(?:kill|killpg)|process\.kill)\b(?!\s*\()|\bfrom\s+os\s+import\b[^\n]*\bkill(?:pg)?\b/.test(text)) {
+      deny("KILL_UNPROVABLE", `${origin} refers to a kill primitive without calling it directly, so the target PID cannot be proven yours`);
+    }
     for (const m of text.matchAll(/\b(?:os\.(?:kill|killpg)|process\.kill)\s*\(\s*([^,)]*)/g)) {
       const arg = m[1].trim();
       if (!/^-?\d+$/.test(arg) && !/^[A-Za-z_][\w.]*\.pid$/.test(arg)) {
@@ -477,9 +494,16 @@ function isTrackedUnmodified(file, ctx) {
   if (!/^[0-9a-f]{7,64}$/.test(base)) return false;
   try {
     const relative = path.relative(ctx.roots.primary, file);
-    execFileSync("git", ["-C", ctx.roots.primary, "cat-file", "-e", `${base}:${relative}`], { stdio: "ignore" });
-    execFileSync("git", ["-C", ctx.roots.primary, "diff", "--quiet", base, "--", relative], { stdio: "ignore" });
-    return true;
+    const bytes = readFileSync(file);
+    const hash = createHash(base.length > 40 ? "sha256" : "sha1");
+    hash.update(`blob ${bytes.length}\0`);
+    hash.update(bytes);
+    const trusted = execFileSync("git", ["-C", ctx.roots.primary, "rev-parse", "--verify", `${base}:${relative}`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+    }).trim();
+    return trusted === hash.digest("hex");
   } catch {
     return false;
   }
@@ -495,6 +519,16 @@ function languageOf(file, text) {
   return shebang ? "other" : "";
 }
 
+function userWritable(file) {
+  for (const target of [file, path.dirname(file)]) {
+    try {
+      accessSync(target, fsConstants.W_OK);
+      return true;
+    } catch {}
+  }
+  return false;
+}
+
 function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
   const abs = path.isAbsolute(rawPath) ? rawPath : st.cwd ? path.join(st.cwd, rawPath) : null;
   if (!abs) return;
@@ -507,7 +541,7 @@ function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
   } else {
     // A script outside the copy is still worker-reachable code (/tmp, home);
     // only installed system locations are trusted as other people's tools.
-    if (SYSTEM_PREFIXES.some((prefix) => physical.startsWith(prefix))) return;
+    if (SYSTEM_PREFIXES.some((prefix) => physical.startsWith(prefix)) && !userWritable(physical)) return;
     try {
       const stat = statSync(physical);
       if (!stat.isFile() || stat.size > MAX_SCRIPT_BYTES) return;
@@ -608,7 +642,7 @@ function langOfInterpreter(name) {
 const FLAG_ONLY_READERS = new Set(["pwd", "whoami", "hostname", "nproc", "uname", "id"]);
 const REV_PARSE_ARGS = /^(?:--short(?:=\d+)?|--verify|--show-toplevel|--git-dir|--is-inside-work-tree|HEAD)$/;
 
-function readOnlySubstitution(content) {
+function readOnlySubstitution(content, st) {
   const lexed = new Lexer(content).tokenize();
   if (lexed.error) return false;
   const program = splitProgram(lexed.tokens);
@@ -616,7 +650,8 @@ function readOnlySubstitution(content) {
   for (const tokens of program.nodes) {
     if (tokens.some((t) => t.type === "group" || t.type === "redir" || (t.type === "word" && t.subs.length > 0))) return false;
     const words = tokens.filter((t) => t.type === "word");
-    const name = basename(words[0]?.value || "");
+    const name = words[0]?.value || "";
+    if (name.includes("/") || st.aliases.has(name) || st.functions.has(name)) return false;
     const args = words.slice(1).map((w) => w.value);
     if (FLAG_ONLY_READERS.has(name)) {
       if (!args.every((a) => /^-[A-Za-z]+$/.test(a))) return false;
@@ -638,8 +673,10 @@ function payloadText(word) {
   if (word.subs.length === 0) return word.value;
   let text = word.value;
   for (const sub of [...word.subs].sort((a, b) => b.at - a.at)) {
-    const at = Math.min(sub.at ?? text.length, text.length);
-    text = text.slice(0, at) + SUBSTITUTION_MARK + text.slice(at);
+    if (!Number.isInteger(sub.at) || sub.at < 0 || sub.at > word.value.length) {
+      deny("OPAQUE_EXEC", "a substitution inside inline code sits at a position the guard cannot reconstruct");
+    }
+    text = text.slice(0, sub.at) + SUBSTITUTION_MARK + text.slice(sub.at);
   }
   return text;
 }
@@ -752,7 +789,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
   if (name === "eval") {
     for (const word of args) {
       for (const sub of word.subs) {
-        if (!readOnlySubstitution(sub.content)) deny("OPAQUE_EXEC", `eval code is partly produced by $(${sub.content.slice(0, 60)}), which the guard cannot read without running it`);
+        if (!readOnlySubstitution(sub.content, st)) deny("OPAQUE_EXEC", `eval code is partly produced by $(${sub.content.slice(0, 60)}), which the guard cannot read without running it`);
       }
     }
     const text = args.map((w) => payloadText(w)).join(" ");
@@ -768,7 +805,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     if (invocation.kind === "inline") {
       if (!invocation.payload) return;
       for (const sub of invocation.payload.subs) {
-        if (!readOnlySubstitution(sub.content)) {
+        if (!readOnlySubstitution(sub.content, st)) {
           deny("OPAQUE_EXEC", `${name} inline code is partly produced by $(${sub.content.slice(0, 60)}), which the guard cannot read without running it (only plain readers such as pwd, date, basename or git rev-parse are allowed inside inline code)`);
         }
       }
@@ -847,6 +884,10 @@ export function analyzeShell(text, st, ctx, depth = 0) {
         for (const sub of token.subs) analyzeShell(sub.content, cloneState(st), ctx, depth + 1);
       }
     }
+    const defined = tokens[0].type === "word" && tokens[1]?.type === "group" && tokens[1].kind === "subshell" && tokens[2]?.type === "group" && tokens[2].kind === "brace"
+      ? tokens[0].value
+      : tokens[0].type === "word" && tokens[0].value === "function" && tokens[1]?.type === "word" ? tokens[1].value : null;
+    if (defined) st.functions.add(defined);
     const position = commandPosition(tokens);
     const words = position.words;
     for (const payload of position.wrapperPayloads) analyzeShell(payload, cloneState(st), ctx, depth + 1);
@@ -898,6 +939,11 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       }
       continue;
     }
+    if (cmdName === "trap") {
+      const handler = args.find((a) => !a.value.startsWith("-"));
+      if (handler) analyzeShell(payloadText(handler), cloneState(st), { ...ctx, nested: true, strict: ctx.strict ?? true }, depth + 1);
+      continue;
+    }
     if (cmdName === "alias") {
       for (const a of args) {
         const m = a.value.match(/^([^=]+)=(.*)$/s);
@@ -947,6 +993,7 @@ export function decide(options) {
     vars: new Map(),
     ownPids: new Set(),
     aliases: new Map(),
+    functions: new Set(),
     vfiles: new Map(),
   };
   try {

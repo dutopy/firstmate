@@ -59,6 +59,8 @@ The shell walk also unwraps `busybox`, `nice`, `time`, `setsid` and similar wrap
 The guard is a static, read-only policy.
 It does not claim to contain arbitrary dynamically generated code.
 What it deliberately refuses is opaque execution that sits next to a kill or delete capability.
+It also refuses a command word it cannot read without running anything: a word containing a substitution or a variable that is not a single variable assigned earlier in the same command (`$(echo pkill) -f x`, `${P}ill`, `$a$b`).
+Trap handlers, `"pk"+"ill"` string concatenation in embedded code, and aliased kill primitives (`k = os.kill`, `from os import kill`) are read or refused the same way.
 What it cannot see:
 
 - code reached only through an import, a plugin, a compiled binary, a package script (`npm run`, `make`), or a script outside the copy; a `pkill` or `rm -rf` placed in a `package.json` script or a Makefile runs unseen;
@@ -90,6 +92,7 @@ A raw launch command carries none of this because its harness is unverified.
 
 ## False positives to expect
 
+- A command whose name comes from an unresolved variable or a substitution, including path-prefixed forms such as `$FM_ROOT/bin/tool`, `"$HOME/.local/bin/gh-axi"` and `$(npm bin)/tsc`; write the literal path, or assign the variable earlier in the same command so the guard can follow it.
 - `rm -r` of a scratch directory under `/tmp` or `$TMPDIR` other than `/tmp/fm-<id>`; use a directory inside the copy or `/tmp/fm-<id>`.
 - `shutil.rmtree(tmpdir)` or `fs.rmSync(dir, {recursive:true})` with a non-literal path in untracked or modified code.
 - A modified or new script that uses `exec`/`eval`/`getattr(os, ...)` next to `os` or `subprocess`.
