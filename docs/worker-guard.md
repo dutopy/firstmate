@@ -31,16 +31,18 @@ A worker may not:
 A path prefix never counts as ownership: `copy6evil` is not `copy6`.
 Paths and process working directories are resolved physically (symlinks followed) before the comparison.
 Nothing in the submitted command or in a scanned script is executed, sourced, or expanded.
-The only processes the guard starts are `ps`, `lsof`, and `git ls-files/diff` to read facts.
+The only processes the guard starts are `ps`, `lsof`, and `git rev-parse` to read facts.
 
 ## Indirect execution
 
 The shell walk recurses into groups, substitutions, `-c` payloads, `eval` arguments, `env -S` payloads, here-documents, here-strings, literal `echo`/`printf`/`cat <<` pipes into a shell, and files written by `cat > f <<EOF` or `tee f` earlier in the same command line.
 It tracks `cd`, literal variable assignments, and aliases within one command line.
-A script file the worker runs from inside its copy is read:
+A script file the worker runs is read; installed system locations (`/usr`, `/opt`, `/Library`, and similar) are skipped only when neither the file nor its directory is writable by the current user, so a user-writable `/opt/homebrew` or `/usr/local` is scanned.
+The guard process environment may add colon-separated prefixes to that list with `FM_WORKER_GUARD_SYSTEM_PREFIXES` (launch state only, used by the tests).
+For a script inside the copy:
 
 - a file that is new, edited, or committed by the worker is scanned strictly, exactly like inline code;
-- a file identical to the task base (the merge-base of the worker's HEAD with the default branch) is reviewed project code and is held only to the definitive broad motifs (`pkill`, `killall`, `xargs kill`, `kill $(pgrep ...)`), so ordinary project scripts that clean their own temp variables keep working.
+- a file whose bytes hash to the same blob as the task base commit (`FM_WORKER_GUARD_BASE`, compared with `GIT_NO_REPLACE_OBJECTS=1` and no git config, so worker-controlled refs, filters, and config cannot launder it) is reviewed project code and is held only to the definitive broad motifs (`pkill`, `killall`, `xargs kill`, `kill $(pgrep ...)`), so ordinary project scripts that clean their own temp variables keep working.
 
 Non-shell code is scanned statically for:
 
@@ -60,7 +62,7 @@ The guard is a static, read-only policy.
 It does not claim to contain arbitrary dynamically generated code.
 What it deliberately refuses is opaque execution that sits next to a kill or delete capability.
 It also refuses a command word it cannot read without running anything: a word containing a substitution or a variable that is not a single variable assigned earlier in the same command (`$(echo pkill) -f x`, `${P}ill`, `$a$b`).
-Trap handlers, `"pk"+"ill"` string concatenation in embedded code, and aliased kill primitives (`k = os.kill`, `from os import kill`) are read or refused the same way.
+Trap handlers, `"pk"+"ill"` string concatenation in embedded code (adjacent literals fold whatever the quote characters, joined by `+` or by plain adjacency), and aliased kill primitives (`k = os.kill`, `from os import kill`) are read or refused the same way.
 What it cannot see:
 
 - code reached only through an import, a plugin, a compiled binary, a package script (`npm run`, `make`), or a script outside the copy; a `pkill` or `rm -rf` placed in a `package.json` script or a Makefile runs unseen;
@@ -92,6 +94,7 @@ A raw launch command carries none of this because its harness is unverified.
 
 ## False positives to expect
 
+- A `$(...)` in inline code (`python3 -c "print('$(pwd)')"`) is accepted only for a bare fixed-metadata reader (`pwd`, `whoami`, `date +fmt`, `git rev-parse --show-toplevel`, ...); a path-qualified name, a name shadowed by an alias or function defined earlier, or any command line that assigns or exports `PATH` (including `env PATH=`) is refused.
 - A command whose name comes from an unresolved variable or a substitution, including path-prefixed forms such as `$FM_ROOT/bin/tool`, `"$HOME/.local/bin/gh-axi"` and `$(npm bin)/tsc`; write the literal path, or assign the variable earlier in the same command so the guard can follow it.
 - `rm -r` of a scratch directory under `/tmp` or `$TMPDIR` other than `/tmp/fm-<id>`; use a directory inside the copy or `/tmp/fm-<id>`.
 - `shutil.rmtree(tmpdir)` or `fs.rmSync(dir, {recursive:true})` with a non-literal path in untracked or modified code.
