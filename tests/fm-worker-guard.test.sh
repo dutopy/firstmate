@@ -701,7 +701,7 @@ test_security_review_bypasses_denied() {
   assert_denied "PATH assignment shadows a reader" "PATH=\$PWD/bin:\$PATH python3 -c \"print('\$(pwd)')\""
   assert_denied "env PATH shadows a reader" "env PATH=\$PWD/bin:\$PATH python3 -c \"print('\$(pwd)')\""
   assert_denied "exported PATH shadows a reader" "export PATH=\$PWD/bin:\$PATH; python3 -c \"print('\$(pwd)')\""
-  rm -rf "$WT/bin"
+  rm -rf "${WT:?}/bin"
   assert_denied "mixed-quote concatenated pkill" "node -e 'require(\"child_process\").execSync(\"pk\"+'\"'\"'ill -f sleep'\"'\"')'"
   assert_denied "implicit adjacent literal pkill" "python3 -c 'import subprocess; subprocess.run([\"pk\" \"ill\", \"-f\", \"sleep\"])'"
   assert_allowed "adjacent literals that are not a kill" "python3 -c 'print(\"a\" \"b\", \"c\" + \"d\")'"
