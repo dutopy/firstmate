@@ -1,0 +1,25 @@
+PASS | pkill-f (expect deny got deny) | pkill -f chrome-headless-shell
+PASS | killall (expect deny got deny) | killall -9 python3
+PASS | bash-c (expect deny got deny) | bash -c 'pkill -f daemon.py'
+PASS | xargs (expect deny got deny) | pgrep -f explore.py | xargs kill
+PASS | py-subprocess (expect deny got deny) | python3 -c "import subprocess; subprocess.run(['pkill','-f','dbg.py'])"
+PASS | py-os-kill-foreign (expect deny got deny) | python3 -c "import os; os.kill(36277,9)"
+PASS | kill-foreign (expect deny got deny) | kill -9 36277
+PASS | kill-cmdsubst (expect deny got deny) | kill $(pgrep -f chrome)
+PASS | split-var (expect deny got deny) | P=pk; ${P}ill -f chrome
+PASS | two-vars (expect deny got deny) | a=pk; b=ill; $a$b -f x
+PASS | echo-subst (expect deny got deny) | $(echo pkill) -f chrome
+PASS | trap (expect deny got deny) | trap "pkill -f x" EXIT
+PASS | mixedquote (expect deny got deny) | node -e 'require("child_process").execSync("pk"+'"'"'ill -f sleep'"'"')'
+PASS | pyimplicit (expect deny got deny) | python3 -c "import subprocess; subprocess.run([\"pk\" \"ill\", \"-f\", \"x\"])"
+PASS | alias-oskill (expect deny got deny) | python3 -c "import os; k=os.kill; k(36277,9)"
+PASS | rm-foreign (expect deny got deny) | rm -rf /tmp/fmprobe.8kNo/foreign/keep
+PASS | rm-slash (expect deny got deny) | rm -rf /
+PASS | rm-bypass-script (expect deny got deny) | bash -c 'rm -rf /tmp/fmprobe.8kNo/foreign/keep'
+PASS | path-shadow (expect deny got deny) | mkdir -p bin; printf '#!/bin/sh\n' > bin/pwd; PATH=$PWD/bin:$PATH python3 -c "print('$(pwd)')"
+PASS | dyn-prefix-FP (expect deny got deny) | $FM_ROOT/bin/x.sh
+PASS | kill-owned (expect allow got allow) | kill 36281
+PASS | rm-owned (expect allow got allow) | rm -rf /tmp/fmprobe.8kNo/wt/build
+PASS | plain-ls (expect allow got allow) | ls -la
+PASS | str-concat-benign (expect allow got allow) | python3 -c "print('a'+'b')"
+PASS | pgrep-ok (expect allow got allow) | pgrep -f sleep
