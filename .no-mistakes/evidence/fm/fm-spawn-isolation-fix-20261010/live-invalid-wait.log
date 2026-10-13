@@ -1,0 +1,22 @@
+## exit status + leftover state after full-pool run
+exit=1
+no result files left
+
+not in a git or jj repository: git rev-parse --show-toplevel: fatal: not a git repository (or any of the parent directories): .git
+## invalid waits (before any side effect: window count before/after)
+       2
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '0'
+  [0] exit=
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got 'abc'
+  [abc] exit=
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '3601'
+  [3601] exit=
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '-5'
+  [-5] exit=
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '007'
+  [007] exit=
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '99999'
+  [99999] exit=
+error: FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer number of seconds (1-3600), got '1 2'
+  [1 2] exit=
+       2

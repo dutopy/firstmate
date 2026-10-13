@@ -1,0 +1,3 @@
+warning: /tmp/nmlab/home/data/lab-full-z1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: treehouse get did not enter an isolated worktree within 5s (set FM_SPAWN_ISOLATION_WAIT_SECS to change this wait) (last seen '/private/tmp/nmlab/proj': it is the spawning project itself; spawning project '/tmp/nmlab/proj'); inspect window firstmate:fm-lab-full-z1
+[wait=5] elapsed=7s
