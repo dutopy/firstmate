@@ -29,7 +29,12 @@ case "$1 $2" in
   "repo view") printf 'repo:\n  visibility: %s\n' "${FAKE_VIS:-private}" ;;
   "pr list")
     [ "${FAKE_PR_FAIL:-0}" != 1 ] || exit 1
-    printf 'count: 1\npull_requests[1]{number,title,state,author,draft,review,url,created}:\n'
+    if [ "${FAKE_PR_NOURL:-0}" = 1 ]; then
+      printf 'count: 1\npull_requests[1]{number,title,state,author,draft,review}:\n'
+    else
+      case "$*" in *"--fields url,createdAt"*) ;; *) exit 1 ;; esac
+      printf 'count: 1\npull_requests[1]{number,title,state,author,draft,review,url,createdAt}:\n'
+    fi
     cat "${FAKE_PR_OUT:-/dev/null}" ;;
   *) exit 1 ;;
 esac
@@ -226,6 +231,9 @@ test_pr_age_presentation_and_unknown_forge() {
   assert_not_contains "$(line_of "$home")" "PR>48h" "a 1d-old PR is under the threshold"
   refresh "$home" $((T0 + 7600)) FAKE_PR_FAIL=1
   assert_contains "$(line_of "$home")" "unknown: PR" "a forge that cannot answer is unknown, not clean"
+  printf '  7,"t",open,me,no,none\n' > "$out"
+  refresh "$home" $((T0 + 9500)) FAKE_PR_OUT="$out" FAKE_PR_NOURL=1
+  assert_contains "$(line_of "$home")" "unknown: PR" "a table with rows but no url/age column is unknown, not clean"
   pass "fm-antidrift-check: PR age, registered-vs-presented, and forge-unknown are distinct"
 }
 

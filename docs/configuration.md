@@ -672,7 +672,7 @@ The alarms are literal and each is a count in the one line:
 - A checkpoint that could not be published alarms with its reason, and a worktree whose slot ownership is not proven alarms.
 
 Clocks are never inferred.
-The last push is the pipeline's own receipt, `branch_sync.pipeline.pushed_at` from `no-mistakes axi status` with `remote.freshness` equal to `pipeline_push`, or the WIP push receipt; a fetch time is never used.
+The last push is the pipeline's own receipt, `branch_sync.pipeline.pushed_at` from `no-mistakes axi status` with `remote.freshness` equal to `pipeline_push`, only; WIP push receipts govern WIP publication, not this age; a fetch time is never used.
 Dirty duration is tracked from the first observation and persisted under `state/wip/`, and an unobserved start is unknown rather than backdated from file times.
 PR age comes from the forge's relative age, which `gh-axi pr list` reports in whole days, so a PR counts from `2d ago`.
 A forge or tool that cannot answer is reported as `unknown` and is never read as clean.

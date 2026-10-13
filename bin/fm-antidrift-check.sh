@@ -36,7 +36,8 @@
 #   slot not proven      a task worktree whose pool-slot claim is not this task's
 # Clocks are never inferred. The last push is the native pipeline receipt
 # (axi status branch_sync.pipeline.pushed_at with remote.freshness=pipeline_push)
-# or the WIP push receipt; otherwise the age is reported as unknown. Dirty
+# only; WIP push receipts govern WIP publication, not this age. Otherwise the age
+# is reported as unknown. Dirty
 # duration is tracked from the first observation and persisted; an unobserved
 # start is unknown, never backdated from file times. A forge that cannot answer
 # is reported as unknown and never as clean.
@@ -335,7 +336,7 @@ presented_pr_urls() {
 }
 
 check_prs() {
-  local seen='' i wt common cache out url age reg pres now_cache
+  local seen='' i wt common cache out url age reg pres now_cache rows parsed
   if ! command -v gh-axi >/dev/null 2>&1; then UNKNOWN+=("PR: gh-axi absent"); return 0; fi
   reg=$(registered_pr_urls); pres=$(presented_pr_urls)
   for i in "${!E_PATH[@]}"; do
@@ -352,9 +353,15 @@ check_prs() {
     case "$now_cache" in ''|*[!0-9]*) now_cache=0 ;; esac
     if [ $((NOW - now_cache)) -ge "$PR_POLL_SECS" ]; then
       mkdir -p "$STATE/wip"
-      if out=$(cd "$wt" && fm_run_timed "$CALL_TIMEOUT" gh-axi pr list --author @me 2>/dev/null); then
-        printf '%s\n' "$out" | sed -n 's/.*"\(https:[^"]*\)",\([^,]*\)$/\1 \2/p' > "$cache.list.tmp" && mv -f "$cache.list.tmp" "$cache.list"
-        wip_kv_set "$cache" polled "$NOW"; wip_kv_set "$cache" ok 1
+      if out=$(cd "$wt" && fm_run_timed "$CALL_TIMEOUT" gh-axi pr list --author @me --fields url,createdAt 2>/dev/null); then
+        printf '%s\n' "$out" | sed -n 's/.*"\(https:[^"]*\)",\([^,]*\)$/\1 \2/p' > "$cache.list.tmp"
+        rows=$(printf '%s\n' "$out" | grep -c '^[[:space:]]*[0-9]')
+        parsed=$(wc -l < "$cache.list.tmp")
+        if [ "$rows" -eq "$((parsed))" ]; then
+          mv -f "$cache.list.tmp" "$cache.list"; wip_kv_set "$cache" polled "$NOW"; wip_kv_set "$cache" ok 1
+        else
+          rm -f "$cache.list.tmp"; wip_kv_set "$cache" polled "$NOW"; wip_kv_set "$cache" ok 0
+        fi
       else
         wip_kv_set "$cache" polled "$NOW"; wip_kv_set "$cache" ok 0
       fi
