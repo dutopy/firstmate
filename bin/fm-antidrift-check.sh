@@ -27,7 +27,7 @@
 #   no upstream          a worktree whose branch has no GitHub upstream (scouts excluded)
 #   >10 unpushed         commits ahead of the upstream, or of the native pushed head
 #   push >4h             last successful push older than 4 hours (every non-scout worktree)
-#   push age unknown     no native or WIP receipt exists for that branch
+#   push age unknown     no native pipeline receipt exists for that branch
 #   dirty >30m           uncommitted changes observed continuously for 30 minutes
 #   push DISABLED        a remote whose push URL is DISABLED
 #   PR >48h              an open PR of the forge login, not registered or with no
