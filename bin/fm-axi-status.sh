@@ -182,6 +182,7 @@ def usage_validate():
 def usage_diagnostics():
     print('usage: fm-axi-status.sh diagnostics [--full] [--width N]')
     print('reads the six bounded error/log/hook targets without changing legacy files.')
+    print('--full content is the last 65536 raw bytes per target; truncated=true marks omitted earlier bytes.')
     print('runtime invocation frequency is reported as unknown unless retained evidence exists.')
 
 
@@ -195,32 +196,48 @@ DIAGNOSTIC_TARGETS = (
 )
 
 
+DIAGNOSTIC_TAIL_BYTES = 65536
+
+
 def diagnostic_records():
     for relative, surface in DIAGNOSTIC_TARGETS:
-        path = (os.path.join(state_dir, relative[6:])
-                if relative.startswith('state/')
-                else os.path.join(os.path.dirname(state_dir), relative))
-        # The command's script root is authoritative for tracked hook sources;
-        # state remains home-local. This prevents a home override from making a
-        # source inventory silently read a different checkout.
-        if relative.startswith('bin/'):
-            path = os.path.join(os.environ['FM_AXI_SCRIPT_DIR'], relative[4:])
+        root = state_dir if relative.startswith('state/') else os.environ['FM_AXI_SCRIPT_DIR']
+        path = os.path.join(root, relative.split('/', 1)[1])
         exists = os.path.isfile(path)
-        content = ''
+        size = lines = 0
+        tail = b''
         if exists:
             try:
-                with open(path, encoding='utf-8', errors='strict') as handle:
-                    content = handle.read()
-            except UnicodeDecodeError:
-                fail('INVALID_ENCODING', 'diagnostic target is not valid UTF-8', relative)
+                with open(path, 'rb') as handle:
+                    last = b'\n'
+                    while True:
+                        chunk = handle.read(1 << 20)
+                        if not chunk:
+                            break
+                        size += len(chunk)
+                        lines += chunk.count(b'\n')
+                        last = chunk[-1:]
+                    if size and last != b'\n':
+                        lines += 1
+                    handle.seek(max(0, size - DIAGNOSTIC_TAIL_BYTES))
+                    tail = handle.read(DIAGNOSTIC_TAIL_BYTES)
             except OSError as exc:
                 fail('IO_ERROR', str(exc), relative, 1)
+        truncated = size > len(tail)
+        if truncated:
+            while tail and 0x80 <= tail[0] < 0xC0:
+                tail = tail[1:]
+        try:
+            content = tail.decode('utf-8', errors='strict')
+        except UnicodeDecodeError:
+            fail('INVALID_ENCODING', 'diagnostic target is not valid UTF-8', relative)
         yield {
             'target': relative,
             'surface': surface,
             'exists': 'true' if exists else 'false',
-            'bytes': str(len(content.encode('utf-8'))),
-            'lines': str(content.count('\n') + (1 if content and not content.endswith('\n') else 0)),
+            'bytes': str(size),
+            'lines': str(lines),
+            'truncated': 'true' if truncated else 'false',
             'frequency': 'unknown',
             'content': content,
         }
@@ -234,6 +251,7 @@ def diagnostics_output(full, width):
                 ' exists=' + row['exists'] +
                 ' bytes=' + row['bytes'] +
                 ' lines=' + row['lines'] +
+                ' truncated=' + row['truncated'] +
                 ' frequency=' + row['frequency'])
         if full:
             print(base + ' content=' + encode(row['content']))
@@ -242,6 +260,7 @@ def diagnostics_output(full, width):
                 print(line)
             for label, value in (('surface', row['surface']), ('exists', row['exists']),
                                  ('bytes', row['bytes']), ('lines', row['lines']),
+                                 ('truncated', row['truncated']),
                                  ('frequency', 'unknown')):
                 for line in wrap(label, value, width):
                     print(line)

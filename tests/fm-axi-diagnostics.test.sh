@@ -39,3 +39,20 @@ expect_fail() { if "$@" >"$TMP_ROOT/unexpected.out" 2>"$TMP_ROOT/unexpected.err"
 expect_fail "$AXI" diagnostics --width 19
 expect_fail "$AXI" diagnostics --unknown
 pass "axi diagnostics preserves six legacy error/log/hook targets and reports runtime frequency as unknown"
+
+python3 - "$HOME_DIR/state/.watch-triage.log" <<'PY'
+import sys
+with open(sys.argv[1], 'w', encoding='utf-8') as f:
+    f.write('OLDHEAD\n' + 'é' * 100000 + '\nNEWTAIL\n')
+PY
+BIG=$("$AXI" diagnostics --full) || fail "big full diagnostics failed"
+ROW=$(printf '%s\n' "$BIG" | grep -F 'target=state/.watch-triage.log')
+printf '%s\n' "$ROW" | grep -F 'truncated=true' >/dev/null || fail "oversize target not marked truncated"
+printf '%s\n' "$ROW" | grep -F 'bytes=200017' >/dev/null || fail "source byte inventory not preserved"
+printf '%s\n' "$ROW" | grep -F 'lines=3' >/dev/null || fail "source line inventory not preserved"
+printf '%s\n' "$ROW" | grep -F 'NEWTAIL' >/dev/null || fail "recent tail not preserved"
+printf '%s\n' "$ROW" | grep -F 'OLDHEAD' >/dev/null && fail "head leaked past byte cap"
+[ "${#ROW}" -lt 400000 ] || fail "projection not bounded"
+printf '%s\n' "$BIG" | grep -F 'target=state/x-poll.error' | grep -F 'truncated=false' >/dev/null \
+  || fail "small target wrongly truncated"
+pass "axi diagnostics caps content at 65536 raw bytes with explicit truncation"
