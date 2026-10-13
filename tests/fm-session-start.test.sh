@@ -472,7 +472,7 @@ case "${1:-} ${2:-}" in
     ;;
   "agent get")
     if [ "${3:-}" = p-new ] && [ -e "$spawned" ]; then
-      printf '%s\n' '{"result":{"agent":{"agent_status":"idle"}}}'
+      printf '%s\n' '{"result":{"agent":{"agent":"pi","agent_status":"idle"}}}'
     else
       printf '%s\n' '{"error":{"code":"agent_not_found"}}' >&2
       exit 1

@@ -231,7 +231,7 @@ case "${1:-}" in
           exit 0
         fi
         [ -n "${FM_FAKE_HERDR_AGENT_STATUS:-}" ] || exit 1
-        printf '{"result":{"agent":{"agent_status":"%s"}}}\n' "$FM_FAKE_HERDR_AGENT_STATUS"
+        printf '{"result":{"agent":{"agent":"pi","agent_status":"%s"}}}\n' "$FM_FAKE_HERDR_AGENT_STATUS"
         exit 0 ;;
     esac ;;
 esac

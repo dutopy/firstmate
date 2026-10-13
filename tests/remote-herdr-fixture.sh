@@ -105,9 +105,9 @@ case "${1:-} ${2:-}" in
     pane=${3:-}
     if [ "$(jq_state -r --arg p "$pane" '.working[$p] // false')" = true ]; then
       jq_state --arg p "$pane" '.working |= with_entries(select(.key != $p))' | save
-      printf '{"result":{"agent":{"agent_status":"working"}}}\n'
+      printf '{"result":{"agent":{"agent":"pi","agent_status":"working"}}}\n'
     elif [ "$(jq_state -r --arg p "$pane" '.typed[$p] // false')" = true ]; then
-      printf '{"result":{"agent":{"agent_status":"idle"}}}\n'
+      printf '{"result":{"agent":{"agent":"pi","agent_status":"idle"}}}\n'
     else
       printf '{"error":{"code":"agent_not_found","message":"%s"}}\n' "$pane"
     fi
