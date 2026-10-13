@@ -196,7 +196,10 @@ process_entry() {  # <index>
     up=$(src "$wt" for-each-ref --format='%(upstream:short)' "refs/heads/$branch" 2>/dev/null)
     if [ -n "$up" ]; then
       remote=$(src "$wt" config "branch.$branch.remote" 2>/dev/null)
-      url=$(src "$wt" remote get-url "$remote" 2>/dev/null)
+      # The configured URL, not the rewritten one: a url.<base>.insteadOf rule
+      # must not hide which forge the upstream names.
+      url=$(src "$wt" config "remote.$remote.url" 2>/dev/null)
+      [ -n "$url" ] || url=$(src "$wt" remote get-url "$remote" 2>/dev/null)
       case "$url" in *github.com[:/]*) gh=1 ;; esac
       ahead=$(src "$wt" rev-list --count "$up..HEAD" 2>/dev/null)
     fi
@@ -236,12 +239,16 @@ process_entry() {  # <index>
   fi
   # alarms that need a product (non-scout) worktree
   if [ "$kind" != scout ]; then
-    if [ "$gh" = 0 ]; then C_NOUP+=("$label${E_MODE[$i]:+[${E_MODE[$i]}]}"); fi
+    if [ "$gh" = 0 ]; then C_NOUP+=("$label$([ "${E_MODE[$i]}" = local-only ] && printf '[local-only]')"); fi
     if [ -n "$ahead" ] && [ "$ahead" -gt "$UNPUSHED_MAX" ]; then C_MANY+=("$label:$ahead"); fi
-    if [ -n "$last_push" ]; then
-      if [ $((NOW - last_push)) -gt "$PUSH_AGE_MAX" ]; then C_PUSH4+=("$label"); fi
-    elif [ "$gh" = 1 ] && [ -n "$branch" ]; then
-      C_PUSHUNK+=("$label")
+    # Push age is a property of produced work: a task's own worktree. A
+    # registered checkout or the home root has no native push receipt to read.
+    if [ "$kind" = ship ]; then
+      if [ -n "$last_push" ]; then
+        if [ $((NOW - last_push)) -gt "$PUSH_AGE_MAX" ]; then C_PUSH4+=("$label"); fi
+      elif [ "$gh" = 1 ] && [ -n "$branch" ]; then
+        C_PUSHUNK+=("$label")
+      fi
     fi
   fi
   # --- checkpoint triggers (active task worktrees, or dirty roots) ---
@@ -334,7 +341,7 @@ check_prs() {
     common=$(cd "$wt" && cd "$common" 2>/dev/null && pwd -P) || continue
     case " $seen " in *" $common "*) continue ;; esac
     seen="$seen $common"
-    src "$wt" remote -v 2>/dev/null | grep -q 'github\.com' || continue
+    src "$wt" config --get-regexp '^remote\..*\.url$' 2>/dev/null | grep -q 'github\.com' || continue
     cache="$STATE/wip/pr-$(printf '%s' "$common" | wip_hash)"
     now_cache=$(wip_kv_get "$cache" polled)
     case "$now_cache" in ''|*[!0-9]*) now_cache=0 ;; esac
