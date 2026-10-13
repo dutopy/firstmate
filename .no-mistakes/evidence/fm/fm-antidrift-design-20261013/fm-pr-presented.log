@@ -1,0 +1,2 @@
+ok - fm-pr-check --presented: explicit, exact-URL, idempotent receipt
+ok - fm-pr-check --presented: no registered PR means no receipt

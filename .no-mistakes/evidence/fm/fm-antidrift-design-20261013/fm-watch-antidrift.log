@@ -1,0 +1,4 @@
+ok - fm-watch: the heartbeat raises one check wake per new drift line
+ok - fm-watch: the heartbeat reads the cache only and never reaches the forge
+ok - fm-watch: the status backstop still wakes when drift is pending too
+ok - fm-watch: a done: status line kicks the producer into a milestone checkpoint
