@@ -1,0 +1,3 @@
+ok - baseline: claude 2.1.296 (Claude Code) offers the advisor tool when advisorModel is set
+ok - worker: the fm-spawn launch removes the advisor tool from the model request on claude 2.1.296 (Claude Code)
+ok - the captain's user-level Claude settings were not touched
