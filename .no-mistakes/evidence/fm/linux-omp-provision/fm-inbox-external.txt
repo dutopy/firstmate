@@ -1,0 +1,12 @@
+ok - external-source note records one note, one wake, and private metadata
+ok - external-source replay is idempotent
+ok - external source ids are validated before queuing
+ok - replay after a failed announcement re-announces the original note instead of duplicating
+ok - external id is bound to its original body
+ok - changed metadata rejects without overwriting the original
+ok - a crash between note and map publication recovers the exact note
+ok - handled note recovery does not requeue processed work
+ok - ambiguous external identities refuse without another publication
+ok - fresh external ids do not scan unrelated pending or handled notes
+ok - concurrent CRLF replays retain one exact note and receipt
+ok - lost-map changed metadata cannot overwrite the immutable captured payload
