@@ -1,0 +1,89 @@
+acf0c34097285fb18acc728b0548e4778347339c5e493e0a5720176fa8da74db  .watch-triage.log
+== full
+axi-output.v1 target=state/.watch-triage.log surface=runtime_log exists=true bytes=200017 lines=3 truncated=true frequency=unknown content=%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9% ...[len=196730]
+axi-output.v1 target=state/.watch-cycle-exits.log surface=runtime_log exists=true bytes=5 lines=1 truncated=false frequency=unknown content=exit%0A ...[len=147]
+axi-output.v1 target=state/.watch-deliveries.log surface=runtime_log exists=true bytes=2 lines=1 truncated=false frequency=unknown content=d%0A ...[len=143]
+axi-output.v1 target=state/x-poll.error surface=runtime_error exists=true bytes=6 lines=1 truncated=false frequency=unknown content=small%0A ...[len=140]
+axi-output.v1 target=bin/fm-hook-host-lib.sh surface=hook_source exists=true bytes=1968 lines=36 truncated=false frequency=unknown content=%23%21/usr/bin/env%20bash%0A%23%20Shared%20%22which%20harness ...[len=2967]
+axi-output.v1 target=bin/fm-kimi-turnend-hook.sh surface=hook_source exists=true bytes=10576 lines=276 truncated=false frequency=unknown content=%23%21/usr/bin/env%20bash%0A%23%20Install%20or%20remove ...[len=17689]
+== tail check
+NEWTAIL
+0
+== compact w30
+target=state/.watch-triage.log
+surface=runtime_log
+exists=true
+bytes=200017
+lines=3
+truncated=true
+frequency=unknown
+details=omitted;
+rerun=
+command=diagnostics --full
+target=
+  state/.watch-cycle-exits.log
+surface=runtime_log
+exists=true
+bytes=5
+lines=1
+truncated=false
+frequency=unknown
+details=omitted;
+rerun=
+command=diagnostics --full
+target=
+  state/.watch-deliveries.log
+surface=runtime_log
+exists=true
+bytes=2
+lines=1
+truncated=false
+frequency=unknown
+details=omitted;
+rerun=
+command=diagnostics --full
+target=state/x-poll.error
+surface=runtime_error
+exists=true
+bytes=6
+lines=1
+truncated=false
+frequency=unknown
+details=omitted;
+rerun=
+command=diagnostics --full
+target=bin/fm-hook-host-lib.sh
+surface=hook_source
+exists=true
+bytes=1968
+lines=36
+truncated=false
+frequency=unknown
+details=omitted;
+rerun=
+command=diagnostics --full
+target=
+  bin/fm-kimi-turnend-hook.sh
+surface=hook_source
+exists=true
+bytes=10576
+lines=276
+truncated=false
+frequency=unknown
+details=omitted;
+rerun=
+command=diagnostics --full
+== empty/missing state
+axi-output.v1 target=state/x-poll.error surface=runtime_error exists=false bytes=0 lines=0 truncated=false frequency=unknown content=
+== bad width
+error:
+  code: INVALID_WIDTH
+  field: width
+  message: "width must be at least 20"
+rc=2
+== unchanged
+acf0c34097285fb18acc728b0548e4778347339c5e493e0a5720176fa8da74db  /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/tmp.FolnwKlB9c/state/.watch-triage.log
+== file exactly 65536 bytes
+axi-output.v1 target=state/x-poll.error surface=runtime_error exists=true bytes=65536 lines=1 truncated=false frequency=unknown content=aaaaaaaaaaaaaa
+== 65537
+axi-output.v1 target=state/x-poll.error surface=runtime_error exists=true bytes=65537 lines=1 truncated=true frequency=unknown content=aaaaaaaaaaaaaaa
