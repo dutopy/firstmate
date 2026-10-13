@@ -665,7 +665,7 @@ A task worktree is read or snapshotted only while its pool-slot claim names that
 The alarms are literal and each is a count in the one line:
 - A product worktree whose branch has no GitHub upstream alarms immediately, with no grace period; a `local-only` project is annotated but still alarmed, and scout worktrees are excluded.
 - More than 10 commits ahead of the upstream, or of the native pushed head, alarms.
-- A last push older than 4 hours alarms for a task worktree; an unrecorded push reads as "push age unknown" and is alarmed, never guessed.
+- A last push older than 4 hours alarms for every inventoried worktree with a branch; an unrecorded push reads as "push age unknown" and is alarmed, never guessed.
 - Uncommitted changes observed continuously for 30 minutes alarm.
 - A remote whose push URL is `DISABLED` alarms.
 - An open PR of the forge login older than 48 hours alarms when no task registered it, or when its task has no presentation receipt.

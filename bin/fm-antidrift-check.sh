@@ -26,7 +26,7 @@
 # Alarms, each a count in the one line. All are literal thresholds:
 #   no upstream          a worktree whose branch has no GitHub upstream (scouts excluded)
 #   >10 unpushed         commits ahead of the upstream, or of the native pushed head
-#   push >4h             last successful push older than 4 hours
+#   push >4h             last successful push older than 4 hours (every non-scout worktree)
 #   push age unknown     no native or WIP receipt exists for that branch
 #   dirty >30m           uncommitted changes observed continuously for 30 minutes
 #   push DISABLED        a remote whose push URL is DISABLED
@@ -215,7 +215,7 @@ process_entry() {  # <index>
     gh=1   # detached and fully contained in a remote: not drift
   fi
   # native push receipt for pipeline-authored branches
-  if [ "$kind" = ship ] && [ -n "$branch" ] && command -v no-mistakes >/dev/null 2>&1; then
+  if [ "$kind" != scout ] && [ -n "$branch" ] && command -v no-mistakes >/dev/null 2>&1; then
     nm_out=$(fm_nm_run "$wt" "$NM_TIMEOUT" axi status) || nm_out=''
     pushed_head=$(fm_nm_branch_sync_pipeline_field "$nm_out" pushed_head)
     fresh=$(fm_nm_branch_sync_freshness "$nm_out")
@@ -247,14 +247,13 @@ process_entry() {  # <index>
   if [ "$kind" != scout ]; then
     if [ "$gh" = 0 ]; then C_NOUP+=("$label$([ "${E_MODE[$i]}" = local-only ] && printf '[local-only]')"); fi
     if [ -n "$ahead" ] && [ "$ahead" -gt "$UNPUSHED_MAX" ]; then C_MANY+=("$label:$ahead"); fi
-    # Push age is a property of produced work: a task's own worktree. A
-    # registered checkout or the home root has no native push receipt to read.
-    if [ "$kind" = ship ]; then
-      if [ -n "$last_push" ]; then
-        if [ $((NOW - last_push)) -gt "$PUSH_AGE_MAX" ]; then C_PUSH4+=("$label"); fi
-      elif [ "$gh" = 1 ] && [ -n "$branch" ]; then
-        C_PUSHUNK+=("$label")
-      fi
+    # Push age applies to every inventoried worktree with a branch. The age is
+    # known only from a native receipt; without one it is reported as unknown,
+    # never guessed and never silently dropped.
+    if [ -n "$last_push" ]; then
+      if [ $((NOW - last_push)) -gt "$PUSH_AGE_MAX" ]; then C_PUSH4+=("$label"); fi
+    elif [ "$gh" = 1 ] && [ -n "$branch" ]; then
+      C_PUSHUNK+=("$label")
     fi
   fi
   # --- checkpoint triggers (active task worktrees, or dirty roots) ---

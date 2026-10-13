@@ -116,7 +116,8 @@ test_no_upstream_alarm_and_scout_exclusion() {
   refresh "$home" $T0
   line=$(line_of "$home")
   assert_contains "$line" "no-upstream 1 (lonely[local-only])" "a local-only project is alarmed and annotated"
-  assert_not_contains "$line" "tracked" "a project with a GitHub upstream is clean"
+  assert_not_contains "$line" "no-upstream 2" "a project with a GitHub upstream is not alarmed for upstream"
+  assert_not_contains "$line" "tracked[" "a project with a GitHub upstream is not annotated"
   assert_not_contains "$line" "no-upstream 2" "a scout worktree is never alarmed for upstream"
   assert_not_contains "$line" "scout1)" "a scout worktree is not named in the no-upstream list"
   pass "fm-antidrift-check: no-upstream alarm is immediate, annotated for local-only, scouts excluded"
@@ -134,6 +135,15 @@ test_unpushed_threshold_is_literal() {
   refresh "$home" $((T0 + 1))
   assert_contains "$(line_of "$home")" "unpushed>10 1 (busy:11)" "11 unpushed commits alarm"
   pass "fm-antidrift-check: more than 10 unpushed commits alarms, exactly 10 does not"
+}
+
+test_push_age_applies_to_registry_clones_and_the_home_root_as_unknown() {
+  local home
+  home=$(mk_home pushscope)
+  mk_repo "$home/projects/tracked" github; register_project "$home" tracked
+  refresh "$home" $T0
+  assert_contains "$(line_of "$home")" "push-age-unknown 1 (tracked)" "a registered clone without a native receipt is reported unknown, not dropped"
+  pass "fm-antidrift-check: push-age alarms cover registry clones and the home root as unknown, never silently skipped"
 }
 
 test_push_age_uses_the_native_receipt_and_never_guesses() {
@@ -420,6 +430,7 @@ test_a_held_lock_makes_the_producer_a_no_op() {
 test_empty_inventory_is_quiet_and_schedules_the_next_run
 test_no_upstream_alarm_and_scout_exclusion
 test_unpushed_threshold_is_literal
+test_push_age_applies_to_registry_clones_and_the_home_root_as_unknown
 test_push_age_uses_the_native_receipt_and_never_guesses
 test_dirty_duration_is_tracked_and_never_backdated
 test_a_deleted_tracked_file_counts_as_dirty
