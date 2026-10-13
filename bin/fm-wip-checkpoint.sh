@@ -105,16 +105,20 @@ is_home_repo_worktree() {  # <worktree>
 
 # Print the pathspec exclusions (one per line) for a snapshot of <worktree>.
 exclusion_pathspecs() {  # <real-worktree> <shadow>
-  local wt=$1 shadow=$2 g rel
+  local wt=$1 shadow=$2 g rel store
   for g in ${DENY_GLOBS[@]+"${DENY_GLOBS[@]}"}; do printf ':(exclude,glob)%s\n' "$g"; done
   if is_home_repo_worktree "$wt"; then
     for g in 'data/**' 'state/**' 'config/**' 'projects/**' '.no-mistakes/**' '.env'; do
       printf ':(exclude,glob)%s\n' "$g"
     done
   fi
-  case "$shadow" in
-    "$wt"/*) rel=${shadow#"$wt"/}; printf ':(exclude,glob)%s/**\n' "$rel" ;;
-  esac
+  # The whole WIP store (shadow repos, info, locks, pass scratch) and the state
+  # directory that holds it are never captured, wherever they sit.
+  for store in "$(wip_real_path "$STATE/wip")" "$(wip_real_path "$STATE")" "$(dirname "$shadow")"; do
+    case "$store" in
+      "$wt"/*) rel=${store#"$wt"/}; printf ':(exclude,glob)%s/**\n' "$rel" ;;
+    esac
+  done
 }
 
 SHADOW=
@@ -133,7 +137,6 @@ resolve_worktree() {  # <path>
   KEY=$(wip_key "$REAL_WT")
   KDIR=$(wip_dir "$KEY")
   SHADOW=$(wip_shadow "$KEY")
-  mkdir -p "$KDIR" || die "cannot create $KDIR"
 }
 
 # One pass: bring the shadow index in line with the worktree's eligible files
@@ -193,6 +196,7 @@ action_snapshot() {
       *) die "slot ownership unreadable; snapshot refused" 3 ;;
     esac
   fi
+  mkdir -p "$KDIR" || die "cannot create $KDIR"
   lock="$KDIR/lock"
   fm_lock_try_acquire "$lock" || die "another snapshot is running for $REAL_WT" 1
   # shellcheck disable=SC2064
