@@ -12,6 +12,8 @@ mkdir -p "$state"
 
 fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-classify-lib.sh"
 run() { FM_STATE_OVERRIDE="$state" FM_HOME="$TMP_ROOT" REFLEX_MAX_SCAN_BYTES="${REFLEX_MAX_SCAN_BYTES:-131072}" "$REPORTER" "$@"; }
 
 keys=()
@@ -91,11 +93,40 @@ aged_key=${aged#*$'\t'}
 run report aged "$aged_key" >/dev/null
 run review aged "$aged_key" >/dev/null
 printf '%s\n' $(seq 1 100) >> "$state/aged.status"
-if run resolve aged "$aged_key" >/dev/null 2>&1; then
-  fail 'aged lifecycle was resolved after bounded history was lost'
-fi
 if run intake aged worker unknown 'aged evidence' >/dev/null 2>&1; then
   fail 'aged lifecycle admitted duplicate after bounded refusal'
+fi
+[ "$(run review aged "$aged_key")" = "already-review$(printf '\t')$aged_key" ] \
+  || fail 'open review beyond bounded scan was not recognized'
+[ "$(run resolve aged "$aged_key" 'closed beyond scan')" = "resolved$(printf '\t')$aged_key" ] \
+  || fail 'open review beyond bounded scan could not be resolved'
+if status_open_decisions "$state/aged.status" | grep -F "$aged_key" >/dev/null; then
+  fail 'native decision fold did not close review resolved beyond bounded scan'
+fi
+if run resolve aged "$aged_key" >/dev/null 2>&1; then
+  fail 'closed lifecycle beyond bounded scan was not refused'
+fi
+[ "$(grep -c "^resolved \\[key=$aged_key\\]" "$state/aged.status")" -eq 1 ] \
+  || fail 'resolution beyond bounded scan was duplicated'
+
+# Without an open review the bounded refusal stands, and no event is appended.
+unreviewed=$(run intake unreviewed worker unknown 'unreviewed aged evidence')
+unreviewed_key=${unreviewed#*$'\t'}
+run report unreviewed "$unreviewed_key" >/dev/null
+printf '%s\n' $(seq 1 100) >> "$state/unreviewed.status"
+before=$(wc -l < "$state/unreviewed.status")
+for cmd in review resolve report; do
+  if run "$cmd" unreviewed "$unreviewed_key" >/dev/null 2>&1; then
+    fail "$cmd succeeded beyond bounded scan without an open review"
+  fi
+done
+[ "$(wc -l < "$state/unreviewed.status")" -eq "$before" ] || fail 'refused command mutated aged history'
+
+# A hand-written decision under a generated-looking key is not a reflex review.
+printf '%s\n' "needs-decision [key=$spoof_key]: native decision" > "$state/spoof-aged.status"
+printf '%s\n' $(seq 1 100) >> "$state/spoof-aged.status"
+if run resolve spoof-aged "$spoof_key" >/dev/null 2>&1; then
+  fail 'non-reflex decision was resolved beyond bounded scan'
 fi
 
 # A resolved lifecycle is also refused when its history is no longer complete;

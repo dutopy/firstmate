@@ -110,6 +110,14 @@ reflex_key_or_die() {
   valid_reflex_key "$1" || die 'invalid reflex key (expected generated reflex identity)'
 }
 
+# Beyond the bounded scan, an already-open review is still provable through the
+# native cursor-backed open-decision fold; nothing else is.
+open_review_beyond_scan() {  # <status-file> <key>
+  _fm_wake_require_classify || return 1
+  status_open_decisions_incremental "$1" 2>/dev/null \
+    | awk -F '\t' -v key="$2" '$1 == key && $2 == "needs-decision" && $3 == "reflex review requested" { found=1 } END { exit(found ? 0 : 1) }'
+}
+
 acquire_reflex_lock() {  # <status-file>
   local lock="$1.lock" attempts=0
   mkdir -p "$STATE"
@@ -134,7 +142,7 @@ cmd_intake() {
   digest=$(sha256_text "$evidence")
   key="reflex-$(key_digest "$task|$instance|$cause|$digest")"
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
-  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
+  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan'; }
   case "$(latest_state "$file" "$key")" in
     intake|report|review)
       fm_lock_release "$file.lock"
@@ -155,7 +163,7 @@ cmd_report() {
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no suspicion exists for task'
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
-  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
+  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan'; }
   has_reflex_origin "$file" "$key" || { fm_lock_release "$file.lock"; die 'report requires an actual reflex intake event'; }
   case "$(latest_state "$file" "$key")" in
     report|review) fm_lock_release "$file.lock"; printf 'already-report\t%s\n' "$key"; return 0 ;;
@@ -175,7 +183,12 @@ cmd_review() {
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no report exists for task'
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
-  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
+  if ! scan_complete "$file"; then
+    if open_review_beyond_scan "$file" "$key"; then
+      fm_lock_release "$file.lock"; printf 'already-review\t%s\n' "$key"; return 0
+    fi
+    fm_lock_release "$file.lock"; die 'status history exceeds bounded scan and no open review was found for key'
+  fi
   has_reflex_origin "$file" "$key" || { fm_lock_release "$file.lock"; die 'review requires an actual reflex intake event'; }
   case "$(latest_state "$file" "$key")" in
     review) fm_lock_release "$file.lock"; printf 'already-review\t%s\n' "$key"; return 0 ;;
@@ -196,13 +209,17 @@ cmd_resolve() {
   file=$(task_status "$task")
   [ -f "$file" ] || die 'no reflex exists for task'
   acquire_reflex_lock "$file" || die 'could not acquire status lock within bounded wait'
-  scan_complete "$file" || { fm_lock_release "$file.lock"; die 'status history exceeds bounded scan; retry after compaction'; }
-  has_reflex_origin "$file" "$key" || {
+  if ! scan_complete "$file"; then
+    open_review_beyond_scan "$file" "$key" || {
+      fm_lock_release "$file.lock"
+      die 'status history exceeds bounded scan and no open review was found for key'
+    }
+  elif ! has_reflex_origin "$file" "$key"; then
     fm_lock_release "$file.lock"
     die 'unknown reflex key (resolution requires an existing reflex lifecycle)'
-  }
-  local state
-  state=$(latest_state "$file" "$key")
+  fi
+  local state=review
+  scan_complete "$file" && state=$(latest_state "$file" "$key")
   case "$state" in
     intake|report|review) ;;
     resolved)
@@ -225,9 +242,9 @@ cmd_list() {
   local task=$1 file
   file=$(task_status "$task")
   [ -f "$file" ] || exit 0
-  scan_complete "$file" || die 'status history exceeds bounded list; retry after compaction'
+  scan_complete "$file" || die 'status history exceeds bounded list'
   [ "$(wc -l < "$file")" -le "$REFLEX_MAX_LIST_LINES" ] \
-    || die 'status history exceeds bounded list lines; retry after compaction'
+    || die 'status history exceeds bounded list lines'
   awk '/^(reflex-intake|reflex-report|resolved) \[key=reflex-[0-9a-f]{24}\]([ :]|$)/ { print }
        /^needs-decision \[key=reflex-[0-9a-f]{24}\]: reflex review requested$/ { print }' "$file"
 }
