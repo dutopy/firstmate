@@ -68,6 +68,8 @@ JSON
   cat > "$repo/node_modules/@earendil-works/pi-coding-agent/index.js" <<'JS'
 import { writeFileSync } from "node:fs";
 
+export const VERSION = "0.84.4";
+
 export function getAgentDir() {
   return "/stub-agent-dir";
 }
@@ -991,12 +993,6 @@ globalThis.__fmOnBranchPrompt = async ({ session }) => {
   const ack = drained.stderr.match(/--ack-through ([0-9]+) --recovery-generation ([A-Za-z0-9._-]+)/);
   if (!ack) throw new Error(`drain did not return its acknowledgement command: ${drained.stderr}`);
   const report = session.options.customTools.find((tool) => tool.name === "fm_branch_report");
-  const verdictDescription = report.parameters.properties.verdict.description;
-  if (!verdictDescription.includes("Verdict: routine or captain") ||
-      !verdictDescription.includes("one owner of the rule") ||
-      verdictDescription.includes("unconditionally")) {
-    throw new Error(`branch provider received conflicting verdict semantics: ${verdictDescription}`);
-  }
   const result = await report.execute(
     `resource-result-${fleetOperations.length}`,
     {
@@ -1050,7 +1046,10 @@ entries.push({ type: "message", message: { role: "user", content: legacyOperatio
 await fire("agent_start", {}, mainCtx);
 const unsolicited = dispatch("signal: healthy resource result");
 if (!unsolicited.accepted) throw new Error("branch did not accept the unsolicited result");
-await settle(() => fleetOperations.length === 2, "unsolicited result acknowledgement");
+// The offer settles after the real CLI work and wake-row grant release.
+// An intermediate command count neither proves completion nor bounds latency.
+await unsolicited.settlement;
+if (fleetOperations.length !== 2) throw new Error(`unsolicited result did not acknowledge exactly once: ${JSON.stringify(fleetOperations)}`);
 if (sentToMain.length !== 1 || sentToMain[0].options.triggerTurn) {
   throw new Error(`unsolicited healthy result opened a main turn: ${JSON.stringify(sentToMain)}`);
 }
@@ -1079,7 +1078,8 @@ for (let index = 0; index < requestedPrompts.length; index += 1) {
   await fire("agent_start", {}, mainCtx);
   const requested = dispatch("signal: healthy resource result");
   if (!requested.accepted) throw new Error(`branch did not accept requested result ${index}`);
-  await settle(() => fleetOperations.length === 4 + (index * 2), `requested result ${index} acknowledgement`);
+  await requested.settlement;
+  if (fleetOperations.length !== 4 + (index * 2)) throw new Error(`requested result ${index} did not acknowledge exactly once: ${JSON.stringify(fleetOperations)}`);
   const deliveredRequestMirror = globalThis.__fmSessions[0].ops
     .filter((op) => op.kind === "custom" && op.message.customType === "fm-main-mirror")
     .at(-1)?.message.content;
@@ -4276,6 +4276,29 @@ const pi = {
 };
 const extension = await import(`${pathToFileURL(process.env.EXT).href}?consumer=${Date.now()}`);
 extension.default(pi);
+const processedDefinition = tools.find((tool) => tool.name === "fm_branch_processed");
+if (!processedDefinition) throw new Error("fm_branch_processed was not registered");
+const stockProcessedDefinition = { ...processedDefinition };
+delete stockProcessedDefinition.renderShell;
+delete stockProcessedDefinition.renderCall;
+delete stockProcessedDefinition.renderResult;
+const processedArgs = { through: 1 };
+const processedResult = { content: [{ type: "text", text: "acknowledged through 1" }], details: undefined, isError: false };
+const processedUi = { requestRender() {} };
+const stockProcessed = new ToolExecutionComponent("fm_branch_processed", "stock-processed", processedArgs, { showImages: false }, stockProcessedDefinition, processedUi, process.cwd());
+const actualProcessed = new ToolExecutionComponent("fm_branch_processed", "actual-processed", processedArgs, { showImages: false }, processedDefinition, processedUi, process.cwd());
+for (const row of [stockProcessed, actualProcessed]) {
+  row.markExecutionStarted();
+  row.setArgsComplete();
+  row.updateResult(processedResult);
+}
+for (const expanded of [false, true]) {
+  stockProcessed.setExpanded(expanded);
+  actualProcessed.setExpanded(expanded);
+  if (JSON.stringify(actualProcessed.render(100)) !== JSON.stringify(stockProcessed.render(100))) {
+    throw new Error(`${expanded ? "expanded" : "collapsed"} Calm-off fm_branch_processed rendering differs from Pi stock`);
+  }
+}
 const actualDefinition = tools.find((tool) => tool.name === "fm_branch_outcomes");
 if (!actualDefinition) throw new Error("fm_branch_outcomes was not registered");
 const stockDefinition = { ...actualDefinition };

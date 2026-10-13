@@ -822,7 +822,7 @@ Live choices are represented but inert for Discord `MESSAGE_CONTENT`, Omarchy ve
 Apply mode for setup, live Discord health, live transcription, and non-dry-run process-event arming refuses until a later activation task supplies every approval.
 The built-in `discord-workspace` process-event adapter lives at `bin/fm-procevent-discord-workspace.sh` and uses the existing `bin/fm-procevent.sh` owner for source registration, capture, durable result acknowledgement, and retirement.
 Its offline source reads only `FM_DISCORD_WORKSPACE_FIXTURE` or `poll.fixture_file`, accepts only allowlisted operations-guild exchange forum posts or threads from allowlisted captain users, and turns accepted results into idempotent `bin/fm-inbox.sh note` records.
-The idempotency seam is `bin/fm-inbox.sh note --source <name> --external-id <id> [--metadata-file <json>]`, which records a private map under `state/inbox/external/` so replay returns the original note id and appends no second wake.
+The `bin/fm-inbox.sh note --source <name> --external-id <id> [--metadata-file <json>]` seam uses the immutable-payload, crash-recovery, and notification guarantees owned by `docs/discord-workspace.md`'s "Inbox replay idempotency" section.
 Outbound dry-run state lives under `state/discord-workspace/`, including request records, task links, nonce-keyed receipts, pending final replies, and artifact records.
 `bin/fm-teardown.sh` refuses to clean up a task while `state/discord-workspace/pending-followups/<task-id>.json` still records an unresolved private Discord final reply, unless explicit discard authority is carried by `--force`.
 

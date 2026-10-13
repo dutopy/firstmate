@@ -56,8 +56,11 @@
 # in bin/fm-voice-relay.py hands real work over to firstmate, it runs this
 # subcommand rather than carrying a second queue of its own. Keep the `note`
 # contract stable for that caller. A trusted external intake may add
-# `--source`, `--external-id`, and `--metadata-file`; replaying the same source
-# and upstream id returns the first note id and appends no second wake. `status`
+# `--source`, `--external-id`, and `--metadata-file`. That identity binds the
+# original normalized note body and exact metadata bytes: changed payloads are
+# refused. Replay recovers the same pending/handled note even if its map was
+# lost. Successful replay adds no wake; an uncertain announcement may be retried.
+# `status`
 # is the HUMAN view of the records; bin/fm_voice_records.py owns the
 # scope-controlled machine view the voice agent reads, because the voice agent
 # must be able to answer without record free text ever reaching a model.
@@ -222,6 +225,139 @@ external_map_path() {  # <source> <external-id>
   printf '%s/external/%s.map\n' "$INBOX" "$digest"
 }
 
+external_note_binding() {  # <source> <external-id> <metadata-file> <map>; body on fd 3
+  python3 - "$INBOX" "$1" "$2" "$3" "$4" <<'PY'
+import hashlib, json, os, pathlib, re, stat, sys, tempfile
+
+inbox, source, external_id, metadata_file, map_name = sys.argv[1:]
+inbox, mapping = pathlib.Path(inbox), pathlib.Path(map_name)
+metadata_path = mapping.with_suffix(".metadata.json")
+body = os.fdopen(3, "rb").read()[:-1]  # The shell here-string adds exactly one newline.
+
+def read_file(path, limit=None):
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise ValueError("unsafe external note file")
+        data = handle.read() if limit is None else handle.read(limit + 1)
+    if limit is not None and len(data) > limit:
+        raise ValueError("external metadata is too large")
+    return data
+
+def digest(text, metadata):
+    return hashlib.sha256(len(text).to_bytes(8, "big") + text + metadata).hexdigest()
+
+def fields(raw):
+    result = {}
+    for line in raw.decode("utf-8").split("\n"):
+        if not line:
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or key in result:
+            raise ValueError("malformed external note identity")
+        result[key] = value
+    return result
+
+def note(path):
+    raw = read_file(path)
+    header, separator, content = raw.partition(b"\n--\n")
+    if not separator:
+        raise ValueError("malformed external note")
+    record = fields(header)
+    if (record.get("external_source"), record.get("external_id")) != (source, external_id):
+        return None
+    if record.get("id") != path.stem or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", path.stem):
+        raise ValueError("malformed external note id")
+    if not content.endswith(b"\n"):
+        raise ValueError("malformed external note body")
+    stored_metadata = b""
+    if record.get("external_metadata"):
+        if record["external_metadata"] != str(metadata_path):
+            raise ValueError("unsafe external metadata identity")
+        stored_metadata = read_file(metadata_path, 16384)
+    actual = digest(content[:-1], stored_metadata)
+    if record.get("payload_sha256", actual) != actual or actual != requested:
+        raise ValueError("external id belongs to another payload")
+    return record
+
+try:
+    metadata = read_file(pathlib.Path(metadata_file), 16384) if metadata_file else b""
+    if metadata and not isinstance(json.loads(metadata), dict):
+        raise ValueError("external metadata must be an object")
+    requested = digest(body, metadata)
+    if mapping.exists() or mapping.is_symlink():
+        record = fields(read_file(mapping))
+        if (record.get("source"), record.get("external_id")) != (source, external_id):
+            raise ValueError("malformed external map identity")
+        existing = record.get("note_id", "")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", existing):
+            raise ValueError("malformed external map note id")
+        matches = []
+        for parent in (inbox, inbox / "handled"):
+            path = parent / (existing + ".note")
+            if path.exists() or path.is_symlink():
+                if note(path) is None:
+                    raise ValueError("external map references another note")
+                matches.append(path)
+        if len(matches) != 1 or record.get("announced") not in ("0", "1"):
+            raise ValueError("external map has no unique published note")
+        if record.get("payload_sha256", requested) != requested:
+            raise ValueError("external id belongs to another payload")
+        announced = "1" if matches[0].parent.name == "handled" else record["announced"]
+    else:
+        matches = []
+        for parent in (inbox, inbox / "handled"):
+            path = parent / ("ext-" + mapping.stem + ".note")
+            if path.exists() or path.is_symlink():
+                if note(path) is None:
+                    raise ValueError("external note id belongs to another identity")
+                matches.append(path)
+        if len(matches) > 1:
+            raise ValueError("external note identity is ambiguous")
+        existing = matches[0].stem if matches else "-"
+        announced = "1" if matches and matches[0].parent.name == "handled" else "0"
+        if not matches and metadata:
+            fd, temporary = tempfile.mkstemp(prefix=".metadata-", dir=mapping.parent)
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(metadata)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, metadata_path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+    print(requested, existing, announced, sep="\t")
+except (OSError, ValueError, UnicodeError):
+    raise SystemExit("external note identity cannot be verified")
+PY
+}
+
+sync_external_file() {  # <published-file>; persist data before notification
+  python3 - "$1" <<'PY'
+import os, sys
+path = sys.argv[1]
+for target in (path, os.path.dirname(path)):
+    fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+PY
+}
+
+write_external_map() {  # <map> <source> <external-id> <note-id> <digest> <summary> <announced> <metadata>
+  local tmp
+  tmp=$(mktemp "${1%/*}/.map-XXXXXX") || return 1
+  {
+    printf 'schema=fm-inbox-external-map.v3\n'
+    printf 'source=%s\nexternal_id=%s\nnote_id=%s\npayload_sha256=%s\n' "$2" "$3" "$4" "$5"
+    printf 'summary=%s\nannounced=%s\n' "$6" "$7"
+    [ -z "$8" ] || printf 'metadata=%s\n' "$8"
+  } > "$tmp" || return 1
+  chmod 600 "$tmp" && mv "$tmp" "$1" && sync_external_file "$1"
+}
+
 rewrite_external_map_announced() {  # <map-path> <0|1>
   local map=$1 announced=$2 tmp
   tmp=$(mktemp "${map%/*}/.map-XXXXXX") || return 1
@@ -230,14 +366,14 @@ rewrite_external_map_announced() {  # <map-path> <0|1>
     printf 'announced=%s\n' "$announced"
   } > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 600 "$tmp" || { rm -f -- "$tmp"; return 1; }
-  mv "$tmp" "$map"
+  mv "$tmp" "$map" && sync_external_file "$map"
 }
 
-queue_note_file() {  # <source> <body> <extra>
-  local source=$1 body=$2 extra=${3:-} tmp id staging_name
+queue_note_file() {  # <source> <body> <extra> [fixed-id]
+  local source=$1 body=$2 extra=${3:-} id=${4:-} tmp staging_name
   tmp=$(mktemp "$INBOX/.staging-XXXXXX")
   staging_name=$(basename "$tmp")
-  id="$(date +%s)-${staging_name#.staging-}"
+  [ -n "$id" ] || id="$(date +%s)-${staging_name#.staging-}"
   {
     printf 'id=%s\n' "$id"
     printf 'at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -261,7 +397,7 @@ queue_note() {
     [ -z "$metadata_file" ] || validate_metadata_file "$metadata_file"
   fi
 
-  local id summary map lock lock_held=0 metadata_dst tmp_map existing
+  local id summary map lock lock_held=0 metadata_dst existing binding payload_digest announced existing_summary
   if [ -n "$external_id" ]; then
     mkdir -p "$INBOX/external"
     chmod 700 "$INBOX/external" 2>/dev/null || true
@@ -273,6 +409,17 @@ queue_note() {
     # shellcheck disable=SC2064
     trap "[ '$lock_held' -eq 0 ] || fm_lock_release '$lock'" RETURN
     die_locked() { fm_lock_release "$lock"; lock_held=0; trap - RETURN; die "$1"; }
+    need python3
+    binding=$(external_note_binding "$source" "$external_id" "$metadata_file" "$map" 3<<< "$body") \
+      || die_locked "cannot verify immutable external note payload"
+    IFS=$'\t' read -r payload_digest existing announced <<< "$binding"
+    summary=$(printf '%s' "$body" | tr '\n\t' '  ' | cut -c1-100)
+    metadata_dst=""
+    [ -z "$metadata_file" ] || metadata_dst="${map%.map}.metadata.json"
+    if [ "$existing" != "-" ]; then
+      write_external_map "$map" "$source" "$external_id" "$existing" "$payload_digest" \
+        "$summary" "$announced" "$metadata_dst" || die_locked "cannot recover external inbox map"
+    fi
     if [ -f "$map" ] && [ ! -L "$map" ]; then
       existing=$(sed -n 's/^note_id=//p' "$map" | head -1)
       [ -n "$existing" ] || die_locked "external inbox map is malformed: $map"
@@ -302,29 +449,16 @@ queue_note() {
       return 0
     fi
     [ ! -e "$map" ] && [ ! -L "$map" ] || die_locked "external inbox map is unsafe: $map"
-    metadata_dst=""
     if [ -n "$metadata_file" ]; then
-      metadata_dst="${map%.map}.metadata.json"
-      cp "$metadata_file" "$metadata_dst" || die_locked "cannot copy metadata file"
-      chmod 600 "$metadata_dst" || die_locked "cannot protect metadata file"
       extra="${extra}${extra:+$'\n'}external_metadata=$metadata_dst"
     fi
     extra="${extra}${extra:+$'\n'}external_source=$source
-external_id=$external_id"
-    id=$(queue_note_file "$source" "$body" "$extra")
-    tmp_map=$(mktemp "$INBOX/external/.map-XXXXXX")
-    summary=$(printf '%s' "$body" | tr '\n\t' '  ' | cut -c1-100)
-    {
-      printf 'schema=fm-inbox-external-map.v2\n'
-      printf 'source=%s\n' "$source"
-      printf 'external_id=%s\n' "$external_id"
-      printf 'note_id=%s\n' "$id"
-      printf 'announced=0\n'
-      printf 'summary=%s\n' "$summary"
-      [ -z "$metadata_dst" ] || printf 'metadata=%s\n' "$metadata_dst"
-    } > "$tmp_map"
-    chmod 600 "$tmp_map" || die_locked "cannot protect external inbox map"
-    mv "$tmp_map" "$map" || die_locked "cannot publish external inbox map"
+external_id=$external_id
+payload_sha256=$payload_digest"
+    id=$(queue_note_file "$source" "$body" "$extra" "ext-$(basename "$map" .map)")
+    sync_external_file "$INBOX/$id.note" || die_locked "cannot persist external inbox note"
+    write_external_map "$map" "$source" "$external_id" "$id" "$payload_digest" \
+      "$summary" 0 "$metadata_dst" || die_locked "cannot publish external inbox map"
     printf 'queued %s\n' "$id"
     printf '  %s\n' "$summary"
     if wake_for "$id" "$summary"; then

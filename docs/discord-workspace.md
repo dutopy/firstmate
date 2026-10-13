@@ -100,8 +100,13 @@ The process-event adapter declares self-announcing so a successfully handled Dis
 `bin/fm-inbox.sh note` accepts `--source <name> --external-id <id> [--metadata-file <json>]` for trusted external intake.
 The external source and id are non-secret identifiers.
 The inbox writes a private map under `state/inbox/external/`.
-A replay with the same source and external id returns the original note id and appends no second notification.
+A replay must match the normalized original body and the exact metadata bytes; a changed body or metadata is refused rather than silently treated as the original message.
+Matching replay returns the original note id.
+Notes are named from the source and external-id digest (`ext-<digest>`), so a lost map is recovered by exact lookup of that name in the pending inbox and `handled/`, never by scanning history.
+A name collision with another identity, or the same note in both places, is refused.
 The metadata file must be bounded JSON and is copied into private inbox state.
+Versioned digest maps are committed only after durable note and metadata publication.
+An already-announced replay appends no second notification; a crash with an uncertain announcement may re-notify that same physical note.
 The note body remains the durable human-readable captain note.
 
 ## Outbound replies and final follow-ups
