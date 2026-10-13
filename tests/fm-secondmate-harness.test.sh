@@ -2230,7 +2230,9 @@ SH
       "$ROOT/bin/fm-config-push.sh" > "$first_out" 2>&1
   ) &
   first_pid=$!
-  for _ in $(seq 1 100); do
+  # Wait for the push's own delivery event, not a fixed 2s guess: a loaded host
+  # (measured: 4 of 4 runs under CPU contention) starts the push later than that.
+  for _ in $(seq 1 1500); do
     [ -e "$entered" ] && break
     sleep 0.02
   done
