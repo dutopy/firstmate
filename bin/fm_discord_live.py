@@ -42,8 +42,15 @@ from typing import Any, Dict, List, Optional
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 _spec = importlib.util.spec_from_file_location("fwl", SCRIPT_DIR / "fm_discord_workspace_lib.py")
-fwl = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(fwl)
+# Reuse an already-loaded workspace module when one is registered, so every
+# module in one process shares a single FMError family; otherwise a
+# DiscordError raised here would not be caught by a caller's ``except FMError``.
+if "fwl" in sys.modules:
+    fwl = sys.modules["fwl"]
+else:
+    fwl = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(fwl)
+    sys.modules["fwl"] = fwl
 
 FMError = fwl.FMError
 API_BASE_DEFAULT = "https://discord.com/api/v10"
@@ -60,36 +67,73 @@ def redact(text: str, token: str) -> str:
     return text.replace(token, "[REDACTED]")
 
 
-def decrypt_token(env: "fwl.Env", cfg: "fwl.WorkspaceConfig") -> str:
-    """Decrypt only the bot token into process memory. Never printed."""
-    secret_ref = str((cfg.transcription or {}).get("secret_file") or "config/discord-workspace.secrets.sops.yaml")
+def bounded_cause(stderr: str) -> str:
+    """The last non-empty, length-bounded stderr line, for one actionable reason line."""
+    for line in reversed((stderr or "").splitlines()):
+        line = line.strip()
+        if line:
+            return line if len(line) <= 300 else line[:299] + "\u2026"
+    return ""
+
+
+def decrypt_token_from(env: "fwl.Env", secret_ref: str, key: str = TOKEN_KEY) -> str:
+    """Decrypt only one named token into process memory from a secret file.
+
+    The secret file reference is a normalized `config/<name>.sops.yaml` path
+    under the effective home. The value is never printed, logged, or written
+    to disk; every caller is responsible for redacting failure text with
+    `redact`. This is the single owner of Firstmate's Discord token handling,
+    shared by the workspace live layer and the session mirror.
+
+    Every failure raises FMError with one bounded line naming what failed and
+    the next step, so a missing or unusable secret file, a decryption-tool
+    problem, or an absent key never escapes as a Python traceback.
+    """
     path = Path(secret_ref).expanduser()
     if not path.is_absolute():
         path = env.home / path
     if not path.is_file():
-        raise FMError(f"secret file is missing: {path}")
+        raise FMError(
+            f"secret file is missing: {path}; create it or point secret_file in the Discord config at an existing file"
+        )
     sops = os.environ.get("FM_DISCORD_LIVE_SOPS", "sops")
-    proc = subprocess.run(
-        [sops, "-d", str(path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            [sops, "-d", str(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        detail = exc.strerror or str(exc)
+        raise FMError(
+            f"cannot run the secret decryption tool {sops!r} ({detail}); install it or set FM_DISCORD_LIVE_SOPS to its path"
+        ) from exc
     if proc.returncode != 0:
-        raise FMError("secret decryption failed; the secret file was not modified")
+        cause = bounded_cause(proc.stderr)
+        detail = f" ({cause})" if cause else ""
+        raise FMError(
+            f"secret decryption failed{detail}; check that {sops!r} and the age key can read {path} (the secret file was not modified)"
+        )
     token = ""
     for line in proc.stdout.splitlines():
-        match = re.fullmatch(rf"{TOKEN_KEY}:\s*(\S+)\s*", line)
+        match = re.fullmatch(rf"{re.escape(key)}:\s*(\S+)\s*", line)
         if match:
             token = match.group(1)
             break
     if not token:
-        raise FMError(f"decrypted secret file does not contain {TOKEN_KEY}")
+        raise FMError(f"decrypted secret file does not contain {key}")
     for bad in ("\n", "\r"):
         if bad in token:
             raise FMError("decrypted token contains a newline; refusing")
     proc.stdout = ""
     return token
+
+
+def decrypt_token(env: "fwl.Env", cfg: "fwl.WorkspaceConfig") -> str:
+    """Decrypt the workspace bot token into process memory. Never printed."""
+    secret_ref = str((cfg.transcription or {}).get("secret_file") or "config/discord-workspace.secrets.sops.yaml")
+    return decrypt_token_from(env, secret_ref, TOKEN_KEY)
 
 
 class DiscordError(FMError):
@@ -570,4 +614,9 @@ if __name__ == "__main__":
         sys.exit(main(sys.argv))
     except FMError as exc:
         print(f"fm-discord-live: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        # Defense in depth: a filesystem or process error that escaped a
+        # command handler is still one bounded line, never a traceback.
+        print(f"fm-discord-live: system error: {exc}", file=sys.stderr)
         sys.exit(1)

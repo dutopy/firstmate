@@ -4,10 +4,10 @@
 # copying credentials and pins the captain-approved openai-codex model.
 set -u
 
-if [ "${FM_PI_LIVE_E2E:-0}" != 1 ]; then
-  echo "skip: set FM_PI_LIVE_E2E=1 to run the isolated interactive Pi regression"
-  exit 0
-fi
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+fm_live_gate opt-in FM_PI_LIVE_E2E pi tmux
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 unset NO_MISTAKES_GATE
@@ -16,9 +16,6 @@ fail() {
   printf 'not ok - %s\n' "$1" >&2
   exit 1
 }
-
-command -v pi >/dev/null 2>&1 || fail "pi not found"
-command -v tmux >/dev/null 2>&1 || fail "tmux not found"
 
 TMUX=$(command -v tmux)
 SOCKET="fm-pi-live-e2e-$$"
@@ -244,10 +241,53 @@ run_native_ahoy_regressions() {
     || fail "Pi native later-message Ahoy reran session start"
 }
 
+# Live proof of the ONE harness signal the Pi follow-up ladder depends on: Pi's
+# `input` event reports prompt provenance structurally, as `interactive` for a
+# typed captain message and `extension` for a message this extension injected
+# with sendUserMessage. The ladder resets on the former and never on the latter,
+# and a stub can only confirm the assumption already written into it, so this
+# case runs the real harness. Two cheap model turns, no tmux.
+run_input_provenance_probe() {
+  local probe_dir log out
+  probe_dir="$LAB/pi-input-provenance"
+  log="$probe_dir/provenance.log"
+  mkdir -p "$probe_dir"
+  cat > "$probe_dir/probe.ts" <<'TS'
+import { appendFileSync } from "node:fs";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  let sent = false;
+  pi.on("input", (event) => {
+    const e = event as { source?: unknown; text?: unknown };
+    appendFileSync(process.env.PROBE_LOG!, `input\t${String(e.source)}\t${String(e.text).slice(0, 40)}\n`);
+  });
+  pi.on("turn_end", () => {
+    if (sent) return;
+    sent = true;
+    pi.sendUserMessage("INJECTED_PROBE: reply with exactly SECOND_OK", { deliverAs: "followUp" });
+  });
+}
+TS
+  out=$(
+    cd "$probe_dir" &&
+      PROBE_LOG="$log" pi --print --approve --no-session --no-context-files --no-extensions \
+        --no-skills --tools read \
+        -e "$probe_dir/probe.ts" \
+        --model openai-codex/gpt-5.6-sol --thinking low \
+        "Reply with exactly: FIRST_OK"
+  ) || fail "Pi input-provenance probe exited nonzero: $out"
+  grep -Fq "$(printf 'input\tinteractive\t')" "$log" \
+    || fail "Pi did not report a typed prompt as input source 'interactive': $(cat "$log")"
+  grep -Fq "$(printf 'input\textension\t')" "$log" \
+    || fail "Pi did not report an extension-injected message as input source 'extension': $(cat "$log")"
+}
+
 mkdir -p "$LAB"
 git clone -q "$ROOT" "$PROJECT"
 run_ahoy_transcript_regressions
 run_native_ahoy_regressions
+run_input_provenance_probe
 mkdir -p "$PROJECT/.pi/extensions/lib"
 cp "$ROOT/.pi/extensions/fm-calm.ts" "$PROJECT/.pi/extensions/fm-calm.ts"
 cp "$ROOT/.pi/extensions/fm-primary-pi-watch.ts" "$PROJECT/.pi/extensions/fm-primary-pi-watch.ts"
@@ -255,7 +295,9 @@ cp "$ROOT/.pi/extensions/lib/fm-calm-assistant-layout.ts" "$PROJECT/.pi/extensio
 cp "$ROOT/.pi/extensions/lib/fm-calm-operational-user-layout.ts" "$PROJECT/.pi/extensions/lib/fm-calm-operational-user-layout.ts"
 cp "$ROOT/.pi/extensions/lib/fm-calm-visibility.ts" "$PROJECT/.pi/extensions/lib/fm-calm-visibility.ts"
 cp "$ROOT/.pi/extensions/lib/fm-calm-working-ship.ts" "$PROJECT/.pi/extensions/lib/fm-calm-working-ship.ts"
+cp "$ROOT/.pi/extensions/lib/fm-calm-working-ship-sprite.ts" "$PROJECT/.pi/extensions/lib/fm-calm-working-ship-sprite.ts"
 cp "$ROOT/.pi/extensions/lib/fm-branch-dispatch.ts" "$PROJECT/.pi/extensions/lib/fm-branch-dispatch.ts"
+cp "$ROOT/.pi/extensions/lib/fm-native-contract.ts" "$PROJECT/.pi/extensions/lib/fm-native-contract.ts"
 cp "$ROOT/.pi/extensions/lib/fm-async-exec.ts" "$PROJECT/.pi/extensions/lib/fm-async-exec.ts"
 cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$PROJECT/.pi/extensions/lib/fm-operational-input.ts"
 cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$PROJECT/.pi/extensions/fm-primary-turnend-guard.ts"
@@ -285,20 +327,20 @@ send_prompt "Reply exactly CALM_LIVE_WORKING_VISIBLE"
 i=0
 while [ "$i" -lt 240 ]; do
   pane=$(capture)
-  if printf '%s\n' "$pane" | grep -Fq '\__/'; then
+  if printf '%s\n' "$pane" | grep -Fq '╲▁▁▁╱'; then
     break
   fi
   sleep 0.05
   i=$((i + 1))
 done
-printf '%s\n' "$pane" | grep -Fq '\__/' \
+printf '%s\n' "$pane" | grep -Fq '╲▁▁▁╱' \
   || fail "Calm did not show the working ship on the credentialed provider path"
 printf '%s\n' "$pane" | grep -Fq "Working..." \
   && fail "Calm left Pi's stock working row visible on the credentialed provider path"
 wait_for_exact_line "CALM_LIVE_WORKING_VISIBLE" 120 \
   || fail "Pi did not settle the Calm working-ship provider probe"
 pane=$(capture)
-printf '%s\n' "$pane" | grep -Fq '\__/' \
+printf '%s\n' "$pane" | grep -Fq '╲▁▁▁╱' \
   && fail "Calm left the working ship on screen after the run settled"
 printf '%s\n' "$pane" | grep -Fq "calm transcript" \
   && fail "Calm added a persistent Calm status row on the credentialed provider path"

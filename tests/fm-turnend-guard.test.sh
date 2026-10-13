@@ -22,6 +22,14 @@ fm_git_identity fmtest fmtest@example.invalid
 REQUIRED_REASON='watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn'
 AWAY_REQUIRED_REASON='Away mode owns watcher supervision'
 
+# REQUIRED_REASON is the CLAUDE repair line, so the cases asserting it need
+# detect_own to answer claude. CLAUDECODE=1 alone no longer pins that - a
+# structural ancestor of a different harness outranks a marker - so those
+# invocations also blind the ancestry walk. Only per-pid comm/args/ppid queries
+# are answered here; watcher liveness still reaches the real ps.
+BLIND_BIN=$(fm_fakebin "$TMP_ROOT/blind-ancestry")
+fm_fake_blind_ancestry "$BLIND_BIN"
+
 # --- PREDICATE: bin/fm-supervision-lib.sh -----------------------------------
 
 test_predicate_healthy_no_inflight() {
@@ -97,6 +105,73 @@ test_predicate_source_needs_supervision() {
   [ "$FM_SUP_IN_FLIGHT" -eq 0 ] || fail "a process-event source must not count as a task"
   [ "$FM_SUP_SOURCES" -eq 1 ] || fail "expected one registered process-event source"
   pass "fm_supervision_unhealthy: source-only home needs supervision"
+}
+
+# Register a custom check the way an operator does, through the real
+# bin/fm-check-register.sh, so these cases bind to the shipped registration
+# artifacts rather than to a hand-written imitation of them.
+register_custom_check() {
+  local state=$1 id=$2
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$state/$id.check.sh"
+  chmod 700 "$state/$id.check.sh"
+  FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-check-register.sh" "$id" >/dev/null \
+    || fail "fm-check-register.sh could not register $id"
+}
+
+test_predicate_registered_check_needs_supervision() {
+  local state="$TMP_ROOT/pred-check/state"
+  mkdir -p "$state"
+  register_custom_check "$state" issue-comments
+  fm_supervision_needed "$state" 300 || fail "a registered custom check did not register as supervision need"
+  [ "$FM_SUP_IN_FLIGHT" -eq 0 ] || fail "a registered custom check must not count as an in-flight task"
+  [ "$FM_SUP_CHECKS" -eq 1 ] || fail "expected one registered custom check, got $FM_SUP_CHECKS"
+  fm_supervision_unhealthy "$state" 300 || fail "a registered custom check with no beacon must be unhealthy"
+  pass "fm_supervision_needed: a registered custom check needs supervision with no task in flight"
+}
+
+test_predicate_registered_check_survives_rebinding_drift() {
+  local state="$TMP_ROOT/pred-check-drift/state"
+  mkdir -p "$state"
+  register_custom_check "$state" issue-comments
+  printf '#!/usr/bin/env bash\necho drifted\n' > "$state/issue-comments.check.sh"
+  fm_supervision_needed "$state" 300 \
+    || fail "an edited registered check must keep supervision on so the sweep can report the rejection"
+  [ "$FM_SUP_CHECKS" -eq 1 ] || fail "expected the edited check to stay counted, got $FM_SUP_CHECKS"
+  pass "fm_supervision_needed: a registered check whose bytes drifted still needs supervision"
+}
+
+test_predicate_unregistered_check_needs_nothing() {
+  local state="$TMP_ROOT/pred-check-unregistered/state"
+  mkdir -p "$state"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$state/rogue.check.sh"
+  chmod 700 "$state/rogue.check.sh"
+  if fm_supervision_needed "$state" 300; then
+    fail "a check with no trust binding must not arm supervision"
+  fi
+  [ "$FM_SUP_CHECKS" -eq 0 ] || fail "an unregistered check must not be counted, got $FM_SUP_CHECKS"
+  pass "fm_supervision_needed: false for a check.sh with no registration binding"
+}
+
+test_predicate_task_pr_poll_is_not_a_custom_check() {
+  local state="$TMP_ROOT/pred-pr-poll/state"
+  mkdir -p "$state"
+  : > "$state/task1.meta"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$state/task1.check.sh"
+  chmod 700 "$state/task1.check.sh"
+  : > "$state/task1.pr-poll"
+  fm_supervision_needed "$state" 300 || fail "the in-flight task itself must need supervision"
+  [ "$FM_SUP_IN_FLIGHT" -eq 1 ] || fail "expected the task to be the one in-flight need, got $FM_SUP_IN_FLIGHT"
+  [ "$FM_SUP_CHECKS" -eq 0 ] || fail "a task PR poll must not count as a registered custom check"
+  pass "fm_supervision_needed: a task PR poll without a trust binding is not a registered custom check"
+}
+
+test_predicate_relay_shim_is_not_a_custom_check() {
+  local state="$TMP_ROOT/pred-relay-not-custom/state"
+  mkdir -p "$state"
+  : > "$state/x-watch.check.sh"
+  fm_supervision_needed "$state" 300 || fail "the relay poll must still need supervision"
+  [ "$FM_SUP_CHECKS" -eq 0 ] || fail "the relay shim keeps its own trust path and must not be counted as a custom check"
+  pass "fm_supervision_status: the relay shim is not counted as a registered custom check"
 }
 
 # --- HOOK: bin/fm-turnend-guard.sh ------------------------------------------
@@ -193,7 +268,7 @@ make_secondmate_linked_home_dir() {
 run_hook() {
   local dir=$1 stop_active=$2 home
   home=$(cd "$dir" && pwd)
-  printf '{"stop_hook_active":%s}' "$stop_active" | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1
+  printf '{"stop_hook_active":%s}' "$stop_active" | PATH="$BLIND_BIN:$PATH" CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1
 }
 
 nonexistent_pid() {
@@ -324,6 +399,7 @@ Codex|{"cwd":"$dir","stop_hook_active":false}
 OpenCode|{"stop_hook_active":false}
 Pi|{"stop_hook_active":false}
 pi-signed|{"stop_hook_active":false}
+omp|{"stop_hook_active":false}
 Grok|{"sessionId":"grok-session","stopHookActive":false}
 Kimi|{"stop_hook_active":false}
 EOF
@@ -370,7 +446,7 @@ test_hook_blocks_from_fm_home_state() {
   home="$TMP_ROOT/hook-fm-home-op"
   mkdir -p "$home/state"
   : > "$home/state/task1.meta"
-  out=$(printf '{"stop_hook_active":false}' | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  out=$(printf '{"stop_hook_active":false}' | PATH="$BLIND_BIN:$PATH" CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
   expect_code 2 "$status" "hook must inspect the active FM_HOME state dir"
   assert_contains "$out" "$REQUIRED_REASON" "block reason must contain the exact required instruction"
   pass "fm-turnend-guard: blocks from active FM_HOME state, not only repo-root state"
@@ -399,6 +475,17 @@ test_hook_x_mode_only_blocks_in_default_mode() {
   pass "fm-turnend-guard: X-mode-only supervision remains guarded in default mode"
 }
 
+test_hook_registered_check_only_blocks_with_check_banner() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-check-only")
+  register_custom_check "$dir/state" issue-comments
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "default hook mode must block a registered-check-only blind turn"
+  assert_contains "$out" "1 registered custom check(s), but no live watcher" "check-only blind stop must identify its supervision need"
+  assert_not_contains "$out" "X-mode relay polling needs supervision" "check-only blind stop must not be misreported as relay polling"
+  pass "fm-turnend-guard: registered-check-only supervision is named in the block banner"
+}
+
 test_hook_ignores_repo_state_when_fm_home_set() {
   local dir home out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-fm-home-ignore-root")
@@ -418,7 +505,7 @@ test_hook_uses_state_override() {
   state="$TMP_ROOT/hook-state-override-active"
   mkdir -p "$home/state" "$state"
   : > "$state/task1.meta"
-  out=$(printf '{"stop_hook_active":false}' | CLAUDECODE=1 FM_HOME="$home" FM_STATE_OVERRIDE="$state" bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  out=$(printf '{"stop_hook_active":false}' | PATH="$BLIND_BIN:$PATH" CLAUDECODE=1 FM_HOME="$home" FM_STATE_OVERRIDE="$state" bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
   expect_code 2 "$status" "hook must let FM_STATE_OVERRIDE win over FM_HOME/state"
   assert_contains "$out" "$REQUIRED_REASON" "block reason must contain the exact required instruction"
   pass "fm-turnend-guard: uses FM_STATE_OVERRIDE ahead of FM_HOME/state"
@@ -982,7 +1069,7 @@ test_pi_extension_injects_once_per_logical_agent_run() {
   cat > "$repo/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
 cat >/dev/null
-printf 'guard\n' >> "${FM_GUARD_LOG:?}"
+printf '%s\n' "${FM_TURNEND_FOLLOWUP_COUNT:-unset}" >> "${FM_GUARD_LOG:?}"
 printf 'logical-run guard fired\n' >&2
 exit 2
 SH
@@ -1008,7 +1095,6 @@ const pi = {
     if (!message.includes("watcher cycle is missing, failed, or unhealthy")) throw new Error(`guard prompt omitted recovery-only state: ${message}`);
     if (message.includes("Resume supervision according to the session-start operating block")) throw new Error(`guard prompt used ordinary continuity: ${message}`);
     if (options?.deliverAs !== "followUp") throw new Error("guard prompt was not a follow-up");
-    await handlers.get("agent_settled")?.({ type: "agent_settled" }, {});
   },
 };
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
@@ -1017,23 +1103,210 @@ if (handlers.has("turn_end")) throw new Error("guard still treats internal Pi tu
 const settled = handlers.get("agent_settled");
 if (!settled) throw new Error("agent_settled handler was not registered");
 
+// One logical run with no tool calls, then one with several internal turns.
+// A follow-up turn settles AFTER sendUserMessage returns (never re-entrantly),
+// which is the real Pi shape the old boolean latch depended on.
 await settled({ type: "agent_settled" }, {});
 if (prompts !== 1) throw new Error(`no-tool run injected ${prompts} follow-ups`);
-
 for (let i = 0; i < 3; i += 1) {
   await handlers.get("turn_end")?.({ type: "turn_end", turnIndex: i }, {});
 }
+if (prompts !== 1) throw new Error(`internal tool turns injected ${prompts - 1} extra follow-ups`);
 await settled({ type: "agent_settled" }, {});
-if (prompts !== 2) throw new Error(`multi-tool run produced ${prompts - 1} follow-ups`);
+if (prompts !== 2) throw new Error(`second blocking logical run produced ${prompts} follow-ups, expected 2`);
 
-const guardRuns = readFileSync(process.env.FM_GUARD_LOG, "utf8").trim().split("\n").length;
-if (guardRuns !== 2) throw new Error(`guard predicate ran ${guardRuns} times for two logical runs`);
+const counts = readFileSync(process.env.FM_GUARD_LOG, "utf8").trim().split("\n");
+if (counts.length !== 2) throw new Error(`guard predicate ran ${counts.length} times for two logical runs`);
+if (counts[0] !== "0" || counts[1] !== "1") throw new Error(`adapter did not report the ladder count: ${counts.join(",")}`);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi guard must inject once for no-tool and multi-tool logical runs"
+  expect_code 0 "$status" "Pi guard must inject once per blocking logical run and report its ladder count"
   [ -z "$out" ] || fail "Pi logical-run guard test printed output: $out"
-  pass ".pi primary extension: no-tool and multi-tool runs each inject exactly one guard follow-up"
+  pass ".pi primary extension: each blocking logical run injects one guard follow-up carrying its ladder count"
+}
+
+# Drive the real extension in a hermetic fixture: the fixture holds the tracked
+# extension, its lib, the operational-input CLI, and a fake shared guard whose
+# exit status is a fixed code unless FM_GUARD_EXIT_FILE names a file holding one.
+# Sets PI_FIXTURE_REPO and PI_FIXTURE_HOME (never via command substitution, whose
+# subshell would discard them).
+make_pi_guard_fixture() {  # <name> <default-guard-exit-code>
+  local name=$1 code=$2 repo home
+  repo="$TMP_ROOT/pi-$name-root"
+  home="$TMP_ROOT/pi-$name-home"
+  rm -rf "$repo" "$home"
+  mkdir -p "$repo/.pi/extensions/lib" "$repo/bin" "$home/state"
+  cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$repo/.pi/extensions/fm-primary-turnend-guard.ts"
+  cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
+  cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cat > "$repo/bin/fm-turnend-guard.sh" <<SH
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s\n' "\${FM_TURNEND_FOLLOWUP_COUNT:-unset}" >> "\${FM_GUARD_COUNT_LOG:-/dev/null}"
+printf 'guard banner\n' >&2
+if [ -n "\${FM_GUARD_EXIT_FILE:-}" ] && [ -f "\$FM_GUARD_EXIT_FILE" ]; then
+  exit "\$(cat "\$FM_GUARD_EXIT_FILE")"
+fi
+exit $code
+SH
+  cat > "$repo/bin/fm-arm-pretool-check.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$repo/bin/fm-turnend-guard.sh" "$repo/bin/fm-arm-pretool-check.sh"
+  PI_FIXTURE_REPO=$repo
+  PI_FIXTURE_HOME=$home
+}
+
+# The original 2026-09-20 defect, reproduced and then bounded: a pane stuck in a
+# repeating wake makes the guard block on EVERY logical run. The old boolean
+# latch cleared on the very next settled turn, so it fired on every alternate
+# turn forever and filled the session. The persisted ladder must instead stop at
+# the harness-side ceiling and record why it stopped.
+test_pi_extension_followup_ladder_is_bounded_by_the_ceiling() {
+  local repo home ext out status
+  make_pi_guard_fixture ceiling 2
+  repo=$PI_FIXTURE_REPO
+  home=$PI_FIXTURE_HOME
+  ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
+  out=$(PLUGIN="$ext" FM_HOME="$home" FM_PI_TURNEND_FOLLOWUP_CEILING=4 FM_GUARD_EXIT_FILE="$home/guard-exit" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const handlers = new Map();
+let prompts = 0;
+const pi = {
+  on(event, handler) { handlers.set(event, handler); },
+  async sendUserMessage() { prompts += 1; },
+};
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+const settled = handlers.get("agent_settled");
+
+// 12 consecutive blocking logical runs, exactly the repeating-wake shape.
+for (let i = 0; i < 12; i += 1) await settled({ type: "agent_settled" }, {});
+if (prompts !== 4) throw new Error(`ceiling did not bite: ${prompts} follow-ups for 12 blocking runs`);
+const record = readFileSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`, "utf8");
+if (!/stopped=ceiling/.test(record)) throw new Error(`ceiling stop was not recorded: ${record}`);
+
+// The ceiling must never become permanent: the guard still runs at the ceiling,
+// so a recovery is seen and the ladder restarts without a captain message.
+writeFileSync(process.env.FM_GUARD_EXIT_FILE, "0");
+await settled({ type: "agent_settled" }, {});
+if (existsSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`)) {
+  throw new Error("recovery at the ceiling did not restart the ladder");
+}
+writeFileSync(process.env.FM_GUARD_EXIT_FILE, "2");
+await settled({ type: "agent_settled" }, {});
+if (prompts !== 5) throw new Error(`ladder did not resume after recovery at the ceiling: ${prompts}`);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi follow-up ladder must stop at the harness-side ceiling and record why"
+  [ -z "$out" ] || fail "Pi ceiling test printed output: $out"
+  pass ".pi primary extension: the follow-up ladder stops at FM_PI_TURNEND_FOLLOWUP_CEILING and records the stop"
+}
+
+# The ceiling must not be permanent: a real captain message and a healthy guard
+# verdict are the two events that genuinely end the episode, so both restart the
+# ladder instead of leaving the session silently unguarded.
+test_pi_extension_ladder_restarts_on_captain_message_and_healthy_verdict() {
+  local repo home ext exit_file out status
+  make_pi_guard_fixture restart 2
+  repo=$PI_FIXTURE_REPO
+  home=$PI_FIXTURE_HOME
+  ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
+  exit_file="$home/guard-exit"
+  # The script body is staged in a file rather than a heredoc inside $( ):
+  # stock Bash 3.2 cannot parse a heredoc inside a command substitution whose
+  # body holds an unbalanced quote, which the JS comments here contain.
+  cat > "$TMP_ROOT/pi-ladder-restart.mjs" <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const handlers = new Map();
+let prompts = 0;
+const pi = {
+  on(event, handler) { handlers.set(event, handler); },
+  async sendUserMessage() { prompts += 1; },
+};
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+const settled = handlers.get("agent_settled");
+const input = handlers.get("input");
+if (!input) throw new Error("input handler was not registered");
+
+// Drive the ladder to its ceiling.
+for (let i = 0; i < 5; i += 1) await settled({ type: "agent_settled" }, {});
+if (prompts !== 2) throw new Error(`expected the ceiling at 2, saw ${prompts}`);
+
+// A real captain message (Pi reports source "interactive") ends the episode.
+await input({ type: "input", source: "interactive" }, {});
+if (existsSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`)) {
+  throw new Error("captain message did not reset the follow-up ladder");
+}
+await settled({ type: "agent_settled" }, {});
+if (prompts !== 3) throw new Error(`ladder did not restart after a captain message: ${prompts}`);
+
+// This extension's own injected follow-up must NOT count as a captain message.
+await input({ type: "input", source: "extension" }, {});
+if (!existsSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`)) {
+  throw new Error("the extension's own follow-up was mistaken for a captain message");
+}
+
+// A healthy guard verdict is the other reset: supervision recovered.
+writeFileSync(process.env.FM_GUARD_EXIT_FILE, "0");
+await settled({ type: "agent_settled" }, {});
+if (existsSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`)) {
+  throw new Error("a healthy guard verdict did not reset the follow-up ladder");
+}
+// ... and the ladder is usable again for a genuinely new episode.
+writeFileSync(process.env.FM_GUARD_EXIT_FILE, "2");
+await settled({ type: "agent_settled" }, {});
+if (prompts !== 4) throw new Error(`ladder did not restart after recovery: ${prompts}`);
+const record = readFileSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`, "utf8");
+if (!/count=1/.test(record)) throw new Error(`restarted ladder did not start from one: ${record}`);
+EOF
+  out=$(PLUGIN="$ext" FM_HOME="$home" FM_PI_TURNEND_FOLLOWUP_CEILING=2 FM_GUARD_EXIT_FILE="$exit_file" node --input-type=module < "$TMP_ROOT/pi-ladder-restart.mjs" 2>&1)
+  status=$?
+  expect_code 0 "$status" "Pi ladder must restart on a captain message and on a healthy guard verdict"
+  [ -z "$out" ] || fail "Pi ladder restart test printed output: $out"
+  pass ".pi primary extension: a captain message and a healthy guard verdict each restart the follow-up ladder"
+}
+
+# The bound must not depend on the filesystem: a home whose state directory
+# cannot be written still gets a bounded loop, because the in-process mirror of
+# the ladder owns the bound when persistence fails.
+test_pi_extension_ladder_is_bounded_without_a_writable_state_dir() {
+  local repo home ext out status
+  make_pi_guard_fixture no-state 2
+  repo=$PI_FIXTURE_REPO
+  home=$PI_FIXTURE_HOME
+  ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
+  rm -rf "$home/state"
+  out=$(PLUGIN="$ext" FM_HOME="$home" FM_PI_TURNEND_FOLLOWUP_CEILING=3 node --input-type=module 2>&1 <<'EOF'
+import { existsSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const handlers = new Map();
+let prompts = 0;
+const pi = {
+  on(event, handler) { handlers.set(event, handler); },
+  async sendUserMessage() { prompts += 1; },
+};
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+const settled = handlers.get("agent_settled");
+for (let i = 0; i < 8; i += 1) await settled({ type: "agent_settled" }, {});
+if (prompts !== 3) throw new Error(`unwritable state reopened the loop: ${prompts} follow-ups`);
+if (existsSync(`${process.env.FM_HOME}/state`)) throw new Error("the fixture unexpectedly wrote a state directory");
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "the Pi ladder must stay bounded when its state directory cannot be written"
+  [ -z "$out" ] || fail "Pi no-state ladder test printed output: $out"
+  pass ".pi primary extension: the follow-up ladder stays bounded without a writable state directory"
 }
 
 test_pi_extension_retries_after_followup_delivery_failure() {
@@ -1057,6 +1330,7 @@ exit 0
 SH
   chmod +x "$repo/bin/fm-turnend-guard.sh" "$repo/bin/fm-arm-pretool-check.sh"
   out=$(PLUGIN="$ext" FM_HOME="$home" node --input-type=module 2>&1 <<'EOF'
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const handlers = new Map();
@@ -1068,7 +1342,6 @@ const pi = {
   async sendUserMessage() {
     attempts += 1;
     if (attempts === 1) throw new Error("synthetic delivery failure");
-    await handlers.get("agent_settled")?.({ type: "agent_settled" }, {});
   },
 };
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
@@ -1077,12 +1350,116 @@ const settled = handlers.get("agent_settled");
 await settled({ type: "agent_settled" }, {});
 await settled({ type: "agent_settled" }, {});
 if (attempts !== 2) throw new Error(`expected delivery retry, saw ${attempts} attempts`);
+const record = readFileSync(`${process.env.FM_HOME}/state/.turnend-pi-followups`, "utf8");
+if (!/count=1/.test(record)) throw new Error(`a failed delivery was charged against the ladder: ${record}`);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi guard latch must reset after follow-up delivery failure"
+  expect_code 0 "$status" "Pi ladder must not charge a follow-up that was never delivered"
   [ -z "$out" ] || fail "Pi delivery-failure guard test printed output: $out"
-  pass ".pi primary extension: delivery failure resets the logical-run latch"
+  pass ".pi primary extension: a failed follow-up delivery is retried and not charged against the ladder"
+}
+
+# --- the firstmate-owned lower bound in the shared guard ----------------------
+# The harness-side ceiling is the outer bound; this is the lower, firstmate-owned
+# one, so the session is TOLD (once, loudly) before that ceiling rather than
+# going quietly dark at it. It is event-driven (the guard's own failure event),
+# deduplicated by its own markers, and it names the supported clearing operation.
+
+run_hook_with_followup_count() {  # <dir> <count>
+  local dir=$1 count=$2 home
+  home=$(cd "$dir" && pwd)
+  printf '{"stop_hook_active":false}' | PATH="$BLIND_BIN:$PATH" CLAUDECODE=1 FM_HOME="$home" \
+    FM_TURNEND_FOLLOWUP_COUNT="$count" bash "$dir/bin/fm-turnend-guard.sh" 2>&1
+}
+
+test_followup_ladder_early_alert_is_bounded_and_deduplicated() {
+  local dir out status second
+  dir=$(make_primary_dir "$TMP_ROOT/followup-ladder-alert")
+  : > "$dir/state/task1.meta"
+  out=$(run_hook_with_followup_count "$dir" 0); status=$?
+  expect_code 2 "$status" "the guard must still block a genuinely missing watcher"
+  assert_not_contains "$out" "EARLY WARNING" "the ladder must stay silent below its alert threshold"
+
+  out=$(run_hook_with_followup_count "$dir" 3); status=$?
+  expect_code 2 "$status" "the guard must still block at the alert threshold"
+  assert_contains "$out" "EARLY WARNING" "the alert threshold must raise the early alert"
+  assert_contains "$out" "bin/fm-turnend-guard-clear.sh" "the early alert must name the supported clearing operation"
+
+  # Deduplicated: the alert is one-shot per episode, so repeating it can never
+  # become an alert loop of its own.
+  second=$(run_hook_with_followup_count "$dir" 4); status=$?
+  expect_code 2 "$status" "the guard must still block after the alert was spent"
+  assert_not_contains "$second" "EARLY WARNING" "the early alert must fire at most once per episode"
+  pass "fm-turnend-guard: the follow-up ladder's early alert fires once at its threshold"
+}
+
+test_followup_ladder_final_notice_is_loud_once_and_named() {
+  local dir out status second third
+  dir=$(make_primary_dir "$TMP_ROOT/followup-ladder-final")
+  : > "$dir/state/task1.meta"
+  out=$(run_hook_with_followup_count "$dir" 6); status=$?
+  expect_code 2 "$status" "the guard must still block at the final-notice threshold"
+  assert_contains "$out" "FOLLOW-UP CEILING REACHED" "the final-notice threshold must print the loud final notice"
+  assert_contains "$out" "LAST automatic recovery follow-up" "the final notice must say it is the last automatic follow-up"
+  assert_contains "$out" "bin/fm-turnend-guard-clear.sh" "the final notice must name the exact clearing command"
+
+  second=$(run_hook_with_followup_count "$dir" 7); status=$?
+  expect_code 2 "$status" "the guard must still block after the final notice was spent"
+  assert_not_contains "$second" "FOLLOW-UP CEILING REACHED" "the final notice must fire at most once per episode"
+
+  # A healthy turn end genuinely ends the episode, so the one-shot markers are
+  # cleared and a later independent episode can raise them again.
+  rm -f "$dir/state/task1.meta"
+  run_hook_with_followup_count "$dir" 7 >/dev/null 2>&1 || true
+  [ ! -e "$dir/state/.turnend-followup-alert" ] || fail "a healthy turn end must clear the early-alert marker"
+  [ ! -e "$dir/state/.turnend-followup-final" ] || fail "a healthy turn end must clear the final-notice marker"
+  : > "$dir/state/task1.meta"
+  third=$(run_hook_with_followup_count "$dir" 6); status=$?
+  expect_code 2 "$status" "a fresh episode must block again"
+  assert_contains "$third" "FOLLOW-UP CEILING REACHED" "a fresh episode must be able to raise the final notice again"
+  pass "fm-turnend-guard: the final notice is loud, one-shot, named, and reset by recovery"
+}
+
+test_followup_ladder_defaults_leave_other_harnesses_unchanged() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/followup-ladder-default")
+  : > "$dir/state/task1.meta"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "the guard must still block without a reported follow-up count"
+  assert_not_contains "$out" "EARLY WARNING" "a harness that reports no count must see no ladder rung"
+  assert_not_contains "$out" "FOLLOW-UP CEILING REACHED" "a harness that reports no count must see no final notice"
+  pass "fm-turnend-guard: the follow-up ladder is inert for harnesses that report no count"
+}
+
+# --- the supported clearing operation ---------------------------------------
+
+test_turnend_guard_clear_removes_the_ladder_and_names_the_pane_keys() {
+  local home out status
+  home="$TMP_ROOT/turnend-clear-home"
+  rm -rf "$home"; mkdir -p "$home/state"
+  printf 'session=s\ncount=6\nstopped=\n' > "$home/state/.turnend-pi-followups"
+  : > "$home/state/.turnend-followup-alert"
+  : > "$home/state/.turnend-followup-final"
+  : > "$home/state/.wake-queue"
+  out=$(FM_HOME="$home" bash "$ROOT/bin/fm-turnend-guard-clear.sh" 2>&1); status=$?
+  expect_code 0 "$status" "the clearing operation must succeed"
+  [ ! -e "$home/state/.turnend-pi-followups" ] || fail "the clearing operation left the Pi follow-up ladder behind"
+  [ ! -e "$home/state/.turnend-followup-alert" ] || fail "the clearing operation left the early-alert marker behind"
+  [ ! -e "$home/state/.turnend-followup-final" ] || fail "the clearing operation left the final-notice marker behind"
+  [ -e "$home/state/.wake-queue" ] || fail "the clearing operation must not touch the durable wake queue"
+  assert_contains "$out" "cleared:" "the operation must report what it cleared"
+  assert_contains "$out" "Alt+Up" "the operation must name the Pi dequeue key"
+  assert_contains "$out" "Ctrl+C" "the operation must name the Pi editor-clear key"
+  assert_contains "$out" "NOT submitted" "the operation must state that the restored messages are not submitted"
+  assert_contains "$out" "previous_workspace" "the operation must name the Herdr shortcut conflict"
+  assert_contains "$out" "herdr pane send-keys" "the operation must name the reliable Herdr pane-key path"
+  assert_contains "$out" "tmux send-keys" "the operation must name the reliable tmux pane-key path"
+
+  out=$(FM_HOME="$home" bash "$ROOT/bin/fm-turnend-guard-clear.sh" 2>&1); status=$?
+  expect_code 0 "$status" "a second clearing run must be a clean no-op"
+  assert_contains "$out" "nothing" "a second clearing run must say there was nothing to clear"
+  pass "fm-turnend-guard-clear.sh: clears the ladder records and documents the pane-key drain"
 }
 
 # --- --claude cooperative mode -----------------------------------------------
@@ -1139,6 +1516,17 @@ run_integrated_autoarm() {
         printf "%s\n" "$$" > "$FM_HOME/state/.lock"
         "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
       ' 2>&1
+}
+
+# The same real hook, fired from a harness-named process that does NOT write
+# state/.lock: whoever already holds that lock decides whether this firing is
+# the owning session's or a competing one.
+run_integrated_autoarm_unowned() {
+  local dir=$1 home
+  home=$(cd "$dir" && pwd)
+  # shellcheck disable=SC2016 # the fake harness expands FM_HOME inside its child shell.
+  printf '{"session_id":"sess-claude-mode","stop_hook_active":false}\n' \
+    | FM_HOME="$home" "$dir/fake-claude" -c '"$FM_HOME/bin/fm-claude-stop-autoarm.sh"' 2>&1
 }
 
 write_integrated_failed_arm() {
@@ -1535,6 +1923,115 @@ test_hook_claude_mode_integrated_monotonic_fail_open() {
   pass "fm-turnend-guard --claude: integrated fresh failures reach one bounded fail-open, stop continuation, and reset on recovery"
 }
 
+# The auto-arm's ledger epoch advances only when the hook reaches its
+# generation claim. A live harness-named process outside the hook's ancestry
+# holding state/.lock keeps the hook inert by its identity contract, so the
+# ledger stays at the exhausted-failure epoch the hook wrote before it went
+# quiet. The block budget used to advance only on an epoch change, so this
+# shape re-blocked without limit and the attended fail-open never fired: the
+# budget must count consecutive re-blocks against an unchanged epoch instead.
+hold_session_lock_from_foreign_harness() {  # sets FOREIGN_LOCK_HOLDER
+  local dir=$1
+  # `bash -c` execs a single command in place, which would rename the process
+  # to sleep; the trailing no-op keeps the harness-named shell as the holder.
+  # Started in this shell, not a command substitution, so the caller can reap
+  # it and no inherited pipe keeps a substitution waiting on the sleeper.
+  "$dir/fake-claude" -c 'sleep 60; true' >/dev/null 2>&1 &
+  FOREIGN_LOCK_HOLDER=$!
+  printf '%s\n' "$FOREIGN_LOCK_HOLDER" > "$dir/state/.lock"
+}
+
+test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open() {
+  local dir out status guard_out guard_status holder i pid identity count epoch_line
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-frozen-epoch")
+  : > "$dir/state/task1.meta"
+  install_integrated_autoarm "$dir"
+  write_integrated_failed_arm "$dir"
+
+  out=$(run_integrated_autoarm "$dir"); status=$?
+  expect_code 2 "$status" "the exhausted auto-arm cycle must emit its one failure notice before going quiet"
+  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+  expect_code 0 "$guard_status" "the first failed epoch must own its Stop handoff"
+  epoch_line=$(sed -n '1p' "$dir/state/.claude-autoarm-epoch")
+
+  hold_session_lock_from_foreign_harness "$dir"
+  holder=$FOREIGN_LOCK_HOLDER
+  for i in 1 2 3 4; do
+    out=$(run_integrated_autoarm_unowned "$dir"); status=$?
+    expect_code 0 "$status" "an auto-arm outside the lock owner's ancestry must stay inert at stop $i"
+    [ -z "$out" ] || fail "inert auto-arm produced output at stop $i: $out"
+    [ "$(sed -n '1p' "$dir/state/.claude-autoarm-epoch")" = "$epoch_line" ] \
+      || fail "the ledger epoch advanced at stop $i, so this case no longer drives a frozen epoch"
+    guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+    if [ "$i" -lt 4 ]; then
+      expect_code 2 "$guard_status" "frozen-epoch stop $i must still re-block within the budget"
+      assert_contains "$guard_out" "TURN WOULD END BLIND" "frozen-epoch re-block $i lost the blind-turn banner"
+      assert_not_contains "$guard_out" 'FIRSTMATE SUPERVISION IS GENUINELY DOWN' "fail-open fired before the frozen-epoch budget was spent"
+      assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "frozen-epoch re-block $i consumed the attended alarm early"
+    else
+      expect_code 0 "$guard_status" "the frozen-epoch progression must reach the attended fail-open"
+      assert_contains "$guard_out" 'FIRSTMATE SUPERVISION IS GENUINELY DOWN' "the frozen-epoch fail-open alarm is missing"
+      assert_present "$dir/state/.claude-autoarm-failure-alarmed" "the frozen-epoch fail-open did not consume its episode alarm"
+    fi
+  done
+
+  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+  expect_code 2 "$guard_status" "a later unhealthy stop after the frozen-epoch alarm must remain attended"
+  assert_not_contains "$guard_out" 'FIRSTMATE SUPERVISION IS GENUINELY DOWN' "the attended alarm repeated against the frozen epoch"
+
+  # The other direction: the bound must not outlive the failure. A verified
+  # healthy watcher still lets the stop through and clears the whole episode.
+  sleep 60 &
+  pid=$!
+  identity=$(watcher_identity "$dir" "$pid") || {
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    kill "$holder" 2>/dev/null || true
+    wait "$holder" 2>/dev/null || true
+    fail "could not identify the frozen-epoch recovery watcher"
+  }
+  record_watcher_lock "$dir" "$pid" "$identity"
+  touch "$dir/state/.last-watcher-beat"
+  guard_out=$(run_hook_claude "$dir" true); guard_status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  rm -rf "$dir/state/.watch.lock"
+  expect_code 0 "$guard_status" "a healthy watcher must still allow the stop after a frozen-epoch alarm"
+  [ -z "$guard_out" ] || fail "healthy allow after the frozen-epoch alarm produced output: $guard_out"
+  assert_absent "$dir/state/.turnend-claude-blocks" "positive recovery left the frozen-epoch block budget"
+  assert_absent "$dir/state/.claude-autoarm-failure-notified" "positive recovery left the failure notice"
+  assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "positive recovery left the attended alarm"
+  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+  expect_code 2 "$guard_status" "a later unhealthy stop must re-block from a fresh budget"
+  count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
+  [ "$count" = 1 ] || fail "the post-recovery episode must restart its budget at 1, got $count"
+  pass "fm-turnend-guard --claude: an inert auto-arm's frozen epoch reaches one bounded fail-open and resets on recovery"
+}
+
+# The same frozen ledger without a verified failure episode: the budget must
+# still provably run out, and the verified-failure gate - not a stuck counter -
+# is what keeps the stop blocking after that.
+test_hook_claude_mode_frozen_epoch_without_verified_failure_spends_budget_and_keeps_blocking() {
+  local dir out status i count
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-frozen-unverified")
+  : > "$dir/state/task1.meta"
+  printf 'epoch=7 owner_pid=999 outcome=clean updated_at=1\n' > "$dir/state/.claude-autoarm-epoch"
+  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  for i in 1 2 3 4 5; do
+    out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); status=$?
+    expect_code 2 "$status" "frozen unverified stop $i must keep blocking"
+    assert_not_contains "$out" 'systemMessage' "an unverified frozen epoch must never fail open"
+    [ "$(sed -n '1p' "$dir/state/.claude-autoarm-epoch")" = 'epoch=7 owner_pid=999 outcome=clean updated_at=1' ] \
+      || fail "the guard rewrote the frozen ledger at stop $i"
+  done
+  count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
+  [ "$count" -gt 3 ] 2>/dev/null || fail "the block budget must run out against a frozen epoch, but the recorded count is ${count:-absent}"
+  assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "an unverified frozen epoch recorded an attended alarm"
+  pass "fm-turnend-guard --claude: a frozen unverified epoch spends the budget yet still blocks"
+}
+
 test_hook_claude_mode_recovery_contention_is_not_ordinary_allow() {
   local dir pid identity holder out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-recovery-contention")
@@ -1624,6 +2121,8 @@ test_hook_claude_mode_budget_without_verified_failure_keeps_blocking() {
     out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); status=$?
     expect_code 2 "$status" "--claude block $i must exit 2 within the budget"
   done
+  count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
+  [ "$count" -gt 3 ] 2>/dev/null || fail "four consecutive blocks must spend the budget, but the recorded count is ${count:-absent}"
   assert_not_contains "$out" 'systemMessage' "budget exhaustion without verified auto-arm failure must not fail open"
   assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "unverified budget exhaustion recorded an attended alarm"
   pass "fm-turnend-guard --claude: budget exhaustion alone cannot permit a blind stop"
@@ -1901,6 +2400,95 @@ test_hook_daemon_lock_is_ignored_without_away_mode() {
   pass "fm-turnend-guard: a daemon lock proves nothing while away mode is off"
 }
 
+# --- AWAY MODE: beacon grace derives from the poll cadence -------------------
+#
+# The daemon starts a fresh one-shot watcher only after it finishes handling
+# the previous wake, and that handling can legitimately outrun a flat 300s
+# window under load (a slow registered check, a busy supervisor pane) with the
+# daemon perfectly healthy throughout (fm-turnend-guard-afk-race). The guard
+# must accept a live daemon there once FM_POLL justifies the wider window, but
+# must still block a dead daemon or a beacon older than that wider grace.
+
+test_hook_away_daemon_allows_beacon_within_poll_derived_grace() {
+  local dir pid out status beat
+  dir=$(make_away_home_between_cycles "$TMP_ROOT/hook-afk-poll-grace-healthy")
+  sleep 60 &
+  pid=$!
+  record_daemon_lock "$dir" "$pid" || {
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "could not identify live away-mode daemon holder"
+  }
+  # 400s is stale under the flat 300s default, but not under the poll-derived
+  # grace (max(300, FM_POLL + 60) = 660 at FM_POLL=600) - a live daemon that
+  # simply has not finished restarting its watcher yet.
+  beat=$(( $(date +%s) - 400 ))
+  fm_touch_epoch "$beat" "$dir/state/.last-watcher-beat"
+  out=$(FM_GUARD_GRACE='' FM_POLL=600 run_hook "$dir" false); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$status" "a live daemon with a beacon within the poll-derived grace must not block"
+  [ -z "$out" ] || fail "away-mode daemon within poll-derived grace still produced a block banner: $out"
+  pass "fm-turnend-guard: away-mode beacon freshness uses the poll-derived grace, not the flat default"
+}
+
+test_hook_away_daemon_blocks_dead_daemon_despite_poll_derived_grace() {
+  local dir dead out status
+  dir=$(make_away_home_between_cycles "$TMP_ROOT/hook-afk-poll-grace-dead-daemon")
+  dead=$(nonexistent_pid)
+  record_daemon_lock "$dir" "$dead" "dead daemon identity"
+  out=$(FM_GUARD_GRACE='' FM_POLL=600 run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "a wider poll-derived grace must not paper over a dead daemon"
+  assert_contains "$out" "$AWAY_REQUIRED_REASON" "away-mode block must point at the daemon, not normal supervision"
+  pass "fm-turnend-guard: a dead away-mode daemon still blocks under the poll-derived grace"
+}
+
+test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace() {
+  local dir pid out status beat
+  dir=$(make_away_home_between_cycles "$TMP_ROOT/hook-afk-poll-grace-stale")
+  sleep 60 &
+  pid=$!
+  record_daemon_lock "$dir" "$pid" || {
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "could not identify live away-mode daemon holder"
+  }
+  # 700s exceeds even the wider poll-derived grace (660 at FM_POLL=600), so a
+  # live daemon that has genuinely stopped restarting its watcher still blocks.
+  beat=$(( $(date +%s) - 700 ))
+  fm_touch_epoch "$beat" "$dir/state/.last-watcher-beat"
+  out=$(FM_GUARD_GRACE='' FM_POLL=600 run_hook "$dir" false); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 2 "$status" "a beacon older than the poll-derived grace must still block"
+  assert_contains "$out" "$AWAY_REQUIRED_REASON" "away-mode block must point at the daemon, not normal supervision"
+  pass "fm-turnend-guard: the poll-derived grace is bounded, not unlimited"
+}
+
+test_hook_no_afk_ignores_poll_derived_grace() {
+  local dir pid out status beat
+  dir=$(make_away_home_between_cycles "$TMP_ROOT/hook-no-afk-poll-grace")
+  rm -f "$dir/state/.afk"
+  sleep 60 &
+  pid=$!
+  record_daemon_lock "$dir" "$pid" || {
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "could not identify live daemon holder"
+  }
+  # 400s would be within the poll-derived grace the away-mode branch would
+  # accept, but away mode is off here, so the strict watcher predicate and its
+  # flat default govern instead - old behavior, unaffected by FM_POLL.
+  beat=$(( $(date +%s) - 400 ))
+  fm_touch_epoch "$beat" "$dir/state/.last-watcher-beat"
+  out=$(FM_GUARD_GRACE='' FM_POLL=600 run_hook "$dir" false); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 2 "$status" "without .afk, FM_POLL must not widen the strict watcher predicate's grace"
+  assert_contains "$out" "$REQUIRED_REASON" "block reason must contain the exact required instruction"
+  pass "fm-turnend-guard: with away mode off, the poll-derived grace never applies"
+}
+
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon
@@ -1908,6 +2496,11 @@ test_predicate_healthy_fresh_beacon
 test_predicate_queue_pending_flag
 test_predicate_x_mode_needs_supervision
 test_predicate_source_needs_supervision
+test_predicate_registered_check_needs_supervision
+test_predicate_registered_check_survives_rebinding_drift
+test_predicate_unregistered_check_needs_nothing
+test_predicate_task_pr_poll_is_not_a_custom_check
+test_predicate_relay_shim_is_not_a_custom_check
 test_hook_silent_when_no_work_in_flight
 test_hook_blocks_when_fresh_beacon_has_no_live_lock
 test_hook_blocks_source_only_home
@@ -1919,6 +2512,7 @@ test_hook_blocks_when_unhealthy_in_primary
 test_hook_blocks_from_fm_home_state
 test_hook_x_mode_reason_sources_cadence
 test_hook_x_mode_only_blocks_in_default_mode
+test_hook_registered_check_only_blocks_with_check_banner
 test_hook_ignores_repo_state_when_fm_home_set
 test_hook_uses_state_override
 test_hook_loop_guard_allows_retry
@@ -1946,7 +2540,14 @@ test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root
 test_codex_hook_ignores_nested_git_root_guard
 test_opencode_plugin_anchors_guard_to_worktree
 test_pi_extension_injects_once_per_logical_agent_run
+test_pi_extension_followup_ladder_is_bounded_by_the_ceiling
+test_pi_extension_ladder_is_bounded_without_a_writable_state_dir
+test_pi_extension_ladder_restarts_on_captain_message_and_healthy_verdict
 test_pi_extension_retries_after_followup_delivery_failure
+test_followup_ladder_early_alert_is_bounded_and_deduplicated
+test_followup_ladder_final_notice_is_loud_once_and_named
+test_followup_ladder_defaults_leave_other_harnesses_unchanged
+test_turnend_guard_clear_removes_the_ladder_and_names_the_pane_keys
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
@@ -1961,6 +2562,8 @@ test_hook_claude_mode_blocks_on_stuck_generation_claim
 test_hook_claude_mode_terminal_fail_open_clears_abandoned_claim
 test_hook_claude_mode_preserves_fresh_failed_progression
 test_hook_claude_mode_integrated_monotonic_fail_open
+test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open
+test_hook_claude_mode_frozen_epoch_without_verified_failure_spends_budget_and_keeps_blocking
 test_hook_claude_mode_recovery_contention_is_not_ordinary_allow
 test_hook_claude_mode_concurrent_recovery_resets_are_idempotent
 test_hook_claude_mode_stale_rewake_epoch_blocks
@@ -1978,3 +2581,7 @@ test_hook_away_mode_blocks_on_dead_daemon
 test_hook_away_mode_blocks_on_pid_reused_daemon
 test_hook_away_mode_blocks_on_stale_beacon
 test_hook_daemon_lock_is_ignored_without_away_mode
+test_hook_away_daemon_allows_beacon_within_poll_derived_grace
+test_hook_away_daemon_blocks_dead_daemon_despite_poll_derived_grace
+test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
+test_hook_no_afk_ignores_poll_derived_grace

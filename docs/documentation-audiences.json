@@ -177,6 +177,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/harness-adapters/references/harness/agy.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/references/harness/claude.md",
       "audience": "agent-runtime"
     },
@@ -205,6 +209,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/harness-adapters/references/harness/omp.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/references/harness/opencode.md",
       "audience": "agent-runtime"
     },
@@ -217,11 +225,23 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/home-layout/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/process-event-sources/SKILL.md",
       "audience": "agent-runtime"
     },
     {
       "path": ".agents/skills/project-management/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/proposals/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/quiet/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -313,7 +333,23 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/discord-conversation-console.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/discord-session-mirror.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/discord-workspace.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/verification/discord-workspace-activation.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-workspace-structure.md",
       "audience": "operator-current"
     },
     {
@@ -361,12 +397,24 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/jev-class-router.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/jev-guard.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/orca-backend.md",
       "audience": "operator-current"
     },
     {
       "path": "docs/pi-supervision-branch.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/proposal-lane.md",
+      "audience": "operator-current"
     },
     {
       "path": "docs/remote-secondmates.md",
@@ -405,6 +453,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": "docs/supervision-protocols/omp.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": "docs/supervision-protocols/opencode.md",
       "audience": "agent-runtime"
     },
@@ -429,7 +481,43 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/verification/agy.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-console-audio-transcription.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-console-cards.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-console-fast-path.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-console-latency.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-console-prepared-request.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-console-session-mirror.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/discord-console-uncertain-transcription-card.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/dispatch-auth.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/dispatch-resolve.md",
       "audience": "maintainer-verification"
     },
     {
@@ -470,6 +558,10 @@
     },
     {
       "path": "docs/verification/trace-context.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/treehouse-slot-reconciliation.md",
       "audience": "maintainer-verification"
     },
     {

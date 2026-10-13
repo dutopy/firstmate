@@ -33,6 +33,7 @@ install_pi_watch_extension_fixture() {
     "$repo/node_modules/typebox"
   cp "$EXT" "$repo/.pi/extensions/fm-primary-pi-watch.ts"
   cp "$ROOT/.pi/extensions/lib/fm-branch-dispatch.ts" "$repo/.pi/extensions/lib/fm-branch-dispatch.ts"
+  cp "$ROOT/.pi/extensions/lib/fm-native-contract.ts" "$repo/.pi/extensions/lib/fm-native-contract.ts"
   cp "$ROOT/.pi/extensions/lib/fm-async-exec.ts" "$repo/.pi/extensions/lib/fm-async-exec.ts"
   cp "$ROOT/.pi/extensions/lib/fm-calm-visibility.ts" "$repo/.pi/extensions/lib/fm-calm-visibility.ts"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
@@ -808,6 +809,103 @@ merge-confirmation|check: task-a.check.sh: PR merged
 real-board-answer|check: procevent lavish lavish-abcdef0123456789 1
 CLASSES
   pass "every main-only check class still reaches main, never the supervision branch"
+}
+
+# The captain-message fast lane: a captain-inbox note is delivered as steering
+# input so a busy main run reaches it at its next LLM boundary, while every
+# other main wake keeps the follow-up delivery the continuity and
+# replacement-handoff contract was built on. Both classes are driven through
+# the real extension in one run so the choice is proven to be the message and
+# not the arm's position in the sequence.
+test_pi_captain_inbox_note_is_delivered_as_steering_input() {
+  local repo home plugin log stop out status
+  repo="$TMP_ROOT/pi-captain-note-steer-root"
+  home="$TMP_ROOT/pi-captain-note-steer-home"
+  log="$TMP_ROOT/pi-captain-note-steer.log"
+  stop="$TMP_ROOT/pi-captain-note-steer.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf '%s\n' "${FM_TEST_CAPTAIN_NOTE:?}"
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+  printf '%s\n' "${FM_TEST_OTHER_WAKE:?}"
+  exit 0
+fi
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+trap 'exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" \
+    FM_TEST_CAPTAIN_NOTE="check: captain inbox note 1700000000-loop - is the acknowledgement gone?" \
+    FM_TEST_OTHER_WAKE="check: gh auth check failed; re-authenticate before dispatch" \
+    node --input-type=module 2>&1 <<'EOF'
+import { writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const prompts = [];
+let tool = null;
+const handlers = new Map();
+const pi = {
+  on(event, handler) {
+    handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+  },
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  events: { on() {}, emit() {} },
+  // Idle main: Pi accepts the wake, raises before_agent_start with the exact
+  // text, and then the user message_start that consumes it. The delivery mode
+  // recorded here is the whole contract under test.
+  sendUserMessage: async (message, options) => {
+    prompts.push({ message, options: options ?? {} });
+    for (const handler of handlers.get("before_agent_start") ?? []) {
+      await handler({ prompt: message }, {});
+    }
+    for (const handler of handlers.get("message_start") ?? []) {
+      await handler({ message: { role: "user", content: [{ type: "text", text: message }] } }, {});
+    }
+  },
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+const armed = await tool.execute("tool-call-captain-note-steer", {}, undefined, undefined, {});
+if (!armed.details?.ok) throw new Error(`watcher did not arm: ${JSON.stringify(armed.details)}`);
+for (let i = 0; i < 500 && prompts.length < 2; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (prompts.length !== 2) {
+  throw new Error(`expected both main wakes to be delivered: ${JSON.stringify(prompts.map((p) => p.message))}`);
+}
+const note = prompts.find((p) => p.message.includes("captain inbox note"));
+const other = prompts.find((p) => p.message.includes("gh auth check failed"));
+if (!note || !other) throw new Error(`missing one of the two wakes: ${JSON.stringify(prompts.map((p) => p.message))}`);
+if (note.options.deliverAs !== "steer") {
+  throw new Error(`a captain inbox note must be steering input, got ${JSON.stringify(note.options)}`);
+}
+if (other.options.deliverAs !== "followUp") {
+  throw new Error(`a non-captain main wake must stay a follow-up, got ${JSON.stringify(other.options)}`);
+}
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+process.exit(0);
+EOF
+  )
+  status=$?
+  expect_code 0 "$status" "a captain inbox note must reach a busy main as steering input: $out"
+  [ -z "$out" ] || fail "Pi captain-note steering test printed output: $out"
+  pass "a captain inbox note is delivered as steering input while other wakes stay follow-ups"
 }
 
 # A surfaced captain-held signal uses the existing decision-owned payload, so a
@@ -2122,7 +2220,10 @@ while :; do
 done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_MARKER_ROOT="$marker_root" FM_TRIGGER_FILE="$trigger" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
+  # The script body is staged in a file rather than a heredoc inside $( ):
+  # stock Bash 3.2 cannot parse a heredoc inside a command substitution whose
+  # body holds an unbalanced quote, which the JS comments here contain.
+  cat > "$TMP_ROOT/pi-session-replacement-handoff.mjs" <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2216,7 +2317,11 @@ if (previous.prompts.length !== 0) {
 }
 await waitFor(() => liveArms().length === 1 && armRows().length >= 2, "old-session successor");
 writeFileSync(process.env.FM_TRIGGER_FILE, "replacement-successor actionable outcome\n");
-await waitFor(() => liveArms().length === 0, "mid-delivery successor actionable close");
+// That successor's actionable close lands while the branch still holds the
+// earlier wake, so its replacement must be restored immediately instead of
+// waiting for that delivery to settle: the home is otherwise left with no
+// watcher for the whole settlement.
+await waitFor(() => liveArms().length === 1 && armRows().length >= 3, "restored successor for the mid-delivery actionable close");
 
 await previous.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
 await waitFor(() => liveArms().length === 0, "retired old-session successor");
@@ -2270,7 +2375,7 @@ if (liveArms().length !== 1) {
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
 EOF
-)
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_MARKER_ROOT="$marker_root" FM_TRIGGER_FILE="$trigger" FM_STOP_FILE="$stop" node --input-type=module < "$TMP_ROOT/pi-session-replacement-handoff.mjs" 2>&1)
   status=$?
   expect_code 0 "$status" "Pi session replacement must auto-arm and carry an in-flight actionable close"
   [ -z "$out" ] || fail "Pi session-replacement handoff test printed output: $out"
@@ -2594,6 +2699,103 @@ EOF
   expect_code 0 "$status" "Pi must retry a verified successor that failed during wake delivery"
   [ -z "$out" ] || fail "Pi successor-dies-mid-delivery test printed output: $out"
   pass "Pi retries a verified successor that failed during wake delivery once that delivery settles"
+}
+
+# An ACTIONABLE close that arrives while an earlier wake is still being
+# delivered must still restore the singleton successor immediately. The
+# delivery pipeline's own single-flight flag must never gate continuity:
+# deliverActionableWake awaits the branch settlement, and a branch turn can
+# take minutes. Gating on it leaves the home with no watcher at all for that
+# whole window, which is exactly what the PID-strict turn-end guard then
+# reports as supervision off.
+test_pi_actionable_close_restores_successor_during_blocked_delivery() {
+  local repo home plugin log stop out status
+  repo="$TMP_ROOT/pi-actionable-during-delivery-root"
+  home="$TMP_ROOT/pi-actionable-during-delivery-home"
+  log="$TMP_ROOT/pi-actionable-during-delivery.log"
+  stop="$TMP_ROOT/pi-actionable-during-delivery.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'confirmed=%s\n' "$2" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=chain-%s\n' "$$" "$count"
+if [ "$count" -eq 1 ]; then
+  printf 'signal: first close\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  printf 'signal: second close while the first wake is still being delivered\n'
+  exit 0
+fi
+trap 'exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+let releaseBranch = () => {};
+const branchSettlement = new Promise((resolve) => {
+  releaseBranch = resolve;
+});
+let branchAccepted = false;
+let tool = null;
+const pi = {
+  on() {},
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async () => {},
+  events: {
+    on() {},
+    emit(event, data) {
+      if (event !== "fm-branch-supervision:dispatch") return;
+      branchAccepted = true;
+      data.accept(branchSettlement);
+    },
+  },
+};
+const arms = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").split("\n").filter((row) => row.startsWith("arm=")).length
+  : 0;
+async function waitFor(pred, label) {
+  for (let i = 0; i < 500; i += 1) {
+    if (pred()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.FM_HOME}/state/during-delivery.meta`, "project=/projects/during-delivery\nwindow=fm-during-delivery\n");
+writeFileSync(`${process.env.FM_HOME}/state/.wake-queue`, "1\t1\tsignal\tduring-delivery.status\tsignal: first close\n");
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("initial-arm", {}, undefined, undefined, {});
+await waitFor(() => branchAccepted, "branch accepted the first wake behind a verified successor");
+if (arms() !== 2) throw new Error(`expected the verified successor before delivery, got ${arms()} arms`);
+// The successor closes actionably while the branch still holds the first wake.
+await waitFor(() => arms() === 3, "a successor restored for the actionable close during delivery");
+releaseBranch();
+await new Promise((resolve) => setTimeout(resolve, 150));
+if (arms() !== 3) throw new Error(`the restored successor was not single-flight: ${arms()} arms`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+process.exit(0);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi must restore a successor for an actionable close during wake delivery"
+  [ -z "$out" ] || fail "Pi actionable-close-during-delivery test printed output: $out"
+  pass "Pi restores a successor for an actionable close while an earlier wake is still being delivered"
 }
 
 test_pi_late_retiring_actionable_reaches_replacement() {
@@ -3982,6 +4184,7 @@ test_pi_branch_offer_owns_actionable_wake
 test_pi_branch_offer_flags_heartbeat
 test_pi_heartbeat_is_not_ridden_into_main_by_a_co_present_check
 test_pi_main_only_check_classes_stay_on_main
+test_pi_captain_inbox_note_is_delivered_as_steering_input
 test_pi_captain_held_signal_stays_on_main
 test_pi_unread_pending_reply_forces_later_stale_alias_to_main
 test_pi_distinct_files_mixed_batch_routes_whole_batch_to_main
@@ -4001,6 +4204,7 @@ test_pi_session_replacement_carries_inflight_actionable_close
 test_pi_streaming_followup_is_replayed_after_replacement
 test_pi_streaming_time_delivery_keeps_the_successor_chain
 test_pi_successor_failure_during_delivery_is_retried_after_delivery
+test_pi_actionable_close_restores_successor_during_blocked_delivery
 test_pi_late_retiring_actionable_reaches_replacement
 test_pi_replacement_tokens_are_process_unique
 test_pi_replacement_persistence_failure_stops_arm_child

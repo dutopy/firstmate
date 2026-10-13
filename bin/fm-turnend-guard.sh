@@ -35,9 +35,17 @@
 # Away mode (state/.afk): the away-mode daemon owns supervision and runs the
 # watcher one-shot, restarting it after every wake, so the watch lock is
 # regularly unheld at a turn boundary with nothing wrong. A live
-# identity-matched daemon holding this home, plus the unchanged fresh-beacon
-# test, is what proves supervision there - see fm_afk_daemon_owns_supervision in
-# bin/fm-wake-lib.sh. The strict watcher predicate is unchanged everywhere else.
+# identity-matched daemon holding this home, plus a fresh beacon, is what
+# proves supervision there - see fm_afk_daemon_owns_supervision in
+# bin/fm-wake-lib.sh. The beacon freshness test there uses AFK_GRACE
+# (fm_poll_derived_grace, docs/turnend-guard.md "Guard grace and the poll
+# cadence"), not the flat $GRACE every other check on this page uses: the
+# daemon starts a fresh one-shot watcher only after it finishes handling the
+# previous wake, and that handling can legitimately run past a flat 300s
+# window under load (a slow registered check, a busy supervisor pane) with the
+# daemon perfectly healthy throughout. The strict watcher predicate and $GRACE
+# are unchanged everywhere else, including for a dead daemon pid or a beacon
+# older than AFK_GRACE, which still block.
 #
 # Loop-guard, codex/Grok (default) mode: never block twice in the same turn.
 # Codex uses stop_hook_active and Grok uses stopHookActive; typed camel-case
@@ -48,6 +56,21 @@
 # That bounds those harnesses to at most one forced continuation per turn -
 # never a wedged, un-endable session - while still nagging again on a later turn
 # if the problem persists.
+#
+# Follow-up ladder for a passive adapter (FM_TURNEND_FOLLOWUP_COUNT): a
+# one-per-turn latch is not a bound, because a pane stuck in a repeating wake
+# makes every alternate turn a fresh latch and the adapter can fire on every
+# other turn forever (the 2026-09-20 saturation). A passive adapter therefore
+# reports how many CONSECUTIVE guard-driven follow-ups this session has already
+# taken, and this firstmate-owned script supplies the lower half of a two-tier
+# bound: at FM_TURNEND_GUARD_ALERT_AT it prints ONE early alert, and at
+# FM_TURNEND_GUARD_NOTICE_AT it prints ONE final loud notice naming the supported
+# clearing operation, each deduplicated by its own marker so the ladder never
+# becomes an alert loop of its own. The adapter's own hard ceiling
+# (FM_PI_TURNEND_FOLLOWUP_CEILING, above this bound) is what stops the follow-ups
+# entirely; this bound exists so the session is TOLD before that ceiling rather
+# than going quietly dark at it. The count is advisory input only: a harness that
+# never sets it keeps today's unchanged behavior.
 #
 # Loop-guard, --claude mode (Stop-owned auto-arm cooperation): Claude Code
 # marks EVERY stop after ANY stop-hook-driven continuation stop_hook_active=true,
@@ -71,7 +94,22 @@
 #      with the repair banner, bounded to FM_CLAUDE_TURNEND_BLOCK_BUDGET
 #      (default 3) consecutive blocks per session - safely below Claude Code's
 #      hard 8-consecutive-block override - then allow one loud attended
-#      fail-open only for an already verified failure episode.
+#      fail-open only for an already verified failure episode. The budget
+#      charges each event epoch once, and it also charges every re-block
+#      against an epoch the auto-arm never advanced past the previous
+#      re-block (budget_account_current_epoch owns that rule), so an inert
+#      hook that leaves the ledger frozen cannot hold the guard in an
+#      unbounded re-block loop below that override.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -86,9 +124,18 @@ CURSOR_MODE=0
 SYNC_WAIT_MS=${FM_CLAUDE_AUTOARM_SYNC_WAIT_MS:-800}
 EPOCH_FRESH=${FM_CLAUDE_AUTOARM_EPOCH_FRESH:-15}
 BLOCK_BUDGET=${FM_CLAUDE_TURNEND_BLOCK_BUDGET:-3}
+FOLLOWUP_COUNT=${FM_TURNEND_FOLLOWUP_COUNT:-0}
+ALERT_AT=${FM_TURNEND_GUARD_ALERT_AT:-3}
+NOTICE_AT=${FM_TURNEND_GUARD_NOTICE_AT:-6}
 case "$SYNC_WAIT_MS" in ''|*[!0-9]*) SYNC_WAIT_MS=800 ;; esac
 case "$EPOCH_FRESH" in ''|*[!0-9]*|0) EPOCH_FRESH=15 ;; esac
 case "$BLOCK_BUDGET" in ''|*[!0-9]*|0) BLOCK_BUDGET=3 ;; esac
+case "$FOLLOWUP_COUNT" in ''|*[!0-9]*) FOLLOWUP_COUNT=0 ;; esac
+case "$ALERT_AT" in ''|*[!0-9]*|0) ALERT_AT=3 ;; esac
+case "$NOTICE_AT" in ''|*[!0-9]*|0) NOTICE_AT=6 ;; esac
+[ "$NOTICE_AT" -ge "$ALERT_AT" ] || NOTICE_AT=$ALERT_AT
+FOLLOWUP_ALERT_MARKER="$STATE/.turnend-followup-alert"
+FOLLOWUP_NOTICE_MARKER="$STATE/.turnend-followup-final"
 
 for arg in "$@"; do
   case "$arg" in
@@ -168,15 +215,28 @@ budget_reset() {
   fm_lock_release "$BUDGET_LOCK"
 }
 
+# Clear the follow-up ladder's dedup markers whenever this home genuinely stops
+# needing the ladder: supervision is not needed at all, or a live watcher proved
+# healthy. Without this reset the one-shot early alert and final notice would be
+# spent for the rest of the process lifetime and a later independent episode
+# could not raise them. The adapter's own counter is reset on the same events.
+followup_episode_reset() {
+  rm -f "$FOLLOWUP_ALERT_MARKER" "$FOLLOWUP_NOTICE_MARKER" 2>/dev/null || true
+}
+
 fm_supervision_status "$STATE" "$GRACE"
 if [ "$FM_SUP_NEEDED" = false ]; then
+  followup_episode_reset
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0
 fi
 # One owner of the "supervision is on, let this turn end" exit contract, shared
 # by every proof of supervision below.
 allow_supervised_stop() {
-  [ "$CLAUDE_MODE" -eq 1 ] || exit 0
+  if [ "$CLAUDE_MODE" -eq 0 ]; then
+    followup_episode_reset
+    exit 0
+  fi
   fm_failure_episode_reset "$STATE" && exit 0
   exit 2
 }
@@ -191,12 +251,41 @@ fi
 # hand-off, when no watcher process holds the lock and nothing is wrong, so
 # requiring one here alarmed on healthy away-mode supervision. A live
 # identity-matched daemon holding this home is the right owner to test for.
-# The beacon half of the predicate is deliberately unchanged: a daemon that
-# stops restarting its watcher still blocks once the beacon passes grace, and
-# a home with no daemon and no watcher blocks exactly as before.
-if [ "$FM_SUP_WATCHER_FRESH" = true ] && fm_afk_daemon_owns_supervision "$STATE"; then
+# The beacon half of the predicate still applies: a daemon that stops
+# restarting its watcher still blocks once the beacon passes grace, and a home
+# with no daemon and no watcher blocks exactly as before. It uses AFK_GRACE
+# (poll-cadence-derived, see the comment above) instead of the flat $GRACE
+# every other check on this page uses, so a daemon that is genuinely still
+# cycling - just slower than a fixed 300s window - is not misread as down.
+AFK_GRACE=${FM_GUARD_GRACE:-$(fm_poll_derived_grace)}
+if [ "$(fm_path_age "$STATE/.last-watcher-beat")" -lt "$AFK_GRACE" ] \
+  && fm_afk_daemon_owns_supervision "$STATE"; then
   allow_supervised_stop
 fi
+
+# The bounded, deduplicated early-alert / final-notice block appended to the
+# blind-turn banner for a passive adapter that reported its consecutive
+# guard-driven follow-up count. Exactly one of the two rungs prints, at most
+# once per episode, and the final rung names the supported clearing operation so
+# the recovery is an operation rather than an improvisation
+# (docs/turnend-guard.md "Clearing accumulated follow-ups").
+followup_ladder_lines() {
+  [ "$FOLLOWUP_COUNT" -ge "$ALERT_AT" ] || return 0
+  if [ "$FOLLOWUP_COUNT" -ge "$NOTICE_AT" ]; then
+    [ ! -e "$FOLLOWUP_NOTICE_MARKER" ] || return 0
+    (set -C; : > "$FOLLOWUP_NOTICE_MARKER") 2>/dev/null || return 0
+    printf '●  FOLLOW-UP CEILING REACHED - this is the LAST automatic recovery follow-up for this session.\n'
+    printf '●  %s consecutive turns have ended without live supervision and without a captain message.\n' "$FOLLOWUP_COUNT"
+    printf '●  Automatic follow-ups stop at the ceiling; queued wakes stay durable and are not lost.\n'
+    printf '●  Clear the accumulated follow-ups without submitting them, then restore supervision:\n'
+    printf '●    bin/fm-turnend-guard-clear.sh\n'
+    return 0
+  fi
+  [ ! -e "$FOLLOWUP_ALERT_MARKER" ] || return 0
+  (set -C; : > "$FOLLOWUP_ALERT_MARKER") 2>/dev/null || return 0
+  printf '●  EARLY WARNING - the same supervision failure has now forced %s consecutive recovery follow-ups.\n' "$FOLLOWUP_COUNT"
+  printf '●  Follow-ups stop at the ceiling; clear the accumulated ones with bin/fm-turnend-guard-clear.sh before the session saturates.\n'
+}
 
 block_stop() {
   local afk x_mode reason rule
@@ -214,6 +303,8 @@ block_stop() {
       printf '●  %s task(s) in flight, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_IN_FLIGHT" "$FM_SUP_BEACON_DESC"
     elif [ "$FM_SUP_SOURCES" -gt 0 ]; then
       printf '●  %s process-event source(s) registered, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_SOURCES" "$FM_SUP_BEACON_DESC"
+    elif [ "$FM_SUP_CHECKS" -gt 0 ]; then
+      printf '●  %s registered custom check(s), but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_CHECKS" "$FM_SUP_BEACON_DESC"
     else
       printf '●  X-mode relay polling needs supervision, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_BEACON_DESC"
     fi
@@ -221,6 +312,7 @@ block_stop() {
       printf '●  The Stop-owned auto-arm did not claim this home either, so recovery is NOT already under way.\n'
     fi
     printf '●  %s\n' "$reason"
+    followup_ladder_lines
     printf '●%s\n' "$rule"
   } >&2
   exit 2
@@ -234,12 +326,31 @@ fi
 # The Stop-owned auto-arm fires on the same Stop event. Give it a brief bounded
 # window to prove it owns recovery for this event epoch before consuming one of
 # Claude's bounded continuations.
-budget_account_current_epoch() {
-  local current_epoch outcome old_session old_count old_epoch tmp initialized
+#
+# Budget accounting, under the budget lock. Sets COUNT (the session's
+# consumed continuations, including this one) and BUDGET_INITIALIZED_FAILURE.
+# The ledger's epoch identity is what is charged: a new epoch charges once,
+# and an epoch this same invocation already charged is never charged again,
+# because the wait loop above can observe one fresh terminal epoch many times
+# before the block decision. Across Stops the two callers differ:
+#   - observe (the allow paths in autoarm_owns_recovery): seeing an
+#     already-charged epoch again is free - it is the same claim, seen again.
+#   - block (the re-block path): a re-block against the epoch the previous
+#     re-block already charged is a new consumed continuation, because the
+#     auto-arm advanced nothing between the two Stops - it did not participate
+#     at all, which is exactly the absence this budget bounds. Charging only
+#     epoch changes let an inert hook (identity-gated, never fired, or failing
+#     before its generation claim) freeze the ledger and the count together,
+#     so the guard re-blocked without limit and the attended fail-open below
+#     never became reachable.
+BUDGET_CHARGED_EPOCH=
+budget_account_current_epoch() {  # [observe|block]
+  local mode=${1:-observe} current_epoch outcome old_session old_count old_epoch tmp initialized charged
   fm_lock_try_acquire "$BUDGET_LOCK" || return 1
   current_epoch=$(sed -n '1s/^epoch=\([0-9][0-9]*\) .*/\1/p' "$STATE/.claude-autoarm-epoch" 2>/dev/null || true)
   outcome=$(sed -n '1s/^.*outcome=\([a-z][a-z-]*\) .*$/\1/p' "$STATE/.claude-autoarm-epoch" 2>/dev/null || true)
   initialized=0
+  charged=0
   COUNT=0
   if [ -f "$BUDGET_FILE" ]; then
     old_session=$(sed -n '1s/^session=//p' "$BUDGET_FILE" 2>/dev/null || true)
@@ -251,13 +362,18 @@ budget_account_current_epoch() {
     if [ "$old_session" = "$SESSION_ID" ]; then
       COUNT=$old_count
       if [ -n "$current_epoch" ] && [ "$old_epoch" = "$current_epoch" ]; then
-        :
+        if [ "$mode" = block ] && [ "$BUDGET_CHARGED_EPOCH" != "$current_epoch" ]; then
+          COUNT=$((COUNT + 1))
+          charged=1
+        fi
       else
         COUNT=$((COUNT + 1))
+        charged=1
       fi
     fi
   fi
   if [ ! -f "$BUDGET_FILE" ] || [ "${old_session:-}" != "$SESSION_ID" ]; then
+    charged=1
     case "$outcome" in
       failed|failed-suppressed)
         if [ -e "$FAILURE_NOTICE" ]; then
@@ -278,6 +394,7 @@ budget_account_current_epoch() {
     return 1
   fi
   rm -f "$tmp" 2>/dev/null || true
+  [ "$charged" -eq 0 ] || BUDGET_CHARGED_EPOCH=$current_epoch
   BUDGET_INITIALIZED_FAILURE=$initialized
   fm_lock_release "$BUDGET_LOCK"
   return 0
@@ -441,7 +558,7 @@ fi
 
 # The auto-arm genuinely failed to establish: consume the bounded re-block
 # budget before considering the verified one-time attended fail-open.
-budget_account_current_epoch || block_stop
+budget_account_current_epoch block || block_stop
 terminal_fail_open
 terminal_status=$?
 if [ "$terminal_status" -eq 0 ]; then
@@ -449,6 +566,8 @@ if [ "$terminal_status" -eq 0 ]; then
     NEED_DESC="$FM_SUP_IN_FLIGHT task(s) in flight"
   elif [ "$FM_SUP_SOURCES" -gt 0 ]; then
     NEED_DESC="$FM_SUP_SOURCES process-event source(s) registered"
+  elif [ "$FM_SUP_CHECKS" -gt 0 ]; then
+    NEED_DESC="$FM_SUP_CHECKS registered custom check(s)"
   else
     NEED_DESC="X-mode relay polling active"
   fi

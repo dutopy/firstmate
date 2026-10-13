@@ -863,7 +863,7 @@ def descriptor_unchanged(before: os.stat_result, after: os.stat_result, bytes_re
     )
 
 
-def read_text_file(path_text: str, max_bytes: int = 4000) -> str:
+def read_text_file(path_text: str, max_bytes: int = 4000, max_chars: int = 2000) -> str:
     supplied = Path(path_text).expanduser()
     path = supplied if supplied.is_absolute() else Path.cwd() / supplied
     for component in (path, *path.parents):
@@ -894,8 +894,8 @@ def read_text_file(path_text: str, max_bytes: int = 4000) -> str:
         raise FMError("text file contains a NUL byte")
     if not text.strip():
         raise FMError("text file is empty")
-    if len(text) > 2000:
-        raise FMError("Discord message text exceeds the 2000 character phase-1 limit")
+    if len(text) > max_chars:
+        raise FMError(f"Discord message text exceeds the {max_chars} character phase-1 limit")
     return text
 
 
@@ -1668,9 +1668,13 @@ def discord_jump_url(guild_id: str, channel_id: str, message_id: str) -> str:
 
 def validate_discord_cdn_url(url: str, cfg: WorkspaceConfig) -> str:
     parsed = urlparse(url)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise FMError("attachment URL is not https")
     host = parsed.hostname.lower() if parsed.hostname else ""
+    # https is the contract; FM_DISCORD_ALLOW_INSECURE_CDN is a loopback-only
+    # test seam that never loosens the host allowlist below.
+    insecure_hosts = {item.strip() for item in os.environ.get("FM_DISCORD_ALLOW_INSECURE_CDN", "").split(",") if item.strip()}
+    secure = parsed.scheme == "https" or (parsed.scheme == "http" and host in insecure_hosts)
+    if not secure or not parsed.netloc:
+        raise FMError("attachment URL is not https")
     if host not in cfg.cdn_hosts:
         raise FMError("attachment URL host is not in the Discord CDN allowlist")
     return url

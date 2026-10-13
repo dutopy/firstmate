@@ -21,7 +21,7 @@ THREAD=888888888888888881
 dl() { FM_HOME="$H" "$ROOT/bin/fm-discord-live.sh" "$@"; }
 
 start_server() { # start_server <world-file> <port-file> <guild-id>
-  setsid python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "/tmp/livekeep/fake-server.log" 2>&1 <<'PY' &
+  setsid python3 - "$1" "$2" "$FAKE_TOKEN" "$3" > "$TMP_ROOT/fake-server.log" 2>&1 <<'PY' &
 import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -201,7 +201,6 @@ WORLD="$TMP_ROOT/world.json"
 PORT_FILE="$TMP_ROOT/port"
 printf '{"features":["COMMUNITY"],"channels":[],"threads":{},"messages":{},"creates":0,"posts":0,"counter":900000000000000000}\n' > "$WORLD"
 start_server "$WORLD" "$PORT_FILE" "$GUILD"
-echo "$$" > /tmp/livekeep/test-pid
 PORT=$(cat "$PORT_FILE")
 export FM_DISCORD_LIVE_API_BASE="http://127.0.0.1:$PORT"
 export FM_DISCORD_LIVE_SOPS="$TMP_ROOT/fake-sops"
@@ -581,6 +580,40 @@ out=$(dl live-post --config "$CFG20" --thread 123456789012345678 --tag main --te
   && fail "mirror accepted a non-allowlisted thread" || true
 assert_contains "$out" "outside the configured allowlist" "the mirror stays bounded to allowlisted threads"
 pass "live mirror posts once, fires typing, converges with replies, and stays allowlist-bounded"
+
+pass "live mirror posts once, fires typing, converges with replies, and stays allowlist-bounded"
+
+# --- 21. a missing or unusable secret file is one bounded line ----------------
+# A missing decryption tool must be named with its next step, never a traceback.
+new_home h21
+out=$(FM_DISCORD_LIVE_SOPS=/nonexistent-sops dl health --config "$H/config/discord-workspace.json" 2>&1) \
+  && fail "health accepted a missing decryption tool" || true
+assert_contains "$out" "cannot run the secret decryption tool" "a missing decryption tool is named"
+assert_contains "$out" "FM_DISCORD_LIVE_SOPS" "the sops override is named as the next step"
+printf '%s' "$out" | grep -q 'Traceback' && fail "a missing decryption tool printed a traceback: $out"
+pass "a missing decryption tool is one bounded, actionable line"
+
+# A decryption failure must surface the tool's own reason instead of discarding it.
+cat > "$TMP_ROOT/fake-sops-fail" <<FAKE
+#!/usr/bin/env bash
+echo "sops: error: cannot decrypt: no matching key" >&2
+exit 1
+FAKE
+chmod +x "$TMP_ROOT/fake-sops-fail"
+out=$(FM_DISCORD_LIVE_SOPS="$TMP_ROOT/fake-sops-fail" dl health --config "$H/config/discord-workspace.json" 2>&1) \
+  && fail "health accepted a failing decryption" || true
+assert_contains "$out" "secret decryption failed" "a decryption failure is reported"
+assert_contains "$out" "no matching key" "the decryption cause is surfaced"
+printf '%s' "$out" | grep -q 'Traceback' && fail "a failing decryption printed a traceback: $out"
+pass "a decryption failure surfaces its cause in one bounded line"
+
+# A missing secret file must name the file and the follow-up action.
+rm -f "$H/config/discord-workspace.secrets.sops.yaml"
+out=$(dl health --config "$H/config/discord-workspace.json" 2>&1) && fail "health accepted a missing secret file" || true
+assert_contains "$out" "secret file is missing" "a missing secret file is named"
+assert_contains "$out" "create it or point secret_file" "the next step is named"
+printf '%s' "$out" | grep -q 'Traceback' && fail "a missing secret file printed a traceback: $out"
+pass "a missing secret file is one bounded, actionable line"
 
 # --- cleanup -----------------------------------------------------------------
 kill %1 2>/dev/null || true

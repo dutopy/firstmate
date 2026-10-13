@@ -43,6 +43,16 @@
 #
 # Both ids are relay/firstmate slugs that compose a filename, so they are guarded
 # against path traversal even though they come from trusted callers.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -177,7 +187,7 @@ if [ ! -f "$META" ]; then
       ''|*' '*) ;;
       *) ROUTE_HOME_ARG="secondmate:$ROUTE_MATCHES" ;;
     esac
-    printf 'fm-x-link: bind the public promise through the promised-final path instead: tasks-axi public-followup add + bind-work, then bin/fm-public-followup.sh register <obligation-id> --relation <relation-id> --work-home %s --work-id %s --generation <n>, and put the bin/fm-public-followup.sh brief <obligation-id> command into the routed worker instructions.\n' \
+    printf 'fm-x-link: bind the public promise through the promised-final path instead: bin/fm-tasks-axi.sh public-followup add + bind-work, then bin/fm-public-followup.sh register <obligation-id> --relation <relation-id> --work-home %s --work-id %s --generation <n>, and put the bin/fm-public-followup.sh brief <obligation-id> command into the routed worker instructions.\n' \
       "$ROUTE_HOME_ARG" "$ID" >&2
   fi
   exit 1

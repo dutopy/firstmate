@@ -14,6 +14,16 @@
 # for its own backlog or delivered lock whose pid is dead and whose mtime is at
 # least 30 seconds old. No live or uncertain lock is touched. On confirmed
 # receipt the delivered scratch file is removed; no other path is deletable.
+
+# Inert help: fm_cli_help prints this script's own usage and exits 0 before any
+# state change, so --help can never take a lock, write state, or reach the network.
+# shellcheck source=bin/fm-cli-lib.sh
+fm_cli_dir=${BASH_SOURCE[0]%/*}
+[ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+. "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
+unset fm_cli_dir
+if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,7 +67,7 @@ list_keys() { # <file>
 lock_age() {
   local modified now
   if [ "$(uname 2>/dev/null)" = Darwin ]; then
-    modified=$(stat -f '%m' "$1" 2>/dev/null) || return 1
+    modified=$(/usr/bin/stat -f '%m' "$1" 2>/dev/null) || return 1
   else
     modified=$(stat -c '%Y' "$1" 2>/dev/null) || return 1
   fi

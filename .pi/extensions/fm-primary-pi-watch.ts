@@ -12,9 +12,10 @@
 // Stale callbacks from a prior generation are no-ops against the active replacement.
 //
 // Delivery versus consumption (stated once here):
-// A main follow-up is delivered once Pi accepts it (sendUserMessage resolves).
-// The successor pipeline never waits for the model to read it: a follow-up
-// queued while main is streaming joins the running run without ever raising
+// A main wake is delivered once Pi accepts it (sendUserMessage resolves), and
+// its delivery mode is owned by wakeDeliveryMode below.
+// The successor pipeline never waits for the model to read it: a wake queued
+// while main is streaming joins the running run without ever raising
 // before_agent_start, so waiting on that event stalls every later close.
 // Consumption is tracked only so a replacement can replay a follow-up Pi had
 // not consumed. An idle main consumes at before_agent_start; a streaming main
@@ -29,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { registerFirstmateTool } from "./lib/fm-native-contract.ts";
 import {
   createBranchDispatchOffer,
   FM_BRANCH_DISPATCH_EVENT,
@@ -51,6 +53,11 @@ type LockOwnership = "owned" | "missing" | "other";
 type CloseClassification = {
   kind: "actionable" | "failure";
   message: string;
+};
+
+type RestorationOutcome = {
+  failure: string;
+  recovery?: { generation: string; watcherPid: string };
 };
 
 type PendingActionableClose = {
@@ -103,6 +110,10 @@ type SessionGeneration = {
   // still delivering the wake it was started for; its bounded retry runs once
   // that delivery settles instead of being skipped by the single-flight guard.
   deferredClose: { message: string; predecessorArmPid: string } | null;
+  // The single-flight successor restoration, held apart from `restoring` on
+  // purpose: `restoring` guards wake DELIVERY, and delivering an earlier wake
+  // can wait minutes on a branch turn. Continuity must never queue behind it.
+  continuity: Promise<RestorationOutcome> | null;
 };
 
 function refreshWatchToolShell(
@@ -261,6 +272,19 @@ function userMessageText(content: unknown): string {
     }
   }
   return parts.join("\n");
+}
+
+// A captain-inbox note is the one wake whose whole purpose is a prompt answer to
+// the captain. Delivered as a follow-up it waits for main's entire running turn
+// to finish, which the Discord console latency journal measured at hundreds of
+// seconds on a busy fleet. Delivered as steering input, Pi hands it to the
+// running run at the next LLM boundary instead, so the note is drained and
+// answered without waiting the turn out. Every other main wake keeps the
+// follow-up delivery the continuity and replacement-handoff contract was built
+// on. `check: captain inbox notes waiting:` is the watcher's fallback wording
+// when it could not read the queued payload, so both spellings must match.
+function wakeDeliveryMode(message: string): "steer" | "followUp" {
+  return /captain inbox note/.test(message) ? "steer" : "followUp";
 }
 
 function nodeErrorCode(error: unknown): string {
@@ -422,6 +446,7 @@ function createGeneration(): SessionGeneration {
     cleanupFailure: "",
     unconsumedWakes: new Map(),
     deferredClose: null,
+    continuity: null,
   };
 }
 
@@ -523,14 +548,14 @@ export default function (pi: ExtensionAPI) {
     );
     if (pending) owner.unconsumedWakes.set(pending.token, { content, pending });
     try {
-      await pi.sendUserMessage(content, { deliverAs: "followUp" });
+      await pi.sendUserMessage(content, { deliverAs: wakeDeliveryMode(message) });
     } catch (error) {
       if (pending) owner.unconsumedWakes.delete(pending.token);
       throw error;
     }
     // Accepted by Pi. A generation replaced while Pi was accepting it may
-    // have lost the follow-up with the old session, so report it undelivered
-    // and let the replacement replay the still-pending record.
+    // have lost the wake with the old session, so report it undelivered and
+    // let the replacement replay the still-pending record.
     return generationIsLive(owner);
   }
 
@@ -766,7 +791,7 @@ export default function (pi: ExtensionAPI) {
           // A new restoration supersedes whatever became of the previous
           // successor; only a failure during this delivery is retried after it.
           owner.deferredClose = null;
-          const restoration = await restoreAfterActionableClose(owner, pending.predecessorArmPid);
+          const restoration = await restoreContinuity(owner, pending.predecessorArmPid);
           if (!generationIsLive(owner)) {
             settleClaim("failed");
             releaseClaim();
@@ -875,10 +900,25 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  async function restoreAfterActionableClose(owner: SessionGeneration, predecessorArmPid: string): Promise<{
-    failure: string;
-    recovery?: { generation: string; watcherPid: string };
-  }> {
+  // Continuity restoration is single-flight per generation and deliberately
+  // independent of the wake-delivery pipeline's `restoring` guard. Delivering an
+  // earlier wake awaits the supervision branch's settlement, which routinely
+  // takes minutes, and gating the successor start on that left the home with no
+  // watcher at all for the whole wait - which is what the PID-strict turn-end
+  // guard then reported as supervision off. A restoration already in flight is
+  // adopted, so a close arriving mid-restore never starts a second cycle.
+  function restoreContinuity(owner: SessionGeneration, predecessorArmPid: string): Promise<RestorationOutcome> {
+    if (owner.continuity) return owner.continuity;
+    const run = runRestoration(owner, predecessorArmPid);
+    owner.continuity = run;
+    const clear = (): void => {
+      if (owner.continuity === run) owner.continuity = null;
+    };
+    void run.then(clear, clear);
+    return run;
+  }
+
+  async function runRestoration(owner: SessionGeneration, predecessorArmPid: string): Promise<RestorationOutcome> {
     let failure = "";
     for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
       if (!generationIsLive(owner)) return { failure: "" };
@@ -1027,6 +1067,13 @@ export default function (pi: ExtensionAPI) {
         enqueuePendingActionable(owner, pending);
         if (!generationIsLive(owner)) return;
         owner.retryFailures = 0;
+        // Restore the singleton successor for THIS close before anything else.
+        // The wake-delivery pipeline below may still be busy with an earlier
+        // wake, and owner.restoring must not delay a replacement watcher: this
+        // close just destroyed the only one. The pipeline adopts this same
+        // restoration when it reaches this pending record, so Option B ordering
+        // (verified successor before delivery) still holds.
+        void restoreContinuity(owner, predecessor);
         void processPendingActionables(owner);
         return;
       }
@@ -1118,7 +1165,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool?.({
+  registerFirstmateTool(pi, {
     name: "fm_watch_arm_pi",
     label: "Arm firstmate watcher",
     description: "Start the first required Pi watcher cycle, or repair one only after a notification says the cycle is missing, failed, or unhealthy. Do not call after ordinary work or ordinary notifications; the Pi extension re-arms automatically. Never run bin/fm-watch-arm.sh through bash.",
