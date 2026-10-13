@@ -18,7 +18,7 @@
 # ancestor is ever reachable from it.
 #
 # Eligibility: tracked and untracked files, minus the central deny list in
-# bin/fm-wip-exclude.txt (plus config/wip-exclude, additive only), minus the
+# bin/fm-wip-exclude.globs (plus config/wip-exclude, additive only), minus the
 # home-private directories when the worktree belongs to the home's own
 # repository, minus the shadow store itself, minus files over the GitHub size
 # limit. Changing the deny list starts a new lineage (e<N+1>): published history
@@ -61,7 +61,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-DENY_FILE="$SCRIPT_DIR/fm-wip-exclude.txt"
+DENY_FILE="$SCRIPT_DIR/fm-wip-exclude.globs"
 WIP_MAX_FILE_BYTES=94371840
 WIP_MAX_PASSES=3
 CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}

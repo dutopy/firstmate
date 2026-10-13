@@ -649,6 +649,58 @@ The sweep must finish inside `FM_CHECK_TIMEOUT` (default 30), because a run the 
 So a budget larger than that timeout allows is cut down to what fits instead of being refused, and the cut is reported in the report line.
 A budget that is not a whole number from 1 to 120 is still refused outright.
 
+## Repository drift guard and WIP checkpoints (config/wip-remotes, config/wip-exclude)
+
+The drift guard reports repositories that are drifting from GitHub and keeps a private safety copy of in-progress work.
+`bin/fm-antidrift-check.sh refresh` is the producer.
+The watcher starts it detached (the same pattern as the home-summary refresh), at most one instance at a time, whenever its next-due epoch passes or a task status log changes.
+It never runs on the heartbeat path.
+The heartbeat reads only the cache it publishes, `state/.antidrift`, through the readers in `bin/fm-wip-lib.sh`, and raises one `check: antidrift: ...` wake per new line.
+`bin/fm-wip-checkpoint.sh` owns snapshots and publication, `bin/fm-nm-run-lib.sh` owns the native push receipt, and `bin/fm-wip-exclude.globs` owns the central deny list.
+
+The inventory is this home's own: the `worktree=` of every task record in `state/`, the clones registered in `data/projects.md`, and the home's own repository.
+`git worktree list` is never an inventory, so another home's pool copy in a shared git directory is never adopted.
+A task worktree is read or snapshotted only while its pool-slot claim names that task, and a reassigned, unclaimed or unreadable slot is skipped and alarmed.
+
+The alarms are literal and each is a count in the one line:
+- A product worktree whose branch has no GitHub upstream alarms immediately, with no grace period; a `local-only` project is annotated but still alarmed, and scout worktrees are excluded.
+- More than 10 commits ahead of the upstream, or of the native pushed head, alarms.
+- A last push older than 4 hours alarms for a task worktree; an unrecorded push reads as "push age unknown" and is alarmed, never guessed.
+- Uncommitted changes observed continuously for 30 minutes alarm.
+- A remote whose push URL is `DISABLED` alarms.
+- An open PR of the forge login older than 48 hours alarms when no task registered it, or when its task has no presentation receipt.
+- A checkpoint that could not be published alarms with its reason, and a worktree whose slot ownership is not proven alarms.
+
+Clocks are never inferred.
+The last push is the pipeline's own receipt, `branch_sync.pipeline.pushed_at` from `no-mistakes axi status` with `remote.freshness` equal to `pipeline_push`, or the WIP push receipt; a fetch time is never used.
+Dirty duration is tracked from the first observation and persisted under `state/wip/`, and an unobserved start is unknown rather than backdated from file times.
+PR age comes from the forge's relative age, which `gh-axi pr list` reports in whole days, so a PR counts from `2d ago`.
+A forge or tool that cannot answer is reported as `inconnu` and is never read as clean.
+
+A presentation receipt is explicit.
+Registering a PR happens before anyone is told, so it never records a presentation.
+After the message carrying the PR URL has actually reached the captain or parent, run `bin/fm-pr-check.sh <id> <url> --presented`.
+It writes `pr_presented=<epoch>:<url>` to the task record only for a URL the task already registered, there is no retroactive receipt, and a failed write leaves the PR unproven.
+
+Checkpoints are snapshots in a shadow repository per worktree under `state/wip/`, with its own index, refs and objects.
+The source repository is only read, with git's optional locks off, so a branch owned by a validation run is never disturbed.
+Eligible files are the source's own `git ls-files --cached --others --exclude-standard`, so `.gitignore`, `.git/info/exclude` and `core.excludesFile` are honoured.
+The central deny list then applies to tracked and untracked files alike: artifacts, sqlite databases, key material, corpus and card data, and credential or secret files.
+`config/wip-exclude` may add globs, never remove any, and the home-private directories are denied in the home's own repository.
+The shadow lineage is orphaned, so no source ancestor is ever reachable from what is published.
+Changing the deny list opens a new lineage, because published history is never rewritten.
+A checkpoint is made at each task milestone (a new `done:` status line or a newly registered PR) and at least every 30 minutes for an active worktree.
+
+Publication targets are explicit and per project.
+`config/wip-remotes` holds one line per project, `<project> <owner>/<name>`, where the key is the project directory name and `firstmate` names the home's own repository.
+`<project> none` declares local checkpoints only, which is a posture and not a fault; no line at all is reported.
+Nothing here creates a repository, changes visibility or falls back to another target.
+Before every push, repository visibility is read fresh from the forge and only an explicit `private` answer allows it; public, unknown or unreachable refuses and alarms.
+Every commit about to leave is checked against the deny list again, the refspec never carries a leading `+`, and a rejected push is reported and never forced.
+A milestone checkpoint is pushed immediately, otherwise a push happens within 90 minutes of the oldest unpublished checkpoint, and at least once every 24 hours the push action runs even with nothing new.
+
+Intervals and thresholds are constants in the owning scripts' headers, and the existing `FM_CHECK_INTERVAL` and `FM_CHECK_TIMEOUT` bound the producer's cadence and each external call.
+
 ## Mail plane (.env)
 
 The mail plane (bin/fm-mail.sh) reads unseen IMAP messages and sends one SMTP message.

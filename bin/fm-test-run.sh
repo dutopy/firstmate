@@ -302,7 +302,7 @@ family_for_basename() {
     fm-wake-drain-unread-status.test.sh|\
     fm-tool-update-check.test.sh|\
     fm-mail.test.sh|fm-mail-check.test.sh|\
-    fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
+    fm-wake-queue.test.sh|fm-watch-antidrift.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
     fm-watch-triage.test.sh|fm-task-inbox.test.sh|fm-inbox-external.test.sh|\
     fm-procevent-discord-workspace.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh)
@@ -499,6 +499,7 @@ EOF
 # refresh procedure are owned by docs/fm-test-portable-shards.md.
 portable_parallel_weight_hints() {
   cat <<'EOF'
+tests/fm-antidrift-check.test.sh 78000
 tests/fm-arm-pretool-check.test.sh 30898
 tests/fm-backend-herdr.test.sh 22144
 tests/fm-brief.test.sh 1625
@@ -511,8 +512,10 @@ tests/fm-ensure-agents-md.test.sh 901
 tests/fm-grok-harness.test.sh 6563
 tests/fm-herdr-lab.test.sh 9800
 tests/fm-lint.test.sh 164262
+tests/fm-nm-branch-sync-pipeline.test.sh 500
 tests/fm-pi-primary-types.test.sh 8624
 tests/fm-pr-merge.test.sh 111145
+tests/fm-pr-presented.test.sh 2000
 tests/fm-review-diff.test.sh 2747
 tests/fm-send-popup-settle.test.sh 4939
 tests/fm-send-settle.test.sh 2051
@@ -522,6 +525,8 @@ tests/fm-supervision-instructions.test.sh 297
 tests/fm-test-run.test.sh 92944
 tests/fm-tmux-submit-busy.test.sh 2477
 tests/fm-transition-lib.test.sh 99
+tests/fm-watch-antidrift.test.sh 24000
+tests/fm-wip-checkpoint.test.sh 26000
 tests/fm-x-mode.test.sh 31870
 EOF
 }

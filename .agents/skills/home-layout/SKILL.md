@@ -44,6 +44,8 @@ config/turnend-churn-absorb  optional presence flag opting this home into the de
 config/cmux-socket-password  optional cmux control-socket password; LOCAL, gitignored; read fresh on every cmux CLI call and passed through without ever overriding an operator's own ambient CMUX_SOCKET_PASSWORD when absent (docs/cmux-backend.md "Setup")
 config/wedge-alarm  optional away-mode wedge-alarm active-alert directives; LOCAL, gitignored; absent means auto (macOS Notification Center when available); see docs/wedge-alarm.md
 config/watched-tools.json  optional list of the tools this home depends on, read by the update check armed with bin/fm-tool-update-check.sh; LOCAL, gitignored, firstmate-maintained but human-editable, and NOT inherited by secondmate homes; see docs/configuration.md "Watched tool updates"
+config/wip-remotes  optional per-project WIP publication targets, one line `<project> <owner>/<name>` or `<project> none`, read by bin/fm-wip-checkpoint.sh; LOCAL, gitignored; no line means no publication (docs/configuration.md "Repository drift guard")
+config/wip-exclude  optional additive WIP deny globs on top of bin/fm-wip-exclude.globs; LOCAL, gitignored
 config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; source before arming watcher when present
 data/                personal fleet records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history
@@ -85,6 +87,8 @@ state/               runtime records and signals; gitignored
   tool-updates.check.sh  generated watched-tool update poll shim and its .check-trust binding; present only after bin/fm-tool-update-check.sh arm; its report record .tool-updates is what keeps one pending update from being reported on every poll
   proposals.check.sh  generated proposal-card check shim and its .check-trust binding; present only after bin/fm-proposal-lane.sh arm; the lane's cadence records below are what keep one card from being delivered twice
   mail.check.sh      generated received-mail poll shim and its .check-trust binding; present only after bin/fm-mail-check.sh arm; report record .mail-check (mail schema: docs/configuration.md "Mail plane")
+  wip/               shadow repositories, snapshot, dirty and push records for the drift guard; written only by bin/fm-wip-checkpoint.sh and bin/fm-antidrift-check.sh
+  .antidrift .antidrift-next .antidrift-reported .antidrift-sig .antidrift.lock  drift-guard cache line, next-due epoch, last reported line, status-change signature, producer lock
   .mail-seen .mail-woken .mail-retry .mail-retry-pos .mail-turn .mail-seen.lock  mail-plane poll cursor, emission journal, transient-fetch retry set, retry-scan position, contended-slot turn flag, and overlapping-poll lock; written only by bin/fm-mail.sh (mail schema: docs/configuration.md "Mail plane")
   pending-replies/   parent-owned secondmate pending-reply records (correlation id, delivery vs reply, recovery, escalation); fm-pending-reply-lib.sh
   procevent/         registered process-to-event sources, one private record per canonical source id; written only by bin/fm-procevent.sh, and their presence alone keeps supervision required (section 13)
