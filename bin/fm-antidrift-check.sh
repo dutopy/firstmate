@@ -136,6 +136,9 @@ build_inventory() {
     else name=$(basename "${project:-unknown}"); fi
     add_entry "$wt" "$id" "$name" "$kind" ""
   done
+  # The registry and the home root belong to a home only while STATE is that
+  # home's own state directory; an override points at someone else's state.
+  [ "$(wip_real_path "$STATE")" = "$(wip_real_path "$FM_HOME/state")" ] || return 0
   if [ -f "$DATA/projects.md" ]; then
     while IFS= read -r line; do
       case "$line" in '- '*) ;; *) continue ;; esac
