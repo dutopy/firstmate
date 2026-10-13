@@ -4,9 +4,10 @@ ok - in-tree scripts are read, never run: only base-identical scripts escape the
 ok - rm -r outside the copy, on the copy root, via symlink, expansion, cd, or script denied; sentinels intact
 ok - copy6evil never counts as copy6 (path and process cwd)
 ok - foreign / unknown / group / init / variable PIDs denied, foreign processes alive
-tests/fm-worker-guard.test.sh: line 347: 60728 Killed: 9               ( cd "$WT" && exec sleep 601 ) > /dev/null 2>&1
+tests/fm-worker-guard.test.sh: line 347: 44713 Killed: 9               ( cd "$WT" && exec sleep 601 ) > /dev/null 2>&1
 ok - kill of a cwd-proved owned PID is allowed and effective
-ok - ancestry proves ownership; agent/supervisor chain is protected
+ok - ownership needs PID + physical cwd + coherent command line; ancestry alone and a shared cwd alone are refused
+ok - unreadable cwd, command line, or process facts are refused; readable evidence allows the same PID
 ok - own jobs, signal 0, dead PIDs, and own Popen children stay allowed
 ok - ordinary workflows (grep pkill, git commit text, rm inside the copy, scripts, builds, ps/pgrep reads) allowed
 ok - rm -r inside the copy is allowed and effective

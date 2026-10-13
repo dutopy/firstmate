@@ -1,0 +1,38 @@
+--- pkill -f chrome-headless-shell
+worker-guard [BROAD_KILL]: pkill matches processes by name or pattern and reaches other workers' benches. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- killall node
+worker-guard [BROAD_KILL]: killall matches processes by name or pattern and reaches other workers' benches. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- bash -c 'pkill -f explore.py'
+worker-guard [BROAD_KILL]: pkill matches processes by name or pattern and reaches other workers' benches. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- python3 -c "import os; os.kill(48452,9)"
+worker-guard [KILL_FOREIGN]: python3 inline code: PID 48452 is not proven yours: its cwd /private/tmp/fmprobe.g0AA/foreign is outside your isolated copy (command=sleep 600). Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- kill -9 48452
+worker-guard [KILL_FOREIGN]: PID 48452 is not proven yours: its cwd /private/tmp/fmprobe.g0AA/foreign is outside your isolated copy (command=sleep 600). Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- ps aux | grep sleep | awk '{print $2}' | xargs kill
+worker-guard [KILL_XARGS]: xargs kill feeds the kill PIDs the guard cannot prove are yours. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- P=pk; ${P}ill -f chrome
+worker-guard [OPAQUE_EXEC]: command word "${P}ill" is built dynamically and cannot be inspected. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- trap "pkill -f x" EXIT
+worker-guard [BROAD_KILL]: pkill matches processes by name or pattern and reaches other workers' benches. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- python3 -c 'import subprocess; subprocess.run(["pk" "ill","-f","x"])'
+worker-guard [BROAD_KILL_SCRIPT]: python3 inline code calls pkill/killall, which match processes by name or pattern across every worker. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- rm -rf /tmp/fmprobe.g0AA/foreign/keep
+worker-guard [RM_OUTSIDE]: rm -r target "/tmp/fmprobe.g0AA/foreign/keep" resolves to /private/tmp/fmprobe.g0AA/foreign/keep, outside your isolated copy. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+--- rm -rf /tmp/fmprobe.g0AA/copy/build
+exit=0
+--- kill 48457
+exit=0
+--- ls /tmp/fmprobe.g0AA/copy
+exit=0
+/tmp/fmprobe.g0AA/foreign/keep/data
+foreign alive: yes
