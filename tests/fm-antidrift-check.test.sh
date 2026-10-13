@@ -246,7 +246,7 @@ test_worktree_list_is_not_an_inventory() {
   refresh "$home" $((T0 + 1800))
   assert_not_contains "$(line_of "$home")" "foreign" "another home's pool copy in a shared git dir is not adopted"
   assert_not_contains "$(line_of "$home")" "other-home-branch" "its branch is not inventoried"
-  [ -z "$(grep -rl foreign-pool-copy "$home/state/wip" 2>/dev/null)" ] || fail "no WIP state may be created for it"
+  ! grep -rq foreign-pool-copy "$home/state/wip" 2>/dev/null || fail "no WIP state may be created for it"
   pass "fm-antidrift-check: git worktree list is never used as an inventory"
 }
 
