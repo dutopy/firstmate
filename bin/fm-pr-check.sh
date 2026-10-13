@@ -18,6 +18,16 @@
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
+#        fm-pr-check.sh <task-id> <pr-url> --presented
+#
+# --presented is the explicit presentation receipt. Registering a PR (the
+# two-argument form) happens BEFORE firstmate tells anyone, so it never records
+# a presentation. Run --presented only AFTER the message carrying the PR's URL
+# has actually reached the captain or parent. It requires that the task already
+# registered this exact URL, and writes pr_presented=<epoch>:<url> to the task
+# metadata. There is no retroactive receipt: a registered PR with no receipt
+# reads as presentation unknown. A failed write exits non-zero and records
+# nothing, which also reads as unknown, never as presented.
 
 # Inert help: fm_cli_help prints this script's own usage and exits 0 before any
 # state change, so --help can never take a lock, write state, or reach the network.
@@ -42,7 +52,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-parent-channel-lib.sh
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
 
-if [ "$#" -ne 2 ]; then
+PRESENTED=0
+if [ "$#" -eq 3 ] && [ "$3" = --presented ]; then
+  PRESENTED=1
+elif [ "$#" -ne 2 ]; then
   echo "error: invalid PR check request" >&2
   exit 2
 fi
@@ -63,6 +76,26 @@ META="$STATE/$ID.meta"
 if [ ! -f "$META" ] || [ -L "$META" ] || [ "$(fm_pr_file_link_count "$META")" != 1 ]; then
   echo "error: task metadata is unavailable" >&2
   exit 1
+fi
+
+if [ "$PRESENTED" = 1 ]; then
+  grep -qxF -- "pr=$URL" "$META" || { echo "error: this task has not registered that PR" >&2; exit 1; }
+  PRES_LOCK=$(fm_meta_lock_path "$META") || exit 1
+  fm_lock_acquire_wait "$PRES_LOCK"
+  PRES_TMP=$(mktemp "$STATE/.fm-pr-presented.XXXXXX") || { fm_lock_release "$PRES_LOCK"; exit 1; }
+  trap '[ -z "$PRES_TMP" ] || rm -f -- "$PRES_TMP"; fm_lock_release "$PRES_LOCK" || true' EXIT
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      pr_presented=*) ;;
+      *) printf '%s\n' "$line" >> "$PRES_TMP" ;;
+    esac
+  done < "$META"
+  printf 'pr_presented=%s:%s\n' "${FM_PR_PRESENTED_NOW:-$(date +%s)}" "$URL" >> "$PRES_TMP"
+  chmod 0600 "$PRES_TMP"
+  mv -f -- "$PRES_TMP" "$META"
+  PRES_TMP=
+  echo "presented: $ID $URL"
+  exit 0
 fi
 
 # A prior exact merged result may have queued its durable wake immediately

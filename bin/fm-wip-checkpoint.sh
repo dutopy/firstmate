@@ -29,8 +29,10 @@
 # unclaimed slot is refused (exit 3) so a stale record cannot copy a new owner.
 #
 # push publishes the current lineage to the GitHub repository named for
-# <project> in config/wip-remotes (lines: "<project> <owner>/<name>"). No entry
-# means no publication (exit 4). Before EVERY push, repository visibility is
+# <project> in config/wip-remotes (lines: "<project> <owner>/<name>"). A line
+# "<project> none" declares local checkpoints only: publication is intentionally
+# off for that project (exit 8), which is a posture, not a fault. No entry at
+# all means no publication either (exit 4), and that one is reported. Before EVERY push, repository visibility is
 # proven fresh (no cache) with gh-axi, and only an explicit "visibility:
 # private" answer allows it; public, unknown or unreachable refuses (exit 5).
 # Every commit about to leave is checked against the deny list again (exit 6).
@@ -39,7 +41,8 @@
 # durable receipt state/wip/<key>/push. Nothing here creates a repository.
 #
 # Exit: 0 ok, 1 error, 2 usage, 3 ownership not proven, 4 no remote configured,
-# 5 private not proven, 6 deny hit, 7 push failed or rejected.
+# 5 private not proven, 6 deny hit, 7 push failed or rejected, 8 publication
+# intentionally off.
 # Env: FM_HOME, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE, FM_WIP_NOW (test clock),
 # FM_CHECK_TIMEOUT (bound for the visibility read and the push).
 set -u
@@ -251,7 +254,7 @@ action_snapshot() {
 
 # wip_target <project>: prints "<owner>/<name>" from config/wip-remotes.
 wip_target() {
-  awk -v p="$1" '$1 == p && $2 ~ /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/ { print $2; exit }' "$CONFIG/wip-remotes" 2>/dev/null
+  awk -v p="$1" '$1 == p && ($2 == "none" || $2 ~ /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/) { print $2; exit }' "$CONFIG/wip-remotes" 2>/dev/null
 }
 
 # Fresh visibility proof: only an explicit private answer returns 0.
@@ -301,6 +304,10 @@ action_push() {
   W rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || die "no WIP checkpoint to publish" 1
   case "$ref" in refs/heads/wip/*) ;; *) die "refusing to publish a ref outside refs/heads/wip/" 7 ;; esac
   target=$(wip_target "$project")
+  if [ "$target" = none ]; then
+    wip_kv_set "$KDIR/push" result off
+    die "publication is intentionally off for $project (config/wip-remotes: none)" 8
+  fi
   if [ -z "$target" ]; then
     wip_kv_set "$KDIR/push" result no-remote
     die "no WIP remote configured for $project in config/wip-remotes" 4

@@ -245,6 +245,19 @@ test_no_remote_configured_means_no_publication() {
   pass "fm-wip-checkpoint: no configured remote means no publication"
 }
 
+test_publication_can_be_declared_off_for_a_project() {
+  local src home remote rc=0
+  read -r src home remote < <(setup_push puboff)
+  printf 'proj none\n' > "$home/config/wip-remotes"
+  : > "$TMP_ROOT/calls"
+  run_push "$home" "$src" private >/dev/null 2>&1 || rc=$?
+  expect_code 8 "$rc" "a project declared 'none' is intentionally unpublished"
+  assert_equals 0 "$(wc -l < "$TMP_ROOT/calls" | tr -d ' ')" "no forge call is made for an unpublished project"
+  [ -z "$(git --git-dir="$remote" for-each-ref)" ] || fail "nothing may be published for a project declared none"
+  assert_contains "$(cat "$(find "$home/state/wip" -name push | head -n 1)")" "result=off" "the posture is recorded as off, not as a fault"
+  pass "fm-wip-checkpoint: publication declared off is a posture, not a failure"
+}
+
 test_denied_path_in_a_commit_blocks_the_push() {
   local src home remote shadow ref tree commit blob rc=0
   read -r src home remote < <(setup_push denyhit)
@@ -288,5 +301,6 @@ test_ownership_is_proven_before_a_snapshot
 test_only_an_explicit_private_answer_publishes
 test_visibility_is_proven_fresh_before_every_push
 test_no_remote_configured_means_no_publication
+test_publication_can_be_declared_off_for_a_project
 test_denied_path_in_a_commit_blocks_the_push
 test_a_rejected_push_is_reported_and_never_forced
