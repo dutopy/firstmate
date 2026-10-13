@@ -397,7 +397,7 @@
       "audience": "operator-current"
     },
     {
-      "path": "docs/jev-guard.md",
+      "path": "docs/jev-class-router.md",
       "audience": "maintainer-architecture"
     },
     {
