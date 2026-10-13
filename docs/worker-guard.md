@@ -17,7 +17,7 @@ A written instruction was not enough, so the rule is enforced on the tool surfac
 
 A worker may:
 
-- kill a literal PID whose process tree reaches the worker's own agent process, or whose current working directory is inside the worker's isolated copy;
+- kill a literal PID only on a joint proof, all of it required: the process is alive and belongs to the worker's own user, its physical current working directory is inside the worker's isolated copy or a task-owned root, and its command line is coherent with that, meaning no later path argument (including an `--option=value` value or a `..` traversal from its cwd) resolves outside the copy, a task root, or a system location (the executable itself may live anywhere);
 - kill its own job (`$!`, `%N`, `$$`, or a variable assigned from `$!` in the same command), send signal 0, or kill a PID that no longer exists;
 - `rm -r` paths that resolve inside its isolated copy or inside the task-owned scratch root `/tmp/fm-<id>`.
 
@@ -101,7 +101,8 @@ A raw launch command carries none of this because its harness is unverified.
 - A modified or new script that uses `exec`/`eval`/`getattr(os, ...)` next to `os` or `subprocess`.
 - Any script that mentions `pkill` or `killall` as a command, including inside a comment or a string, and a committed repository script that really calls them.
 - `kill $PID` where `$PID` came from a pidfile or an earlier call; read the PID, then kill the literal number after `ps -o pid,ppid,command -p <pid>` confirms it.
-- Killing a process the worker started with `setsid` or `nohup` from a directory outside its copy, once it has been reparented to PID 1.
+- Killing a process the worker started from a directory outside its copy, or whose command line names a path outside the copy, a task root, or a system location (a browser given `--user-data-dir=/tmp/profile` is refused; give it a profile under the copy or `/tmp/fm-<id>`), even when it descends from the worker's own agent.
+- Killing a process whose cwd, command line, or owner cannot be read, which is refused as unproven rather than guessed.
 - Relative deletes after a `cd` whose target is a variable (the working directory becomes unknown).
 - Relative paths resolve against the `cwd` the harness reports and against any `cd` earlier in the same command; both Claude 2.1.296 and omp 18.5.1 return to the session directory between bash calls (verified), so a `cd` in one call never affects the next.
 

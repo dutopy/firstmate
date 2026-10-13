@@ -358,8 +358,11 @@ test_owned_pid_allowed_and_really_killed() {
   pass "kill of a cwd-proved owned PID is allowed and effective"
 }
 
-test_ancestry_owned_pid_allowed() {
-  local owner_pid child_pid pidfile="$TMP_ROOT/child.pid"
+# Ownership is a JOINT proof (PID + physical cwd + coherent command line).
+# Ancestry alone and a shared cwd alone are not proof, and the agent's own
+# chain is never a target.
+test_pid_proof_is_joint() {
+  local owner_pid child_pid pidfile="$TMP_ROOT/child.pid" proof_pid same_cwd_pid rel_pid opt_pid inside_pid
   # The "agent": a process outside the copy that launches a child outside the copy.
   (cd "$FOREIGN" && exec bash -c 'sleep 603 & echo $! >"$1"; wait' _ "$pidfile") >/dev/null 2>&1 &
   owner_pid=$!
@@ -367,16 +370,79 @@ test_ancestry_owned_pid_allowed() {
   for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$pidfile" ] && break; sleep 0.2; done
   child_pid=$(cat "$pidfile")
   STARTED_PIDS+=("$child_pid")
+  # Ancestry is not proof: a descendant of the agent with a foreign cwd is refused.
   run_hook "kill $child_pid" "$WT" --owner-pid "$owner_pid"
-  [ "$HOOK_CODE" = 0 ] || fail "descendant of the agent must be allowed: $HOOK_ERR"
-  run_hook "kill $child_pid" "$WT"
-  [ "$HOOK_CODE" = 2 ] || fail "without the agent identity the same PID is foreign"
+  [ "$HOOK_CODE" = 2 ] || fail "a descendant of the agent with a foreign cwd must be refused"
+  alive "$child_pid" || fail "the descendant was killed"
   run_hook "kill $FOREIGN_PID" "$WT" --owner-pid "$owner_pid"
   [ "$HOOK_CODE" = 2 ] || fail "a non-descendant stays foreign even with an agent identity"
   run_hook "kill $owner_pid" "$WT" --owner-pid "$owner_pid"
   [ "$HOOK_CODE" = 2 ] || fail "the agent must not kill itself"
-  kill "$child_pid"
-  pass "ancestry proves ownership; agent/supervisor chain is protected"
+  assert_contains "$HOOK_ERR" "own agent" "the agent refusal names why"
+
+  # Positive: cwd inside the copy and a coherent command line (path argument inside the copy).
+  : >"$WT/proof.log"
+  (cd "$WT" && exec tail -f "$WT/proof.log") >/dev/null 2>&1 &
+  proof_pid=$!
+  STARTED_PIDS+=("$proof_pid")
+  (cd "$WT" && exec tail -f proof.log) >/dev/null 2>&1 &
+  inside_pid=$!
+  STARTED_PIDS+=("$inside_pid")
+  sleep 0.3
+  run_hook "kill $proof_pid"
+  [ "$HOOK_CODE" = 0 ] || fail "cwd in the copy plus an in-copy absolute argument must be allowed: $HOOK_ERR"
+  run_hook "kill $inside_pid"
+  [ "$HOOK_CODE" = 0 ] || fail "cwd in the copy plus a relative in-copy argument must be allowed: $HOOK_ERR"
+
+  # Negative: SAME cwd as the copy, command line works on a foreign tree (absolute).
+  (cd "$WT" && exec tail -f "$FOREIGN/keep/data") >/dev/null 2>&1 &
+  same_cwd_pid=$!
+  STARTED_PIDS+=("$same_cwd_pid")
+  # ... relative traversal out of the copy.
+  (cd "$WT" && exec tail -f "../foreign/keep/data") >/dev/null 2>&1 &
+  rel_pid=$!
+  STARTED_PIDS+=("$rel_pid")
+  # ... option value pointing outside.
+  (cd "$WT" && exec python3 -c 'import time; time.sleep(603)' --out="$EVIL/keep") >/dev/null 2>&1 &
+  opt_pid=$!
+  STARTED_PIDS+=("$opt_pid")
+  sleep 0.3
+  local pid
+  for pid in "$same_cwd_pid" "$rel_pid" "$opt_pid"; do
+    run_hook "kill $pid"
+    [ "$HOOK_CODE" = 2 ] || fail "same cwd but a foreign command line must be refused (pid $pid)"
+    assert_contains "$HOOK_ERR" "outside your isolated copy" "the contradiction is named"
+    alive "$pid" || fail "a contradictory-ownership process was killed (pid $pid)"
+  done
+  kill "$child_pid" "$proof_pid" "$inside_pid" "$same_cwd_pid" "$rel_pid" "$opt_pid" 2>/dev/null
+  pass "ownership needs PID + physical cwd + coherent command line; ancestry alone and a shared cwd alone are refused"
+}
+
+# Unknown is not owned: an unreadable cwd or command line is refused even for a
+# process that really is the worker's.
+test_unknown_ownership_is_refused() {
+  local owned out code
+  start_cwd_owned
+  owned=$STARTED
+  mkdir -p "$TMP_ROOT/nolsof" "$TMP_ROOT/nops"
+  printf '#!/bin/sh\nexit 1\n' >"$TMP_ROOT/nolsof/lsof"
+  chmod +x "$TMP_ROOT/nolsof/lsof"
+  out=$(hook_json "kill $owned" | PATH="$TMP_ROOT/nolsof:$PATH" "$CHECK" --claude --owner-pid none 2>&1)
+  code=$?
+  if [ ! -r "/proc/$owned/cwd" ]; then
+    [ "$code" = 2 ] || fail "an unreadable cwd must be refused, got $code"
+    assert_contains "$out" "unreadable working directory" "unknown cwd reason"
+  fi
+  printf '#!/bin/sh\nexit 1\n' >"$TMP_ROOT/nops/ps"
+  chmod +x "$TMP_ROOT/nops/ps"
+  out=$(hook_json "kill $owned" | PATH="$TMP_ROOT/nops:$PATH" "$CHECK" --claude --owner-pid none 2>&1)
+  code=$?
+  [ "$code" = 2 ] || fail "an unreadable process listing must be refused, got $code"
+  alive "$owned" || fail "the unknown-ownership process was killed"
+  run_hook "kill $owned"
+  [ "$HOOK_CODE" = 0 ] || fail "with readable evidence the same worker-owned process is allowed: $HOOK_ERR"
+  kill "$owned" 2>/dev/null
+  pass "unreadable cwd, command line, or process facts are refused; readable evidence allows the same PID"
 }
 
 test_job_and_dead_pid_allowed() {
@@ -723,7 +789,8 @@ test_rm_outside_denied
 test_copy_prefix_is_not_ownership
 test_foreign_pid_denied
 test_owned_pid_allowed_and_really_killed
-test_ancestry_owned_pid_allowed
+test_pid_proof_is_joint
+test_unknown_ownership_is_refused
 test_job_and_dead_pid_allowed
 test_safe_workflows_allowed
 test_rm_inside_really_works

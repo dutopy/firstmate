@@ -163,15 +163,64 @@ function processCwd(pid) {
   }
 }
 
-function processCommand(pid) {
+// The argument vector of a live process: the kernel's NUL-separated list where
+// it exists, otherwise `ps`, whose whitespace splitting can only make a path
+// look wrong (which is refused), never right.
+function processArgv(pid) {
   try {
-    return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const raw = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+    if (raw) return raw.split("\0").filter((a, index, all) => a !== "" || index < all.length - 1);
+  } catch {}
+  try {
+    const text = execFileSync("ps", ["-ww", "-o", "command=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return text ? text.split(/\s+/) : [];
   } catch {
-    return "";
+    return [];
   }
 }
 
-// Returns null when the PID is proven owned (or does not exist), else a denial detail.
+function processUid(pid) {
+  try {
+    const text = execFileSync("ps", ["-o", "uid=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return /^\d+$/.test(text) ? Number(text) : null;
+  } catch {
+    return null;
+  }
+}
+
+const ARGUMENT_TRUSTED_PREFIXES = ["/usr/", "/bin/", "/sbin/", "/opt/", "/etc/", "/System/", "/Library/", "/dev/", "/nix/", "/snap/"];
+
+// A command line is coherent with ownership when no path-shaped argument
+// points outside the worker's copy: the executable itself (argv[0]) may live
+// anywhere, but every later path argument must resolve, physically and
+// relative to the process's own cwd, inside the copy, a task root, or a system
+// location. Anything else means the process works on someone else's tree.
+function commandlineProblem(argv, cwd, ctx) {
+  for (const arg of argv.slice(1)) {
+    let value = arg;
+    const eq = arg.match(/^--?[A-Za-z0-9_-]+=(.*)$/s);
+    if (arg.startsWith("-")) {
+      if (!eq) continue;
+      value = eq[1];
+    }
+    if (!value || /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) continue;
+    if (!/[/\\]|^\.|^~/.test(value)) continue;
+    const expanded = expandTilde(value, ctx.roots);
+    const abs = path.isAbsolute(expanded) ? expanded : path.join(cwd, expanded);
+    const physical = ctx.roots.physical(abs);
+    if (ctx.roots.contains(physical)) continue;
+    if (ARGUMENT_TRUSTED_PREFIXES.some((prefix) => physical.startsWith(prefix))) continue;
+    return `its command line names ${JSON.stringify(value)}, which resolves to ${physical}, outside your isolated copy`;
+  }
+  return "";
+}
+
+// Returns null when the PID is proven owned (or provably gone), else the
+// reason. Ownership is a JOINT proof, all of it required: the PID is a live
+// process of this user, its physical cwd is inside the worker's copy, and its
+// command line is coherent with that (no path argument reaching outside).
+// Ancestry alone and a shared cwd alone are not proof, and anything unreadable
+// or contradictory is refused.
 function ownershipProblem(pid, ctx) {
   if (pid <= 1) return `PID ${pid} is a system or process-group target`;
   // "Dead" is decided by the kernel, never by a process listing that may be
@@ -183,10 +232,20 @@ function ownershipProblem(pid, ctx) {
   }
   const self = ctx.ownerPid;
   if (self && (pid === self || ancestors(self).includes(pid))) return `PID ${pid} is this worker's own agent or its supervisor chain`;
-  if (self && ancestors(pid).includes(self)) return null;
+  const argv = processArgv(pid);
+  const shown = argv.join(" ").slice(0, 120) || "unknown";
+  const uid = processUid(pid);
+  if (uid === null || (typeof process.getuid === "function" && uid !== process.getuid())) {
+    return `PID ${pid} is not provably a process of your own user (uid=${uid ?? "unknown"}, command=${shown})`;
+  }
   const cwd = processCwd(pid);
-  if (cwd && ctx.roots.contains(ctx.roots.physical(cwd))) return null;
-  return `PID ${pid} is not proven yours (cwd=${cwd || "unknown"}, command=${processCommand(pid).slice(0, 120) || "unknown"})`;
+  if (!cwd) return `PID ${pid} has an unreadable working directory, so ownership is unproven (command=${shown})`;
+  const physicalCwd = ctx.roots.physical(cwd);
+  if (!ctx.roots.contains(physicalCwd)) return `PID ${pid} is not proven yours: its cwd ${physicalCwd} is outside your isolated copy (command=${shown})`;
+  if (argv.length === 0) return `PID ${pid} has an unreadable command line, so ownership is unproven (cwd=${physicalCwd})`;
+  const contradiction = commandlineProblem(argv, physicalCwd, ctx);
+  if (contradiction) return `PID ${pid} is not proven yours: its cwd is inside your copy but ${contradiction} (command=${shown})`;
+  return null;
 }
 
 // ---------------------------------------------------------------- state
