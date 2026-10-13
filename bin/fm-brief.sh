@@ -467,6 +467,8 @@ If the top-level path is the primary checkout or not the worktree you were launc
 # Rules
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
+   Checkpoint at least every 30 minutes of active work: commit your task-branch progress with an ordinary \`git commit\` (never amend, never force-push).
+   While a no-mistakes validation run owns the branch, do not commit to it: the automatic WIP checkpoint covers you at the same 30-minute cadence, so this is a different mechanism, not a lower frequency.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
