@@ -87,8 +87,10 @@ source-file count cannot silently become a runtime-frequency claim:
 The first four targets are home-local runtime records; the last two are tracked
 source files from the executable's own checkout. Missing targets are represented
 with `exists=false`, never fabricated. The default projection exposes target,
-surface, existence, byte count, line count, and `frequency=unknown`; `--full`
-adds percent-encoded content without changing any source or log. The selection is
+surface, existence, byte count, line count, `truncated`, and `frequency=unknown`;
+`--full` adds percent-encoded content, bounded to the last 65536 raw bytes per
+target (`truncated=true` marks omitted earlier bytes; `bytes` and `lines` still
+describe the whole file), without changing any source or log. The selection is
 an inventory boundary, not a claim that these are the most frequently invoked
 artifacts. No retained invocation dataset with a stated time window exists for
 this bounded list, so runtime frequency remains unknown. Existing log readers and
