@@ -1,0 +1,16 @@
+ok - Pi extension reports external healthy watcher output
+ok - Pi custom tool exposes repair-only metadata and returns automatic-continuation guidance
+ok - Pi redundant tool call returns ownership guidance and spawns no second child
+ok - Pi scheduled retry remains extension-owned after another tool call
+ok - Pi actionable close starts one successor before wake delivery settles
+ok - Pi dispatcher branch offer owns accepted wakes and falls back to main
+ok - Pi dispatcher flags a fleet-wide heartbeat offer as branch-eligible
+ok - a co-present check row neither vetoes nor rides a heartbeat into main
+not ok - the real-board-answer check class must stay on main: file:///Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M4VCSKX7YGR6FYZDWK9R7541/[eval1]:46
+  throw new Error(`a main-only check was offered to the branch: ${JSON.stringify(offers)}`);
+        ^
+
+Error: a main-only check was offered to the branch: []
+    at file:///Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M4VCSKX7YGR6FYZDWK9R7541/[eval1]:46:9
+
+Node.js v26.7.0: expected exit 0, got 1

@@ -1,0 +1,3 @@
+ok - Pi extension reports external healthy watcher output
+ok - Pi custom tool exposes repair-only metadata and returns automatic-continuation guidance
+not ok - Pi redundant tool call must remain an ownership-based no-op with repair-only guidance: expected exit 0, got 1

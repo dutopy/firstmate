@@ -1,0 +1,45 @@
+tests/fm-pi-watch-extension.test.sh: line 8: fm_test_tmproot: command not found
+mkdir: /pi-external-healthy-root: Read-only file system
+mkdir: /pi-external-healthy-home: Read-only file system
+mkdir: /pi-external-healthy-home: Read-only file system
+mkdir: /pi-external-healthy-root: Read-only file system
+mkdir: /pi-external-healthy-root: Read-only file system
+mkdir: /pi-external-healthy-root: Read-only file system
+mkdir: /pi-external-healthy-root: Read-only file system
+cp: /pi-external-healthy-root/.pi/extensions/fm-primary-pi-watch.ts: No such file or directory
+cp: /pi-external-healthy-root/.pi/extensions/lib/fm-branch-dispatch.ts: No such file or directory
+cp: /pi-external-healthy-root/.pi/extensions/lib/fm-native-contract.ts: No such file or directory
+cp: /pi-external-healthy-root/.pi/extensions/lib/fm-async-exec.ts: No such file or directory
+cp: /pi-external-healthy-root/.pi/extensions/lib/fm-calm-visibility.ts: No such file or directory
+cp: /pi-external-healthy-root/.pi/extensions/lib/fm-operational-input.ts: No such file or directory
+mkdir: /pi-external-healthy-root: Read-only file system
+cp: /pi-external-healthy-root/bin/fm-operational-input.sh: No such file or directory
+chmod: /pi-external-healthy-root/bin/fm-operational-input.sh: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 43: /pi-external-healthy-root/node_modules/@earendil-works/pi-coding-agent/package.json: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 46: /pi-external-healthy-root/node_modules/@earendil-works/pi-coding-agent/index.js: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 53: /pi-external-healthy-root/node_modules/@earendil-works/pi-tui/package.json: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 56: /pi-external-healthy-root/node_modules/@earendil-works/pi-tui/index.js: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 65: /pi-external-healthy-root/node_modules/typebox/package.json: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 68: /pi-external-healthy-root/node_modules/typebox/index.js: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 84: /pi-external-healthy-root/bin/fm-watch-arm.sh: No such file or directory
+chmod: /pi-external-healthy-root/bin/fm-watch-arm.sh: No such file or directory
+tests/fm-pi-watch-extension.test.sh: line 150: expect_code: command not found
+not ok - Pi external-healthy test printed output: node:fs:2914
+    return binding.writeFileUtf8(
+                   ^
+
+Error: ENOENT: no such file or directory, open '/pi-external-healthy-home/state/.lock'
+    at writeFileSync (node:fs:2914:20)
+    at file:///Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M4VCSKX7YGR6FYZDWK9R7541/[eval1]:17:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async node:internal/modules/esm/loader:226:26
+    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:223:20)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: '/pi-external-healthy-home/state/.lock'
+}
+
+Node.js v26.7.0
