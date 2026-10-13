@@ -131,6 +131,45 @@ fm_nm_branch_sync_state() {  # <toon-output>
   fm_nm_strip_quotes "$s"
 }
 
+# Scalar <key> under branch_sync.pipeline in captured `axi status` TOON $1
+# (pushed_at, pushed_head, push_generation, run, ...). This is the native,
+# durable receipt of the pipeline's last successful push for the attributed
+# branch. Empty when the block or key is absent: no run on this branch, another
+# branch's run, or a CLI without branch sync. Callers treat empty as unknown and
+# never as "no push"; remote.freshness is read by fm_nm_branch_sync_freshness.
+fm_nm_branch_sync_pipeline_field() {  # <toon-output> <key>
+  local s
+  s=$(printf '%s\n' "$1" | awk -v key="$2" '
+    function indent(l) { match(l, /^[ \t]*/); return RLENGTH }
+    /^[ \t]*branch_sync:[ \t]*$/ { inbs = 1; bsind = indent($0); next }
+    inbs && /[^ \t]/ && indent($0) <= bsind { inbs = 0; inpl = 0 }
+    inbs && /^[ \t]*pipeline:[ \t]*$/ { inpl = 1; plind = indent($0); next }
+    inpl && /[^ \t]/ && indent($0) <= plind { inpl = 0 }
+    inpl {
+      l = $0; sub(/^[ \t]+/, "", l)
+      if (index(l, key ":") == 1) { sub(/^[^:]*:[ \t]*/, "", l); print l; exit }
+    }')
+  fm_nm_strip_quotes "$s"
+}
+
+# remote.freshness under branch_sync in captured `axi status` TOON $1
+# ("pipeline_push" when the remote head was last observed through the
+# pipeline's own push, as opposed to a fetch-style observation).
+fm_nm_branch_sync_freshness() {  # <toon-output>
+  local s
+  s=$(printf '%s\n' "$1" | awk '
+    function indent(l) { match(l, /^[ \t]*/); return RLENGTH }
+    /^[ \t]*branch_sync:[ \t]*$/ { inbs = 1; bsind = indent($0); next }
+    inbs && /[^ \t]/ && indent($0) <= bsind { inbs = 0; inrm = 0 }
+    inbs && /^[ \t]*remote:[ \t]*$/ { inrm = 1; rmind = indent($0); next }
+    inrm && /[^ \t]/ && indent($0) <= rmind { inrm = 0 }
+    inrm {
+      l = $0; sub(/^[ \t]+/, "", l)
+      if (index(l, "freshness:") == 1) { sub(/^[^:]*:[ \t]*/, "", l); print l; exit }
+    }')
+  fm_nm_strip_quotes "$s"
+}
+
 # 0 if the run in captured `axi status` TOON $1 is still in flight: no
 # terminal outcome and no terminal status.
 fm_nm_run_is_active() {  # <toon-output>
