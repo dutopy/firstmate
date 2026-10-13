@@ -204,6 +204,7 @@ action_snapshot() {
   fm_lock_try_acquire "$lock" || die "another snapshot is running for $REAL_WT" 1
   # shellcheck disable=SC2064
   trap "fm_lock_release '$lock'" EXIT
+  wip_reset_if_task_changed "$KDIR" "$TASK"
   [ -d "$SHADOW" ] || git init -q --bare "$SHADOW" || die "cannot create the shadow repository"
   load_deny_globs
   dh=$(deny_hash)

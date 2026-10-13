@@ -115,9 +115,9 @@ test_no_upstream_alarm_and_scout_exclusion() {
   mk_task "$home" scout1 scout >/dev/null
   refresh "$home" $T0
   line=$(line_of "$home")
-  assert_contains "$line" "sans-upstream 1 (lonely[local-only])" "a local-only project is alarmed and annotated"
+  assert_contains "$line" "no-upstream 1 (lonely[local-only])" "a local-only project is alarmed and annotated"
   assert_not_contains "$line" "tracked" "a project with a GitHub upstream is clean"
-  assert_not_contains "$line" "sans-upstream 2" "a scout worktree is never alarmed for upstream"
+  assert_not_contains "$line" "no-upstream 2" "a scout worktree is never alarmed for upstream"
   assert_not_contains "$line" "scout1)" "a scout worktree is not named in the no-upstream list"
   pass "fm-antidrift-check: no-upstream alarm is immediate, annotated for local-only, scouts excluded"
 }
@@ -129,10 +129,10 @@ test_unpushed_threshold_is_literal() {
   p="$home/projects/busy"
   for i in 1 2 3 4 5 6 7 8 9 10; do git -C "$p" commit -q --allow-empty -m "c$i"; done
   refresh "$home" $T0
-  assert_not_contains "$(line_of "$home")" ">10-non-poussés" "exactly 10 unpushed is not over the cap"
+  assert_not_contains "$(line_of "$home")" "unpushed>10" "exactly 10 unpushed is not over the cap"
   git -C "$p" commit -q --allow-empty -m c11
   refresh "$home" $((T0 + 1))
-  assert_contains "$(line_of "$home")" ">10-non-poussés 1 (busy:11)" "11 unpushed commits alarm"
+  assert_contains "$(line_of "$home")" "unpushed>10 1 (busy:11)" "11 unpushed commits alarm"
   pass "fm-antidrift-check: more than 10 unpushed commits alarms, exactly 10 does not"
 }
 
@@ -146,7 +146,7 @@ test_push_age_uses_the_native_receipt_and_never_guesses() {
   refresh "$home" $((T0 + 1)) FAKE_NM_PUSHED_AT=$((T0 + 1 - 14401))
   assert_contains "$(line_of "$home")" "push>4h 1 (t1)" "a push older than 4h alarms"
   refresh "$home" $((T0 + 2))
-  assert_contains "$(line_of "$home")" "âge-push-inconnu 1 (t1)" "no receipt means unknown, visibly alarmed"
+  assert_contains "$(line_of "$home")" "push-age-unknown 1 (t1)" "no receipt means unknown, visibly alarmed"
   assert_not_contains "$(line_of "$home")" "push>4h" "an unknown age is never reported as old"
   pass "fm-antidrift-check: push age comes from the native receipt; absence is unknown, not guessed"
 }
@@ -160,18 +160,18 @@ test_dirty_duration_is_tracked_and_never_backdated() {
   printf 'x\n' > "$repo/new.txt"
   touch -t 200001010000 "$repo/new.txt"
   refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0
-  assert_not_contains "$(line_of "$home")" "sale>30m" "an old file time never backdates the first observation"
+  assert_not_contains "$(line_of "$home")" "dirty>30m" "an old file time never backdates the first observation"
   refresh "$home" $((T0 + 1799)) FAKE_NM_PUSHED_AT=$((T0 + 1799))
-  assert_not_contains "$(line_of "$home")" "sale>30m" "29m59s observed is not yet an alarm"
+  assert_not_contains "$(line_of "$home")" "dirty>30m" "29m59s observed is not yet an alarm"
   refresh "$home" $((T0 + 1800)) FAKE_NM_PUSHED_AT=$((T0 + 1800))
-  assert_contains "$(line_of "$home")" "sale>30m 1 (t1)" "30 minutes of continuous observation alarms"
+  assert_contains "$(line_of "$home")" "dirty>30m 1 (t1)" "30 minutes of continuous observation alarms"
   rm "$repo/new.txt"
   refresh "$home" $((T0 + 1900)) FAKE_NM_PUSHED_AT=$((T0 + 1900))
-  assert_not_contains "$(line_of "$home")" "sale>30m" "a clean tree clears the alarm"
+  assert_not_contains "$(line_of "$home")" "dirty>30m" "a clean tree clears the alarm"
   printf 'y\n' > "$repo/new2.txt"
   refresh "$home" $((T0 + 2000)) FAKE_NM_PUSHED_AT=$((T0 + 2000))
   refresh "$home" $((T0 + 2000 + 1799)) FAKE_NM_PUSHED_AT=$((T0 + 3799))
-  assert_not_contains "$(line_of "$home")" "sale>30m" "a new dirty period restarts the clock"
+  assert_not_contains "$(line_of "$home")" "dirty>30m" "a new dirty period restarts the clock"
   pass "fm-antidrift-check: dirty duration is observed continuously, persisted, never backdated from file times"
 }
 
@@ -183,7 +183,7 @@ test_a_deleted_tracked_file_counts_as_dirty() {
   rm "$repo/a.txt"
   refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0
   refresh "$home" $((T0 + 1800)) FAKE_NM_PUSHED_AT=$((T0 + 1800))
-  assert_contains "$(line_of "$home")" "sale>30m 1 (t1)" "a deletion is an uncommitted change"
+  assert_contains "$(line_of "$home")" "dirty>30m 1 (t1)" "a deletion is an uncommitted change"
   pass "fm-antidrift-check: deletions count as uncommitted changes"
 }
 
@@ -203,10 +203,10 @@ test_pr_age_presentation_and_unknown_forge() {
   mk_repo "$home/projects/p" github; register_project "$home" p
   printf '  7,"t",open,me,no,none,"https://github.com/acme/p/pull/7",2d ago\n' > "$out"
   refresh "$home" $T0 FAKE_PR_OUT="$out"
-  assert_contains "$(line_of "$home")" "PR>48h-non-enregistrée 1 (7)" "an unregistered 2d-old PR alarms"
+  assert_contains "$(line_of "$home")" "PR>48h-unregistered 1 (7)" "an unregistered 2d-old PR alarms"
   printf 'pr=https://github.com/acme/p/pull/7\n' > "$home/state/x.meta"
   refresh "$home" $((T0 + 1900)) FAKE_PR_OUT="$out"
-  assert_contains "$(line_of "$home")" "PR>48h-sans-preuve-de-présentation 1 (7)" "registered is not presented"
+  assert_contains "$(line_of "$home")" "PR>48h-presentation-unproven 1 (7)" "registered is not presented"
   assert_not_contains "$(line_of "$home")" "non-enregistrée" "a registered PR is no longer unregistered"
   printf 'pr=https://github.com/acme/p/pull/7\npr_presented=1:https://github.com/acme/p/pull/7\n' > "$home/state/x.meta"
   refresh "$home" $((T0 + 3800)) FAKE_PR_OUT="$out"
@@ -215,7 +215,7 @@ test_pr_age_presentation_and_unknown_forge() {
   refresh "$home" $((T0 + 5700)) FAKE_PR_OUT="$out"
   assert_not_contains "$(line_of "$home")" "PR>48h" "a 1d-old PR is under the threshold"
   refresh "$home" $((T0 + 7600)) FAKE_PR_FAIL=1
-  assert_contains "$(line_of "$home")" "inconnu: PR" "a forge that cannot answer is unknown, not clean"
+  assert_contains "$(line_of "$home")" "unknown: PR" "a forge that cannot answer is unknown, not clean"
   pass "fm-antidrift-check: PR age, registered-vs-presented, and forge-unknown are distinct"
 }
 
@@ -226,13 +226,45 @@ test_foreign_or_reassigned_slots_never_leak_to_snapshots() {
   before=$(fingerprint "$repo")
   refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0
   after=$(fingerprint "$repo")
-  assert_contains "$(line_of "$home")" "propriété-non-prouvée 1 (t1:other)" "a slot claimed by another task is alarmed"
+  assert_contains "$(line_of "$home")" "slot-unproven 1 (t1:other)" "a slot claimed by another task is alarmed"
   assert_equals "$before" "$after" "the foreign slot's repository is byte-identical"
   [ -z "$(find "$home/state/wip" -maxdepth 1 -name '*.git' 2>/dev/null)" ] || fail "no snapshot may exist for a reassigned slot"
   rm "$home/../pool/t1/.fm-slot-owner"
   refresh "$home" $((T0 + 10)) FAKE_NM_PUSHED_AT=$T0
-  assert_contains "$(line_of "$home")" "propriété-non-prouvée 1 (t1:absent)" "an unclaimed slot is not proven"
+  assert_contains "$(line_of "$home")" "slot-unproven 1 (t1:absent)" "an unclaimed slot is not proven"
   pass "fm-antidrift-check: reassigned or unclaimed slots are skipped and alarmed, never snapshotted"
+}
+
+test_a_reused_slot_does_not_inherit_the_previous_tasks_state() {
+  local home repo shadow
+  home=$(mk_home reuse)
+  repo=$(mk_task "$home" t1 ship)
+  git -C "$repo" push -q -u origin "fm/t1"
+  printf 'w1\n' > "$repo/w.txt"
+  printf 'done: first task finished\n' >> "$home/state/t1.status"
+  refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0
+  # the pool hands the same slot to the next task
+  rm -f "$home/state/t1.meta" "$home/state/t1.status"
+  printf 'worktree=%s\nkind=ship\nproject=%s/projects/none\n' "$repo" "$home" > "$home/state/t2.meta"
+  : > "$home/state/t2.status"
+  printf 'task=t2\nhome=%s\n' "$home" > "$home/../pool/t1/.fm-slot-owner"
+  printf 'w2\n' > "$repo/w.txt"
+  refresh "$home" $((T0 + 5)) FAKE_NM_PUSHED_AT=$((T0 + 5))
+  shadow=$(find "$home/state/wip" -maxdepth 1 -name '*.git' | head -n 1)
+  assert_contains "$(git --git-dir="$shadow" for-each-ref --format='%(refname)')" "refs/heads/wip/t2/" "the new owner's first checkpoint is not delayed by the old cadence"
+  pass "fm-antidrift-check: a reused pool slot starts the new task with fresh WIP state"
+}
+
+test_secondmate_records_are_never_inventoried() {
+  local home second
+  home=$(mk_home mate)
+  second="$TMP_ROOT/mate/otherhome"
+  mk_repo "$second"
+  fm_write_secondmate_meta "$home/state/mate1.meta" "$second"
+  refresh "$home" $T0
+  assert_equals "" "$(line_of "$home")" "a secondmate record raises no alarm in the parent home"
+  [ -z "$(find "$home/state/wip" -maxdepth 1 -name '*.git' 2>/dev/null)" ] || fail "no WIP state may be created for a secondmate home"
+  pass "fm-antidrift-check: secondmate records are never adopted as worktrees"
 }
 
 test_worktree_list_is_not_an_inventory() {
@@ -315,14 +347,14 @@ test_blocked_publication_is_visible_not_silent() {
   printf 'w\n' > "$repo/w.txt"
   printf 'none acme/wip\n' > "$home/config/wip-remotes"
   refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0 FAKE_VIS=public
-  assert_contains "$(line_of "$home")" "WIP-bloqué 1 (t1:privé non prouvé)" "a public repository blocks and alarms"
+  assert_contains "$(line_of "$home")" "WIP-blocked 1 (t1:private-unproven)" "a public repository blocks and alarms"
   refresh "$home" $((T0 + 5)) FAKE_NM_PUSHED_AT=$T0 FAKE_VIS=private
   printf '' > "$home/config/wip-remotes"
   refresh "$home" $((T0 + 10)) FAKE_NM_PUSHED_AT=$T0
-  assert_contains "$(line_of "$home")" "t1:sans remote" "no configured remote is reported"
+  assert_contains "$(line_of "$home")" "t1:no-remote" "no configured remote is reported"
   printf 'none none\n' > "$home/config/wip-remotes"
   refresh "$home" $((T0 + 15)) FAKE_NM_PUSHED_AT=$T0
-  assert_not_contains "$(line_of "$home")" "WIP-bloqué" "a project declared 'none' is a posture, not a fault"
+  assert_not_contains "$(line_of "$home")" "WIP-blocked" "a project declared 'none' is a posture, not a fault"
   pass "fm-antidrift-check: blocked publication is alarmed with its reason; declared-off is silent"
 }
 
@@ -351,14 +383,14 @@ test_the_cached_reader_reports_news_once() {
   mk_repo "$home/projects/lonely"; register_project "$home" lonely
   refresh "$home" $T0
   out=$(FM_HOME="$home" "$AD" cached)
-  assert_contains "$out" "sans-upstream 1" "a new cached line is news"
+  assert_contains "$out" "no-upstream 1" "a new cached line is news"
   # shellcheck source=bin/fm-wip-lib.sh
   ( STATE="$home/state"; . "$ROOT/bin/fm-wip-lib.sh"; antidrift_mark_reported "$out"
     [ -z "$(antidrift_news_line)" ] || exit 1 ) || fail "a reported line is not news again"
   mk_repo "$home/projects/second"; register_project "$home" second
   refresh "$home" $((T0 + 10))
   out=$(FM_HOME="$home" "$AD" cached)
-  assert_contains "$out" "sans-upstream 2" "a changed line is news again"
+  assert_contains "$out" "no-upstream 2" "a changed line is news again"
   pass "fm-antidrift-check: the cached reader reports a line once until it changes"
 }
 
@@ -394,6 +426,8 @@ test_a_deleted_tracked_file_counts_as_dirty
 test_push_disabled_remote_is_reported
 test_pr_age_presentation_and_unknown_forge
 test_foreign_or_reassigned_slots_never_leak_to_snapshots
+test_a_reused_slot_does_not_inherit_the_previous_tasks_state
+test_secondmate_records_are_never_inventoried
 test_worktree_list_is_not_an_inventory
 test_own_task_roots_are_included_with_an_empty_registry
 test_checkpoint_cadence_and_milestone_trigger

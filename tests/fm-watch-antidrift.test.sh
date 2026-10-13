@@ -43,7 +43,7 @@ test_heartbeat_raises_a_check_wake_for_new_drift_once() {
   start_watch "$dir" "$out" FM_HEARTBEAT=2
   pid=$!
   wait_for_exit "$pid" 150 || fail "the heartbeat never raised the anti-drift wake: $(cat "$out")"
-  assert_contains "$(cat "$out")" "check: antidrift: sans-upstream 1 (lonely)" "the wake reason is the one coalesced line"
+  assert_contains "$(cat "$out")" "check: antidrift: no-upstream 1 (lonely)" "the wake reason is the one coalesced line"
   assert_contains "$(cat "$dir/state/.wake-queue")" "antidrift" "the wake is durable before it is reported"
   assert_present "$dir/state/.antidrift-reported" "the line is marked reported"
   : > "$out"
@@ -59,7 +59,7 @@ test_heartbeat_reader_makes_no_git_or_forge_call() {
   local dir out pid sig
   dir=$(make_home_case hb-pure); out="$dir/watch.out"
   mkdir -p "$dir/state"
-  printf 'fm-antidrift-v1\nepoch=1\nline=antidrift: sans-upstream 1 (staged)\n' > "$dir/state/.antidrift"
+  printf 'fm-antidrift-v1\nepoch=1\nline=antidrift: no-upstream 1 (staged)\n' > "$dir/state/.antidrift"
   printf '%s\n' "$(($(date +%s) + 999999))" > "$dir/state/.antidrift-next"
   sig=$(wc -c "$dir/state"/*.status 2>/dev/null | cksum)
   printf '%s\n' "$sig" > "$dir/state/.antidrift-sig"
@@ -83,7 +83,7 @@ test_status_backstop_is_not_skipped_when_drift_is_pending() {
   printf 'working: setup\nneeds-decision: pick A or B\nworking: tidying\n' > "$dir/state/miss.status"
   sig=$(LC_ALL=C wc -c < "$dir/state/miss.status" | tr -d '[:space:]')
   prime_status_seen "$dir/state" "$dir/state/miss.status" 2>/dev/null || true
-  printf 'fm-antidrift-v1\nepoch=1\nline=antidrift: sans-upstream 1 (staged)\n' > "$dir/state/.antidrift"
+  printf 'fm-antidrift-v1\nepoch=1\nline=antidrift: no-upstream 1 (staged)\n' > "$dir/state/.antidrift"
   printf '%s\n' "$(($(date +%s) + 999999))" > "$dir/state/.antidrift-next"
   printf '%s\n' "$(wc -c "$dir/state"/*.status 2>/dev/null | cksum)" > "$dir/state/.antidrift-sig"
   start_watch "$dir" "$out" FM_HEARTBEAT=2

@@ -675,7 +675,7 @@ Clocks are never inferred.
 The last push is the pipeline's own receipt, `branch_sync.pipeline.pushed_at` from `no-mistakes axi status` with `remote.freshness` equal to `pipeline_push`, or the WIP push receipt; a fetch time is never used.
 Dirty duration is tracked from the first observation and persisted under `state/wip/`, and an unobserved start is unknown rather than backdated from file times.
 PR age comes from the forge's relative age, which `gh-axi pr list` reports in whole days, so a PR counts from `2d ago`.
-A forge or tool that cannot answer is reported as `inconnu` and is never read as clean.
+A forge or tool that cannot answer is reported as `unknown` and is never read as clean.
 
 A presentation receipt is explicit.
 Registering a PR happens before anyone is told, so it never records a presentation.

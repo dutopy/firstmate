@@ -79,21 +79,48 @@ if [ ! -f "$META" ] || [ -L "$META" ] || [ "$(fm_pr_file_link_count "$META")" !=
 fi
 
 if [ "$PRESENTED" = 1 ]; then
-  grep -qxF -- "pr=$URL" "$META" || { echo "error: this task has not registered that PR" >&2; exit 1; }
   PRES_LOCK=$(fm_meta_lock_path "$META") || exit 1
   fm_lock_acquire_wait "$PRES_LOCK"
-  PRES_TMP=$(mktemp "$STATE/.fm-pr-presented.XXXXXX") || { fm_lock_release "$PRES_LOCK"; exit 1; }
+  PRES_TMP=
   trap '[ -z "$PRES_TMP" ] || rm -f -- "$PRES_TMP"; fm_lock_release "$PRES_LOCK" || true' EXIT
+  STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
+  [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
+    && [ "$(fm_pr_file_device "$META")" = "$STATE_DEVICE" ] \
+    || { echo "error: task metadata is unavailable" >&2; exit 1; }
+  # The task must already have registered exactly this PR.
+  fm_pr_metadata_identity_parse "$META" || { echo "error: this task has not registered that PR" >&2; exit 1; }
+  [ "$FM_PR_META_PROVIDER" = "$PROVIDER" ] && [ "$FM_PR_META_URL" = "$URL" ] \
+    && [ "$FM_PR_META_HOST" = "$HOST" ] && [ "$FM_PR_META_PATH" = "$PROJECT_PATH" ] \
+    && [ "$FM_PR_META_NUMBER" = "$NUMBER" ] \
+    || { echo "error: this task has not registered that PR" >&2; exit 1; }
+  PRES_TMP=$(mktemp "$STATE/.fm-pr-presented.XXXXXX") || exit 1
+  # The receipt goes BEFORE the pr= line: the metadata identity parser rejects
+  # any unknown key after pr=, and a receipt must never invalidate a registration.
+  receipt_written=0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       pr_presented=*) ;;
-      *) printf '%s\n' "$line" >> "$PRES_TMP" ;;
+      pr=*)
+        if [ "$receipt_written" = 0 ]; then
+          printf 'pr_presented=%s:%s\n' "${FM_PR_PRESENTED_NOW:-$(date +%s)}" "$URL" >> "$PRES_TMP" || exit 1
+          receipt_written=1
+        fi
+        printf '%s\n' "$line" >> "$PRES_TMP" || exit 1
+        ;;
+      *) printf '%s\n' "$line" >> "$PRES_TMP" || exit 1 ;;
     esac
   done < "$META"
-  printf 'pr_presented=%s:%s\n' "${FM_PR_PRESENTED_NOW:-$(date +%s)}" "$URL" >> "$PRES_TMP"
-  chmod 0600 "$PRES_TMP"
-  mv -f -- "$PRES_TMP" "$META"
+  [ "$receipt_written" = 1 ] || exit 1
+  chmod 0600 "$PRES_TMP" || exit 1
+  fm_pr_private_file_valid "$PRES_TMP" 600 "$STATE_DEVICE" || exit 1
+  fm_pr_metadata_identity_parse "$PRES_TMP" || exit 1
+  [ "$FM_PR_META_URL" = "$URL" ] || exit 1
+  fm_pr_regular_destination_on_device_or_absent "$META" "$STATE_DEVICE" || exit 1
+  mv -f -- "$PRES_TMP" "$META" || exit 1
   PRES_TMP=
+  fm_pr_private_file_valid "$META" 600 "$STATE_DEVICE" || exit 1
+  fm_pr_metadata_identity_parse "$META" || exit 1
+  [ "$FM_PR_META_URL" = "$URL" ] || exit 1
   echo "presented: $ID $URL"
   exit 0
 fi

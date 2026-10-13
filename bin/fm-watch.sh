@@ -122,6 +122,10 @@
 #                          rows do not feed this escalation, observation is
 #                          read-only, and one parent notification covers each
 #                          no-progress episode
+#   check: antidrift: <line>
+#                          the drift guard's cached one-line summary (bin/fm-antidrift-check.sh)
+#                          is new; read from the producer's cache on a heartbeat, never by
+#                          running git or contacting the forge on that path
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock.

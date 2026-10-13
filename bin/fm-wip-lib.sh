@@ -49,6 +49,19 @@ wip_kv_set() {
   mv -f "$tmp" "$file"
 }
 
+# A pool slot is reused by later tasks, and WIP state is keyed by the slot's
+# path. When the task recorded for a key differs from the current owner, the
+# previous task's cadence, milestone, dirty and push records must not carry
+# over: reset them and record the new owner at once.
+wip_reset_if_task_changed() {  # <kdir> <current-task>
+  local kdir=$1 task=$2 recorded
+  [ -f "$kdir/info" ] || return 0
+  recorded=$(wip_kv_get "$kdir/info" task)
+  [ "$recorded" != "$task" ] || return 0
+  rm -f "$kdir/ms" "$kdir/ckpt" "$kdir/dirty" "$kdir/push"
+  wip_kv_set "$kdir/info" task "$task"
+}
+
 # Every git read against a source worktree must never take an optional lock or
 # refresh the index: a validation run may own that branch.
 wip_src_git() {  # <worktree> <git args...>

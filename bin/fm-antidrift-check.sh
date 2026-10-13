@@ -131,7 +131,9 @@ build_inventory() {
     id=$(basename "$meta" .meta)
     wt=$(meta_get "$meta" worktree); kind=$(meta_get "$meta" kind); project=$(meta_get "$meta" project)
     [ -n "$wt" ] || continue
-    case "$kind" in scout) kind=scout ;; *) kind=ship ;; esac
+    # Only task kinds that own a worktree are inventoried; a secondmate record
+    # names another home and is never adopted.
+    case "$kind" in scout) kind=scout ;; ship|'') kind=ship ;; *) continue ;; esac
     if [ -n "$project" ] && [ "$(wip_real_path "$project")" = "$hreal" ]; then name=firstmate
     else name=$(basename "${project:-unknown}"); fi
     add_entry "$wt" "$id" "$name" "$kind" ""
@@ -191,6 +193,7 @@ process_entry() {  # <index>
     if [ "$FM_TREEHOUSE_SLOT_OWNER" != mine ]; then C_SLOT+=("$label:$FM_TREEHOUSE_SLOT_OWNER"); return 0; fi
   fi
   key=$(wip_key "$wt"); kdir=$(wip_dir "$key")
+  wip_reset_if_task_changed "$kdir" "$task"
   branch=$(src "$wt" branch --show-current 2>/dev/null)
   head=$(src "$wt" rev-parse HEAD 2>/dev/null)
   # upstream / GitHub upstream
@@ -298,10 +301,10 @@ process_entry() {  # <index>
         "$CK" push "$wt" --project "$proj" >/dev/null 2>&1 || true
     fi
     case "$(wip_kv_get "$kdir/push" result)" in
-      no-remote) C_WIPBLOCK+=("$label:sans remote") ;;
-      private-not-proven) C_WIPBLOCK+=("$label:privé non prouvé") ;;
-      deny-hit) C_WIPBLOCK+=("$label:chemin refusé") ;;
-      push-failed-*) C_WIPBLOCK+=("$label:push refusé") ;;
+      no-remote) C_WIPBLOCK+=("$label:no-remote") ;;
+      private-not-proven) C_WIPBLOCK+=("$label:private-unproven") ;;
+      deny-hit) C_WIPBLOCK+=("$label:denied-path") ;;
+      push-failed-*) C_WIPBLOCK+=("$label:push-rejected") ;;
     esac
   fi
 }
@@ -370,19 +373,19 @@ check_prs() {
 
 compose_line() {
   LINE_PARTS=()
-  field_add "sans-upstream" "${#C_NOUP[@]}" ${C_NOUP[@]+"${C_NOUP[@]}"}
-  field_add ">10-non-poussés" "${#C_MANY[@]}" ${C_MANY[@]+"${C_MANY[@]}"}
+  field_add "no-upstream" "${#C_NOUP[@]}" ${C_NOUP[@]+"${C_NOUP[@]}"}
+  field_add "unpushed>10" "${#C_MANY[@]}" ${C_MANY[@]+"${C_MANY[@]}"}
   field_add "push>4h" "${#C_PUSH4[@]}" ${C_PUSH4[@]+"${C_PUSH4[@]}"}
-  field_add "âge-push-inconnu" "${#C_PUSHUNK[@]}" ${C_PUSHUNK[@]+"${C_PUSHUNK[@]}"}
-  field_add "sale>30m" "${#C_DIRTY[@]}" ${C_DIRTY[@]+"${C_DIRTY[@]}"}
+  field_add "push-age-unknown" "${#C_PUSHUNK[@]}" ${C_PUSHUNK[@]+"${C_PUSHUNK[@]}"}
+  field_add "dirty>30m" "${#C_DIRTY[@]}" ${C_DIRTY[@]+"${C_DIRTY[@]}"}
   field_add "push-DISABLED" "${#C_DISABLED[@]}" ${C_DISABLED[@]+"${C_DISABLED[@]}"}
-  field_add "PR>48h-non-enregistrée" "${#C_PRUNREG[@]}" ${C_PRUNREG[@]+"${C_PRUNREG[@]}"}
-  field_add "PR>48h-sans-preuve-de-présentation" "${#C_PRNOPROOF[@]}" ${C_PRNOPROOF[@]+"${C_PRNOPROOF[@]}"}
-  field_add "WIP-bloqué" "${#C_WIPBLOCK[@]}" ${C_WIPBLOCK[@]+"${C_WIPBLOCK[@]}"}
-  field_add "propriété-non-prouvée" "${#C_SLOT[@]}" ${C_SLOT[@]+"${C_SLOT[@]}"}
+  field_add "PR>48h-unregistered" "${#C_PRUNREG[@]}" ${C_PRUNREG[@]+"${C_PRUNREG[@]}"}
+  field_add "PR>48h-presentation-unproven" "${#C_PRNOPROOF[@]}" ${C_PRNOPROOF[@]+"${C_PRNOPROOF[@]}"}
+  field_add "WIP-blocked" "${#C_WIPBLOCK[@]}" ${C_WIPBLOCK[@]+"${C_WIPBLOCK[@]}"}
+  field_add "slot-unproven" "${#C_SLOT[@]}" ${C_SLOT[@]+"${C_SLOT[@]}"}
   local body='' p
   for p in ${LINE_PARTS[@]+"${LINE_PARTS[@]}"}; do body="${body:+$body; }$p"; done
-  if [ "${#UNKNOWN[@]}" -gt 0 ]; then body="${body:+$body; }inconnu: $(printf '%s\n' "${UNKNOWN[@]}" | head -n 2 | paste -sd, -)"; fi
+  if [ "${#UNKNOWN[@]}" -gt 0 ]; then body="${body:+$body; }unknown: $(printf '%s\n' "${UNKNOWN[@]}" | head -n 2 | paste -sd, -)"; fi
   [ -n "$body" ] || { printf '\n'; return 0; }
   fm_cap_line_var "antidrift: $body" "$MAX_LINE"
   printf '%s\n' "$FM_LINE_CAP_LINE"
