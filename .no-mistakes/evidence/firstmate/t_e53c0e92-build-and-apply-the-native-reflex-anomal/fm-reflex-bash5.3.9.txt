@@ -1,0 +1,2 @@
+ok - ten synthetic cases preserve lifecycle, privacy, deduplication, and explicit resolution
+rc=0
