@@ -743,17 +743,19 @@ test_a_stale_cache_is_reported_once_as_a_stale_producer() {
 
 # A producer that never published its first cache is visible through its launch time.
 test_a_producer_that_never_published_is_reported_stale() {
-  local home out
+  local home out t
   home=$(mk_home nevercache)
+  printf '%s\n' "$T0" > "$home/state/.antidrift-first"
   printf '%s\n' "$T0" > "$home/state/.antidrift-kick"
   out=$(cached_at "$home" $((T0 + 899)))
-  [ -z "$out" ] || fail "a kick younger than the bound stays silent: $out"
+  [ -z "$out" ] || fail "a first launch younger than the bound stays silent: $out"
+  for t in 300 600 900; do printf '%s\n' $((T0 + t)) > "$home/state/.antidrift-kick"; done
   out=$(cached_at "$home" $((T0 + 901)))
-  assert_contains "$out" "unknown: producer-stale" "a launch that never published is reported stale"
+  assert_contains "$out" "unknown: producer-stale" "relaunches do not erase a never-published first cache"
   home=$(mk_home nokick)
   [ -z "$(cached_at "$home" $((T0 + 5000)))" ] || fail "nothing ever launched stays silent"
-  printf 'junk\n' > "$home/state/.antidrift-kick"
-  [ -z "$(cached_at "$home" $((T0 + 5000)))" ] || fail "a malformed kick stays silent"
+  printf 'junk\n' > "$home/state/.antidrift-first"
+  [ -z "$(cached_at "$home" $((T0 + 5000)))" ] || fail "a malformed first launch stays silent"
   pass "fm-antidrift-check: a producer that never published is reported stale"
 }
 

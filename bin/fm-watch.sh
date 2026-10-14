@@ -2197,6 +2197,9 @@ antidrift_refresh_detached() {
   # relaunches of a producer that dies without publishing, and the status
   # signature marks which status changes this launch has taken in
   printf '%s\n' "$(wip_now)" > "$STATE/.antidrift-kick" 2>/dev/null || true
+  if [ ! -f "$STATE/.antidrift" ] && [ ! -f "$STATE/.antidrift-first" ]; then
+    cp "$STATE/.antidrift-kick" "$STATE/.antidrift-first" 2>/dev/null || true
+  fi
   if [ -n "$ANTIDRIFT_SIG_NEW" ]; then
     printf '%s\n' "$ANTIDRIFT_SIG_NEW" > "$STATE/.antidrift-sig" 2>/dev/null || true
   fi

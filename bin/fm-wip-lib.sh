@@ -147,8 +147,8 @@ antidrift_cache_read() {
       esac
     done < "$f"
   else
-    [ -f "$STATE/.antidrift-kick" ] || return 0
-    IFS= read -r ep < "$STATE/.antidrift-kick" || ep=''
+    [ -f "$STATE/.antidrift-first" ] || return 0
+    IFS= read -r ep < "$STATE/.antidrift-first" || ep=''
   fi
   tick=${FM_CHECK_INTERVAL:-300}
   case "$tick" in ''|*[!0-9]*|0) tick=300 ;; esac
