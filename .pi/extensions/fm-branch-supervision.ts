@@ -1575,6 +1575,8 @@ ${context.command}
     // getEntries() here loses the captain request that the next wake may answer.
     // Stage it verbatim and remember the future persisted index for turn_end's
     // duplicate suppression. Operational extension injections are not dialog.
+    // A run started by a custom message carries no user prompt to stage.
+    if (!("prompt" in event)) return;
     const prompt = event.prompt.trim();
     if (!prompt || isOperationalUserText(prompt)) return;
     const file = currentMainSession.getSessionFile() ?? "";
@@ -2037,6 +2039,56 @@ ${context.command}
     return stockOutcomesPreviewLines ?? undefined;
   };
 
+  // Pi 0.99.0 started printing a tool call's arguments after the title in its
+  // stock fallback header. Probe the installed Pi rather than inferring from
+  // its version, so an older Pi that prints the bare title still matches.
+  let stockCallShowsArgs: boolean | undefined;
+  const getStockCallShowsArgs = (): boolean => {
+    if (stockCallShowsArgs !== undefined) return stockCallShowsArgs;
+    try {
+      const probeDefinition: ToolDefinition = {
+        name: "fm_call_args_probe",
+        label: "Call args probe",
+        description: "Call args probe",
+        parameters: Type.Object({}),
+        execute: async () => ({ content: [], details: undefined }),
+      };
+      const probe = new ToolExecutionComponent(
+        probeDefinition.name,
+        "fm-call-args-probe",
+        { fm_probe: "FM_CALL_ARGS_PROBE" },
+        { showImages: false },
+        probeDefinition,
+        { requestRender() {} } as ConstructorParameters<typeof ToolExecutionComponent>[5],
+        root,
+      );
+      stockCallShowsArgs = probe.render(4096).join("\n").includes("FM_CALL_ARGS_PROBE");
+    } catch {
+      stockCallShowsArgs = false;
+    }
+    return stockCallShowsArgs;
+  };
+  const stockCallHeader = (
+    title: string,
+    args: unknown,
+    theme: Parameters<NonNullable<ToolDefinition["renderCall"]>>[1],
+    expanded: boolean,
+  ): string => {
+    const header = theme.fg("toolTitle", theme.bold(title));
+    if (!getStockCallShowsArgs() || args == null || typeof args !== "object" || Array.isArray(args)) return header;
+    const entries = Object.entries(args);
+    if (entries.length === 0) return header;
+    if (expanded) {
+      const lines = entries.map(([key, value]) => {
+        const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? String(value));
+        return `  ${key}: ${text.replace(/\t/g, "   ").replace(/\r/g, "").split("\n").join("\n    ")}`;
+      });
+      return `${header}\n${theme.fg("muted", lines.join("\n"))}`;
+    }
+    const pairs = entries.map(([key, value]) => `${key}=${JSON.stringify(value) ?? String(value)}`).join(" ");
+    return `${header} ${theme.fg("muted", pairs.length > 100 ? `${pairs.slice(0, 97)}...` : pairs)}`;
+  };
+
   type OutcomesToolShellState = {
     shell?: Box;
     call?: Text;
@@ -2071,11 +2123,11 @@ ${context.command}
       recent: Type.Optional(Type.Number({ description: "How many most-recent outcomes to read (default 20)" })),
     }),
     renderShell: "self",
-    renderCall: (_args, theme, context) => {
+    renderCall: (args, theme, context) => {
       if (calmPresentation.stockExportRendering) throw new Error("Use Pi stock export rendering");
       if (calmHides("assistant-tool-call")) return new Container();
       const shellState = context.state as OutcomesToolShellState;
-      shellState.call = new Text(theme.fg("toolTitle", theme.bold("fm_branch_outcomes")), 0, 0);
+      shellState.call = new Text(stockCallHeader("fm_branch_outcomes", args, theme, context.expanded), 0, 0);
       return refreshOutcomesToolShell(shellState, theme, context);
     },
     renderResult: (result, options, theme, context) => {
