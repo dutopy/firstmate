@@ -138,14 +138,18 @@ AD_SIG=''
 antidrift_cache_read() {
   local f="$STATE/.antidrift" l ep='' tick lim now
   AD_LINE=''; AD_SIG=''
-  [ -f "$f" ] || return 0
-  while IFS= read -r l || [ -n "$l" ]; do
-    case "$l" in
-      epoch=*) ep=${l#epoch=} ;;
-      line=*) AD_LINE=${l#line=} ;;
-      sig=*) AD_SIG=${l#sig=} ;;
-    esac
-  done < "$f"
+  if [ -f "$f" ]; then
+    while IFS= read -r l || [ -n "$l" ]; do
+      case "$l" in
+        epoch=*) ep=${l#epoch=} ;;
+        line=*) AD_LINE=${l#line=} ;;
+        sig=*) AD_SIG=${l#sig=} ;;
+      esac
+    done < "$f"
+  else
+    [ -f "$STATE/.antidrift-kick" ] || return 0
+    IFS= read -r ep < "$STATE/.antidrift-kick" || ep=''
+  fi
   tick=${FM_CHECK_INTERVAL:-300}
   case "$tick" in ''|*[!0-9]*|0) tick=300 ;; esac
   lim=$((tick * 3)); [ "$lim" -ge 900 ] || lim=900

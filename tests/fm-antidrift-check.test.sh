@@ -741,6 +741,22 @@ test_a_stale_cache_is_reported_once_as_a_stale_producer() {
   pass "fm-antidrift-check: a stale cache is reported as a stale producer"
 }
 
+# A producer that never published its first cache is visible through its launch time.
+test_a_producer_that_never_published_is_reported_stale() {
+  local home out
+  home=$(mk_home nevercache)
+  printf '%s\n' "$T0" > "$home/state/.antidrift-kick"
+  out=$(cached_at "$home" $((T0 + 899)))
+  [ -z "$out" ] || fail "a kick younger than the bound stays silent: $out"
+  out=$(cached_at "$home" $((T0 + 901)))
+  assert_contains "$out" "unknown: producer-stale" "a launch that never published is reported stale"
+  home=$(mk_home nokick)
+  [ -z "$(cached_at "$home" $((T0 + 5000)))" ] || fail "nothing ever launched stays silent"
+  printf 'junk\n' > "$home/state/.antidrift-kick"
+  [ -z "$(cached_at "$home" $((T0 + 5000)))" ] || fail "a malformed kick stays silent"
+  pass "fm-antidrift-check: a producer that never published is reported stale"
+}
+
 # C4: a blocked git read cannot silence the guard.
 test_a_blocked_git_read_is_reported_unknown() {
   local home real
@@ -823,5 +839,6 @@ test_a_change_in_the_truncated_tail_is_still_news
 test_names_in_a_segment_are_sorted
 test_a_persistent_alarm_is_reminded_after_the_interval
 test_a_stale_cache_is_reported_once_as_a_stale_producer
+test_a_producer_that_never_published_is_reported_stale
 test_a_blocked_git_read_is_reported_unknown
 test_the_same_task_on_two_copies_publishes_distinct_references

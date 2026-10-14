@@ -659,6 +659,7 @@ The watcher reads only the cache it publishes, `state/.antidrift`, through the r
 A line is new when it or the digest of its uncapped composition changes, and an unchanged alarm is announced again after six hours so an ignored alarm does not go quiet.
 The line puts the safety alarms first (slot ownership, blocked publication, unknown) so the length cap never cuts them, and lists the first two names of each segment in sorted order.
 A cache that has not been refreshed for three ticks (at least 15 minutes) is itself reported once as `unknown: producer-stale`, so a hung producer is never read as clean.
+A producer that was launched (`state/.antidrift-kick`) but never published a first cache is reported the same way once its launch is that old.
 `bin/fm-wip-checkpoint.sh` owns snapshots and publication, `bin/fm-nm-run-lib.sh` owns the native push receipt, and `bin/fm-wip-exclude.globs` owns the central deny list.
 
 The inventory is this home's own: the `worktree=` of every task record in `state/`, the clones registered in `data/projects.md`, and the home's own repository.
