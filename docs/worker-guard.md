@@ -38,7 +38,7 @@ The only processes the guard starts are `ps`, `lsof`, and `git rev-parse` to rea
 The shell walk recurses into groups, substitutions, `-c` payloads, `eval` arguments, `env -S` payloads, here-documents, here-strings, literal `echo`/`printf`/`cat <<` pipes into a shell, and files written by `cat > f <<EOF` or `tee f` earlier in the same command line.
 It tracks `cd` (including `builtin cd`), literal variable assignments, aliases, and `ln -s` links created earlier in the same command line, so a delete that goes through such a link is refused.
 A brace group that starts an argument (`rm -r {/a,b}`) is read as brace expansion, and option values (`bash -o pipefail -c`, `python -X opt -c`, `node --eval=CODE`) are skipped when finding the code.
-The argument of `echo` and `printf` is text the shell may run, so only the leading `-n`, `-e`, `-E` options of `echo` are dropped.
+The argument of `echo` and `printf` is text the shell may run, so only the leading `-n`, `-e`, `-E` options of `echo` are dropped. The text is read literally only when it has no backslash other than `\n` and, for `printf`, no `%`; otherwise the producer is unreadable and treated as opaque.
 A script file the worker runs is read; installed system locations (`/usr`, `/opt`, `/Library`, and similar) are skipped only when neither the file nor its directory is writable by the current user, so a user-writable `/opt/homebrew` or `/usr/local` is scanned.
 The guard process environment may add colon-separated prefixes to that list with `FM_WORKER_GUARD_SYSTEM_PREFIXES` (launch state only, used by the tests).
 For a script inside the copy:
@@ -101,6 +101,7 @@ A raw launch command carries none of this because its harness is unverified.
 
 - A `$(...)` in inline code (`python3 -c "print('$(pwd)')"`) is accepted only for a bare fixed-metadata reader (`pwd`, `whoami`, `date +fmt`, `git rev-parse --show-toplevel`, ...); a path-qualified name, a name shadowed by an alias or function defined earlier, or any command line that assigns or exports `PATH` (including `env PATH=`) is refused.
 - A command whose name comes from an unresolved variable or a substitution, including path-prefixed forms such as `$FM_ROOT/bin/tool`, `"$HOME/.local/bin/gh-axi"` and `$(npm bin)/tsc`; write the literal path, or assign the variable earlier in the same command so the guard can follow it.
+- `echo`/`printf` text piped into a shell or interpreter, or redirected to a file that a later `sh`/`bash` in the same command runs, when it contains a backslash other than `\n` (`echo -e 'a\tb'`, `printf 'x\x41'`, `echo 'grep "a\.b" f'`) or, for `printf`, a `%` (`printf '%s\n' cmd`). The guard cannot know what the shell expands, so it refuses even harmless text; write the command in a script file or a heredoc, or drop the escape or format.
 - `rm -r` of a scratch directory under `/tmp` or `$TMPDIR` other than `/tmp/fm-<id>`; use a directory inside the copy or `/tmp/fm-<id>`.
 - `shutil.rmtree(tmpdir)` or `fs.rmSync(dir, {recursive:true})` with a non-literal path in untracked or modified code.
 - A modified or new script that uses `exec`/`eval`/`getattr(os, ...)` next to `os` or `subprocess`.
