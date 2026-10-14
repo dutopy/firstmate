@@ -1,0 +1,2 @@
+rm -rf /tmp/fm-task1/x -> rc=0
+rm -rf /tmp/other -> rc=2

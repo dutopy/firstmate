@@ -1,0 +1,50 @@
+== deny cases (nothing is executed; foreign process + sentinel must survive)
+PASS [deny rc=2] pkill-f :: pkill -f chrome-headless-shell
+PASS [deny rc=2] pkill-daemon :: pkill -f daemon.py
+PASS [deny rc=2] killall :: killall chrome
+PASS [deny rc=2] split-pkill :: P=pk; ${P}ill -f chrome
+PASS [deny rc=2] split-pkill2 :: a=pk; b=ill; $a$b -f x
+PASS [deny rc=2] cmdsub-pkill :: $(echo pkill) -f chrome
+PASS [deny rc=2] bash-c :: bash -c 'pkill -f explore.py'
+PASS [deny rc=2] bash-o-c :: bash -o pipefail -c "rm -rf /tmp/zz"
+PASS [deny rc=2] xargs-kill :: pgrep -f dbg.py | xargs kill
+PASS [deny rc=2] killsub :: kill $(pgrep -f chrome)
+PASS [deny rc=2] foreign-pid :: kill 33388
+PASS [deny rc=2] foreign-pid9 :: kill -9 33388
+PASS [deny rc=2] owner-chain :: kill 33193
+PASS [deny rc=2] py-oskill :: python3 -c 'import os; os.kill(33388, 9)'
+PASS [deny rc=2] py-subproc :: python3 -c 'import subprocess; subprocess.run(["pkill","-f","x"])'
+PASS [deny rc=2] py-concat :: python3 -c 'import subprocess; subprocess.run(["pk" "ill","-f","x"])'
+PASS [deny rc=2] node-concat :: node -e 'require("child_process").execSync("pk"+"ill -f sleep")'
+PASS [deny rc=2] node-mixed :: node -e 'require("child_process").execSync("pk"+'"'"'ill -f sleep'"'"')'
+PASS [deny rc=2] alias-oskill :: python3 -c 'import os; k=os.kill; k(33388,9)'
+PASS [deny rc=2] trap :: trap "pkill -f x" EXIT
+PASS [deny rc=2] rm-foreign :: rm -rf /tmp/fmguard-drive.tMyN/foreign/keep
+PASS [deny rc=2] rm-root :: rm -rf /tmp/zz
+PASS [deny rc=2] rm-tilde-user :: rm -rf ~root
+PASS [deny rc=2] rm-rec-prefix :: rm --rec /tmp/zz
+PASS [deny rc=2] rm-brace :: rm -rf {/tmp/zz,a}
+PASS [deny rc=2] rm-symlink :: ln -s /tmp/fmguard-drive.tMyN/foreign zl; rm -rf zl/
+PASS [deny rc=2] flock :: flock /tmp/l rm -rf /tmp/zz
+PASS [deny rc=2] su-c :: su -c 'rm -rf /tmp/zz'
+PASS [deny rc=2] echo-pipe :: echo rm -rf /tmp/zz | sh
+PASS [deny rc=2] echo-script :: echo rm -rf /tmp/zz > s.sh; sh s.sh
+PASS [deny rc=2] printf-fmt :: printf "%s" "rm -rf /tmp/zz" | sh
+PASS [deny rc=2] printf-hex :: printf "pk\x69ll -f x" | sh
+PASS [deny rc=2] echo-e :: echo -e "pk\x69ll -f x" | sh
+PASS [deny rc=2] awk :: awk 'BEGIN{system("rm -rf /tmp/zz")}'
+PASS [deny rc=2] git-clean :: git --git-dir=/tmp/x clean -fdx
+PASS [deny rc=2] reader-shadow :: mkdir b; printf "#!/bin/sh\n" > b/pwd; PATH=$PWD/b:$PATH python3 -c "print(\"$(pwd)\")"
+== allow cases
+PASS [allow rc=0] own-job :: sleep 1 & kill $!
+PASS [allow rc=0] signal0 :: kill -0 33388
+PASS [allow rc=0] own-pid :: kill 33391
+PASS [allow rc=0] rm-own :: rm -rf /tmp/fmguard-drive.tMyN/copy6/mine
+FAIL [want allow rc=2] rm-tmp-fm :: rm -rf /tmp/fm-task1/x :: worker-guard [RM_OUTSIDE]: rm -r target "/tmp/fm-task1/x" resolves to /private/tmp/fm-task1/x, outside your isolated copy. Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+PASS [allow rc=0] benign :: ls -la && echo hello
+PASS [allow rc=0] benign-py :: python3 -c 'print(1+1)'
+PASS [allow rc=0] string-use :: python3 -c 'print("pk" "x")'
+== survivors
+PASS foreign process alive
+PASS foreign sentinel intact
+fails=1
