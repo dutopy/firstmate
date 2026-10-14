@@ -332,6 +332,35 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
 }
 
+# The guard's trusted script base is the commit the worker was FIRST launched
+# at (docs/worker-guard.md). A relaunch must carry it forward unchanged, never
+# re-read the worktree, which by then holds the worker's own commits.
+test_relaunch_keeps_the_guard_script_base_of_the_first_launch() {
+  local dir out rc base head
+  dir=$(new_case guardbase rlg1)
+  add_ship_task "$dir" rlg1 claude
+  base=$(git -C "$dir/wt" rev-parse HEAD)
+  printf 'guard_base=%s\n' "$base" >> "$dir/home/state/rlg1.meta"
+  git -C "$dir/wt" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m "worker commit"
+  head=$(git -C "$dir/wt" rev-parse HEAD)
+  [ "$head" != "$base" ] || fail "the fixture needs a worker commit after launch"
+  out=$(run_control "$dir" rlg1 relaunch --note "after a worker commit"); rc=$?
+  expect_code 0 "$rc" "relaunch should succeed"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/literal")" "FM_WORKER_GUARD_BASE='$base'" "the relaunched worker must keep the first launch's script base"
+  assert_not_contains "$(cat "$dir/fake/literal")" "$head" "the worker's own commit must never become the trusted base"
+  [ "$(meta_field "$dir" rlg1 guard_base)" = "$base" ] || fail "the recorded base must survive the relaunch"
+
+  dir=$(new_case guardbase-none rlg2)
+  add_ship_task "$dir" rlg2 claude
+  git -C "$dir/wt" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m "worker commit"
+  head=$(git -C "$dir/wt" rev-parse HEAD)
+  out=$(run_control "$dir" rlg2 relaunch --note "no recorded base"); rc=$?
+  expect_code 0 "$rc" "relaunch of a task with no recorded base should succeed"$'\n'"$out"
+  assert_not_contains "$(cat "$dir/fake/literal")" "$head" "without a recorded base no worktree commit may be trusted"
+  assert_contains "$(cat "$dir/fake/literal")" "FM_WORKER_GUARD_BASE=''" "an unknown base trusts no script"
+  pass "fm-control relaunch: the guard's script base is the first launch's commit, or empty when unknown"
+}
+
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
   local dir out rc
   dir=$(new_case pending-exit rl43)
@@ -1682,6 +1711,7 @@ test_relaunch_moves_a_drifted_item_back_in_flight() {
 }
 
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
+test_relaunch_keeps_the_guard_script_base_of_the_first_launch
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree

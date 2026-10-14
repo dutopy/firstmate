@@ -4218,6 +4218,16 @@ fi
 
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
+# The worker guard's trusted script base is the commit of the FIRST launch.
+# A relaunch carries the recorded one forward (an unknown one trusts no script);
+# re-reading HEAD would let the worker's own commits become reviewed code.
+GUARD_BASE=
+if [ "$RELAUNCH" -eq 1 ]; then
+  GUARD_BASE=$(fm_meta_get "$RELAUNCH_META" guard_base 2>/dev/null || true)
+else
+  GUARD_BASE=$(git -C "$WT" rev-parse HEAD 2>/dev/null || true)
+fi
+case "$GUARD_BASE" in *[!0-9a-f]*) GUARD_BASE= ;; esac
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
@@ -4235,7 +4245,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx guard_base", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -4253,6 +4263,7 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
+  [ -z "$GUARD_BASE" ] || echo "guard_base=$GUARD_BASE"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
@@ -4410,7 +4421,7 @@ LAUNCH=${LAUNCH//__OMPWORKERCFG__/$sq_ompcfg}
 LAUNCH=${LAUNCH//__OMPGUARD__/$(shell_quote "$FM_ROOT/bin/fm-worker-guard-omp-ext.ts")}
 LAUNCH=${LAUNCH//__GUARDCHECK__/$(shell_quote "$FM_ROOT/bin/fm-worker-guard-pretool-check.sh")}
 LAUNCH=${LAUNCH//__TASKTMP__/$(shell_quote "$TASK_TMP")}
-LAUNCH=${LAUNCH//__GUARDBASE__/$(shell_quote "$(git -C "$WT" rev-parse HEAD 2>/dev/null || true)")}
+LAUNCH=${LAUNCH//__GUARDBASE__/$(shell_quote "$GUARD_BASE")}
 LAUNCH=${LAUNCH//__GUARDLOG__/$(shell_quote "$STATE_REAL/$ID.worker-guard.log")}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 case "$HARNESS" in

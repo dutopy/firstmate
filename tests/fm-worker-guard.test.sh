@@ -775,6 +775,81 @@ test_security_review_bypasses_denied() {
   pass "shadowed readers, laundered base scripts, and unreconstructable substitutions are denied"
 }
 
+# Captain review of PR 13 (items 1-8, 11): each command below was allowed by an
+# earlier build. The payloads name a disposable sentinel directory and the guard
+# only analyses the text, so nothing is ever executed or deleted here.
+test_captain_review_bypasses_denied() {
+  local t="$EVIL/keep"
+  assert_denied "echo with a dash argument piped to a shell" "echo rm -rf $t | sh"
+  assert_denied "echo with a dash argument written to a script" "echo rm -rf $t > s.sh; sh s.sh"
+  assert_denied "printf with a dash argument piped to a shell" "printf 'rm -rf %s' $t | sh"
+  assert_denied "value-taking shell option before -c" "bash -o pipefail -c \"rm -rf $t\""
+  assert_denied "--rcfile before -c" "bash --rcfile x -c \"rm -rf $t\""
+  assert_denied "python -X option before -c" "python3 -X dev -c \"import shutil; shutil.rmtree('$t')\""
+  assert_denied "node --eval=CODE" "node --eval=\"require('fs').rmSync('$t',{recursive:true})\""
+  assert_denied "flock wrapper" "flock $WT/lock rm -rf $t"
+  assert_denied "su -c wrapper" "su -c \"rm -rf $t\""
+  assert_denied "chroot wrapper" "chroot / rm -rf $t"
+  assert_denied "unshare wrapper" "unshare -r rm -rf $t"
+  assert_denied "strace wrapper" "strace rm -rf $t"
+  assert_denied "watch wrapper" "watch rm -rf $t"
+  assert_denied "script -c wrapper" "script -qc \"rm -rf $t\" /dev/null"
+  assert_denied "at reading a heredoc" "at now <<< \"rm -rf $t\""
+  assert_denied "other user's home" "rm -rf ~root"
+  assert_denied "other user's path" "rm -rf ~nobody/x"
+  assert_denied "previous directory tilde" "rm -rf ~-"
+  assert_denied "GNU long-option prefix" "rm --rec $t"
+  assert_denied "git clean --git-dir" "git --git-dir=$EVIL/.git clean -fdx"
+  assert_denied "git clean --work-tree" "git --work-tree=$EVIL clean -fdx"
+  assert_denied "git clean -C attached path" "git -C$EVIL clean -fdx"
+  assert_denied "git clean repeated -C" "git -C . -C $EVIL clean -fdx"
+  assert_denied "brace group at the start of a word" "rm -rf {$t,a}"
+  assert_denied "symlink created in the same line" "ln -s $EVIL zl; rm -rf zl/keep"
+  assert_denied "awk system()" "awk 'BEGIN{system(\"rm -rf $t\")}'"
+  assert_denied "perl q()" "perl -e 'system(q(rm -rf $t))'"
+  assert_denied "ruby %q()" "ruby -e 'system(%q(rm -rf $t))'"
+  assert_denied "builtin cd leaves the copy" "builtin cd $EVIL && rm -rf keep"
+  assert_allowed "an option value before -c is still analysed, not refused" "bash -o pipefail -c 'echo ok'"
+  assert_allowed "flock around an ordinary command" "flock $WT/lock ls"
+  assert_allowed "GNU prefix inside the copy" "rm --rec $WT/build"
+  assert_allowed "echo of text that is not run" "echo rm -rf $t"
+  assert_nothing_destroyed "captain review bypasses"
+  pass "the PR 13 review bypasses are denied while ordinary look-alikes stay allowed"
+}
+
+# Review item 10: an option value that looks like another option must not be
+# read as an option by the transport.
+test_transport_option_values_are_values() {
+  local out code
+  out=$("$CHECK" --omp --cwd -h --command "rm -rf $EVIL/keep" 2>&1)
+  code=$?
+  [ "$code" = 2 ] || fail "a dash-valued --cwd must not turn the call into a help request, got $code: $out"
+  out=$("$CHECK" --omp --cwd "$WT" --command --help 2>&1)
+  assert_not_contains "$out" "PreToolUse transport" "a command text of --help is a value, not a help request"
+  alive "$FOREIGN_PID" && [ -f "$EVIL/keep/data" ] || fail "sentinels disturbed"
+  pass "option values are consumed as values by the transport"
+}
+
+# Review item 12/13: the process table is read only when a kill needs it, and
+# the guard never lets a worker kill an ancestor of the guard itself, whatever
+# the agent binary is called.
+test_owner_lookup_is_lazy_and_name_independent() {
+  local shim="$TMP_ROOT/pshim" log="$TMP_ROOT/pshim.log" real_ps target out
+  real_ps=$(command -v ps)
+  mkdir -p "$shim"
+  : >"$log"
+  printf '#!/bin/sh\necho called >>"%s"\nexec "%s" "$@"\n' "$log" "$real_ps" >"$shim/ps"
+  chmod +x "$shim/ps"
+  hook_json "ls -la" "$WT" | PATH="$shim:$PATH" "$CHECK" --claude --owner-pid auto >/dev/null 2>&1
+  [ ! -s "$log" ] || fail "an ordinary command must not read the process table"
+
+  # A wrapper whose name is not claude or omp is the guard's ancestor.
+  out=$(cd "$WT" && sh -c 'printf "{\"cwd\":\"%s\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"kill %s\"}}" "$1" "$$" | "$2" --claude --owner-pid auto 2>&1; echo "rc=$?"' _ "$WT" "$CHECK")
+  assert_contains "$out" "rc=2" "killing an ancestor of the guard must be refused even when it is not named claude or omp"
+  assert_contains "$out" "own agent" "the refusal names why"
+  pass "owner lookup is lazy and an ancestor of the guard is never killable"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -805,6 +880,9 @@ test_xargs_rm_without_recursion_is_not_refused
 test_dynamic_command_word_denied_at_top_level
 test_indirect_pattern_kills_denied
 test_security_review_bypasses_denied
+test_captain_review_bypasses_denied
+test_transport_option_values_are_values
+test_owner_lookup_is_lazy_and_name_independent
 test_scripts_are_shellcheck_clean
 assert_nothing_destroyed "end of suite"
 pass "fm-worker-guard suite complete"

@@ -139,6 +139,14 @@ function ancestors(pid) {
   return chain;
 }
 
+let ownerCache;
+function ownerPidOf(spec) {
+  if (ownerCache === undefined) ownerCache = resolveOwnerPid(spec);
+  return ownerCache;
+}
+
+// The process table is read only when a kill needs it, so ordinary commands
+// pay no `ps`.
 function resolveOwnerPid(spec) {
   if (spec === "" || spec === undefined || spec === null) return null;
   if (spec !== "auto") return Number(spec) || null;
@@ -230,8 +238,10 @@ function ownershipProblem(pid, ctx) {
   } catch (error) {
     if (error?.code === "ESRCH") return null;
   }
-  const self = ctx.ownerPid;
-  if (self && (pid === self || ancestors(self).includes(pid))) return `PID ${pid} is this worker's own agent or its supervisor chain`;
+  const self = ownerPidOf(ctx.ownerSpec);
+  // Whatever the agent binary is called, nothing above the guard process
+  // (its hook shell, the agent, its supervisors) is a target.
+  if (pid === process.pid || ancestors(process.pid).includes(pid) || (self && (pid === self || ancestors(self).includes(pid)))) return `PID ${pid} is this worker's own agent or its supervisor chain`;
   const argv = processArgv(pid);
   const shown = argv.join(" ").slice(0, 120) || "unknown";
   const uid = processUid(pid);
@@ -251,7 +261,7 @@ function ownershipProblem(pid, ctx) {
 // ---------------------------------------------------------------- state
 
 function cloneState(st) {
-  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), functions: new Set(st.functions), vfiles: st.vfiles };
+  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), functions: new Set(st.functions), vfiles: st.vfiles, links: new Set(st.links) };
 }
 
 function lexWords(text) {
@@ -274,6 +284,10 @@ function wordValue(word, st) {
   return value;
 }
 
+// ~user, ~+ and ~- name a directory the guard cannot resolve without asking
+// the system, so only plain ~ and ~/ are understood.
+const foreignTilde = (value) => value.startsWith("~") && value !== "~" && !value.startsWith("~/");
+
 function expandTilde(value, roots) {
   if (value === "~") return roots.home;
   if (value.startsWith("~/")) return path.join(roots.home, value.slice(2));
@@ -283,6 +297,7 @@ function expandTilde(value, roots) {
 // ---------------------------------------------------------------- rm / find
 
 function checkDeleteTarget(rawValue, st, ctx, label, allowRoot = false) {
+  if (foreignTilde(rawValue)) deny("RM_UNPROVABLE", `${label} target ${JSON.stringify(rawValue)} starts with a user or directory-stack tilde that cannot be resolved without running it`);
   let value = expandTilde(rawValue, ctx.roots);
   if (/\{[^}]*\}/.test(value)) {
     const brace = value.match(/\{([^{}]*)\}/);
@@ -307,6 +322,9 @@ function checkDeleteTarget(rawValue, st, ctx, label, allowRoot = false) {
     if (!st.cwd) deny("RM_UNPROVABLE", `${label} target ${JSON.stringify(rawValue)} is relative to a working directory that cannot be resolved`);
     prefix = path.join(st.cwd, prefix);
   }
+  for (const link of st.links ?? []) {
+    if (prefix.startsWith(`${link}/`)) deny("RM_UNPROVABLE", `${label} target ${JSON.stringify(rawValue)} goes through ${link}, a symlink created earlier in this command whose destination the guard cannot follow`);
+  }
   const trailing = /\/$/.test(value) || globAt !== -1;
   const physical = ctx.roots.physicalForDelete(prefix, trailing);
   if (!ctx.roots.contains(physical)) {
@@ -329,8 +347,10 @@ function recursiveFlag(args) {
       continue;
     }
     if (!end && v.startsWith("--")) {
-      if (v === "--recursive") recursive = true;
-      if (v === "--no-preserve-root") noPreserve = true;
+      // GNU getopt accepts any unambiguous prefix of a long option.
+      const option = v.slice(2).split("=")[0];
+      if (option !== "" && "recursive".startsWith(option)) recursive = true;
+      if (option.length > 1 && "no-preserve-root".startsWith(option)) noPreserve = true;
       continue;
     }
     if (!end && /^-[A-Za-z]+$/.test(v)) {
@@ -401,6 +421,42 @@ function checkFind(args, st, ctx) {
   }
 }
 
+// ---------------------------------------------------------------- git
+
+// `git clean` deletes untracked files of whatever tree the global options select:
+// -C (repeatable, relative to the previous one), --git-dir, --work-tree.
+function checkGit(args, st, ctx) {
+  let base = st.cwd;
+  const selected = [];
+  let i = 0;
+  const value = (word) => {
+    const v = word ? wordValue(word, st) : null;
+    return v === null ? null : v;
+  };
+  const resolve = (from, v) => (v === null || (!path.isAbsolute(v) && !from) ? null : path.isAbsolute(v) ? v : path.join(from, v));
+  for (; i < args.length; i += 1) {
+    const v = args[i].value;
+    if (v === "-C") {
+      base = resolve(base, value(args[i + 1]));
+      i += 1;
+    } else if (/^-C./.test(v)) {
+      base = resolve(base, value({ ...args[i], value: v.slice(2) }));
+    } else if (/^--(?:git-dir|work-tree)$/.test(v)) {
+      selected.push(resolve(st.cwd, value(args[i + 1])));
+      i += 1;
+    } else if (/^--(?:git-dir|work-tree)=/.test(v)) {
+      selected.push(resolve(st.cwd, value({ ...args[i], value: v.slice(v.indexOf("=") + 1) })));
+    } else if (v === "-c" || /^--(?:namespace|super-prefix|config-env|exec-path|attr-source)$/.test(v)) {
+      i += 1;
+    } else if (!v.startsWith("-")) {
+      break;
+    }
+  }
+  if (args[i]?.value !== "clean") return;
+  const inside = (p) => p !== null && ctx.roots.contains(ctx.roots.physical(p));
+  if (![base, ...selected].every(inside)) deny("RM_OUTSIDE", "git clean outside your isolated copy deletes another tree's untracked files");
+}
+
 // ---------------------------------------------------------------- kill
 
 function checkKill(args, st, ctx) {
@@ -469,6 +525,10 @@ function embeddedShellStrings(text) {
       return /[\s"'$`;|&<>()*?]/.test(v) || v === "" ? `'${v.replace(/'/g, `'\\''`)}'` : v;
     }).join(" "));
   }
+  for (const m of text.matchAll(QUOTE_LIKE)) {
+    const value = m[1] ?? m[2] ?? m[3] ?? m[4] ?? "";
+    if (DANGER_RAW.test(value) && /\s/.test(value)) out.push(value);
+  }
   for (const m of text.matchAll(STRING_LITERAL)) {
     const value = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? "";
     if (DANGER_RAW.test(value) && /\s/.test(value)) out.push(value);
@@ -476,6 +536,9 @@ function embeddedShellStrings(text) {
   }
   return out;
 }
+
+// perl q() qq() qx() and ruby %q() %Q() %x() quote-like strings.
+const QUOTE_LIKE = /(?:(?<![\w$@%])q[qx]?|%[qQx])\s*(?:\(([^()]*)\)|\{([^{}]*)\}|\[([^\[\]]*)\]|<([^<>]*)>)/g;
 
 const STRING_CONCAT = /(["'])((?:[^"'\\\n]|\\.)*)\1(?:\s*\+\s*|\s+)(["'])((?:[^"'\\\n]|\\.)*)\3/;
 
@@ -635,12 +698,35 @@ function analyzeShellBroadOnly(text, st, ctx, depth) {
 
 // ---------------------------------------------------------------- dispatch
 
-const EXTRA_WRAPPERS = new Set(["busybox", "toybox", "nice", "ionice", "time", "setsid", "stdbuf", "caffeinate", "builtin", "doas", "chronic", "unbuffer", "arch", "script"]);
+const EXTRA_WRAPPERS = new Set(["busybox", "toybox", "nice", "ionice", "time", "setsid", "stdbuf", "caffeinate", "builtin", "doas", "chronic", "unbuffer", "arch"]);
+
+// Wrappers whose own options take a value and which then take N operands
+// before the command they run.
+const OPERAND_WRAPPERS = {
+  flock: { valueOptions: /^(?:-[wE]|--timeout|--conflict-exit-code)$/, operands: 1 },
+  chroot: { valueOptions: /^--(?:userspec|groups)$/, operands: 1 },
+  unshare: { valueOptions: /^-[SG]$/, operands: 0 },
+  strace: { valueOptions: /^-[opesuEbOSPIaXC]$/, operands: 0 },
+  ltrace: { valueOptions: /^-[opesuEbOSPIaXC]$/, operands: 0 },
+  watch: { valueOptions: /^(?:-n|--interval)$/, operands: 0 },
+  taskset: { valueOptions: /^$/, operands: 1 },
+};
+// Wrappers that hand a string to a shell with -c.
+const COMMAND_STRING_WRAPPERS = new Set(["su", "runuser", "script", "flock", "sg"]);
+const commandStringFlag = (v) => /^-[A-Za-z]*c$/.test(v) || v === "--command" || v.startsWith("--command=");
 
 function unwrap(cw) {
   let words = cw;
   for (let guard = 0; guard < 8 && words.length > 0; guard += 1) {
     const name = basename(words[0].value);
+    const spec = OPERAND_WRAPPERS[name];
+    if (spec) {
+      if (COMMAND_STRING_WRAPPERS.has(name) && words.some((w) => commandStringFlag(w.value))) break;
+      let k = 1;
+      while (words[k] && words[k].value.startsWith("-")) k += spec.valueOptions.test(words[k].value) ? 2 : 1;
+      words = words.slice(k + spec.operands);
+      continue;
+    }
     if (!EXTRA_WRAPPERS.has(name)) break;
     let i = 1;
     while (words[i] && words[i].value.startsWith("-")) {
@@ -666,8 +752,34 @@ function xargsInner(args) {
 function interpreterInvocation(name, args) {
   // Returns { payload: Word|null, kind: "inline"|"file"|"stdin"|"module", file: Word|null }
   const inlineFlags = SHELLS.has(name) ? /^-[A-Za-z]*c[A-Za-z]*$/ : /^-[A-Za-z]*[ceEp][A-Za-z]*$/;
+  if (/^(?:n|g|m)?awk$/.test(name)) {
+    // The program is the first operand unless -f names a file; -F and -v take a value.
+    for (let i = 0; i < args.length; i += 1) {
+      const v = args[i].value;
+      if (v === "-f" || v === "--file") return args[i + 1] ? { kind: "file", payload: args[i + 1], file: args[i + 1] } : { kind: "stdin", payload: null };
+      if (v === "-F" || v === "-v" || v === "-e") {
+        i += 1;
+        continue;
+      }
+      if (v === "--") continue;
+      if (v.startsWith("-")) continue;
+      return { kind: "inline", payload: args[i] };
+    }
+    return { kind: "stdin", payload: null };
+  }
   for (let i = 0; i < args.length; i += 1) {
     const v = args[i].value;
+    const attached = v.match(/^--(?:eval|print|command|execute)=([\s\S]*)$/);
+    if (attached) return { kind: "inline", payload: { value: attached[1], literal: true, subs: [], type: "word" } };
+    // Options that take a separate value must not be mistaken for the script.
+    if (SHELLS.has(name) && (/^[-+]o$/.test(v) || /^[-+]O$/.test(v) || v === "--rcfile" || v === "--init-file")) {
+      i += 1;
+      continue;
+    }
+    if (/^python/.test(name) && v === "-X") {
+      i += 1;
+      continue;
+    }
     if (v === "--eval" || v === "--print" || v === "--command" || v === "--execute") return { kind: "inline", payload: args[i + 1] || null };
     if (inlineFlags.test(v) && !(name === "perl" && /^-[A-Za-z]*[wW]$/.test(v))) {
       let j = i + 1;
@@ -787,6 +899,32 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     // committed scripts: only the definitive motifs above, plus nested analysis below
   }
 
+  if (COMMAND_STRING_WRAPPERS.has(name) && !ctx.broadOnly) {
+    const at = args.findIndex((w) => commandStringFlag(w.value));
+    if (at !== -1) {
+      const attached = args[at].value.match(/^--command=([\s\S]*)$/);
+      const payload = attached ? { value: attached[1], literal: true, subs: [], type: "word" } : args[at + 1];
+      if (payload) {
+        for (const sub of payload.subs) {
+          if (!readOnlySubstitution(sub.content, st)) deny("OPAQUE_EXEC", `${name} -c code is partly produced by $(${sub.content.slice(0, 60)}), which the guard cannot read without running it`);
+        }
+        return runInline(payloadText(payload), "shell", st, ctx, ctx.depth ?? 0, `${name} -c code`);
+      }
+    }
+  }
+  if ((name === "at" || name === "batch") && !ctx.broadOnly) {
+    // `at` runs its standard input as a shell script at a later time.
+    const bodies = position?.stdinBodies ?? [];
+    for (const body of bodies) runInline(body, "shell", st, ctx, ctx.depth ?? 0, "at job");
+    if (position?.pipedFrom && bodies.length === 0) {
+      if (position.pipedFrom.literalText !== null) runInline(position.pipedFrom.literalText, "shell", st, ctx, ctx.depth ?? 0, "at job");
+      else deny("OPAQUE_EXEC", "at runs piped input that is not a literal the guard can read");
+    }
+    const file = args.findIndex((w) => w.value === "-f");
+    if (file !== -1 && args[file + 1]) scanScriptFile(args[file + 1].value, st, ctx, ctx.depth ?? 0, "shell");
+    return;
+  }
+
   if (name === "kill") {
     if (ctx.broadOnly) {
       if (args.some((w) => w.subs.length > 0 && w.subs.some((s) => /pgrep|pidof|lsof|\bps\b/.test(s.content)))) deny("BROAD_KILL", "kill $(pgrep ...) kills whatever matches, across every worker");
@@ -807,13 +945,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     return;
   }
   if (name === "git" && !ctx.broadOnly) {
-    const dirFlag = args.findIndex((w) => w.value === "-C");
-    const sub = args.slice(dirFlag === -1 ? 0 : dirFlag + 2).find((w) => !w.value.startsWith("-"));
-    if (sub?.value === "clean") {
-      const target = dirFlag === -1 ? st.cwd : wordValue(args[dirFlag + 1], st);
-      const base = target && (path.isAbsolute(target) ? target : st.cwd ? path.join(st.cwd, target) : null);
-      if (!base || !ctx.roots.contains(ctx.roots.physical(base))) deny("RM_OUTSIDE", "git clean outside your isolated copy deletes another tree's untracked files");
-    }
+    checkGit(args, st, ctx);
     return;
   }
   if (name === "rsync" && !ctx.broadOnly && args.some((w) => /^--(?:del|delete|delete-[a-z-]+|remove-source-files|remove-sent-files)(?:=|$)/.test(w.value))) {
@@ -910,9 +1042,25 @@ function literalProducerText(tokens) {
   const name = basename(words[0]?.value || "");
   if (name === "cat" && heredoc && words.length === 1) return heredoc.heredoc;
   if ((name === "echo" || name === "printf") && words.slice(1).every((w) => w.literal && w.subs.length === 0)) {
-    return words.slice(1).filter((w) => !w.value.startsWith("-") || w.value === "-").map((w) => w.value).join(" ").replace(/\\n/g, "\n");
+    const rest = words.slice(1);
+    // Only the leading options are options; a later "-rf" is text the shell will run.
+    if (name === "echo") while (rest[0] && /^-[neE]+$/.test(rest[0].value)) rest.shift();
+    else if (rest[0]?.value === "--") rest.shift();
+    return rest.map((w) => w.value).join(" ").replace(/\\n/g, "\n");
   }
   return null;
+}
+
+// The shared lexer reads a "{" that starts a word as a command group, so
+// `rm -rf {/a,b}` loses its argument. A group directly after a word with a comma
+// and no whitespace is brace expansion: it becomes an argument word again.
+function foldBraceArguments(tokens) {
+  if (tokens[0]?.type === "word" && tokens[0].value === "function") return tokens;
+  return tokens.map((t, i) => {
+    if (i === 0 || t.type !== "group" || t.kind !== "brace" || tokens[i - 1].type !== "word") return t;
+    if (!t.content.includes(",") || /[\s;&|<>]/.test(t.content)) return t;
+    return { type: "word", value: `{${t.content}}`, literal: true, subs: [] };
+  });
 }
 
 export function analyzeShell(text, st, ctx, depth = 0) {
@@ -924,7 +1072,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
   }
   const program = splitProgram(lexed.tokens);
   for (let n = 0; n < program.nodes.length; n += 1) {
-    const tokens = stripPrefixKeywords(program.nodes[n]);
+    let tokens = stripPrefixKeywords(program.nodes[n]);
     const first = tokens[0];
     if (!first) continue;
     if (first.type === "word" && KEYWORDS_SKIP.has(first.value) && first.literal) {
@@ -948,6 +1096,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       ? tokens[0].value
       : tokens[0].type === "word" && tokens[0].value === "function" && tokens[1]?.type === "word" ? tokens[1].value : null;
     if (defined) st.functions.add(defined);
+    tokens = foldBraceArguments(tokens);
     const position = commandPosition(tokens);
     const words = position.words;
     if (words.some((w) => /^PATH\+?=/.test(w.value))) st.pathTouched = true;
@@ -985,14 +1134,25 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       continue;
     }
 
-    const cmdName = basename(position.command.value);
-    const args = words.slice(position.index + 1);
+    let cmdName = basename(position.command.value);
+    let args = words.slice(position.index + 1);
+    if (cmdName === "builtin" && args[0]) {
+      cmdName = basename(args[0].value);
+      args = args.slice(1);
+    }
+    if (cmdName === "ln" && args.some((a) => /^-[A-Za-z]*s|^--symbolic$/.test(a.value))) {
+      const operands = args.filter((a) => !a.value.startsWith("-"));
+      const linkWord = operands.length > 1 ? operands[operands.length - 1] : null;
+      const linkValue = linkWord ? wordValue(linkWord, st) : null;
+      if (linkWord && (linkValue === null || !(path.isAbsolute(linkValue) || st.cwd))) st.links.add("/");
+      else if (linkValue !== null) st.links.add(ctx.roots.physical(path.isAbsolute(linkValue) ? linkValue : path.join(st.cwd, linkValue)).replace(/\/$/, ""));
+    }
     if (cmdName === "cd" || cmdName === "pushd" || cmdName === "popd") {
       if (cmdName !== "cd") st.cwd = null;
       else if (args.length === 0) st.cwd = ctx.roots.home;
       else {
         const value = wordValue(args.find((a) => !a.value.startsWith("-")) || args[0], st);
-        if (value === null || value === "-") st.cwd = null;
+        if (value === null || value === "-" || foreignTilde(value)) st.cwd = null;
         else {
           const expanded = expandTilde(value, ctx.roots);
           st.cwd = path.isAbsolute(expanded) ? path.normalize(expanded) : st.cwd ? path.join(st.cwd, expanded) : null;
@@ -1047,8 +1207,7 @@ export function decide(options) {
   const home = options.home || process.env.HOME || "/";
   const roots = new Roots(options.root, options.extraRoots || [], home);
   tableCache = null;
-  const ownerPid = resolveOwnerPid(options.ownerPid);
-  const ctx = { roots, ownerPid, strict: true, nested: false, embedded: false };
+  const ctx = { roots, ownerSpec: options.ownerPid, strict: true, nested: false, embedded: false };
   const st = {
     cwd: options.cwd ? roots.physical(options.cwd) : null,
     vars: new Map(),
@@ -1057,6 +1216,7 @@ export function decide(options) {
     functions: new Set(),
     vfiles: new Map(),
     pathTouched: false,
+    links: new Set(),
   };
   try {
     if (options.code !== undefined && options.code !== null) {

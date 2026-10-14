@@ -217,10 +217,16 @@ test_no_profile_keeps_claude_profile_defaults() {
   assert_meta_profile "$HOME_DIR/state/$id.meta" claude default default
 
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}" "no-profile claude launch lost its settings policy"
-  assert_contains "$launch" "$CLAUDE_CONTROL_CHANNEL_FLAG" "no-profile claude launch lost the task-worker role statement"
-  assert_contains "$launch" "encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md')\"" "no-profile claude launch did not use the canonical launch kind"
-  assert_not_contains "$launch" "--model" "no-profile claude launch must not invent a model flag"
+  CURSOR_AGENT=1 GEMINI_CLI=1 fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  fm_launch_has_arg --dangerously-skip-permissions || fail "no-profile claude launch lost the default permission flag"
+  jq -e '.feedbackDrafts == "off" and .attribution.sessionUrl == false' <<<"$(fm_launch_arg_after --settings)" >/dev/null \
+    || fail "no-profile claude launch lost its settings policy"
+  assert_contains "$(fm_launch_arg_after --append-system-prompt)" "task worker launched by Firstmate" "no-profile claude launch lost the task-worker role statement"
+  assert_equals "$("$ROOT/bin/fm-operational-input.sh" encode launch-brief < "$HOME_DIR/data/$id/launch-brief.md")" "${LAUNCH_ARGS[${#LAUNCH_ARGS[@]}-1]}" \
+    "no-profile claude launch did not deliver the canonical launch kind as its brief"
+  fm_launch_has_arg --model && fail "no-profile claude launch must not invent a model flag"
+  grep -q '^CURSOR_AGENT=\|^GEMINI_CLI=' "$CASE_DIR/capture/env" && fail "the launch must clear foreign harness markers"
+  grep -q '^CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false$' "$CASE_DIR/capture/env" || fail "the launch must disable prompt suggestions"
   pass "no --model/--effort records defaults and types the claude launch instructions"
 }
 
@@ -1015,8 +1021,9 @@ test_claude_forwards_firstmate_config_dir_when_set() {
   status=$?
   expect_code 0 "$status" "claude spawn with CLAUDE_CONFIG_DIR set should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false" \
-    "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
+  fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  grep -qx "CLAUDE_CONFIG_DIR=$CASE_DIR/claude-work" "$CASE_DIR/capture/env" \
+    || fail "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
   pass "claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store"
 }
 
@@ -1470,8 +1477,9 @@ test_claude_permission_mode_bypass_matches_absent_launch() {
   status=$?
   expect_code 0 "$status" "claude spawn with claude-permission-mode=bypass should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "claude --dangerously-skip-permissions --settings" "explicit bypass did not reproduce the absent-file launch's permission flag"
-  assert_not_contains "$launch" "--permission-mode" "explicit bypass must not carry auto mode"
+  fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  fm_launch_has_arg --dangerously-skip-permissions || fail "explicit bypass did not reproduce the absent-file launch's permission flag"
+  fm_launch_has_arg --permission-mode && fail "explicit bypass must not carry auto mode"
   pass "config/claude-permission-mode=bypass launches exactly as an absent file does"
 }
 
@@ -1488,9 +1496,10 @@ test_claude_permission_mode_auto_swaps_only_the_permission_flag() {
   expect_code 0 "$status" "claude spawn with claude-permission-mode=auto should succeed"
   assert_contains "$out" "spawned $id harness=claude" "auto spawn did not report claude"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "claude --permission-mode auto --settings" "auto did not swap in its permission flag"
-  assert_contains "$launch" "encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md')\"" "auto changed the launch-brief envelope"
-  assert_not_contains "$launch" "--dangerously-skip-permissions" "auto launch must not request bypass mode"
+  fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  assert_equals auto "$(fm_launch_arg_after --permission-mode)" "auto did not swap in its permission flag"
+  assert_equals "$("$ROOT/bin/fm-operational-input.sh" encode launch-brief < "$HOME_DIR/data/$id/launch-brief.md")" "${LAUNCH_ARGS[${#LAUNCH_ARGS[@]}-1]}" "auto changed the launch-brief envelope"
+  fm_launch_has_arg --dangerously-skip-permissions && fail "auto launch must not request bypass mode"
   pass "config/claude-permission-mode=auto replaces --dangerously-skip-permissions with --permission-mode auto"
 }
 

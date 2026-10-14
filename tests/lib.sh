@@ -588,6 +588,47 @@ assert_equals() {
   [ "$1" = "$2" ] || fail "$3 (expected '$1', got '$2')"
 }
 
+# fm_launch_capture <launch-line> <cwd> <out-dir> <binary>...
+# Executes a rendered harness launch line with recording stand-ins for the named
+# binaries (a bare name is placed on PATH, an absolute path is replaced in place)
+# and leaves what the harness would have received: LAUNCH_ARGS (array) and
+# <out-dir>/env. Fails when no stand-in was reached. Tests assert on what the
+# harness receives, never on the launch line's spelling.
+fm_launch_capture() {
+  local launch=$1 cwd=$2 out=$3 bin target
+  shift 3
+  mkdir -p "$out/bin"
+  rm -f "$out/args" "$out/env"
+  for bin in "$@"; do
+    case "$bin" in /*) target=$bin ;; *) target="$out/bin/$bin" ;; esac
+    printf '#!/usr/bin/env bash\nprintf "%%s\\0" "$@" > %q\nenv > %q\n' "$out/args" "$out/env" > "$target"
+    chmod +x "$target"
+  done
+  (cd "$cwd" && PATH="$out/bin:$PATH" bash -c "$launch") >/dev/null 2>&1
+  LAUNCH_ARGS=()
+  [ -s "$out/args" ] || return 1
+  mapfile -d '' -t LAUNCH_ARGS < "$out/args"
+}
+
+# fm_launch_arg_after <flag>: the argument the harness received after <flag>.
+fm_launch_arg_after() {
+  local i
+  for ((i = 0; i + 1 < ${#LAUNCH_ARGS[@]}; i += 1)); do
+    if [ "${LAUNCH_ARGS[$i]}" = "$1" ]; then
+      printf '%s' "${LAUNCH_ARGS[$((i + 1))]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# fm_launch_has_arg <argument>
+fm_launch_has_arg() {
+  local a
+  for a in "${LAUNCH_ARGS[@]}"; do [ "$a" = "$1" ] && return 0; done
+  return 1
+}
+
 # assert_not_equals <unexpected> <actual> <msg>
 assert_not_equals() {
   [ "$1" != "$2" ] || fail "$3 (unexpectedly got '$1')"

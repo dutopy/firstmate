@@ -37,11 +37,24 @@ HAVE_OWNER=0
 HAVE_INPUT=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --root | --root=*) HAVE_ROOT=1 ;;
-    --owner-pid | --owner-pid=*) HAVE_OWNER=1 ;;
-    --command | --command=* | --code | --code=*) HAVE_INPUT=1 ;;
     --claude | --omp) shift; continue ;;
     -h | --help) sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d'; exit 0 ;;
+    --root=*) HAVE_ROOT=1 ;;
+    --owner-pid=*) HAVE_OWNER=1 ;;
+    --command=* | --code=*) HAVE_INPUT=1 ;;
+    --root | --owner-pid | --command | --code | --cwd | --lang | --home | --extra-root)
+      # An option's value is a value even when it looks like an option
+      # (`--cwd -h`, a command text of `--help`), so it is consumed here.
+      case "$1" in
+        --root) HAVE_ROOT=1 ;;
+        --owner-pid) HAVE_OWNER=1 ;;
+        --command | --code) HAVE_INPUT=1 ;;
+      esac
+      ARGS+=("$1")
+      shift
+      if [ "$#" -gt 0 ]; then ARGS+=("$1"); shift; fi
+      continue
+      ;;
   esac
   ARGS+=("$1")
   shift
