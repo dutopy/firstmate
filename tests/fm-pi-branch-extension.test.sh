@@ -1041,6 +1041,13 @@ await fire("before_agent_start", { prompt: operational.stdout }, mainCtx);
 entries.push({ type: "message", message: { role: "user", content: operational.stdout } });
 const unsolicitedPrompt = "Please keep responses concise while monitoring the fleet.";
 await fire("before_agent_start", { prompt: unsolicitedPrompt }, mainCtx);
+// Pi 1.2 also raises before_agent_start for a run started by a custom message;
+// that event carries no user prompt, so there is nothing to stage.
+await fire(
+  "before_agent_start",
+  { messageType: "custom", message: { role: "custom", customType: "fm-test", content: "x", display: false, timestamp: 1 } },
+  mainCtx,
+);
 entries.push({ type: "message", message: { role: "user", content: unsolicitedPrompt } });
 await fire("agent_start", {}, mainCtx);
 await fire("agent_end", {}, mainCtx);
@@ -4344,8 +4351,8 @@ if (JSON.stringify(actualRow.render(100)) !== JSON.stringify(stockRow.render(100
 }
 
 pi.events.emit("firstmate:calm-presentation", { active: true, stockExportRendering: true });
-const stockHtml = createToolHtmlRenderer({ getToolDefinition: () => stockDefinition, theme, cwd: process.cwd() });
-const actualHtml = createToolHtmlRenderer({ getToolDefinition: () => actualDefinition, theme, cwd: process.cwd() });
+const stockHtml = createToolHtmlRenderer({ getToolDefinition: () => stockDefinition, getToolRenderers: () => stockDefinition, theme, cwd: process.cwd() });
+const actualHtml = createToolHtmlRenderer({ getToolDefinition: () => actualDefinition, getToolRenderers: () => actualDefinition, theme, cwd: process.cwd() });
 const stockCall = stockHtml.renderCall("stock-html", "fm_branch_outcomes", args);
 const actualCall = actualHtml.renderCall("actual-html", "fm_branch_outcomes", args);
 const stockResult = stockHtml.renderResult("stock-html", "fm_branch_outcomes", result.content, result.details, false);
