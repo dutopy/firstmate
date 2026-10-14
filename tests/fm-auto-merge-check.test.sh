@@ -43,6 +43,8 @@ if a[:2]==['api','GET']:
     else: sys.exit(91)
 elif a[:3]==['api','POST','/graphql']:
     body=json.load(sys.stdin); after=body['variables'].get('after')
+    if 'checkSuite{headSha}' in body['query']:
+        print(base64.b64encode(json.dumps({'errors':[{'extensions':{'code':'undefinedField','fieldName':'headSha','typeName':'CheckSuite'},'message':"Field 'headSha' doesn't exist on type 'CheckSuite'"}]}).encode()).decode()); sys.exit(0)
     page=0 if after is None else int(after)
     checks=d['checks'][page:page+100]; end=page+len(checks)
     connection={'nodes':checks,'totalCount':len(d['checks']),
@@ -125,7 +127,7 @@ class Eligibility(unittest.TestCase):
           'additions':sum(f['additions'] for f in files),'deletions':sum(f['deletions'] for f in files)},
           'merger':{'id':20,'login':'merger'},'files':files,
           'checks':[{'__typename':'CheckRun','name':f'check-{i}','status':'COMPLETED',
-            'id':f'check-id-{i}','conclusion':'SUCCESS','checkSuite':{'headSha':self.head}} for i in range(101)]}
+            'id':f'check-id-{i}','conclusion':'SUCCESS','checkSuite':{'commit':{'oid':self.head}}} for i in range(101)]}
         self.native=f'''run:
   id: fixture-run
   branch: topic
@@ -181,7 +183,7 @@ steps[2]{{step,status,findings,duration_ms}}:
             with self.subTest(kind=kind):
                 self.d=json.loads(json.dumps(original))
                 if kind=='zero': self.d['checks']=[]
-                if kind=='old-head': self.d['checks'][0]['checkSuite']['headSha']=self.base
+                if kind=='old-head': self.d['checks'][0]['checkSuite']['commit']['oid']=self.base
                 if kind=='pending': self.d['checks'][0]['status']='IN_PROGRESS'
                 if kind=='unknown': self.d['checks'][0]['__typename']='Other'
                 if kind=='malformed': self.d['checks'][0].pop('name')

@@ -24,7 +24,7 @@ CHECK_QUERY = '''query($owner:String!,$repo:String!,$number:Int!,$after:String){
  repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid
  statusCheckRollup{contexts(first:100,after:$after){totalCount
  pageInfo{hasNextPage endCursor} nodes{__typename
- ... on CheckRun{id name status conclusion checkSuite{headSha}}
+ ... on CheckRun{id name status conclusion checkSuite{commit{oid}}}
  ... on StatusContext{id context state commit{oid}}}}}}}}'''
 
 
@@ -91,7 +91,7 @@ def checks(project, number, head):
             if kind == 'CheckRun':
                 require(isinstance(node['name'], str) and node['name'] and node['status'] == 'COMPLETED'
                         and node['conclusion'] == 'SUCCESS'
-                        and node['checkSuite']['headSha'] == head, 'checks not green at final head')
+                        and node['checkSuite']['commit']['oid'] == head, 'checks not green at final head')
             elif kind == 'StatusContext':
                 require(isinstance(node['context'], str) and node['context'] and node['state'] == 'SUCCESS'
                         and node['commit']['oid'] == head, 'checks status not green at final head')
