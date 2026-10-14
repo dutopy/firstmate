@@ -46,6 +46,9 @@ For a script inside the copy:
 - a file that is new, edited, or committed by the worker is scanned strictly, exactly like inline code;
 - a file whose bytes hash to the same blob as the task base commit (`FM_WORKER_GUARD_BASE`, compared with `GIT_NO_REPLACE_OBJECTS=1` and no git config, so worker-controlled refs, filters, and config cannot launder it) is reviewed project code and is held only to the definitive broad motifs (`pkill`, `killall`, `xargs kill`, `kill $(pgrep ...)`), so ordinary project scripts that clean their own temp variables keep working.
 
+The external memory-file helper `bin/fm-ensure-agents-md.sh` uses shell forms supported by strict source inspection, without a helper exemption or a parser-policy relaxation.
+Its supported route is exercised through the real pretool transport and helper in disposable projects by `tests/fm-worker-guard.test.sh`, including project-owned guidance preservation, owned-link conversion, and conflicting-file/foreign-link refusal.
+
 Non-shell code is scanned statically for:
 
 - `pkill`/`killall` names;

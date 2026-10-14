@@ -25,6 +25,8 @@
 # link would have carried for that same mismatch.
 # This is a worktree utility for crewmates, not a supervision script, so it does
 # not call fm-guard.sh.
+# Keep this external worker utility compatible with strict source inspection
+# by the narrow shared shell parser; do not exempt it from the worker guard.
 # Usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]
 set -eu
 
@@ -40,12 +42,10 @@ Without the first-line mark or exact canonical heading, the helper adds the sect
 EOF
 }
 
-case "${1:-}" in
-  -h|--help)
-    usage 2>&1
-    exit 0
-    ;;
-esac
+if [ "${1:-}" = -h ] || [ "${1:-}" = --help ]; then
+  usage 2>&1
+  exit 0
+fi
 [ "$#" -le 1 ] || { usage; exit 1; }
 
 DIR=${1:-.}
@@ -104,13 +104,11 @@ ensure_maintenance_section() {
 }
 
 write_skeleton() {
-  cat > "$AGENTS" <<'EOF'
-# Project agent memory
+  printf '%s\n' "# Project agent memory
 
 This file is the project's committed home for project-intrinsic agent knowledge: build, test, release, architecture, and sharp-edge notes that should travel with the code.
 
-- Add durable project-specific notes here as they are discovered through real work.
-EOF
+- Add durable project-specific notes here as they are discovered through real work." > "$AGENTS"
   ensure_maintenance_section
 }
 
@@ -147,9 +145,9 @@ install_claude_pointer() {
 is_correct_claude_symlink() {
   [ -L "$CLAUDE" ] || return 1
   target=$(readlink "$CLAUDE")
-  case "$target" in
-    "$AGENTS"|"./$AGENTS") return 0 ;;
-  esac
+  if [ "$target" = "$AGENTS" ] || [ "$target" = "./$AGENTS" ]; then
+    return 0
+  fi
   [ -e "$AGENTS" ] || return 1
   if command -v python3 >/dev/null 2>&1; then
     python3 - "$CLAUDE" "$AGENTS" <<'PY'
@@ -174,12 +172,10 @@ for entry in *; do
     continue
   fi
   if [ "$entry" != "$AGENTS" ]; then
-    case "$entry" in
-      [Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd])
-        echo "conflict: memory file is named $entry in $DIR but the convention is AGENTS.md; rename it to AGENTS.md so CLAUDE.md's @AGENTS.md pointer resolves portably" >&2
-        exit 1
-        ;;
-    esac
+    if [ "${#entry}" -eq 9 ] && printf '%s\n' "$entry" | grep -Eq '^[Aa][Gg][Ee][Nn][Tt][Ss][.][Mm][Dd]$'; then
+      echo "conflict: memory file is named $entry in $DIR but the convention is AGENTS.md; rename it to AGENTS.md so CLAUDE.md's @AGENTS.md pointer resolves portably" >&2
+      exit 1
+    fi
   fi
 done
 
