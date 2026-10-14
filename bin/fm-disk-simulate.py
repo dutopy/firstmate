@@ -148,10 +148,12 @@ def protected_name(name):
                                            '.bak', '.backup', '.dump'))
 
 
-def protected(path):
+def protected(path, canonical=True):
     if any(protected_name(part) for part in Path(path).parts):
         return True
-    candidates = (Path(path), Path(os.path.realpath(str(path))))
+    candidates = [Path(path)]
+    if canonical:
+        candidates.append(Path(os.path.realpath(str(path))))
     return any(candidate == root or root in candidate.parents
                for candidate in candidates for root in HOME_PRIVATE_ROOT_SPELLINGS)
 
@@ -213,7 +215,7 @@ def inspect_path(item, reasons, facts):
             directory = pending.pop()
             with os.scandir(directory) as entries:
                 for entry in entries:
-                    if protected(entry.path):
+                    if protected(entry.path, canonical=False):
                         reasons.append('excluded-descendant')
                         return None
                     if (entry.name in ('.lease', '.reserved', '.active')
