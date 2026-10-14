@@ -1,7 +1,8 @@
 # Central auto-merge deny list (one glob per line, matched case-insensitively
 # against the whole changed path). bin/fm_auto_merge_check.py is its single
 # consumer: a change touching any matching path is never eligible for automatic
-# merge. This is a name list, not a content scanner. It preserves every
+# merge. This file owns the path names only; bin/fm_auto_merge_check.py also
+# refuses sensitive changed content. It preserves every
 # sensitive category the earlier docs-only allowlist refused, and it denies this
 # auto-merge framework's own files so a pull request cannot widen its own
 # eligibility. Changing it is therefore a sensitive change by construction.
@@ -10,8 +11,24 @@
 # Agent instructions and skills
 AGENTS.md
 **/AGENTS.md
+CLAUDE.md
+**/CLAUDE.md
+GROK_BOT.md
+**/GROK_BOT.md
 .agents/skills/**
 **/.claude/skills/**
+skills/**
+**/skills/**
+
+# No-mistakes, review and task configuration
+.no-mistakes.yaml
+**/.no-mistakes.yaml
+.greptile/**
+**/.greptile/**
+.tasks.toml
+**/.tasks.toml
+.gitattributes
+**/.gitattributes
 
 # CI workflows, agent hooks and harness configuration
 .github/**

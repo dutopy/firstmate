@@ -327,6 +327,22 @@ steps[2]{{step,status,findings,duration_ms}}:
                 self.set_change('A useful sentence.\n','A different useful sentence.\n',path)
                 self.run_check(False,'sensitive path')
 
+    def test_sensitive_diff_content_refuses(self):
+        for before,after in (
+            ('A useful sentence.\n','A useful sentence.\nGITHUB_TOKEN=ghp_example\n'),
+            ('A useful sentence with a token.\n','A useful sentence.\n'),
+            ('A useful sentence.\n','A changed sentence with a password.\n')):
+            with self.subTest(after=after):
+                self.set_change(before,after,'docs/setup.md')
+                self.run_check(False,'sensitive content')
+
+    def test_instruction_and_config_siblings_refuse(self):
+        for path in ('CLAUDE.md','docs/CLAUDE.md','GROK_BOT.md','skills/stow/SKILL.md',
+                     '.no-mistakes.yaml','.greptile/rules.md','.tasks.toml','.gitattributes'):
+            with self.subTest(path=path):
+                self.set_change('A useful sentence.\n','A different useful sentence.\n',path)
+                self.run_check(False,'sensitive path')
+
     def test_symlink_addition_and_binary_refuse(self):
         self.git('reset','--hard','-q',self.base)
         (self.repo/'docs/new.md').write_text('A new sentence.\n')

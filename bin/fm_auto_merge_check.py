@@ -14,6 +14,10 @@ import sys
 BIN = Path(__file__).resolve().parent
 SHA = re.compile(r"[0-9a-f]{40}")
 DENY = BIN/'fm-auto-merge-denylist.globs'
+SENSITIVE = re.compile(
+    r"secret|credential|password|token|permission|rights|droits|chmod|chown|"
+    r"delet|remov|supprim|force|github|gitlab|remote|publish|publication|"
+    r"worker.guard|spawn|teardown|agents\.md|antidrift|wip|config", re.I)
 CHECK_QUERY = '''query($owner:String!,$repo:String!,$number:Int!,$after:String){
  repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid
  statusCheckRollup{contexts(first:100,after:$after){totalCount
@@ -160,6 +164,9 @@ def classify(wt, base, head, files, pr):
                 'unclassified mode, rename, addition or removal')
         require(not any(fnmatch.fnmatchcase(path.lower(), pattern) for pattern in patterns),
                 'sensitive path')
+        for content in (git(wt, 'cat-file', 'blob', base + ':' + path),
+                        git(wt, 'cat-file', 'blob', head + ':' + path)):
+            require(not SENSITIVE.search(content.decode('ascii')), 'sensitive content')
         records[path] = git(wt, 'rev-parse', head + ':' + path).strip().decode()
     nums = git(wt, 'diff', '--numstat', '-z', *flags, base, head).split(b'\0')
     stats = {}
