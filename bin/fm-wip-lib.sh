@@ -100,9 +100,9 @@ wip_target() {  # uses $CONFIG
 # copy) has no claim to read; its authority is record exclusivity, which the
 # inventory enforces (two records for one path are refused). Anything that
 # cannot be read is refused. Sets WIP_SLOT_REASON on refusal.
+# shellcheck disable=SC2034 # WIP_SLOT_REASON is an output variable, read by the sourcing caller.
 wip_slot_proven() {  # <worktree> <task>
   local slot parent pool
-  # shellcheck disable=SC2034 # Output variable, read by the sourcing caller.
   WIP_SLOT_REASON=unreadable
   slot=$(wip_real_path "$1") || return 1
   parent=$(dirname "$slot"); pool=$(dirname "$parent")

@@ -776,7 +776,7 @@ test_a_blocked_git_read_is_reported_unknown() {
 
 # E3: one task on two copies must not collide on a single remote reference.
 test_the_same_task_on_two_copies_publishes_distinct_references() {
-  local home repo1 repo2 remote r1 r2
+  local home repo1 remote r1 r2
   home=$(mk_home twocopies)
   repo1=$(mk_task "$home" t1 ship)
   git -C "$repo1" push -q -u origin "fm/t1"
