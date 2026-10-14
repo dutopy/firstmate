@@ -427,6 +427,10 @@ The filter runs at the worker command boundary, after the terminal daemon and pa
 This is not a sandbox: it cannot revoke same-user access to credential files, prevent tools or later shells from loading credentials again, or isolate processes from the same user's other processes.
 Regression coverage executes emitted launch commands with synthetic nonsecret values in [`tests/fm-spawn-dispatch-profile.test.sh`](../tests/fm-spawn-dispatch-profile.test.sh).
 
+Every claude launch also carries the explicit assignment `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`, which the filter retains like every explicit launch assignment, so a worker or secondmate never offers Claude's advisor tool regardless of an ambient value or the captain's user-level `advisorModel`.
+A raw launch command is not rewritten and must carry the assignment itself.
+Live proof against the installed Claude is [`tests/fm-claude-advisor-live-e2e.test.sh`](../tests/fm-claude-advisor-live-e2e.test.sh).
+
 Every claude launch's inline `--settings` JSON also carries `"attribution":{"commit":"","pr":"","sessionUrl":false}`, so a spawned worker never writes a Co-Authored-By trailer, Claude-Session link, or generated-with line into a commit or PR body regardless of which settings scopes end up loaded.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)

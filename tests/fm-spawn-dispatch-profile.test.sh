@@ -217,7 +217,7 @@ test_no_profile_keeps_claude_profile_defaults() {
   assert_meta_profile "$HOME_DIR/state/$id.meta" claude default default
 
   launch=$(cat "$LAUNCH_LOG")
-  expected="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md')\""
+  expected="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md')\""
   [ "$launch" = "$expected" ] || fail "no-profile claude launch did not use the canonical launch kind"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   pass "no --model/--effort records defaults and types the claude launch instructions"
 }
@@ -965,7 +965,7 @@ test_claude_forwards_firstmate_config_dir_when_set() {
   status=$?
   expect_code 0 "$status" "claude spawn with CLAUDE_CONFIG_DIR set should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
+  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
     "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
   pass "claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store"
 }
@@ -1155,6 +1155,61 @@ SH
   done
 }
 
+# The advisor tool is removed at the worker launch boundary: executing the
+# emitted claude launch under every ambient value and allowlist posture must
+# deliver CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1, and other harnesses stay untouched.
+# tests/fm-claude-advisor-live-e2e.test.sh proves the vendor tool is really gone.
+test_claude_launch_disables_advisor_tool() {
+  local kind setting ambient id rec out status result sm args
+  for kind in ship scout secondmate; do
+    for setting in absent enabled empty; do
+      for ambient in unset empty 0; do
+        id="advisor-$kind-$setting-$ambient"
+        rec=$(make_spawn_case "$id" claude "$id")
+        read_case_record "$rec"
+        case "$setting" in
+          enabled) printf 'FM_TEST_ALLOWED\n' > "$HOME_DIR/config/launch-env-allowlist" ;;
+          empty) : > "$HOME_DIR/config/launch-env-allowlist" ;;
+        esac
+        args=("$PROJ_DIR")
+        case "$kind" in
+          ship) args+=(--mode no-mistakes --yolo off) ;;
+          scout) args+=(--scout) ;;
+          secondmate)
+            sm="$CASE_DIR/secondmate-home"
+            make_seeded_secondmate_home "$sm" "$id"
+            args=("$sm" --secondmate)
+            ;;
+        esac
+        out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "${args[@]}")
+        status=$?
+        expect_code 0 "$status" "$kind claude spawn should succeed: $out"
+        cat > "$FAKEBIN_DIR/claude" <<'SH'
+#!/bin/sh
+printf '%s' "${CLAUDE_CODE_DISABLE_ADVISOR_TOOL-unset}"
+SH
+        chmod +x "$FAKEBIN_DIR/claude"
+        case "$ambient" in
+          unset) result=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" /bin/sh -c "$(cat "$LAUNCH_LOG")") ;;
+          empty) result=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" CLAUDE_CODE_DISABLE_ADVISOR_TOOL= /bin/sh -c "$(cat "$LAUNCH_LOG")") ;;
+          0) result=$(env -i HOME="$HOME_DIR/user-home" PATH="$FAKEBIN_DIR:$PATH" CLAUDE_CODE_DISABLE_ADVISOR_TOOL=0 /bin/sh -c "$(cat "$LAUNCH_LOG")") ;;
+        esac || fail "$kind launch failed (allowlist=$setting ambient=$ambient)"
+        [ "$result" = 1 ] || fail "$kind launch left advisor enabled (allowlist=$setting ambient=$ambient): '$result'"
+      done
+    done
+  done
+  pass "claude ship, scout and secondmate launches force the advisor tool off for every ambient value and allowlist posture"
+
+  id=advisor-codex
+  rec=$(make_spawn_case "$id" codex "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "codex spawn should succeed: $out"
+  assert_not_contains "$(cat "$LAUNCH_LOG")" CLAUDE_CODE_DISABLE_ADVISOR_TOOL "non-claude launch must not carry the claude advisor control"
+  pass "non-claude launches do not carry the claude advisor control"
+}
+
 test_launch_environment_invalid_config_refuses() {
   local rec id bad out status
   id=env-invalid
@@ -1323,6 +1378,7 @@ SH
 }
 
 test_launch_environment_allowlist
+test_claude_launch_disables_advisor_tool
 test_launch_environment_invalid_config_refuses
 test_launch_environment_inaccessible_config_refuses
 test_launch_environment_inherited_by_secondmate
@@ -1411,7 +1467,7 @@ SH
 # permission flag, and any other token refuses before endpoint or metadata.
 claude_expected_launch() {  # <home> <id> <permission-flag>
   local home=$1 id=$2 flag=$3
-  printf '%s' "env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $flag --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$home/data/$id/launch-brief.md')\""
+  printf '%s' "env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 claude $flag --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$home/data/$id/launch-brief.md')\""
 }
 
 test_claude_permission_mode_bypass_matches_absent_launch() {

@@ -393,6 +393,21 @@ Removing the `--force` arm makes the forced generic case refuse; honoring `--for
 Restoring `fm_backend_orca_kill`'s swallowed tool check makes the CLI-absent adapter case report success.
 Dropping the retention-is-not-durable line makes the refusal claim a retention teardown does not own.
 
+## Claude advisor tool
+
+Verified 2026-10-10 on claude 2.1.296 (Claude Code) against a local stub model API, so no model token was spent.
+A throwaway `CLAUDE_CONFIG_DIR` carried `advisorModel: claude-opus-5-5`, the setting a worker otherwise inherits from the captain's user scope.
+
+| Launch | Model request `tools` |
+| --- | --- |
+| plain `claude --dangerously-skip-permissions` | contains `advisor_20260301` (`name: advisor`) |
+| the exact command `bin/fm-spawn.sh` emits for a Claude ship worker, with ambient `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=0` | no advisor tool |
+
+The `init` event of `claude -p --output-format stream-json` does not list the advisor tool in either case, so only the recorded request body is valid evidence.
+The variable is read at process start, and the tool is gone from the first request.
+`tests/fm-claude-advisor-live-e2e.test.sh` refreshes this evidence, fails naming the version when the tool or its disable control changes, and asserts the captain's `~/.claude/settings.json` is byte-identical afterwards.
+It needs no credential and spends no tokens, so it runs by default wherever `claude`, `tmux`, and `python3` are installed.
+
 ## Claude workspace trust
 
 Verified 2026-09-03 on Claude Code 2.1.259.
