@@ -1,0 +1,26 @@
+ok - 400 lines accepted
+ok - 401 lines rejected despite environment overrides
+ok - environment cannot loosen limits
+ok - deletions count toward threshold
+ok - mixed 400 lines accepted
+ok - mixed 401 lines rejected
+ok - 15 files accepted
+ok - 16 files rejected
+ok - approved exclusions include excluded binary
+ok - exclusions are path-aware and narrow
+ok - odd paths measured intact
+ok - rename counts once
+ok - rename into included path is counted
+ok - included binary cannot be measured
+ok - included binary deletion cannot be measured
+ok - invalid base refused
+ok - invalid head refused
+ok - empty ref refused
+ok - option-like ref refused
+ok - extra argument refused
+ok - missing origin/main refused
+ok - default merge base and HEAD
+ok - explicit head and base
+ok - unchanged diff measured
+ok - subdirectory and relative config cannot hide changes
+ok - outside repository refused

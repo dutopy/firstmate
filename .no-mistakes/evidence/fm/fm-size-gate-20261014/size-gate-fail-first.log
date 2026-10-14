@@ -1,0 +1,27 @@
+not ok - 400 lines accepted: rc=127 output=
+not ok - 401 lines rejected despite environment overrides: rc=127 output=
+not ok - environment cannot loosen limits: rc=127 output=
+not ok - deletions count toward threshold: rc=127 output=
+not ok - mixed 400 lines accepted: rc=127 output=
+not ok - mixed 401 lines rejected: rc=127 output=
+not ok - 15 files accepted: rc=127 output=
+not ok - 16 files rejected: rc=127 output=
+not ok - approved exclusions include excluded binary: rc=127 output=
+not ok - exclusions are path-aware and narrow: rc=127 output=
+not ok - odd paths measured intact: rc=127 output=
+not ok - rename counts once: rc=127 output=
+not ok - rename into included path is counted: rc=127 output=
+not ok - included binary cannot be measured: rc=127 output=
+not ok - included binary deletion cannot be measured: rc=127 output=
+not ok - invalid base refused: rc=127 output=
+not ok - invalid head refused: rc=127 output=
+not ok - empty ref refused: rc=127 output=
+not ok - option-like ref refused: rc=127 output=
+not ok - extra argument refused: rc=127 output=
+not ok - missing origin/main refused: rc=127 output=
+not ok - default merge base and HEAD: rc=127 output=
+not ok - explicit head and base: rc=127 output=
+not ok - unchanged diff measured: rc=127 output=
+not ok - subdirectory and relative config cannot hide changes: rc=127 output=
+not ok - outside repository refused: rc=127 output=
+not ok - 26 size-gate assertions failed

@@ -1,0 +1,27 @@
+== size-gate live demo ==
+gate: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M4XSYAQQ7JFYF55MHA8V2EH5/bin/size-gate.sh
+ok   - --help exits 0
+
+-- boundary: 400 added+deleted lines vs 401 --
+ok   - 400 lines: accepted                                  rc=0 | added=400 deleted=0 lines=400 files=1 max_lines=400 max_files=15
+ok   - 401 lines: alert (oversized)                         rc=1 | added=401 deleted=0 lines=401 files=1 max_lines=400 max_files=15
+ok   - 401 lines with MAX_ADDED=99999 env: still alerts     rc=1 | added=401 deleted=0 lines=401 files=1 max_lines=400 max_files=15
+
+-- boundary: 15 files vs 16 files --
+ok   - 15 files: accepted                                   rc=0 | added=15 deleted=0 lines=15 files=15 max_lines=400 max_files=15
+ok   - 16 files: alert (oversized)                          rc=1 | added=16 deleted=0 lines=16 files=16 max_lines=400 max_files=15
+
+-- exclusions: lockfiles / snapshots / external docs / fixtures --
+ok   - excluded trees ignored (would be 2807 lines otherwise) rc=0 | added=0 deleted=0 lines=0 files=0 max_lines=400 max_files=15
+ok   - near-miss paths are NOT excluded                     rc=0 | added=8 deleted=0 lines=8 files=8 max_lines=400 max_files=15
+
+-- deletions, renames, binaries, refs --
+ok   - deletions count toward 400                           rc=1 | added=0 deleted=401 lines=401 files=1 max_lines=400 max_files=15
+ok   - rename counts once (0+0, files=1)                    rc=0 | added=0 deleted=0 lines=0 files=1 max_lines=400 max_files=15
+ok   - included binary is a measurement failure             rc=2 | size-gate: included binary or unmeasurable change
+ok   - option-like ref refused (no arg injection)           rc=2 | fatal: Needed a single revision
+size-gate: cannot resolve base ref
+ok   - extra argument refused                               rc=2 | size-gate: expected at most two refs
+
+-- default mode in the real worktree --
+ok   - default merge-base(origin/main,HEAD)..HEAD on this change rc=0 | added=185 deleted=0 lines=185 files=2 max_lines=400 max_files=15
