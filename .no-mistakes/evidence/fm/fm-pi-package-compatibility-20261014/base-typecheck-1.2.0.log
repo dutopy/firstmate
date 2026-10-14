@@ -1,0 +1,2 @@
+../../var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-pi-primary-types.cMz4zt/fm-branch-supervision.ts(1578,26): error TS2339: Property 'prompt' does not exist on type 'BeforeAgentStartEvent'.
+../../var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-pi-primary-types.cMz4zt/fm-primary-pi-watch.ts(1140,35): error TS2339: Property 'prompt' does not exist on type 'BeforeAgentStartEvent'.

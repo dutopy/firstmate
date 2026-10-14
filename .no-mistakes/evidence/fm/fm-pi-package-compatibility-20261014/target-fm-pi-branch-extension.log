@@ -1,0 +1,29 @@
+FM_TEST_BEGIN 2026-10-14T12:11:25Z tests/fm-pi-branch-extension.test.sh family=standalone expected_gate_skip=none
+ok - fm_branch_outcomes hides through ToolExecutionComponent while Calm-off and HTML export stay stock
+ok - the installed Pi still bounds the picker's list and ranks its search
+ok - branch owns accepted wakes with a stable prefix and deterministic verdict-driven delivery
+ok - a captain outcome reaches main's model as one typed, sequence-keyed processing request while routine notes stay plain
+ok - requested and unsolicited healthy outcomes keep distinct delivery and event ownership
+ok - captain outcomes are exact and exactly once across crash, reload, busy main, compaction, and an unrelated assistant response
+ok - a captain outcome opens one sequence-keyed processing turn, survives empty and unrelated answers, is re-presented at run end and session start, and closes only on its acknowledgement
+ok - scopeForUnreadWake excludes every main-only class without vetoing eligible task-local rows, and writes the eligible snapshot
+ok - branch prompt_cache_key is stable per home across sessions and distinct between homes
+ok - branch default-on eligibility (task-scoped, heartbeat, afk) binds and a broken branch rejects to watcher fallback
+ok - a heartbeat review survives a check row arriving before its drain
+ok - fm_branch_report refuses a task the wake did not name, fleet included, while a heartbeat is unscoped
+ok - pre-drain eligibility re-check excludes a newly main-owned row without deferring eligible work
+ok - a co-present needs-decision row neither vetoes nor falsely settles routine branch delivery
+ok - a settled branch turn without a durable outcome falls back and releases its grant for main replay
+not ok - provider errors must latch, cool down, re-probe once, back off, and recover through a durable report: <anonymous_script>:214
+  throw new Error(`timed out waiting for ${label}`);
+        ^
+
+Error: timed out waiting for in-flight failed cooldown probe
+    at settle (eval at <anonymous> (file:///private/tmp/fmtgt.HNXCn0/[eval1]:2:7), <anonymous>:214:9)
+    at async file:///private/tmp/fmtgt.HNXCn0/[eval1]:121:1
+
+Node.js v26.7.0: expected exit 0, got 1
+FM_TEST_END 2026-10-14T12:13:24Z tests/fm-pi-branch-extension.test.sh exit=1 duration_ms=118769 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=119164
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=118769 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-pi-branch-extension.test.sh duration_ms=118769

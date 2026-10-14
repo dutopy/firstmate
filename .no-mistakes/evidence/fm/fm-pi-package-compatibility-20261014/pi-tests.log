@@ -1,0 +1,34 @@
+== fm-pi-primary-types
+skip: Pi extension typecheck prerequisite not found: tsc
+== fm-calm-pi-extension
+skip: installed @earendil-works/pi-coding-agent package not found
+mkdir: /missing-adapter-exports: Read-only file system
+mkdir: /missing-adapter-exports: Read-only file system
+cp: /missing-adapter-exports/project/.pi/extensions/lib/fm-calm-assistant-layout.ts: No such file or directory
+cp: /missing-adapter-exports/project/.pi/extensions/lib/fm-calm-operational-user-layout.ts: No such file or directory
+cp: /missing-adapter-exports/project/.pi/extensions/lib/fm-calm-visibility.ts: No such file or directory
+cp: /missing-adapter-exports/project/.pi/extensions/lib/fm-calm-working-ship.ts: No such file or directory
+cp: /missing-adapter-exports/project/.pi/extensions/lib/fm-calm-working-ship-sprite.ts: No such file or directory
+cp: /missing-adapter-exports/project/.pi/extensions/lib/fm-operational-input.ts: No such file or directory
+tests/fm-calm-pi-extension.test.sh: line 400: /missing-adapter-exports/project/package.json: No such file or directory
+tests/fm-calm-pi-extension.test.sh: line 401: /missing-adapter-exports/project/node_modules/@earendil-works/pi-coding-agent/package.json: No such file or directory
+tests/fm-calm-pi-extension.test.sh: line 404: /missing-adapter-exports/project/node_modules/@earendil-works/pi-coding-agent/index.js: No such file or directory
+tests/fm-calm-pi-extension.test.sh: line 430: cd: /missing-adapter-exports/project: No such file or directory
+not ok - Pi calm missing-adapter-export path failed: 
+tests/fm-calm-pi-extension.test.sh: line 36: fm_test_cleanup: command not found
+== fm-pi-branch-extension
+mkdir: /dispatch-root: Read-only file system
+cp: /dispatch-root/bin/fm-operational-input.sh: No such file or directory
+chmod: /dispatch-root/bin/fm-operational-input.sh: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 65: /dispatch-root/node_modules/@earendil-works/pi-coding-agent/package.json: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 68: /dispatch-root/node_modules/@earendil-works/pi-coding-agent/index.js: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 257: /dispatch-root/node_modules/@earendil-works/pi-ai/package.json: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 260: /dispatch-root/node_modules/@earendil-works/pi-ai/index.js: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 291: /dispatch-root/node_modules/@earendil-works/pi-tui/package.json: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 294: /dispatch-root/node_modules/@earendil-works/pi-tui/index.js: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 388: /dispatch-root/node_modules/typebox/package.json: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 391: /dispatch-root/node_modules/typebox/index.js: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 657: /node-output: Read-only file system
+cat: /node-output: No such file or directory
+tests/fm-pi-branch-extension.test.sh: line 901: expect_code: command not found
+not ok - cache key line missing from driver output: 

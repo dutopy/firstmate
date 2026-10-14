@@ -1,0 +1,45 @@
+FM_TEST_BEGIN 2026-10-14T12:06:25Z tests/fm-pi-primary-types.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.2.0
+FM_TEST_END 2026-10-14T12:06:27Z tests/fm-pi-primary-types.test.sh exit=0 duration_ms=1798 gate_skip=false
+FM_TEST_BEGIN 2026-10-14T12:06:27Z tests/fm-calm-pi-extension.test.sh family=pure-contract-unit expected_gate_skip=none
+tests/fm-calm-pi-extension.test.sh: line 8: fm_test_tmproot: command not found
+mkdir: /home-resolution: Read-only file system
+mkdir: /home-resolution: Read-only file system
+mkdir: /home-resolution: Read-only file system
+mkdir: /home-resolution: Read-only file system
+cp: /home-resolution/project/.pi/extensions/fm-calm.ts: No such file or directory
+cp: /home-resolution/project/.pi/extensions/lib/fm-calm-assistant-layout.ts: No such file or directory
+cp: /home-resolution/project/.pi/extensions/lib/fm-calm-operational-user-layout.ts: No such file or directory
+cp: /home-resolution/project/.pi/extensions/lib/fm-calm-visibility.ts: No such file or directory
+cp: /home-resolution/project/.pi/extensions/lib/fm-calm-working-ship.ts: No such file or directory
+cp: /home-resolution/project/.pi/extensions/lib/fm-calm-working-ship-sprite.ts: No such file or directory
+cp: /home-resolution/project/.pi/extensions/lib/fm-operational-input.ts: No such file or directory
+ln: /home-resolution/project/node_modules/@earendil-works/pi-coding-agent: No such file or directory
+ln: /home-resolution/project/node_modules/@earendil-works/pi-tui: No such file or directory
+ln: /home-resolution/project/node_modules/typebox: No such file or directory
+tests/fm-calm-pi-extension.test.sh: line 180: /home-resolution/project/package.json: No such file or directory
+tests/fm-calm-pi-extension.test.sh: line 259: cd: /home-resolution/launch-cwd: No such file or directory
+not ok - Pi calm home resolution failed: 
+tests/fm-calm-pi-extension.test.sh: line 36: fm_test_cleanup: command not found
+FM_TEST_END 2026-10-14T12:06:28Z tests/fm-calm-pi-extension.test.sh exit=1 duration_ms=342 gate_skip=false
+FM_TEST_BEGIN 2026-10-14T12:06:28Z tests/fm-pi-branch-extension.test.sh family=standalone expected_gate_skip=none
+ok - fm_branch_outcomes hides through ToolExecutionComponent while Calm-off and HTML export stay stock
+ok - the installed Pi still bounds the picker's list and ranks its search
+ok - branch owns accepted wakes with a stable prefix and deterministic verdict-driven delivery
+ok - a captain outcome reaches main's model as one typed, sequence-keyed processing request while routine notes stay plain
+not ok - requested and unsolicited healthy outcomes must follow their distinct public delivery paths: <anonymous_script>:214
+  throw new Error(`timed out waiting for ${label}`);
+        ^
+
+Error: timed out waiting for requested result 3 acknowledgement
+    at settle (eval at <anonymous> (file:///Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M4X4NWXCARVNQZJ6B7400CAN/[eval1]:2:7), <anonymous>:214:9)
+    at async file:///Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M4X4NWXCARVNQZJ6B7400CAN/[eval1]:149:3
+
+Node.js v26.7.0: expected exit 0, got 1
+FM_TEST_END 2026-10-14T12:06:55Z tests/fm-pi-branch-extension.test.sh exit=1 duration_ms=27756 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=2 skipped_gate=0 duration_ms=30783
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=2140 failed=1
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=27756 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-pi-branch-extension.test.sh duration_ms=27756
+FM_TEST_SLOWEST rank=2 script=tests/fm-pi-primary-types.test.sh duration_ms=1798
+FM_TEST_SLOWEST rank=3 script=tests/fm-calm-pi-extension.test.sh duration_ms=342
