@@ -44,7 +44,7 @@
 # 5 private not proven, 6 deny hit, 7 push failed or rejected, 8 publication
 # intentionally off.
 # Env: FM_HOME, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE, FM_WIP_NOW (test clock),
-# FM_CHECK_TIMEOUT (bound for the visibility read and the push).
+# FM_CHECK_TIMEOUT (bound for the visibility read), FM_WIP_PUSH_TIMEOUT (bound for the push, default 600 s), FM_WIP_GIT_TIMEOUT (bound per source git read, default 15 s).
 set -u
 export LC_ALL=C
 export GIT_TERMINAL_PROMPT=0
@@ -66,6 +66,9 @@ WIP_MAX_FILE_BYTES=94371840
 WIP_MAX_PASSES=3
 CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}
 case "$CHECK_TIMEOUT" in ''|*[!0-9]*|0) CHECK_TIMEOUT=30 ;; esac
+# The push itself gets its own, longer bound: a large first push must not be killed by the 30 s visibility-read bound.
+PUSH_TIMEOUT=${FM_WIP_PUSH_TIMEOUT:-600}
+case "$PUSH_TIMEOUT" in ''|*[!0-9]*|0) PUSH_TIMEOUT=600 ;; esac
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -97,22 +100,33 @@ deny_hash() {
 
 HOME_PRIVATE_GLOBS=('data/**' 'state/**' 'config/**' 'projects/**' '.no-mistakes/**' '.env')
 
-# True when <worktree> belongs to the same repository as this home's own
-# checkout, whose private directories must never be snapshotted.
-is_home_repo_worktree() {  # <worktree>
-  local a b
-  a=$(wip_src_git "$1" rev-parse --git-common-dir 2>/dev/null) || return 1
-  a=$(wip_real_path "$(cd "$1" && cd "$a" 2>/dev/null && pwd -P)") || return 1
+# Is <worktree> the home's own repository, whose private directories must never
+# leave? Three answers, evaluated from the worktree itself every time and never
+# from what an earlier snapshot recorded: 0 home, 1 not the home, 2 cannot be
+# determined (the worktree's git directories could not be read). Realpath
+# equality with FM_HOME counts as home as well as a shared git common directory.
+home_repo_state() {  # <real-worktree>
+  local wt=$1 a b
+  [ "$wt" = "$(wip_real_path "$FM_HOME")" ] && return 0
+  a=$(wip_src_git "$wt" rev-parse --git-common-dir 2>/dev/null) || return 2
+  [ -n "$a" ] || return 2
+  a=$(CDPATH='' cd -- "$wt" && CDPATH='' cd -- "$a" 2>/dev/null && pwd -P) || return 2
+  # FM_HOME that is not a git repository cannot share a repository with the worktree.
   b=$(GIT_OPTIONAL_LOCKS=0 git -C "$FM_HOME" rev-parse --git-common-dir 2>/dev/null) || return 1
-  b=$(wip_real_path "$(cd "$FM_HOME" && cd "$b" 2>/dev/null && pwd -P)") || return 1
-  [ -n "$a" ] && [ "$a" = "$b" ]
+  [ -n "$b" ] || return 1
+  b=$(CDPATH='' cd -- "$FM_HOME" && CDPATH='' cd -- "$b" 2>/dev/null && pwd -P) || return 1
+  [ "$a" = "$b" ] && return 0
+  return 1
 }
 
 # Print the pathspec exclusions (one per line) for a snapshot of <worktree>.
 exclusion_pathspecs() {  # <real-worktree> <shadow>
-  local wt=$1 shadow=$2 g rel store
+  local wt=$1 shadow=$2 g rel store st
   for g in ${DENY_GLOBS[@]+"${DENY_GLOBS[@]}"}; do printf ':(exclude,glob,icase)%s\n' "$g"; done
-  if is_home_repo_worktree "$wt"; then
+  # A snapshot errs toward excluding: the home-private directories are denied
+  # unless the worktree is positively not the home.
+  home_repo_state "$wt" && st=0 || st=$?
+  if [ "$st" -ne 1 ]; then
     for g in "${HOME_PRIVATE_GLOBS[@]}"; do
       printf ':(exclude,glob,icase)%s\n' "$g"
     done
@@ -145,38 +159,42 @@ resolve_worktree() {  # <path>
 }
 
 # One pass: bring the shadow index in line with the worktree's eligible files
-# and print the resulting tree id.
+# and print the resulting tree id. The work is done at list level (no per-file
+# shell loop): eligible = tracked + untracked-not-ignored minus the central deny,
+# minus tracked files missing from the worktree, minus gitlinks and nested
+# repositories, minus files over the forge size limit (found with find, which
+# reads no file and never follows a symlink to a FIFO). A path given to
+# update-index that cannot be indexed (unreadable, special file) is skipped
+# individually, so one file never fails the whole snapshot; the count is left in
+# $KDIR/pass-skipped and the checkpoint is then marked best effort.
 shadow_pass() {
-  local tmp present had pathspecs=() p
+  local tmp pathspecs=() p skipped=0
   tmp=$(mktemp -d "$KDIR/pass.XXXXXX") || return 1
   while IFS= read -r p; do pathspecs+=("$p"); done < <(exclusion_pathspecs "$REAL_WT" "$SHADOW")
   wip_src_git "$REAL_WT" ls-files -z --cached --others --exclude-standard -- . \
     ${pathspecs[@]+"${pathspecs[@]}"} 2>/dev/null > "$tmp/eligible.z" || { rm -rf "$tmp"; return 1; }
-  : > "$tmp/present.z"
-  while IFS= read -r -d '' p; do
-    case "$p" in *$'\n'*) continue ;; esac
-    if [ -f "$REAL_WT/$p" ] || [ -L "$REAL_WT/$p" ]; then printf '%s\0' "$p" >> "$tmp/present.z"; fi
-  done < "$tmp/eligible.z"
-  # Drop files over the forge size limit (wc -c reads sizes, not contents).
-  if [ -s "$tmp/present.z" ]; then
-    : > "$tmp/sized.z"
-    (cd "$REAL_WT" && xargs -0 wc -c < "$tmp/present.z" 2>/dev/null) | awk '
-      { n = $1; sub(/^[ \t]*[0-9]+ /, ""); if ($0 != "total" && n+0 > '"$WIP_MAX_FILE_BYTES"') print }' > "$tmp/toolarge.txt"
+  wip_src_git "$REAL_WT" ls-files -z --deleted -- . 2>/dev/null > "$tmp/deleted.z" || true
+  wip_src_git "$REAL_WT" ls-files -z --stage -- . 2>/dev/null | tr '\0' '\n' | awk -F'\t' '$1 ~ /^160000 / { print $2 }' > "$tmp/gitlinks.txt" || true
+  { tr '\0' '\n' < "$tmp/deleted.z"; cat "$tmp/gitlinks.txt"; } | sort -u > "$tmp/drop.txt"
+  tr '\0' '\n' < "$tmp/eligible.z" | grep -v '/$' | sort -u | comm -23 - "$tmp/drop.txt" > "$tmp/present.txt"
+  if [ -s "$tmp/present.txt" ]; then
+    sed 's|^|./|' "$tmp/present.txt" | tr '\n' '\0' \
+      | (cd "$REAL_WT" && xargs -0 sh -c 'find "$@" -maxdepth 0 -type f -size +'"$WIP_MAX_FILE_BYTES"'c -print' sh 2>/dev/null) \
+      | sed 's|^\./||' | sort -u > "$tmp/toolarge.txt"
     if [ -s "$tmp/toolarge.txt" ]; then
-      while IFS= read -r -d '' p; do
-        grep -qxF -- "$p" "$tmp/toolarge.txt" || printf '%s\0' "$p" >> "$tmp/sized.z"
-      done < "$tmp/present.z"
-      mv -f "$tmp/sized.z" "$tmp/present.z"
+      comm -23 "$tmp/present.txt" "$tmp/toolarge.txt" > "$tmp/present2.txt" && mv -f "$tmp/present2.txt" "$tmp/present.txt"
     fi
   fi
-  tr '\0' '\n' < "$tmp/present.z" | sort -u > "$tmp/present.txt"
   W ls-files -z | tr '\0' '\n' | sort -u > "$tmp/had.txt"
   comm -23 "$tmp/had.txt" "$tmp/present.txt" | tr '\n' '\0' | WT_W update-index --force-remove -z --stdin || { rm -rf "$tmp"; return 1; }
-  WT_W update-index --add -z --stdin < "$tmp/present.z" || { rm -rf "$tmp"; return 1; }
-  present=$(WT_W write-tree) || { rm -rf "$tmp"; return 1; }
-  had=$present
+  if ! tr '\n' '\0' < "$tmp/present.txt" | WT_W update-index --add -z --stdin 2>/dev/null; then
+    while IFS= read -r p; do
+      printf '%s\0' "$p" | WT_W update-index --add -z --stdin 2>/dev/null || skipped=$((skipped + 1))
+    done < "$tmp/present.txt"
+  fi
+  printf '%s\n' "$skipped" > "$KDIR/pass-skipped"
+  W write-tree || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"
-  printf '%s\n' "$had"
 }
 
 action_snapshot() {
@@ -193,13 +211,7 @@ action_snapshot() {
   resolve_worktree "$worktree"
   now=$(wip_now)
   if [ -n "$TASK" ]; then
-    fm_treehouse_slot_owner_state "$REAL_WT" "$TASK"
-    case "$FM_TREEHOUSE_SLOT_OWNER" in
-      mine) ;;
-      other) die "slot ownership moved to ${FM_TREEHOUSE_SLOT_OWNER_ID:-another task}; snapshot refused" 3 ;;
-      absent) die "slot ownership not proven (no claim); snapshot refused" 3 ;;
-      *) die "slot ownership unreadable; snapshot refused" 3 ;;
-    esac
+    wip_slot_proven "$REAL_WT" "$TASK" || die "slot ownership not proven (${WIP_SLOT_REASON}); snapshot refused" 3
   fi
   mkdir -p "$KDIR" || die "cannot create $KDIR"
   lock="$KDIR/lock"
@@ -216,12 +228,19 @@ action_snapshot() {
   if [ -n "$stored_dh" ] && [ "$stored_dh" != "$dh" ]; then lineage=$((lineage + 1)); fi
   LABEL=${TASK:-wt-${KEY:0:12}}
   case "$LABEL" in *[!A-Za-z0-9._-]*) LABEL=wt-${KEY:0:12} ;; esac
-  ref="refs/heads/wip/$LABEL/e$lineage"
+  if [ -n "$TASK" ] && [ "$LABEL" = "$TASK" ]; then
+    # one task can live on several copies over its life: the copy key keeps their
+    # lineages (orphan histories) on distinct references
+    ref="refs/heads/wip/$LABEL/${KEY:0:8}/e$lineage"
+  else
+    ref="refs/heads/wip/$LABEL/e$lineage"
+  fi
   wip_kv_set "$KDIR/info" path "$REAL_WT" || die "cannot write WIP info"
   wip_kv_set "$KDIR/info" task "$TASK" || die "cannot write WIP info"
   wip_kv_set "$KDIR/info" deny_hash "$dh" || die "cannot write WIP info"
   wip_kv_set "$KDIR/info" lineage "$lineage" || die "cannot write WIP info"
   wip_kv_set "$KDIR/info" ref "$ref" || die "cannot write WIP info"
+  rm -f "$KDIR/pass-skipped"
   tree=$(shadow_pass) || die "snapshot enumeration failed"
   pass=1
   while [ "$pass" -lt "$WIP_MAX_PASSES" ]; do
@@ -231,6 +250,7 @@ action_snapshot() {
     pass=$((pass + 1))
   done
   [ "$tree" = "${prev:-}" ] || best_effort=1
+  case "$(cat "$KDIR/pass-skipped" 2>/dev/null)" in ''|0) ;; *) best_effort=1 ;; esac
   wip_kv_set "$KDIR/ckpt" last_attempt "$now"
   parent=$(W rev-parse --verify --quiet "$ref^{commit}" 2>/dev/null || true)
   if [ -n "$parent" ] && [ "$(W rev-parse "$parent^{tree}")" = "$tree" ]; then
@@ -255,11 +275,6 @@ action_snapshot() {
 
 # --- push ---------------------------------------------------------------
 
-# wip_target <project>: prints "<owner>/<name>" from config/wip-remotes.
-wip_target() {
-  awk -v p="$1" '$1 == p && ($2 == "none" || $2 ~ /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/) { print $2; exit }' "$CONFIG/wip-remotes" 2>/dev/null
-}
-
 # Fresh visibility proof: only an explicit private answer returns 0.
 prove_private() {  # <owner/name>
   local out vis
@@ -272,12 +287,15 @@ prove_private() {  # <owner/name>
 # candidate tree is loaded into a throwaway index so the full pathspec matcher
 # applies, including to empty files.
 range_has_deny_hit() {  # <ref> <already-pushed-commit-or-empty>
-  local ref=$1 pushed=$2 c specs=() g range idx hit
+  local ref=$1 pushed=$2 c specs=() g range idx hit st
   load_deny_globs
   for g in ${DENY_GLOBS[@]+"${DENY_GLOBS[@]}"}; do specs+=(":(glob,icase)$g"); done
-  if is_home_repo_worktree "$REAL_WT"; then
-    for g in "${HOME_PRIVATE_GLOBS[@]}"; do specs+=(":(glob,icase)$g"); done
-  fi
+  home_repo_state "$REAL_WT" && st=0 || st=$?
+  case "$st" in
+    0) for g in "${HOME_PRIVATE_GLOBS[@]}"; do specs+=(":(glob,icase)$g"); done ;;
+    1) ;;
+    *) return 0 ;;   # cannot tell whether this is the home: refuse rather than assume it is not
+  esac
   [ "${#specs[@]}" -gt 0 ] || return 1
   if [ -n "$pushed" ] && W cat-file -e "$pushed^{commit}" 2>/dev/null; then range="$pushed..$ref"; else range=$ref; fi
   idx="$KDIR/deny-check.index"
@@ -322,18 +340,22 @@ action_push() {
   fm_lock_try_acquire "$lock" || die "a snapshot or push is running for $REAL_WT" 1
   # shellcheck disable=SC2064
   trap "fm_lock_release '$lock'" EXIT
+  pushed=$(wip_kv_get "$KDIR/push" pushed_commit)
+  if range_has_deny_hit "$ref" "$pushed"; then
+    wip_kv_set "$KDIR/push" result deny-hit
+    die "a commit to publish names a denied path (or the home cannot be told apart); publication refused" 6
+  fi
   if ! prove_private "$target"; then
     wip_kv_set "$KDIR/push" result private-not-proven
     die "private visibility of $target not proven now; publication refused" 5
   fi
-  pushed=$(wip_kv_get "$KDIR/push" pushed_commit)
-  if range_has_deny_hit "$ref" "$pushed"; then
-    wip_kv_set "$KDIR/push" result deny-hit
-    die "a commit to publish names a denied path; publication refused" 6
-  fi
   url="https://github.com/$target.git"
   rc=0
-  fm_run_timed "$CHECK_TIMEOUT" git --git-dir="$SHADOW" push --quiet "$url" "$ref:$ref" >/dev/null 2>&1 || rc=$?
+  fm_run_timed "$PUSH_TIMEOUT" git --git-dir="$SHADOW" push --quiet "$url" "$ref:$ref" >/dev/null 2>&1 || rc=$?
+  if [ "$rc" -eq 124 ]; then
+    wip_kv_set "$KDIR/push" result push-timeout
+    die "push to $target did not finish within ${PUSH_TIMEOUT}s; never forced" 7
+  fi
   if [ "$rc" -ne 0 ]; then
     wip_kv_set "$KDIR/push" result "push-failed-$rc"
     die "push to $target failed or was rejected (rc=$rc); never forced" 7

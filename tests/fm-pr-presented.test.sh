@@ -25,14 +25,18 @@ make_state() {  # <name> <meta lines...>
 }
 
 test_receipt_is_written_only_for_the_registered_url() {
-  local state rc=0
+  local state rc=0 before after epoch
   state=$(make_state ok "worktree=/x" "pr=$URL" "pr_head=0123456789abcdef0123456789abcdef01234567")
   assert_not_contains "$(cat "$state/t1.meta")" "pr_presented" "registration alone carries no receipt"
+  before=$(date +%s)
   FM_STATE_OVERRIDE="$state" FM_PR_PRESENTED_NOW=1700000000 "$PR_CHECK" t1 "$URL" --presented >/dev/null || fail "receipt must succeed"
-  assert_contains "$(cat "$state/t1.meta")" "pr_presented=1700000000:$URL" "the receipt names its time and URL"
+  after=$(date +%s)
+  epoch=$(sed -n 's/^pr_presented=\([0-9]*\):.*/\1/p' "$state/t1.meta")
+  [ "$epoch" -ge "$before" ] && [ "$epoch" -le "$after" ] || fail "the receipt time must be the real clock, a stray FM_PR_PRESENTED_NOW must not falsify it (got $epoch)"
+  assert_contains "$(cat "$state/t1.meta")" ":$URL" "the receipt names its URL"
   assert_contains "$(cat "$state/t1.meta")" "pr_head=0123456789abcdef0123456789abcdef01234567" "other metadata is preserved"
   fm_pr_metadata_identity_parse "$state/t1.meta" || fail "a receipt must leave the registration parseable"
-  FM_STATE_OVERRIDE="$state" FM_PR_PRESENTED_NOW=1700000500 "$PR_CHECK" t1 "$URL" --presented >/dev/null
+  FM_STATE_OVERRIDE="$state" "$PR_CHECK" t1 "$URL" --presented >/dev/null
   assert_equals 1 "$(grep -c '^pr_presented=' "$state/t1.meta")" "a repeated receipt replaces, never duplicates"
   FM_STATE_OVERRIDE="$state" "$PR_CHECK" t1 https://github.com/acme/widgets/pull/8 --presented >/dev/null 2>&1 || rc=$?
   expect_code 1 "$rc" "a PR the task did not register gets no receipt"

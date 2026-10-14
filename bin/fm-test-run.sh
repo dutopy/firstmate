@@ -499,7 +499,6 @@ EOF
 # refresh procedure are owned by docs/fm-test-portable-shards.md.
 portable_parallel_weight_hints() {
   cat <<'EOF'
-tests/fm-antidrift-check.test.sh 78000
 tests/fm-arm-pretool-check.test.sh 30898
 tests/fm-backend-herdr.test.sh 22144
 tests/fm-brief.test.sh 1625
@@ -512,10 +511,8 @@ tests/fm-ensure-agents-md.test.sh 901
 tests/fm-grok-harness.test.sh 6563
 tests/fm-herdr-lab.test.sh 9800
 tests/fm-lint.test.sh 164262
-tests/fm-nm-branch-sync-pipeline.test.sh 500
 tests/fm-pi-primary-types.test.sh 8624
 tests/fm-pr-merge.test.sh 111145
-tests/fm-pr-presented.test.sh 2000
 tests/fm-review-diff.test.sh 2747
 tests/fm-send-popup-settle.test.sh 4939
 tests/fm-send-settle.test.sh 2051
@@ -525,8 +522,6 @@ tests/fm-supervision-instructions.test.sh 297
 tests/fm-test-run.test.sh 92944
 tests/fm-tmux-submit-busy.test.sh 2477
 tests/fm-transition-lib.test.sh 99
-tests/fm-watch-antidrift.test.sh 24000
-tests/fm-wip-checkpoint.test.sh 26000
 tests/fm-x-mode.test.sh 31870
 EOF
 }
@@ -675,6 +670,7 @@ tests/fm-afk-pi-herdr-return-e2e.test.sh 100
 tests/fm-afk-return.test.sh 1837
 tests/fm-agy-harness.test.sh 11000
 tests/fm-agy-signals-live-e2e.test.sh 23
+tests/fm-antidrift-check.test.sh 78000
 tests/fm-ask-user-authority.test.sh 128
 tests/fm-backend-cmux-smoke.test.sh 33
 tests/fm-backend-cmux.test.sh 3657
@@ -770,6 +766,7 @@ tests/fm-mail-check.test.sh 6996
 tests/fm-mail.test.sh 8198
 tests/fm-muse-harness.test.sh 55572
 tests/fm-muse-signals-live-e2e.test.sh 23
+tests/fm-nm-branch-sync-pipeline.test.sh 500
 tests/fm-nm-test-contract.test.sh 556
 tests/fm-no-mistakes-required.test.sh 370
 tests/fm-omp-harness.test.sh 59969
@@ -789,6 +786,7 @@ tests/fm-pi-session-mirror-extension.test.sh 4000
 tests/fm-pi-watch-extension.test.sh 42970
 tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pr-check-security.test.sh 172215
+tests/fm-pr-presented.test.sh 2000
 tests/fm-pr-reviewers.test.sh 101
 tests/fm-pr-state-live-e2e.test.sh 247
 tests/fm-pr-state.test.sh 439
@@ -869,12 +867,14 @@ tests/fm-wake-drain-open-decisions.test.sh 6240
 tests/fm-wake-drain-outcome-backstop.test.sh 15182
 tests/fm-wake-drain-unread-status.test.sh 35078
 tests/fm-wake-queue.test.sh 56674
+tests/fm-watch-antidrift.test.sh 24000
 tests/fm-watch-arm.test.sh 69464
 tests/fm-watch-checkpoint.test.sh 5779
 tests/fm-watch-inbox-surface.test.sh 4135
 tests/fm-watch-recovery-loop.test.sh 58731
 tests/fm-watch-triage.test.sh 262626
 tests/fm-watcher-lock.test.sh 88554
+tests/fm-wip-checkpoint.test.sh 26000
 EOF
 }
 

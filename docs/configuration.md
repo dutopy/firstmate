@@ -655,25 +655,30 @@ The drift guard reports repositories that are drifting from GitHub and keeps a p
 `bin/fm-antidrift-check.sh refresh` is the producer.
 The watcher starts it detached (the same pattern as the home-summary refresh), at most one instance at a time, whenever its next-due epoch passes or a task status log changes.
 It never runs on the heartbeat path.
-The heartbeat reads only the cache it publishes, `state/.antidrift`, through the readers in `bin/fm-wip-lib.sh`, and raises one `check: antidrift: ...` wake per new line.
+The watcher reads only the cache it publishes, `state/.antidrift`, through the readers in `bin/fm-wip-lib.sh`, on every heartbeat and on every check interval, and raises one `check: antidrift: ...` wake per new line.
+A line is new when it or the digest of its uncapped composition changes, and an unchanged alarm is announced again after six hours so an ignored alarm does not go quiet.
+The line puts the safety alarms first (slot ownership, blocked publication, unknown) so the length cap never cuts them, and lists the first two names of each segment in sorted order.
+A cache that has not been refreshed for three ticks (at least 15 minutes) is itself reported once as `unknown: producer-stale`, so a hung producer is never read as clean.
 `bin/fm-wip-checkpoint.sh` owns snapshots and publication, `bin/fm-nm-run-lib.sh` owns the native push receipt, and `bin/fm-wip-exclude.globs` owns the central deny list.
 
 The inventory is this home's own: the `worktree=` of every task record in `state/`, the clones registered in `data/projects.md`, and the home's own repository.
 `git worktree list` is never an inventory, so another home's pool copy in a shared git directory is never adopted.
-A task worktree is read or snapshotted only while its pool-slot claim names that task, and a reassigned, unclaimed or unreadable slot is skipped and alarmed.
+A Treehouse task worktree is read or snapshotted only while its pool-slot claim names that task, and a reassigned, unclaimed or unreadable slot is skipped and alarmed.
+A task worktree outside any Treehouse pool, for example an Orca copy, has no claim to read: its authority is record exclusivity, and two records naming one path are refused as ambiguous.
 
 The alarms are literal and each is a count in the one line:
-- A product worktree whose branch has no GitHub upstream alarms immediately, with no grace period; a `local-only` project is annotated but still alarmed, and scout worktrees are excluded.
-- More than 10 commits ahead of the upstream, or of the native pushed head, alarms.
-- A last push older than 4 hours alarms for every inventoried worktree with a branch; an unrecorded push reads as "push age unknown" and is alarmed, never guessed.
+- A product worktree whose branch has no GitHub upstream alarms immediately, with no grace period; a `local-only` project is annotated but still alarmed, scout worktrees are excluded, and a non-GitHub upstream such as GitLab counts as none by design.
+- More than 10 commits ahead alarms, counted against the upstream or the native pushed head, whichever gives the smaller number, so commits the pipeline already pushed are not counted from a stale tracking ref.
+- A last push older than 4 hours alarms for every inventoried non-scout worktree with a branch; an unrecorded push reads as "push age unknown" and is alarmed, never guessed, and scout worktrees carry neither alarm.
 - Uncommitted changes observed continuously for 30 minutes alarm.
-- A remote whose push URL is `DISABLED` alarms.
-- An open PR of the forge login older than 48 hours alarms when no task registered it, or when its task has no presentation receipt.
+- A remote whose push URL is exactly `DISABLED` (any case) alarms; a repository merely named like that does not.
+- An open PR of the forge login older than 48 hours alarms when no task registered it, or when its task has no presentation receipt; an age the parser cannot read is reported unknown.
 - A checkpoint that could not be published alarms with its reason, and a worktree whose slot ownership is not proven alarms.
 
 Clocks are never inferred.
 The last push is the pipeline's own receipt, `branch_sync.pipeline.pushed_at` from `no-mistakes axi status` with `remote.freshness` equal to `pipeline_push`, only; WIP push receipts govern WIP publication, not this age; a fetch time is never used.
 Dirty duration is tracked from the first observation and persisted under `state/wip/`, and an unobserved start is unknown rather than backdated from file times.
+The clock continues across commits while the tree stays dirty, and it is cleared only when the tree is observed clean.
 PR age comes from the forge's relative age, which `gh-axi pr list` reports in whole days, so a PR counts from `2d ago`.
 A forge or tool that cannot answer is reported as `unknown` and is never read as clean.
 
@@ -698,6 +703,14 @@ Nothing here creates a repository, changes visibility or falls back to another t
 Before every push, repository visibility is read fresh from the forge and only an explicit `private` answer allows it; public, unknown or unreachable refuses and alarms.
 Every commit about to leave is checked against the deny list again, the refspec never carries a leading `+`, and a rejected push is reported and never forced.
 A milestone checkpoint is pushed immediately, otherwise a push happens within 90 minutes of the oldest unpublished checkpoint, and at least once every 24 hours the push action runs even with nothing new.
+
+A failed or not-applicable publication is retried no sooner than 15 minutes after the previous attempt, and a project declared `none` is not attempted at all.
+The push itself is bounded by `FM_WIP_PUSH_TIMEOUT` (default 600 seconds), separate from the 30-second visibility read, and a push that outlives it is reported as `push-timeout`, not as a rejection.
+One task that moves to another copy publishes on a reference carrying the copy key, so the two lineages never collide.
+Every source git read is bounded by `FM_WIP_GIT_TIMEOUT` (default 15 seconds) and a blocked read is reported as `unknown: git-timeout`.
+The native status read is cached per worktree, 5 minutes for a task worktree and 30 minutes for any other, and the PR list is polled at most every 30 minutes.
+A snapshot skips a file it cannot read or index and is then marked best effort; files over the 94 MiB forge limit are never captured, whatever their names.
+The shadow repositories are not touched by task cleanup and an unpublished checkpoint is never erased; their retention and cleanup is a separate follow-up, and until it lands nothing here deletes them.
 
 Intervals and thresholds are constants in the owning scripts' headers, and the existing `FM_CHECK_INTERVAL` and `FM_CHECK_TIMEOUT` bound the producer's cadence and each external call.
 

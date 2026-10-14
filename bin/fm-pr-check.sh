@@ -102,7 +102,7 @@ if [ "$PRESENTED" = 1 ]; then
       pr_presented=*) ;;
       pr=*)
         if [ "$receipt_written" = 0 ]; then
-          printf 'pr_presented=%s:%s\n' "${FM_PR_PRESENTED_NOW:-$(date +%s)}" "$URL" >> "$PRES_TMP" || exit 1
+          printf 'pr_presented=%s:%s\n' "$(date +%s)" "$URL" >> "$PRES_TMP" || exit 1
           receipt_written=1
         fi
         printf '%s\n' "$line" >> "$PRES_TMP" || exit 1

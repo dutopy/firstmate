@@ -13,6 +13,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$ROOT/bin/fm-timeout-lib.sh"
 
 CK="$ROOT/bin/fm-wip-checkpoint.sh"
 TMP_ROOT=$(fm_test_tmproot fm-wip-checkpoint)
@@ -177,8 +179,9 @@ test_ownership_is_proven_before_a_snapshot() {
   expect_code 3 "$rc" "a slot claimed by another task is refused"
   assert_absent "$home/state/wip" "a refused snapshot creates no WIP state"
   rm -f "$pool/.fm-slot-owner"
+  : > "$TMP_ROOT/own/pool/treehouse-state.json"
   rc=0; FM_HOME="$home" "$CK" snapshot "$src" --task mine-task >/dev/null 2>&1 || rc=$?
-  expect_code 3 "$rc" "an unclaimed slot is not proven and is refused"
+  expect_code 3 "$rc" "an unclaimed Treehouse slot is not proven and is refused"
   claim_slot "$pool" mine-task
   rc=0; FM_HOME="$home" "$CK" snapshot "$src" --task mine-task >/dev/null 2>&1 || rc=$?
   expect_code 0 "$rc" "a slot claimed by this task is snapshotted"
@@ -325,6 +328,94 @@ test_a_rejected_push_is_reported_and_never_forced() {
   pass "fm-wip-checkpoint: a rejected push is reported and never forced"
 }
 
+# A7: one unreadable file must not fail the whole snapshot.
+test_an_unreadable_file_does_not_fail_the_snapshot() {
+  local src home shadow ref files
+  [ "$(id -u)" != 0 ] || { pass "fm-wip-checkpoint: unreadable file case skipped as root"; return 0; }
+  src=$(make_src unreadable); home=$(make_home unreadable)
+  printf 'secret-ish\n' > "$src/unreadable.txt"
+  chmod 000 "$src/unreadable.txt"
+  FM_HOME="$home" "$CK" snapshot "$src" >/dev/null || fail "an unreadable file must not fail the snapshot"
+  chmod 600 "$src/unreadable.txt"
+  shadow=$(shadow_of "$home")
+  ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  files=$(git --git-dir="$shadow" ls-tree -r --name-only "$ref" | tr '\n' ' ')
+  assert_contains "$files" "a.txt" "readable files are still captured"
+  assert_not_contains "$files" "unreadable.txt" "the unreadable file is skipped"
+  assert_contains "$(cat "$(find "$home/state/wip" -name ckpt | head -n 1)")" "best_effort=1" "the checkpoint is marked best effort"
+  pass "fm-wip-checkpoint: an unreadable file is skipped, the snapshot still lands (best effort)"
+}
+
+# A8/F11: the size cap holds for odd names (leading dash, literal 'total'); special files do not hang.
+test_the_size_cap_holds_for_odd_names_and_special_files_do_not_hang() {
+  local src home shadow ref files rc=0
+  src=$(make_src oddnames); home=$(make_home oddnames)
+  dd if=/dev/zero of="$src/-huge.bin" bs=1048576 count=0 seek=95 2>/dev/null
+  dd if=/dev/zero of="$src/total" bs=1048576 count=0 seek=95 2>/dev/null
+  printf 'small\n' > "$src/small.txt"
+  mkfifo "$src/pipe"
+  ln -s pipe "$src/pipelink"
+  fm_run_timed 40 env FM_HOME="$home" "$CK" snapshot "$src" >/dev/null 2>&1 || rc=$?
+  expect_code 0 "$rc" "the snapshot finishes (a FIFO behind a symlink must not hang it)"
+  shadow=$(shadow_of "$home")
+  ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  files=$(git --git-dir="$shadow" ls-tree -r --name-only "$ref" | tr '\n' ' ')
+  assert_not_contains "$files" "-huge.bin" "a file named with a leading dash is still size-capped"
+  assert_not_contains "$files" "total" "a file literally named total is still size-capped"
+  assert_contains "$files" "small.txt" "ordinary files are captured"
+  pass "fm-wip-checkpoint: the size cap holds for odd names and special files do not hang"
+}
+
+# A9: behavior parity at a larger scale (deletions follow, everything present is captured).
+test_a_large_tree_snapshots_with_deletions_following() {
+  local src home shadow ref d f count
+  src=$(make_src large); home=$(make_home large)
+  for d in $(seq 1 20); do
+    mkdir -p "$src/bulk$d"
+    for f in $(seq 1 150); do printf '%s\n' "$f" > "$src/bulk$d/f$f.txt"; done
+  done
+  fm_run_timed 120 env FM_HOME="$home" "$CK" snapshot "$src" >/dev/null || fail "a 3000-file tree must snapshot within the bound"
+  shadow=$(shadow_of "$home")
+  ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  count=$(git --git-dir="$shadow" ls-tree -r --name-only "$ref" | grep -c '^bulk')
+  assert_equals 3000 "$count" "every present file is captured"
+  rm "$src/bulk1/f1.txt"
+  FM_HOME="$home" "$CK" snapshot "$src" >/dev/null
+  ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  assert_equals 2999 "$(git --git-dir="$shadow" ls-tree -r --name-only "$ref" | grep -c '^bulk')" "a deleted file leaves the tree"
+  pass "fm-wip-checkpoint: a large tree snapshots with deletions following"
+}
+
+# C11: a slow push is its own result (timeout), not a rejection, and the bound is separate from the visibility read.
+test_a_slow_push_is_reported_as_a_timeout_not_a_rejection() {
+  local src home remote rc=0
+  read -r src home remote < <(setup_push pushtimeout)
+  printf '#!/bin/sh\nsleep 6\nexit 0\n' > "$remote/hooks/pre-receive"
+  chmod +x "$remote/hooks/pre-receive"
+  env FM_HOME="$home" FAKE_VIS=private FAKE_VIS_CALLS="$TMP_ROOT/calls" PATH="$FAKEBIN:$PATH" FM_WIP_PUSH_TIMEOUT=1 \
+    "$CK" push "$src" --project proj >/dev/null 2>&1 || rc=$?
+  expect_code 7 "$rc" "a push that outlives its bound fails"
+  assert_contains "$(cat "$(find "$home/state/wip" -name push | head -n 1)")" "result=push-timeout" "a timeout is recorded as its own result"
+  pass "fm-wip-checkpoint: a slow push is a timeout result, not a rejection"
+}
+
+# B3: when the push-time recognition of the home repository cannot be settled, the push is refused before any forge call.
+test_an_undeterminable_home_state_refuses_the_push_without_a_forge_call() {
+  local src home remote real rc=0
+  read -r src home remote < <(setup_push undeterminable)
+  real=$(command -v git)
+  mkdir -p "$TMP_ROOT/slowgit"
+  printf '#!/bin/sh\ncase "$*" in *--git-common-dir*) sleep 5 ;; esac\nexec %s "$@"\n' "$real" > "$TMP_ROOT/slowgit/git"
+  chmod +x "$TMP_ROOT/slowgit/git"
+  : > "$TMP_ROOT/calls"
+  env FM_HOME="$home" FAKE_VIS=private FAKE_VIS_CALLS="$TMP_ROOT/calls" PATH="$TMP_ROOT/slowgit:$FAKEBIN:$PATH" FM_WIP_GIT_TIMEOUT=1 \
+    "$CK" push "$src" --project proj >/dev/null 2>&1 || rc=$?
+  expect_code 6 "$rc" "an undeterminable home recognition refuses the push"
+  assert_equals 0 "$(wc -l < "$TMP_ROOT/calls" | tr -d ' ')" "no forge call is made before the local refusal"
+  [ -z "$(git --git-dir="$remote" for-each-ref)" ] || fail "nothing may reach the remote"
+  pass "fm-wip-checkpoint: an undeterminable home recognition refuses the push before any forge call"
+}
+
 test_snapshot_contents_and_source_untouched
 test_second_pass_is_idempotent_and_deletions_follow
 test_shadow_inside_the_worktree_never_snapshots_itself
@@ -338,3 +429,9 @@ test_publication_can_be_declared_off_for_a_project
 test_denied_path_in_a_commit_blocks_the_push
 test_home_private_paths_in_a_commit_block_the_push
 test_a_rejected_push_is_reported_and_never_forced
+
+test_an_unreadable_file_does_not_fail_the_snapshot
+test_the_size_cap_holds_for_odd_names_and_special_files_do_not_hang
+test_a_large_tree_snapshots_with_deletions_following
+test_a_slow_push_is_reported_as_a_timeout_not_a_rejection
+test_an_undeterminable_home_state_refuses_the_push_without_a_forge_call

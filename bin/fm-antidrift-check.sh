@@ -21,14 +21,19 @@
 # home's own repository. `git worktree list` is never used as an inventory, so
 # another home's pool copy in a shared git directory is never adopted. A task
 # worktree is read or snapshotted only while its pool-slot claim names that
-# task; a reassigned, unclaimed or unreadable slot is skipped and alarmed.
+# task; a reassigned, unclaimed or unreadable slot is skipped and alarmed. A task
+# worktree outside any Treehouse pool (for example an Orca copy) has no claim to
+# read: its authority is record exclusivity, and two records for one path are
+# refused as ambiguous.
 #
 # Alarms, each a count in the one line. All are literal thresholds:
-#   no upstream          a worktree whose branch has no GitHub upstream (scouts excluded)
+#   no upstream          a worktree whose branch has no GitHub upstream (scouts excluded);
+#                        a non-GitHub upstream, for example GitLab, counts as none by design
 #   >10 unpushed         commits ahead of the upstream, or of the native pushed head
 #   push >4h             last successful push older than 4 hours (every non-scout worktree)
-#   push age unknown     no native pipeline receipt exists for that branch
-#   dirty >30m           uncommitted changes observed continuously for 30 minutes
+#   push age unknown     no native pipeline receipt exists for that branch (scouts excluded)
+#   dirty >30m           uncommitted changes observed continuously for 30 minutes; the clock
+#                        is kept across commits while the tree stays dirty and cleared when clean
 #   push DISABLED        a remote whose push URL is DISABLED
 #   PR >48h              an open PR of the forge login, not registered or with no
 #                        presentation receipt (pr_presented in the task metadata)
@@ -49,7 +54,8 @@
 # nothing new. Nothing here pushes, fetches, rebases, merges, deletes or
 # repairs anything outside the WIP store.
 # Env: FM_HOME, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE, FM_WIP_NOW,
-# FM_CHECK_INTERVAL (tick), FM_CHECK_TIMEOUT (bound per external call).
+# FM_CHECK_INTERVAL (tick), FM_CHECK_TIMEOUT (bound per external call),
+# FM_WIP_GIT_TIMEOUT (bound per source git read, default 15 s).
 set -u
 export LC_ALL=C
 export GIT_TERMINAL_PROMPT=0
@@ -94,6 +100,9 @@ PUSH_TRIGGER=5400
 PUSH_DAILY=82800
 PR_MIN_DAYS=2
 PR_POLL_SECS=1800
+PUSH_RETRY=900
+NM_TASK_TTL=300
+NM_OTHER_TTL=1800
 
 # Inventory arrays (indexed in parallel).
 E_PATH=(); E_TASK=(); E_PROJ=(); E_KIND=(); E_MODE=()
@@ -158,13 +167,15 @@ build_inventory() {
 
 src() { wip_src_git "$@"; }
 
-iso_age_unit_old_enough() {  # "<N><unit> ago" -> 0 when >= PR_MIN_DAYS
+iso_age_unit_old_enough() {  # "<N><unit> ago" -> 0 old enough, 1 young, 2 unparsable
   local n unit
   n=${1%% *}; unit=${n##*[0-9]}; n=${n%"$unit"}
+  case "$n" in ''|*[!0-9]*) return 2 ;; esac
   case "$unit" in
-    d) [ "${n:-0}" -ge "$PR_MIN_DAYS" ] ;;
+    d) [ "$n" -ge "$PR_MIN_DAYS" ] ;;
     w|mo|y) return 0 ;;
-    *) return 1 ;;
+    s|m|h) return 1 ;;
+    *) return 2 ;;
   esac
 }
 
@@ -172,7 +183,7 @@ field_add() {  # <label> <count> <names...> -> appends to LINE_PARTS
   local label=$1 count=$2 names
   shift 2
   [ "$count" -gt 0 ] || return 0
-  names=$(printf '%s\n' "$@" | head -n 2 | paste -sd, -)
+  names=$(printf '%s\n' "$@" | LC_ALL=C sort | head -n 2 | paste -sd, -)
   if [ "$count" -gt 2 ]; then names="$names,+$((count - 2))"; fi
   LINE_PARTS+=("$label $count${names:+ ($names)}")
 }
@@ -183,15 +194,51 @@ entry_label() {  # <index>
   printf '%s' "${E_TASK[$i]:-${E_PROJ[$i]:-$base}}"
 }
 
+# A blocked source git read is recorded by wip_src_git; report the worktree as
+# unknown, never as clean. Returns 0 when a timeout was seen (and clears the mark).
+timeout_seen() {  # <label>
+  [ -s "${WIP_TIMEOUT_MARK:-/nonexistent}" ] || return 1
+  UNKNOWN+=("git-timeout:$1")
+  : > "$WIP_TIMEOUT_MARK"
+  return 0
+}
+
+# Native status for one worktree, cached per worktree key: a task worktree is
+# re-asked at most every NM_TASK_TTL seconds, any other worktree every NM_OTHER_TTL.
+# Sets NM_LAST_PUSH (epoch or empty) and NM_PUSHED_HEAD. Empty means unknown.
+nm_facts() {  # <worktree> <kdir> <task>
+  local wt=$1 kdir=$2 task=$3 ttl polled out fresh lp ph
+  NM_LAST_PUSH=''; NM_PUSHED_HEAD=''
+  command -v no-mistakes >/dev/null 2>&1 || return 0
+  ttl=$NM_OTHER_TTL; [ -z "$task" ] || ttl=$NM_TASK_TTL
+  polled=$(wip_kv_get "$kdir/nm" polled)
+  case "$polled" in ''|*[!0-9]*) polled=0 ;; esac
+  if [ $((NOW - polled)) -ge "$ttl" ]; then
+    out=$(fm_nm_run "$wt" "$NM_TIMEOUT" axi status) || out=''
+    ph=$(fm_nm_branch_sync_pipeline_field "$out" pushed_head)
+    fresh=$(fm_nm_branch_sync_freshness "$out")
+    lp=''
+    if [ "$fresh" = pipeline_push ]; then
+      lp=$(fm_nm_branch_sync_pipeline_field "$out" pushed_at)
+      case "$lp" in ''|*[!0-9]*) lp='' ;; esac
+    fi
+    wip_kv_set "$kdir/nm" polled "$NOW"
+    wip_kv_set "$kdir/nm" last_push "$lp"
+    wip_kv_set "$kdir/nm" pushed_head "$ph"
+  fi
+  NM_LAST_PUSH=$(wip_kv_get "$kdir/nm" last_push)
+  NM_PUSHED_HEAD=$(wip_kv_get "$kdir/nm" pushed_head)
+}
+
 process_entry() {  # <index>
-  local i=$1 wt task proj kind label key kdir branch up gh remote url ahead pushed_head last_push nm_out fresh dirty ident first head
+  local i=$1 wt task proj kind label key kdir branch up gh remote url ahead ahead_nm last_push st st_rc dirty first head
   local ms_off size milestone=0 pr_now pr_seen snap_rc act due=0 last_attempt ckpt_commit last snap_args
+  local target attempt result
   wt=${E_PATH[$i]}; task=${E_TASK[$i]}; proj=${E_PROJ[$i]}; kind=${E_KIND[$i]}
   label=$(entry_label "$i")
   if [ "$kind" = ambiguous ]; then C_SLOT+=("$label"); return 0; fi
   if [ -n "$task" ]; then
-    fm_treehouse_slot_owner_state "$wt" "$task"
-    if [ "$FM_TREEHOUSE_SLOT_OWNER" != mine ]; then C_SLOT+=("$label:$FM_TREEHOUSE_SLOT_OWNER"); return 0; fi
+    wip_slot_proven "$wt" "$task" || { C_SLOT+=("$label:$WIP_SLOT_REASON"); return 0; }
   fi
   key=$(wip_key "$wt"); kdir=$(wip_dir "$key")
   wip_reset_if_task_changed "$kdir" "$task"
@@ -207,7 +254,7 @@ process_entry() {  # <index>
       # must not hide which forge the upstream names.
       url=$(src "$wt" config "remote.$remote.url" 2>/dev/null)
       [ -n "$url" ] || url=$(src "$wt" remote get-url "$remote" 2>/dev/null)
-      case "$url" in *github.com[:/]*) gh=1 ;; esac
+      if wip_is_github_url "$url"; then gh=1; fi
       ahead=$(src "$wt" rev-list --count "$up..HEAD" 2>/dev/null)
     fi
   elif [ -n "$head" ] && [ -z "$(src "$wt" branch -r --contains HEAD 2>/dev/null | head -n 1)" ]; then
@@ -215,31 +262,30 @@ process_entry() {  # <index>
   else
     gh=1   # detached and fully contained in a remote: not drift
   fi
-  # native push receipt for pipeline-authored branches
-  if [ "$kind" != scout ] && [ -n "$branch" ] && command -v no-mistakes >/dev/null 2>&1; then
-    nm_out=$(fm_nm_run "$wt" "$NM_TIMEOUT" axi status) || nm_out=''
-    pushed_head=$(fm_nm_branch_sync_pipeline_field "$nm_out" pushed_head)
-    fresh=$(fm_nm_branch_sync_freshness "$nm_out")
-    if [ "$fresh" = pipeline_push ]; then
-      last_push=$(fm_nm_branch_sync_pipeline_field "$nm_out" pushed_at)
-      case "$last_push" in ''|*[!0-9]*) last_push='' ;; esac
-    fi
-    if [ -z "$up" ] && [ -n "$pushed_head" ] && [ -n "$(fm_nm_resolve_commit "$wt" "$pushed_head")" ]; then
-      ahead=$(src "$wt" rev-list --count "$pushed_head..HEAD" 2>/dev/null)
+  # native push receipt and pushed head (cached per worktree)
+  if [ "$kind" != scout ] && [ -n "$branch" ]; then
+    nm_facts "$wt" "$kdir" "$task"
+    last_push=$NM_LAST_PUSH
+    # commits the pipeline already pushed are not unpushed even when the local
+    # tracking ref is stale: take the smaller of the two counts
+    if [ -n "$NM_PUSHED_HEAD" ] && [ -n "$(fm_nm_resolve_commit "$wt" "$NM_PUSHED_HEAD")" ]; then
+      ahead_nm=$(src "$wt" rev-list --count "$NM_PUSHED_HEAD..HEAD" 2>/dev/null)
+      case "$ahead_nm" in ''|*[!0-9]*) ahead_nm='' ;; esac
+      case "$ahead" in ''|*[!0-9]*) ahead='' ;; esac
+      if [ -n "$ahead_nm" ] && { [ -z "$ahead" ] || [ "$ahead_nm" -lt "$ahead" ]; }; then ahead=$ahead_nm; fi
     fi
   fi
   case "$ahead" in ''|*[!0-9]*) ahead='' ;; esac
-  # dirty tracking (persisted, never backdated)
-  ident=$(src "$wt" status --porcelain=v1 -z 2>/dev/null | wip_hash)
+  # dirty tracking: one status read; the clock is continuous while the tree
+  # stays dirty (a commit that leaves it dirty does not reset it) and cleared when clean
+  st=$(src "$wt" status --porcelain=v1 2>/dev/null); st_rc=$?
+  if timeout_seen "$label"; then return 0; fi   # blocked read: unknown, never clean
+  if [ "$st_rc" -ne 0 ]; then UNKNOWN+=("git-error:$label"); return 0; fi
   dirty=0
-  [ -z "$(src "$wt" status --porcelain=v1 2>/dev/null | head -n 1)" ] || dirty=1
+  [ -z "$st" ] || dirty=1
   if [ "$dirty" = 1 ]; then
     first=$(wip_kv_get "$kdir/dirty" first_observed)
-    if [ -z "$first" ] || [ "$(wip_kv_get "$kdir/dirty" head)" != "$head" ]; then
-      wip_kv_set "$kdir/dirty" first_observed "$NOW"; wip_kv_set "$kdir/dirty" head "$head"
-      first=$NOW
-    fi
-    wip_kv_set "$kdir/dirty" ident "$ident"
+    case "$first" in ''|*[!0-9]*) first=$NOW; wip_kv_set "$kdir/dirty" first_observed "$NOW" ;; esac
     if [ $((NOW - first)) -ge "$DIRTY_MAX" ]; then C_DIRTY+=("$label"); fi
   else
     [ ! -e "$kdir/dirty" ] || rm -f "$kdir/dirty"
@@ -264,6 +310,8 @@ process_entry() {  # <index>
     pr_now=$(meta_get "$STATE/$task.meta" pr)
     case "$size" in ''|*[!0-9]*) size=0 ;; esac
     case "$ms_off" in ''|*[!0-9]*) ms_off=0 ;; esac
+    # a status log that was truncated or recreated shorter restarts from the top
+    [ "$size" -ge "$ms_off" ] || ms_off=0
     if [ "$size" -gt "$ms_off" ] && tail -c "+$((ms_off + 1))" "$STATE/$task.status" 2>/dev/null | grep -Eq '^(done|failed)[ :[]'; then milestone=1; fi
     [ -z "$pr_now" ] || [ "$pr_now" = "$pr_seen" ] || milestone=1
   fi
@@ -279,7 +327,9 @@ process_entry() {  # <index>
         "$CK" snapshot "${snap_args[@]}" >/dev/null 2>&1 || snap_rc=$?
       if [ "$snap_rc" -eq 3 ]; then C_SLOT+=("$label:snapshot-refused"); fi
       if [ "$snap_rc" -ne 0 ] && [ "$snap_rc" -ne 3 ]; then C_WIPBLOCK+=("$label:snapshot"); fi
-      if [ "$milestone" = 1 ] && [ "$snap_rc" -eq 0 ] && [ -n "$task" ]; then
+      if [ "$snap_rc" -eq 0 ] && [ -n "$task" ]; then
+        # the offset is recorded after every successful snapshot so a recreated
+        # log is compared with its own size, and a new pr= is remembered
         wip_kv_set "$kdir/ms" status_off "$size"; wip_kv_set "$kdir/ms" pr "$pr_now"
       fi
       last_attempt=$NOW
@@ -296,7 +346,19 @@ process_entry() {  # <index>
     fi
     last=$(wip_kv_get "$kdir/push" last_verified)
     case "$last" in ''|*[!0-9]*) due=1 ;; *) [ $((NOW - last)) -lt "$PUSH_DAILY" ] || due=1 ;; esac
+    attempt=$(wip_kv_get "$kdir/push" last_attempt)
+    result=$(wip_kv_get "$kdir/push" result)
+    target=$(wip_target "$proj")
+    if [ "$target" = none ]; then
+      # publication is intentionally off: record the posture once, never spawn a push for it
+      if [ "$result" != off ]; then wip_kv_set "$kdir/push" result off; wip_kv_set "$kdir/push" last_attempt "$NOW"; fi
+      due=0
+    elif [ "$due" = 1 ] && [ "$result" != pushed ] && [ -n "$attempt" ]; then
+      # a failed or not-applicable attempt is retried only after a backoff
+      case "$attempt" in *[!0-9]*) ;; *) [ $((NOW - attempt)) -ge "$PUSH_RETRY" ] || due=0 ;; esac
+    fi
     if [ "$due" = 1 ]; then
+      wip_kv_set "$kdir/push" last_attempt "$NOW"
       FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
         "$CK" push "$wt" --project "$proj" >/dev/null 2>&1 || true
     fi
@@ -304,6 +366,7 @@ process_entry() {  # <index>
       no-remote) C_WIPBLOCK+=("$label:no-remote") ;;
       private-not-proven) C_WIPBLOCK+=("$label:private-unproven") ;;
       deny-hit) C_WIPBLOCK+=("$label:denied-path") ;;
+      push-timeout) C_WIPBLOCK+=("$label:push-timeout") ;;
       push-failed-*) C_WIPBLOCK+=("$label:push-rejected") ;;
     esac
   fi
@@ -312,7 +375,7 @@ process_entry() {  # <index>
 # --- remotes and PRs --------------------------------------------------------
 
 check_disabled_remotes() {
-  local seen='' i wt common r u
+  local seen='' i wt common r u up
   for i in "${!E_PATH[@]}"; do
     wt=${E_PATH[$i]}
     common=$(src "$wt" rev-parse --git-common-dir 2>/dev/null)
@@ -321,8 +384,11 @@ check_disabled_remotes() {
     seen="$seen $common"
     for r in $(src "$wt" remote 2>/dev/null); do
       u=$(src "$wt" remote get-url --push "$r" 2>/dev/null)
-      case "$u" in *DISABLED*|*disabled*) C_DISABLED+=("$(entry_label "$i"):$r") ;; esac
+      up=$(printf '%s' "$u" | tr '[:lower:]' '[:upper:]')
+      # the push URL IS the value DISABLED, not any URL that contains the word
+      [ "$up" = DISABLED ] && C_DISABLED+=("$(entry_label "$i"):$r")
     done
+    timeout_seen "remotes:$(entry_label "$i")" || true
   done
 }
 
@@ -335,8 +401,16 @@ presented_pr_urls() {
   cat "$STATE"/*.meta 2>/dev/null | sed -n 's/^pr_presented=[0-9]*://p' | sort -u
 }
 
+has_github_remote() {  # <worktree>
+  local u
+  while IFS= read -r u; do
+    wip_is_github_url "$u" && return 0
+  done < <(src "$1" config --get-regexp '^remote\..*\.url$' 2>/dev/null | awk '{print $2}')
+  return 1
+}
+
 check_prs() {
-  local seen='' i wt common cache out url age reg pres now_cache rows parsed
+  local seen='' i wt common cache out url age reg pres now_cache rows parsed rc
   reg=$(registered_pr_urls); pres=$(presented_pr_urls)
   for i in "${!E_PATH[@]}"; do
     wt=${E_PATH[$i]}
@@ -346,7 +420,7 @@ check_prs() {
     common=$(cd "$wt" && cd "$common" 2>/dev/null && pwd -P) || continue
     case " $seen " in *" $common "*) continue ;; esac
     seen="$seen $common"
-    src "$wt" config --get-regexp '^remote\..*\.url$' 2>/dev/null | grep -q 'github\.com' || continue
+    has_github_remote "$wt" || continue
     cache="$STATE/wip/pr-$(printf '%s' "$common" | wip_hash)"
     now_cache=$(wip_kv_get "$cache" polled)
     case "$now_cache" in ''|*[!0-9]*) now_cache=0 ;; esac
@@ -369,15 +443,29 @@ check_prs() {
     while IFS= read -r out; do
       [ -n "$out" ] || continue
       url=${out%% *}; age=${out#* }
-      iso_age_unit_old_enough "$age" || continue
+      rc=0
+      iso_age_unit_old_enough "$age" || rc=$?
+      case "$rc" in
+        0) ;;
+        1) continue ;;
+        *) UNKNOWN+=("PR-age:${url##*/pull/}"); continue ;;
+      esac
       if printf '%s\n' "$pres" | grep -qxF -- "$url"; then continue; fi
       if printf '%s\n' "$reg" | grep -qxF -- "$url"; then C_PRNOPROOF+=("${url##*/pull/}"); else C_PRUNREG+=("${url##*/pull/}"); fi
     done < "$cache.list"
   done
 }
 
+# Composition, most critical first so the cap never cuts a safety alarm. LINE_OUT is
+# the capped line; SIG_OUT is a digest of the UNCAPPED composition, so a change that
+# only lands in the truncated tail is still news.
 compose_line() {
   LINE_PARTS=()
+  field_add "slot-unproven" "${#C_SLOT[@]}" ${C_SLOT[@]+"${C_SLOT[@]}"}
+  field_add "WIP-blocked" "${#C_WIPBLOCK[@]}" ${C_WIPBLOCK[@]+"${C_WIPBLOCK[@]}"}
+  if [ "${#UNKNOWN[@]}" -gt 0 ]; then
+    LINE_PARTS+=("unknown: $(printf '%s\n' "${UNKNOWN[@]}" | LC_ALL=C sort | head -n 2 | paste -sd, -)")
+  fi
   field_add "no-upstream" "${#C_NOUP[@]}" ${C_NOUP[@]+"${C_NOUP[@]}"}
   field_add "unpushed>10" "${#C_MANY[@]}" ${C_MANY[@]+"${C_MANY[@]}"}
   field_add "push>4h" "${#C_PUSH4[@]}" ${C_PUSH4[@]+"${C_PUSH4[@]}"}
@@ -386,42 +474,43 @@ compose_line() {
   field_add "push-DISABLED" "${#C_DISABLED[@]}" ${C_DISABLED[@]+"${C_DISABLED[@]}"}
   field_add "PR>48h-unregistered" "${#C_PRUNREG[@]}" ${C_PRUNREG[@]+"${C_PRUNREG[@]}"}
   field_add "PR>48h-presentation-unproven" "${#C_PRNOPROOF[@]}" ${C_PRNOPROOF[@]+"${C_PRNOPROOF[@]}"}
-  field_add "WIP-blocked" "${#C_WIPBLOCK[@]}" ${C_WIPBLOCK[@]+"${C_WIPBLOCK[@]}"}
-  field_add "slot-unproven" "${#C_SLOT[@]}" ${C_SLOT[@]+"${C_SLOT[@]}"}
   local body='' p
   for p in ${LINE_PARTS[@]+"${LINE_PARTS[@]}"}; do body="${body:+$body; }$p"; done
-  if [ "${#UNKNOWN[@]}" -gt 0 ]; then body="${body:+$body; }unknown: $(printf '%s\n' "${UNKNOWN[@]}" | head -n 2 | paste -sd, -)"; fi
-  [ -n "$body" ] || { printf '\n'; return 0; }
+  LINE_OUT=''; SIG_OUT=''
+  [ -n "$body" ] || return 0
+  SIG_OUT=$(printf '%s' "$body" | wip_hash)
   fm_cap_line_var "antidrift: $body" "$MAX_LINE"
-  printf '%s\n' "$FM_LINE_CAP_LINE"
+  LINE_OUT=$FM_LINE_CAP_LINE
 }
 
-publish() {  # <line>
+publish() {  # <line> <next-due> <sig>
   local tmp
   tmp=$(mktemp "$STATE/.antidrift.XXXXXX") || return 1
-  printf 'fm-antidrift-v1\nepoch=%s\nline=%s\n' "$NOW" "$1" > "$tmp" || { rm -f "$tmp"; return 1; }
+  printf 'fm-antidrift-v1\nepoch=%s\nline=%s\nsig=%s\n' "$NOW" "$1" "$3" > "$tmp" || { rm -f "$tmp"; return 1; }
   mv -f "$tmp" "$STATE/.antidrift" || { rm -f "$tmp"; return 1; }
   tmp=$(mktemp "$STATE/.antidrift-next.XXXXXX") || return 1
   printf '%s\n' "$2" > "$tmp" && mv -f "$tmp" "$STATE/.antidrift-next"
 }
 
 action_refresh() {
-  local lock="$STATE/.antidrift.lock" i line next
+  local lock="$STATE/.antidrift.lock" i next
   [ -d "$STATE" ] || exit 0
   fm_lock_try_acquire "$lock" || exit 0
+  WIP_TIMEOUT_MARK=$(mktemp "$STATE/.antidrift-gt.XXXXXX") || exit 0
+  export WIP_TIMEOUT_MARK
   # shellcheck disable=SC2064
-  trap "fm_lock_release '$lock'" EXIT
+  trap "rm -f '$WIP_TIMEOUT_MARK'; fm_lock_release '$lock'" EXIT
   NOW=$(wip_now)
   declare_counts
   build_inventory
   for i in "${!E_PATH[@]}"; do process_entry "$i"; done
   check_disabled_remotes
   check_prs
-  line=$(compose_line)
+  compose_line
   next=$((NOW + TICK))
   if [ "$NEXT_DUE" -gt 0 ] && [ "$NEXT_DUE" -lt "$next" ]; then next=$NEXT_DUE; fi
   [ "$next" -gt "$NOW" ] || next=$((NOW + 1))
-  publish "$line" "$next" || exit 1
+  publish "$LINE_OUT" "$next" "$SIG_OUT" || exit 1
 }
 
 case "${1:-}" in

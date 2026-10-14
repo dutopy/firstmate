@@ -124,8 +124,9 @@
 #                          no-progress episode
 #   check: antidrift: <line>
 #                          the drift guard's cached one-line summary (bin/fm-antidrift-check.sh)
-#                          is new; read from the producer's cache on a heartbeat, never by
-#                          running git or contacting the forge on that path
+#                          is new, changed, or an unchanged alarm is due its reminder; read
+#                          from the producer's cache on a heartbeat and on the check cadence,
+#                          never by running git or contacting the forge on those paths
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock.
@@ -2178,9 +2179,12 @@ home_summary_refresh_detached() {
 # worktrees, triggers due WIP checkpoints and pushes, and publishes one cached
 # line; the heartbeat below only reads that cache.
 ANTIDRIFT_PID=
+ANTIDRIFT_SIG_NEW=
 antidrift_refresh_detached() {
   if [ -n "$ANTIDRIFT_PID" ]; then
     if kill -0 "$ANTIDRIFT_PID" 2>/dev/null; then
+      # a producer is still running: the trigger stays pending (its signature is
+      # not recorded) and the next poll asks again
       return 0
     fi
     wait "$ANTIDRIFT_PID" 2>/dev/null || true
@@ -2189,6 +2193,13 @@ antidrift_refresh_detached() {
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-antidrift-check.sh" refresh </dev/null >/dev/null 2>&1 &
   ANTIDRIFT_PID=$!
+  # recorded only once a producer was actually launched: the launch time bounds
+  # relaunches of a producer that dies without publishing, and the status
+  # signature marks which status changes this launch has taken in
+  printf '%s\n' "$(wip_now)" > "$STATE/.antidrift-kick" 2>/dev/null || true
+  if [ -n "$ANTIDRIFT_SIG_NEW" ]; then
+    printf '%s\n' "$ANTIDRIFT_SIG_NEW" > "$STATE/.antidrift-sig" 2>/dev/null || true
+  fi
 }
 
 # A status append is a possible milestone: kick the producer when any status
@@ -2197,9 +2208,8 @@ antidrift_status_changed() {
   local sig prev=''
   sig=$(wc -c "$STATE"/*.status 2>/dev/null | cksum)
   [ ! -f "$STATE/.antidrift-sig" ] || IFS= read -r prev < "$STATE/.antidrift-sig" || true
-  [ "$sig" != "$prev" ] || return 1
-  printf '%s\n' "$sig" > "$STATE/.antidrift-sig" 2>/dev/null || true
-  return 0
+  ANTIDRIFT_SIG_NEW=$sig
+  [ "$sig" != "$prev" ]
 }
 
 RECONCILE_REQUEST_PID=
@@ -2367,7 +2377,10 @@ while :; do
     home_summary_refresh_detached
   fi
 
-  if antidrift_refresh_due || antidrift_status_changed; then
+  ad_kick=0
+  if antidrift_status_changed; then ad_kick=1; fi
+  if antidrift_refresh_due; then ad_kick=1; fi
+  if [ "$ad_kick" = 1 ]; then
     antidrift_refresh_detached
   fi
 
@@ -2541,6 +2554,14 @@ EOF
     touch "$STATE/.last-check"
     if [ -n "$contribution_check_output" ]; then
       wake "$contribution_check_output"
+    fi
+    # The drift guard's cached line is also delivered on this cadence, so its
+    # latency is at most one check interval even while the heartbeat backs off.
+    if antidrift_news_check; then
+      ad_reason="check: $AD_LINE"
+      fm_wake_append check antidrift "$ad_reason" || exit 1
+      antidrift_mark_reported "$AD_LINE" "$AD_SIG" || true
+      wake "$ad_reason"
     fi
   fi
 
@@ -2915,12 +2936,11 @@ EOF
     # Anti-drift: read the producer's cached line (no git, no network). The row
     # is enqueued before it is marked reported, and the status backstop below is
     # never skipped: when the heartbeat would wake anyway it carries the row too.
-    ad_line=$(antidrift_news_line)
     ad_reason=
-    if [ -n "$ad_line" ]; then
-      ad_reason="check: $ad_line"
+    if antidrift_news_check; then
+      ad_reason="check: $AD_LINE"
       fm_wake_append check antidrift "$ad_reason" || exit 1
-      antidrift_mark_reported "$ad_line" || true
+      antidrift_mark_reported "$AD_LINE" "$AD_SIG" || true
     fi
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the
