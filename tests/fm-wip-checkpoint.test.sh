@@ -277,6 +277,35 @@ test_denied_path_in_a_commit_blocks_the_push() {
   pass "fm-wip-checkpoint: the publish range is re-checked against the deny list"
 }
 
+test_home_private_paths_in_a_commit_block_the_push() {
+  local home remote shadow ref tree commit blob d rc=0
+  home=$(make_home homeleak); remote="$TMP_ROOT/homeleak/remote.git"
+  git init -q --bare "$remote"
+  : > "$GIT_GLOBAL"
+  git config --file "$GIT_GLOBAL" "url.$remote.insteadOf" "https://github.com/acme/wip.git"
+  printf 'proj acme/wip\n' > "$home/config/wip-remotes"
+  git -C "$home" init -q -b main
+  printf 'x\n' > "$home/AGENTS.md"
+  git -C "$home" add AGENTS.md; git -C "$home" commit -qm init
+  FM_HOME="$home" "$CK" snapshot "$home" --milestone >/dev/null || fail "home snapshot must succeed"
+  shadow=$(find "$home/state/wip" -maxdepth 1 -name '*.git' | head -n 1)
+  ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  # forge a shadow commit that carries a home-private directory
+  blob=$(printf 'secret\n' | git --git-dir="$shadow" hash-object -w --stdin)
+  rm -f "$TMP_ROOT/forge.idx"
+  GIT_INDEX_FILE="$TMP_ROOT/forge.idx" git --git-dir="$shadow" read-tree "$ref"
+  for d in data state config projects .no-mistakes; do
+    GIT_INDEX_FILE="$TMP_ROOT/forge.idx" git --git-dir="$shadow" update-index --add --cacheinfo "100644,$blob,$d/leak.txt"
+  done
+  tree=$(GIT_INDEX_FILE="$TMP_ROOT/forge.idx" git --git-dir="$shadow" write-tree)
+  commit=$(git --git-dir="$shadow" commit-tree "$tree" -p "$ref" -m forged)
+  git --git-dir="$shadow" update-ref "$ref" "$commit"
+  run_push "$home" "$home" private >/dev/null 2>&1 || rc=$?
+  expect_code 6 "$rc" "a home-private path in the publish range blocks the push"
+  [ -z "$(git --git-dir="$remote" for-each-ref)" ] || fail "no home-private history may reach the remote"
+  pass "fm-wip-checkpoint: the publish range is re-checked against the home-private directories"
+}
+
 test_a_rejected_push_is_reported_and_never_forced() {
   local src home remote shadow ref other rc=0 before
   read -r src home remote < <(setup_push reject)
@@ -303,4 +332,5 @@ test_visibility_is_proven_fresh_before_every_push
 test_no_remote_configured_means_no_publication
 test_publication_can_be_declared_off_for_a_project
 test_denied_path_in_a_commit_blocks_the_push
+test_home_private_paths_in_a_commit_block_the_push
 test_a_rejected_push_is_reported_and_never_forced
