@@ -34,8 +34,22 @@ EXCLUDED = frozenset(('hermes', 'desktop', 'documents', 'document',
                       'audio', 'music', 'musique', 'spectrasonics', 'backups', 'backup',
                       'storagebox', 'storage-box', 'restic', 'ms-playwright', 'shared'))
 EXCLUDED_COMPACT = frozenset(re.sub(r'[-_ ]', '', name) for name in EXCLUDED)
-FIRSTMATE_HOME = Path(__file__).resolve().parent.parent
-HOME_PRIVATE_DIRECTORIES = frozenset(('data', 'state'))
+
+
+def _absolute_directory(value, default):
+    return Path(os.path.abspath(value if value else str(default)))
+
+
+FM_ROOT = _absolute_directory(os.environ.get('FM_ROOT_OVERRIDE'),
+                              Path(__file__).resolve().parent.parent)
+FM_HOME = _absolute_directory(os.environ.get('FM_HOME'), FM_ROOT)
+HOME_PRIVATE_ROOTS = frozenset((
+    FM_HOME / 'data', FM_HOME / 'state',
+    _absolute_directory(os.environ.get('FM_DATA_OVERRIDE'), FM_HOME / 'data'),
+    _absolute_directory(os.environ.get('FM_STATE_OVERRIDE'), FM_HOME / 'state')))
+HOME_PRIVATE_ROOT_SPELLINGS = frozenset(
+    spelling for root in HOME_PRIVATE_ROOTS
+    for spelling in (root, Path(os.path.realpath(str(root)))))
 BUSY = re.compile(r'(?:^|[/\s-])(?:claude|codex|pi|opencode|herdr|hermes|cursor|'
                   r'chrome|chromium|playwright|xcode|simulator|simctl|npm|pnpm|yarn|'
                   r'brew|clang|gcc|make|cmake|ninja|xcodebuild|swift)(?:$|[/\s.-])', re.I)
@@ -137,11 +151,9 @@ def protected_name(name):
 def protected(path):
     if any(protected_name(part) for part in Path(path).parts):
         return True
-    try:
-        relative = Path(path).relative_to(FIRSTMATE_HOME)
-    except ValueError:
-        return False
-    return bool(relative.parts) and relative.parts[0].casefold() in HOME_PRIVATE_DIRECTORIES
+    candidates = (Path(path), Path(os.path.realpath(str(path))))
+    return any(candidate == root or root in candidate.parents
+               for candidate in candidates for root in HOME_PRIVATE_ROOT_SPELLINGS)
 
 
 def emit(machine, path, kind, provenance, reasons, facts=None):

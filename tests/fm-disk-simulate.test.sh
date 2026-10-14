@@ -19,13 +19,19 @@ layout = tmp / 'layout'
 layout.mkdir()
 
 
-def invoke(machine, value=None, flags=()):
+def invoke(machine, value=None, flags=(), env=None):
     args = ['bash', str(root / 'bin' / ('fm-disk-simulate-' + machine + '.sh'))]
     if value is not None:
         inventory = tmp / 'inventory.json'
         inventory.write_text(json.dumps(value))
         args += ['--inventory', str(inventory)]
-    result = subprocess.run(args + list(flags), text=True, capture_output=True)
+    environment = dict(os.environ)
+    for key, val in (env or {}).items():
+        if val is None:
+            environment.pop(key, None)
+        else:
+            environment[key] = val
+    result = subprocess.run(args + list(flags), text=True, capture_output=True, env=environment)
     assert result.stdout, (result.returncode, result.stderr)
     rows = [json.loads(line) for line in result.stdout.splitlines()]
     assert all(row['simulation_only'] is True for row in rows)
@@ -72,9 +78,33 @@ for name in ('Hermes', 'Desktop', 'Documents', 'Audio',
     assert code == 2 and 'excluded-path' in rows[0]['reasons'], (name, rows)
     assert rows[0]['whitelist']['id'] == 'imac.task-artifact'
 for name in ('data', 'state'):
-    code, rows = invoke('imac', snapshot('imac', [obj(root / name / 'old', 'task-artifact')]))
+    code, rows = invoke('imac', snapshot('imac', [obj(root / name / 'old', 'task-artifact')]),
+                        env={'FM_HOME': str(root)})
     assert code == 2 and 'excluded-path' in rows[0]['reasons'], (name, rows)
 print('ok - exclusions and the firstmate home data/state override valid whitelist rows')
+
+effective = layout / 'effective-home'
+(effective / 'data').mkdir(parents=True)
+(effective / 'state').mkdir(parents=True)
+override_data = layout / 'override-data'
+override_state = layout / 'override-state'
+override_data.mkdir()
+override_state.mkdir()
+alias = layout / 'home-alias'
+alias.symlink_to(effective, target_is_directory=True)
+for label, candidate, env in (
+        ('FM_HOME data', effective / 'data' / 'old', {'FM_HOME': str(effective)}),
+        ('FM_HOME state', effective / 'state' / 'old', {'FM_HOME': str(effective)}),
+        ('FM_ROOT_OVERRIDE data', effective / 'data' / 'old',
+         {'FM_HOME': None, 'FM_ROOT_OVERRIDE': str(effective)}),
+        ('FM_DATA_OVERRIDE', override_data / 'old',
+         {'FM_HOME': str(effective), 'FM_DATA_OVERRIDE': str(override_data)}),
+        ('FM_STATE_OVERRIDE', override_state / 'old',
+         {'FM_HOME': str(effective), 'FM_STATE_OVERRIDE': str(override_state)}),
+        ('alias spelling', alias / 'data' / 'old', {'FM_HOME': str(effective)})):
+    code, rows = invoke('imac', snapshot('imac', [obj(candidate, 'task-artifact')]), env=env)
+    assert code == 2 and 'excluded-path' in rows[0]['reasons'], (label, rows)
+print('ok - effective home, root override, per-directory overrides and alias spelling stay excluded')
 
 # An innocuous parent cannot hide protected descendants or a symlink escape.
 parent = layout / 'scratch'
@@ -267,6 +297,8 @@ sim['udid'] = udid
 devices = {'devices': {'runtime': [{'udid': udid, 'isAvailable': False, 'state': 'Shutdown'}]}}
 sim['evidence']['simulators'] = record(['xcrun', 'simctl', 'list', 'devices', '--json'],
                                       json.dumps(devices))
+code, rows = invoke('imac', snapshot('imac', [obj(device, 'simulator')]))
+assert code == 2 and 'excluded-descendant' not in rows[0]['reasons'], rows
 code, rows = invoke('imac', snapshot('imac', [sim]))
 assert code == 0, rows
 devices['devices']['runtime'][0]['state'] = 'Booted'
