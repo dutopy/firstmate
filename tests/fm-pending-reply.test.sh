@@ -1086,6 +1086,48 @@ test_tick_skips_terminal_and_reuses_target_observation() {
   pass "tick skips terminal records and reuses target observations"
 }
 
+test_tick_visits_settled_resolved_records_without_forking() {
+  (
+    local home state fb real_grep grep_log owed rec i corr visited
+    home=$(setup_parent settled-visit)
+    state="$home/state"
+    fb="$home/fakebin"
+    grep_log="$home/grep-calls.log"
+    mkdir -p "$fb"
+    real_grep=$(command -v grep)
+    printf '#!/bin/sh\nprintf x >> "%s"\nexec "%s" "$@"\n' "$grep_log" "$real_grep" > "$fb/grep"
+    chmod +x "$fb/grep"
+    # shellcheck disable=SC2030,SC2031
+    export FM_PENDING_REPLY_NOW=10200
+    owed=$(fm_pending_reply_create "$home" "$state" hibit "owed close")
+    fm_pending_reply_mark_delivered "$state" "$owed"
+    rec=$(fm_pending_reply_path "$state" "$owed")
+    fm_pending_reply_set "$rec" escalated_epoch 10100
+    fm_pending_reply_set "$rec" phase resolved
+    printf 'blocked: pending-reply-missed: task=hibit pending-reply-id=%s request=owed close\n' "$owed" \
+      > "$state/hibit.status"
+    i=0
+    while [ "$i" -lt 25 ]; do
+      i=$((i + 1))
+      corr=$(fm_pending_reply_create "$home" "$state" "settled$i" "settled request $i")
+      fm_pending_reply_mark_delivered "$state" "$corr"
+      fm_pending_reply_set "$(fm_pending_reply_path "$state" "$corr")" phase resolved
+    done
+    : > "$grep_log"
+    PATH="$fb:$PATH" fm_pending_reply_tick "$state"
+    [ -n "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" ] \
+      || fail "a resolved record owing an escalation close must still be closed by the tick"
+    [ "$(grep -Fc 'resolved [key=default]: pending-reply-resolved:' "$state/hibit.status")" -eq 1 ] \
+      || fail "the owed escalation close was not appended exactly once"
+    : > "$grep_log"
+    PATH="$fb:$PATH" fm_pending_reply_tick "$state"
+    visited=$(wc -c < "$grep_log" | tr -d ' ')
+    [ "$visited" = 0 ] \
+      || fail "26 settled resolved records should cost the tick no grep forks, got $visited"
+  ) || fail "settled resolved record visit regression failed"
+  pass "tick visits settled resolved records without per-record forks and still closes owed escalations"
+}
+
 test_correlations_reuse_only_for_matching_open_task() {
   local dir fb log home state got corr1 corr2 corr3 rec
   dir="$TMP_ROOT/corr-reuse"; mkdir -p "$dir"
@@ -1599,6 +1641,7 @@ test_busy_idle_observation_via_backend_abstraction
 test_unknown_backend_state_uses_capture_fallback
 test_kimi_capture_fallback_uses_recorded_harness
 test_tick_skips_terminal_and_reuses_target_observation
+test_tick_visits_settled_resolved_records_without_forking
 test_correlations_reuse_only_for_matching_open_task
 test_tick_end_to_end_missed_then_escalate
 test_failed_send_discards_undelivered_expectation

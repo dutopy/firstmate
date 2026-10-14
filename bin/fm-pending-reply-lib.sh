@@ -203,6 +203,26 @@ fm_pending_reply_get() {  # <record-path> <key>
   grep "^${key}=" "$rec" 2>/dev/null | tail -1 | cut -d= -f2- || true
 }
 
+# True when <record-path> is resolved with no escalation close still owed.
+# fm_pending_reply_tick runs inside the watcher's beacon-owning poll, and
+# resolved records are never pruned, so each poll visits all of them. Reading
+# the three fields in one fork-free pass keeps that visit cheap where the
+# per-field grep pipelines and the locked close below cost minutes under load.
+# The last occurrence of a key wins, as in fm_pending_reply_get; anything
+# unreadable or not provably settled returns false and takes the full path.
+fm_pending_reply_resolved_settled() {  # <record-path>
+  local rec=$1 line phase='' escalated='' closed=''
+  [ -f "$rec" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      phase=*) phase=${line#phase=} ;;
+      escalated_epoch=*) escalated=${line#escalated_epoch=} ;;
+      escalation_closed_epoch=*) closed=${line#escalation_closed_epoch=} ;;
+    esac
+  done < "$rec" 2>/dev/null || return 1
+  [ "$phase" = resolved ] && { [ -z "$escalated" ] || [ -n "$closed" ]; }
+}
+
 fm_pending_reply_sighting_encode() {  # <path> <line-number>
   local path=$1 line_no=$2 encoded
   case "$line_no" in ''|*[!0-9]*) return 1 ;; esac
@@ -1441,9 +1461,10 @@ fm_pending_reply_tick() {  # <state-dir>
   [ -d "$dir" ] || return 0
   for rec in "$dir"/*; do
     [ -f "$rec" ] || continue
-    case "$(basename "$rec")" in
+    case "${rec##*/}" in
       .*) continue ;;
     esac
+    fm_pending_reply_resolved_settled "$rec" && continue
     corr=$(fm_pending_reply_get "$rec" corr_id)
     [ -n "$corr" ] || corr=$(basename "$rec")
     task_id=$(fm_pending_reply_get "$rec" task_id)
