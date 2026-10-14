@@ -54,9 +54,9 @@ set -u
 export LC_ALL=C
 export GIT_TERMINAL_PROMPT=0
 
-# shellcheck source=bin/fm-cli-lib.sh
 fm_cli_dir=${BASH_SOURCE[0]%/*}
 [ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+# shellcheck source=bin/fm-cli-lib.sh
 . "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
 unset fm_cli_dir
 if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
@@ -337,7 +337,6 @@ presented_pr_urls() {
 
 check_prs() {
   local seen='' i wt common cache out url age reg pres now_cache rows parsed
-  if ! command -v gh-axi >/dev/null 2>&1; then UNKNOWN+=("PR: gh-axi absent"); return 0; fi
   reg=$(registered_pr_urls); pres=$(presented_pr_urls)
   for i in "${!E_PATH[@]}"; do
     wt=${E_PATH[$i]}

@@ -384,12 +384,12 @@ test_source_repositories_are_never_touched_by_a_full_refresh() {
   printf 'w\n' > "$repo/w.txt"
   printf 'edit\n' >> "$repo/a.txt"
   before=$(fingerprint "$repo")
-  idx_mtime_before=$(stat -f %m "$repo/.git/index" 2>/dev/null || stat -c %Y "$repo/.git/index")
+  idx_mtime_before=$(stat -c %Y "$repo/.git/index" 2>/dev/null || stat -f %m "$repo/.git/index")
   sleep 1
   refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0
   refresh "$home" $((T0 + 1800)) FAKE_NM_PUSHED_AT=$T0
   after=$(fingerprint "$repo")
-  idx_mtime_after=$(stat -f %m "$repo/.git/index" 2>/dev/null || stat -c %Y "$repo/.git/index")
+  idx_mtime_after=$(stat -c %Y "$repo/.git/index" 2>/dev/null || stat -f %m "$repo/.git/index")
   assert_equals "$before" "$after" "index, refs, objects and HEAD are unchanged"
   assert_equals "$idx_mtime_before" "$idx_mtime_after" "the source index is not even rewritten"
   pass "fm-antidrift-check: a full refresh leaves the source byte-identical"

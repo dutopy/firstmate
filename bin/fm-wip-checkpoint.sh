@@ -49,9 +49,9 @@ set -u
 export LC_ALL=C
 export GIT_TERMINAL_PROMPT=0
 
-# shellcheck source=bin/fm-cli-lib.sh
 fm_cli_dir=${BASH_SOURCE[0]%/*}
 [ "$fm_cli_dir" != "${BASH_SOURCE[0]}" ] || fm_cli_dir=.
+# shellcheck source=bin/fm-cli-lib.sh
 . "$fm_cli_dir/fm-cli-lib.sh" 2>/dev/null || true
 unset fm_cli_dir
 if command -v fm_cli_help >/dev/null 2>&1; then fm_cli_help "$@"; fi
