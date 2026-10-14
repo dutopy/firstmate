@@ -1,0 +1,2 @@
+ok - tick visits settled resolved records without per-record forks and still closes owed escalations
+exit=0

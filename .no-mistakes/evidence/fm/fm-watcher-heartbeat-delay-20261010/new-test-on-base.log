@@ -1,0 +1,3 @@
+not ok - 26 settled resolved records should cost the tick no grep forks, got 131
+not ok - settled resolved record visit regression failed
+exit=1
