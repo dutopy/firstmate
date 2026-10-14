@@ -258,6 +258,34 @@ steps[2]{{step,status,findings,duration_ms}}:
         self.native+='branch_sync:\n  state: pipeline_owned\n'
         self.run_check(False,'native')
 
+    def test_native_ci_ready_monitoring_state(self):
+        monitoring='''run:
+  id: fixture-run
+  branch: topic
+  status: running
+  head: "{head}"
+  head_sha: "{head}"
+  pr: "{url}"
+  findings: none
+  steps[3]{{step,status,findings,duration_ms}}:
+    review,completed,0,12
+    pr,completed,0,12
+    ci,running,0,12
+'''.format(head=self.head,url=URL)
+        self.native=monitoring
+        self.run_check()
+        for old,new in (('status: running','status: fixing'),('ci,running','ci,fixing'),
+                        ('ci,running','ci,completed'),('pr,completed,0','pr,running,0')):
+            with self.subTest(new=new):
+                self.native=monitoring.replace(old,new)
+                self.run_check(False)
+        self.native=monitoring.replace('steps[3]','steps[2]').replace('    ci,running,0,12\n','')
+        self.run_check(False)
+        self.native=monitoring.replace('findings: none','findings: 1 awaiting')
+        self.run_check(False)
+        self.native=monitoring+'branch_sync:\n  state: pipeline_owned\n'
+        self.run_check(False,'custody')
+
     def test_exactly_50_deleted_diff_lines_remain_eligible(self):
         self.set_change('Plain prose.  \n'*50,'Plain prose.\n'*50)
         self.run_check()
@@ -331,7 +359,12 @@ steps[2]{{step,status,findings,duration_ms}}:
         for before,after in (
             ('A useful sentence.\n','A useful sentence.\nGITHUB_TOKEN=ghp_example\n'),
             ('A useful sentence with a token.\n','A useful sentence.\n'),
-            ('A useful sentence.\n','A changed sentence with a password.\n')):
+            ('A useful sentence.\n','A changed sentence with a password.\n'),
+            ('A useful sentence.\n','A useful sentence.\nAWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n'),
+            ('A useful sentence.\n','A useful sentence.\napi_key: sk-live-abc\n'),
+            ('A useful sentence.\n','A useful sentence.\nAuthorization: Bearer eyJhbGci\n'),
+            ('A useful sentence.\n','A useful sentence.\npasswd=foo\n'),
+            ('A useful sentence.\n','A useful sentence.\n-----BEGIN RSA PRIVATE KEY-----\n')):
             with self.subTest(after=after):
                 self.set_change(before,after,'docs/setup.md')
                 self.run_check(False,'sensitive content')

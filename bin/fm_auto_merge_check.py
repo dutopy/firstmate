@@ -15,9 +15,11 @@ BIN = Path(__file__).resolve().parent
 SHA = re.compile(r"[0-9a-f]{40}")
 DENY = BIN/'fm-auto-merge-denylist.globs'
 SENSITIVE = re.compile(
-    r"secret|credential|password|token|permission|rights|droits|chmod|chown|"
+    r"secret|credential|password|passwd|token|permission|rights|droits|chmod|chown|"
     r"delet|remov|supprim|force|github|gitlab|remote|publish|publication|"
-    r"worker.guard|spawn|teardown|agents\.md|antidrift|wip|config", re.I)
+    r"worker.guard|spawn|teardown|agents\.md|antidrift|wip|config|"
+    r"access[_-]?key|api[_-]?key|apikey|authorization|bearer|akia[0-9a-z]{16}|"
+    r"private[ _-]?key", re.I)
 CHECK_QUERY = '''query($owner:String!,$repo:String!,$number:Int!,$after:String){
  repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid
  statusCheckRollup{contexts(first:100,after:$after){totalCount
@@ -121,8 +123,9 @@ def native_proof(wt, head, branch, url):
         value = values[0]
         return json.loads(value) if value.startswith('"') else value
     run_id = scalar('id')
+    status = scalar('status')
     require(bool(run_id) and scalar('branch') == branch and scalar('pr') == url
-            and scalar('status') == 'completed' and scalar('outcome') in ('passed', 'checks-passed')
+            and status in ('completed', 'running')
             and scalar('findings') == 'none' and not re.search(r'findings\[', text),
             'native review has missing, open or unfinished evidence')
     native_head = scalar('head')
@@ -144,6 +147,14 @@ def native_proof(wt, head, branch, url):
     reviews = [row for row in ledger if row.get('step') == 'review']
     require(len(reviews) == 1 and reviews[0].get('status') == 'completed'
             and all(row.get('findings') == '0' for row in ledger), 'native review not clean')
+    if status == 'completed':
+        require(scalar('outcome') in ('passed', 'checks-passed'),
+                'native review has missing, open or unfinished evidence')
+    else:
+        ci = [row for row in ledger if row.get('step') == 'ci']
+        require(len(ci) == 1 and ci[0].get('status') == 'running'
+                and all(row.get('status') == 'completed' for row in ledger if row.get('step') != 'ci'),
+                'native run is not a monitoring-only published CI-ready state')
     return run_id
 
 
