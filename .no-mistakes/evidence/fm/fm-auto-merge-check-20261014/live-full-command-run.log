@@ -1,0 +1,8 @@
+=== LIVE full-command run: real PR, real git worktree, real gh/gh-axi/no-mistakes ===
+Wed Oct 14 23:19:28 UTC 2026
+PR: https://github.com/pooriaarab/aigentify/pull/65  author=pooriaarab  merger=dutopy  head=362ea6b3cbe4420ebd9e8bada83a87183bbe76aa
+local worktree: /tmp/fm-live-63918/repo (branch aig-64-readme-seo)
+
+$ FM_HOME=... bin/fm-auto-merge-check.sh livetask <pr-url>
+refused: 'ascii' codec can't decode byte 0xe2 in position 2183: ordinal not in range(128)
+exit=1

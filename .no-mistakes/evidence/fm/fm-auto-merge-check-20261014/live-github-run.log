@@ -1,0 +1,18 @@
+=== live fm-auto-merge-check against real github.com/dutopy/firstmate (authenticated as dutopy) ===
+date: 2026-10-14T23:05:49Z
+
+--- PR #2 (open/clean, author==merger) head=a681721105e40ec96a9c4fa333c0a0b99693dea6 ---
+$ fm-auto-merge-check.sh livetask https://github.com/dutopy/firstmate/pull/2
+refused: author and actual merger identities are same or ambiguous
+exit=1
+
+--- PR #4 (open but not CLEAN (unstable)) head=f663a72aab8e8c9b4c6c9ff0250dce75741d1737 ---
+$ fm-auto-merge-check.sh livetask https://github.com/dutopy/firstmate/pull/4
+refused: PR is not open, non-draft and CLEAN
+exit=1
+
+--- PR #18 (closed) head=61843ce04c2075081a8dfaaa27bcb75ea5b1df0f ---
+$ fm-auto-merge-check.sh livetask https://github.com/dutopy/firstmate/pull/18
+refused: PR is not open, non-draft and CLEAN
+exit=1
+

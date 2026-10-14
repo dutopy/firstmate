@@ -1,0 +1,27 @@
+=== root cause: fm_auto_merge_check.py CHECK_QUERY asks GitHub for a non-existent field ===
+date: 2026-10-14T23:08:17Z
+
+--- 1. the product's own CHECK_QUERY sent verbatim to the real GitHub GraphQL API (PR #2, dutopy/firstmate) ---
+errors[1]:
+  - extensions:
+      code: undefinedField
+      fieldName: headSha
+      typeName: CheckSuite
+    locations[1]{column,line}:
+      55,5
+    message: Field 'headSha' doesn't exist on type 'CheckSuite'
+    path[9]: query,repository,pullRequest,statusCheckRollup,contexts,nodes,... on CheckRun,checkSuite,headSha
+
+
+--- 2. real schema introspection ---
+app branch checkRuns commit conclusion createdAt creator databaseId id matchingPullRequests push repository resourcePath status updatedAt url workflowRun    <- CheckSuite fields (no headSha)
+annotations checkSuite completedAt conclusion databaseId deployment detailsUrl externalId id isRequired name pendingDeploymentRequest permalink repository resourcePath startedAt status steps summary text title url    <- CheckRun fields (no headSha)
+CheckSuite.commit -> NON_NULL Commit
+
+--- 3. corrected form checkSuite{commit{oid}} returns the exact final head (PR cli/cli#14640) ---
+headRefOid=e04bc0145a89bb85472ac53fa26cedc9f64a326f totalCount=18 firstCheck.commit.oid=e04bc0145a89bb85472ac53fa26cedc9f64a326f
+
+--- 4. real CLI on a clean, non-draft public PR whose author differs from the merger: refused at the checks step ---
+$ fm-auto-merge-check.sh livetask https://github.com/cli/cli/pull/14640
+refused: unreadable forge evidence
+exit=1

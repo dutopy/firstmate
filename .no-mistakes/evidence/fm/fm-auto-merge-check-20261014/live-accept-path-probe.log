@@ -1,0 +1,7 @@
+=== live CLI accept-path probe: public PR authored by a DIFFERENT account than the merger ===
+PR: https://github.com/cli/cli/pull/14640 (author BagToad, merger dutopy, state clean, head e04bc0145a89bb85472ac53fa26cedc9f64a326f)
+date: 2026-10-14T23:07:34Z
+
+$ fm-auto-merge-check.sh livetask https://github.com/cli/cli/pull/14640
+refused: unreadable forge evidence
+exit=1

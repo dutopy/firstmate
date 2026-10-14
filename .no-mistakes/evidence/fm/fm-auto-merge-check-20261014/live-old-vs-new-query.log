@@ -1,0 +1,7 @@
+=== BEFORE (old field): product query CheckSuite{headSha} sent to real github.com/cli/cli#14640 ===
+product api() REFUSED with: unreadable forge evidence
+
+=== AFTER (shipped field): same query sent to the same real PR ===
+product api() returned normally. headRefOid = e04bc0145a89bb85472ac53fa26cedc9f64a326f
+contexts totalCount = 18
+CheckRun nodes with checkSuite.commit.oid != final head: 0

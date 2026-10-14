@@ -1,0 +1,7 @@
+=== real installed native contract: no-mistakes v1.79.0 axi status in this gate worktree ===
+Wed Oct 14 23:25:08 UTC 2026
+
+[33mA new version of no-mistakes is available: v1.79.0 -> v1.84.0
+Run "no-mistakes update" to update[0m
+error: repo not initialized (run 'no-mistakes init' first)
+help[1]: Run `no-mistakes init` to set up the gate in this repository

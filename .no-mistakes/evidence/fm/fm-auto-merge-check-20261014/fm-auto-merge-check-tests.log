@@ -1,0 +1,25 @@
+test_accepts_docs_and_tests_non_executable_changes (__main__.Eligibility.test_accepts_docs_and_tests_non_executable_changes) ... ok
+test_accepts_presentation_diff_and_all_101_checks (__main__.Eligibility.test_accepts_presentation_diff_and_all_101_checks) ... ok
+test_actual_removal_and_sensitive_rename_sources_refuse (__main__.Eligibility.test_actual_removal_and_sensitive_rename_sources_refuse) ... ok
+test_check_refusals (__main__.Eligibility.test_check_refusals) ... ok
+test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) ... ok
+test_exactly_50_deleted_diff_lines_remain_eligible (__main__.Eligibility.test_exactly_50_deleted_diff_lines_remain_eligible) ... ok
+test_file_pagination_is_complete_even_when_size_excludes_paths (__main__.Eligibility.test_file_pagination_is_complete_even_when_size_excludes_paths) ... ok
+test_head_state_identity_and_file_evidence_refusals (__main__.Eligibility.test_head_state_identity_and_file_evidence_refusals) ... ok
+test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) ... ok
+test_late_page_red_is_not_ignored (__main__.Eligibility.test_late_page_red_is_not_ignored) ... ok
+test_missing_forge_and_native_evidence_refuses (__main__.Eligibility.test_missing_forge_and_native_evidence_refuses) ... ok
+test_mode_change_and_large_deletion_refuse (__main__.Eligibility.test_mode_change_and_large_deletion_refuse) ... ok
+test_native_branch_sync_heads_do_not_replace_run_identity (__main__.Eligibility.test_native_branch_sync_heads_do_not_replace_run_identity) ... ok
+test_native_ci_ready_monitoring_state (__main__.Eligibility.test_native_ci_ready_monitoring_state) ... ok
+test_native_pipeline_custody_is_not_approval (__main__.Eligibility.test_native_pipeline_custody_is_not_approval) ... ok
+test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) ... ok
+test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) ... ok
+test_size_gate_is_mandatory_and_strict (__main__.Eligibility.test_size_gate_is_mandatory_and_strict) ... ok
+test_symlink_addition_and_binary_refuse (__main__.Eligibility.test_symlink_addition_and_binary_refuse) ... ok
+test_unchanged_executable_mode_refuses (__main__.Eligibility.test_unchanged_executable_mode_refuses) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 158.386s
+
+OK

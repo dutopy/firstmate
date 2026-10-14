@@ -1,0 +1,9 @@
+CHECK_QUERY loaded from the product module. Contains old headSha field: False
+
+live GraphQL response reached product api() without errors; headRefOid = e04bc0145a89bb85472ac53fa26cedc9f64a326f
+contexts totalCount = 18 pageInfo = {'endCursor': 'MTg', 'hasNextPage': False}
+CheckRun nodes sampled = 18
+every CheckRun checkSuite.commit.oid == headRefOid: True (mismatches: 0)
+
+--- now drive the product checks() end-to-end on the real forge ---
+checks() refused with reason: checks not green at final head

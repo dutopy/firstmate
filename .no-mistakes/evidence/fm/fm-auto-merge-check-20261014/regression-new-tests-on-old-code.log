@@ -1,0 +1,662 @@
+=== regression: NEW focused test suite run against PRE-FIX code (temp copy, old checkSuite{headSha}) ===
+Wed Oct 14 23:22:23 UTC 2026
+
+FFF..FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.F
+======================================================================
+FAIL: test_accepts_docs_and_tests_non_executable_changes (__main__.Eligibility.test_accepts_docs_and_tests_non_executable_changes) (path='docs/intro.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 316, in test_accepts_docs_and_tests_non_executable_changes
+  File "<stdin>", line 149, in run_check
+AssertionError: False != True : refused: unreadable forge evidence
+
+
+======================================================================
+FAIL: test_accepts_docs_and_tests_non_executable_changes (__main__.Eligibility.test_accepts_docs_and_tests_non_executable_changes) (path='tests/example.test.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 316, in test_accepts_docs_and_tests_non_executable_changes
+  File "<stdin>", line 149, in run_check
+AssertionError: False != True : refused: unreadable forge evidence
+
+
+======================================================================
+FAIL: test_accepts_presentation_diff_and_all_101_checks (__main__.Eligibility.test_accepts_presentation_diff_and_all_101_checks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 159, in test_accepts_presentation_diff_and_all_101_checks
+  File "<stdin>", line 149, in run_check
+AssertionError: False != True : refused: unreadable forge evidence
+
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='AGENTS.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='docs/AGENTS.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='.agents/skills/a.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='.github/workflows/ci.yml')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='.claude/settings.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='.codex/hooks.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='.grok/hooks/a.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='.pi/extensions/a.ts')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='.omp/fm-worker-overlay.yml')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-calm.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-hook-host-lib.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-cd-pretool-check.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-cd-command-policy.mjs')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-pr-merge.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-merge-local.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-merge-authority-lib.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-teardown.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-spawn.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-lock-lib.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-wake-lib.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-watch.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/size-gate.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-worker-guard-pretool-check.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-antidrift-check.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-wip-lib.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-auto-merge-check.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm_auto_merge_check.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='tests/fm-auto-merge-check.test.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-install-shellcheck.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-update.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='bin/fm-bootstrap.sh')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='config/a.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='secrets/a.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='docs/credential.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='docs/token.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='docs/.env')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='docs/rights.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='docs/publication.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_denylist_categories_refuse (__main__.Eligibility.test_denylist_categories_refuse) (path='docs/remote.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 350, in test_denylist_categories_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_exactly_50_deleted_diff_lines_remain_eligible (__main__.Eligibility.test_exactly_50_deleted_diff_lines_remain_eligible)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 285, in test_exactly_50_deleted_diff_lines_remain_eligible
+  File "<stdin>", line 149, in run_check
+AssertionError: False != True : refused: unreadable forge evidence
+
+
+======================================================================
+FAIL: test_file_pagination_is_complete_even_when_size_excludes_paths (__main__.Eligibility.test_file_pagination_is_complete_even_when_size_excludes_paths)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 398, in test_file_pagination_is_complete_even_when_size_excludes_paths
+  File "<stdin>", line 150, in run_check
+AssertionError: 'deletion' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='CLAUDE.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='docs/CLAUDE.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='GROK_BOT.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='skills/stow/SKILL.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='.no-mistakes.yaml')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='.greptile/rules.md')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='.tasks.toml')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_instruction_and_config_siblings_refuse (__main__.Eligibility.test_instruction_and_config_siblings_refuse) (path='.gitattributes')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 371, in test_instruction_and_config_siblings_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive path' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_late_page_red_is_not_ignored (__main__.Eligibility.test_late_page_red_is_not_ignored)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 170, in test_late_page_red_is_not_ignored
+  File "<stdin>", line 150, in run_check
+AssertionError: 'checks' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_missing_forge_and_native_evidence_refuses (__main__.Eligibility.test_missing_forge_and_native_evidence_refuses)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 310, in test_missing_forge_and_native_evidence_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_mode_change_and_large_deletion_refuse (__main__.Eligibility.test_mode_change_and_large_deletion_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 384, in test_mode_change_and_large_deletion_refuse
+  File "<stdin>", line 150, in run_check
+AssertionError: 'deletion' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_branch_sync_heads_do_not_replace_run_identity (__main__.Eligibility.test_native_branch_sync_heads_do_not_replace_run_identity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 249, in test_native_branch_sync_heads_do_not_replace_run_identity
+  File "<stdin>", line 149, in run_check
+AssertionError: False != True : refused: unreadable forge evidence
+
+
+======================================================================
+FAIL: test_native_ci_ready_monitoring_state (__main__.Eligibility.test_native_ci_ready_monitoring_state)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 270, in test_native_ci_ready_monitoring_state
+  File "<stdin>", line 149, in run_check
+AssertionError: False != True : refused: unreadable forge evidence
+
+
+======================================================================
+FAIL: test_native_pipeline_custody_is_not_approval (__main__.Eligibility.test_native_pipeline_custody_is_not_approval)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 253, in test_native_pipeline_custody_is_not_approval
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='5de56b681d243cb5a06b47b0820cfa544e258b89')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='branch: other')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='https://github.com/example/repo/pull/70')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='findings: unknown')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='review,completed,1')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='review,skipped')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='outcome: failed')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='status: fixing')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_native_proof_refusals (__main__.Eligibility.test_native_proof_refusals) (new='steps[3]')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 238, in test_native_proof_refusals
+  File "<stdin>", line 150, in run_check
+AssertionError: 'native' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A useful sentence.\nGITHUB_TOKEN=ghp_example\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A useful sentence.\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A changed sentence with a password.\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A useful sentence.\nAWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A useful sentence.\napi_key: sk-live-abc\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A useful sentence.\nAuthorization: Bearer eyJhbGci\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A useful sentence.\npasswd=foo\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_sensitive_diff_content_refuses (__main__.Eligibility.test_sensitive_diff_content_refuses) (after='A useful sentence.\n-----BEGIN RSA PRIVATE KEY-----\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 364, in test_sensitive_diff_content_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'sensitive content' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_size_gate_is_mandatory_and_strict (__main__.Eligibility.test_size_gate_is_mandatory_and_strict) (output='bad')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 221, in test_size_gate_is_mandatory_and_strict
+  File "<stdin>", line 150, in run_check
+AssertionError: 'size' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_size_gate_is_mandatory_and_strict (__main__.Eligibility.test_size_gate_is_mandatory_and_strict) (output='added=1 deleted=1 lines=2 files=1 max_lines=500 max_files=15')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 221, in test_size_gate_is_mandatory_and_strict
+  File "<stdin>", line 150, in run_check
+AssertionError: 'size' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_size_gate_is_mandatory_and_strict (__main__.Eligibility.test_size_gate_is_mandatory_and_strict) (output='added=1 deleted=1 lines=401 files=1 max_lines=400 max_files=15')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 221, in test_size_gate_is_mandatory_and_strict
+  File "<stdin>", line 150, in run_check
+AssertionError: 'size' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_size_gate_is_mandatory_and_strict (__main__.Eligibility.test_size_gate_is_mandatory_and_strict) (output='added=1 deleted=1 lines=2 files=16 max_lines=400 max_files=15')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 221, in test_size_gate_is_mandatory_and_strict
+  File "<stdin>", line 150, in run_check
+AssertionError: 'size' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_size_gate_is_mandatory_and_strict (__main__.Eligibility.test_size_gate_is_mandatory_and_strict)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 224, in test_size_gate_is_mandatory_and_strict
+  File "<stdin>", line 150, in run_check
+AssertionError: 'size' not found in 'refused: unreadable forge evidence\n'
+
+======================================================================
+FAIL: test_unchanged_executable_mode_refuses (__main__.Eligibility.test_unchanged_executable_mode_refuses)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 331, in test_unchanged_executable_mode_refuses
+  File "<stdin>", line 150, in run_check
+AssertionError: 'unclassified mode' not found in 'refused: unreadable forge evidence\n'
+
+----------------------------------------------------------------------
+Ran 20 tests in 137.001s
+
+FAILED (failures=81)
