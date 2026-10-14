@@ -764,8 +764,8 @@ test_the_same_task_on_two_copies_publishes_distinct_references() {
   git -C "$repo1" push -q -u origin "fm/t1"
   remote="$TMP_ROOT/twocopies/wip.git"
   git init -q --bare "$remote"
-  git config --file "$GIT_GLOBAL" "url.$remote.insteadOf" "https://github.com/acme/wip.git"
-  printf 'none acme/wip\n' > "$home/config/wip-remotes"
+  git config --file "$GIT_GLOBAL" "url.$remote.insteadOf" "https://github.com/acme/twocopies.git"
+  printf 'none acme/twocopies\n' > "$home/config/wip-remotes"
   printf 'one\n' > "$repo1/one.txt"
   refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0
   # the pool hands the same task a different copy
