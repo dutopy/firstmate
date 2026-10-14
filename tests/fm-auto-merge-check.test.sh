@@ -287,17 +287,32 @@ steps[2]{{step,status,findings,duration_ms}}:
         self.native=''
         self.run_check(False,'native')
 
-    def test_accepts_docs_tests_and_non_sensitive_scripts(self):
-        for path in ('docs/intro.md','tests/example.test.sh','bin/fm-calm.sh'):
+    def test_accepts_docs_and_tests_non_executable_changes(self):
+        for path in ('docs/intro.md','tests/example.test.sh'):
             with self.subTest(path=path):
                 self.set_change('A useful sentence.\n','A different useful sentence.\n',path)
                 self.run_check()
+
+    def test_unchanged_executable_mode_refuses(self):
+        self.git('reset','--hard','-q',self.base)
+        script=self.repo/'tests/example.test.sh'
+        script.parent.mkdir(parents=True,exist_ok=True)
+        script.write_text('A useful sentence.\n')
+        script.chmod(0o755)
+        self.git('add','--','tests/example.test.sh')
+        self.git('commit','-qm','Executable base')
+        self.base=self.git('rev-parse','HEAD')
+        script.write_text('A different useful sentence.\n')
+        self.git('add','--','tests/example.test.sh')
+        self.git('commit','-qm','Executable edit')
+        self.head=self.git('rev-parse','HEAD'); self.refresh()
+        self.run_check(False,'unclassified mode')
 
     def test_denylist_categories_refuse(self):
         for path in ('AGENTS.md','docs/AGENTS.md','.agents/skills/a.md',
                      '.github/workflows/ci.yml','.claude/settings.json','.codex/hooks.json',
                      '.grok/hooks/a.json','.pi/extensions/a.ts','.omp/fm-worker-overlay.yml',
-                     'bin/fm-hook-host-lib.sh','bin/fm-cd-pretool-check.sh',
+                     'bin/fm-calm.sh','bin/fm-hook-host-lib.sh','bin/fm-cd-pretool-check.sh',
                      'bin/fm-cd-command-policy.mjs',
                      'bin/fm-pr-merge.sh','bin/fm-merge-local.sh','bin/fm-merge-authority-lib.sh',
                      'bin/fm-teardown.sh','bin/fm-spawn.sh','bin/fm-lock-lib.sh',

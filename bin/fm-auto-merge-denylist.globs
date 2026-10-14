@@ -24,42 +24,21 @@ AGENTS.md
 .omp/**
 .opencode/**
 .pi/**
-bin/fm-*-pretool-check.sh
-bin/fm-*-command-policy.mjs
-bin/fm-hook-host-lib.sh
-bin/fm-kimi-turnend-hook.sh
 
-# Merge authority and the supervision lifecycle
-bin/fm-pr-merge.sh
-bin/fm-merge-local.sh
-bin/fm-merge-authority-lib.sh
-bin/fm-merge-outcome-lib.sh
-bin/fm-afk-contract.sh
-bin/fm-lease-lib.sh
-bin/fm-teardown.sh
-bin/fm-spawn.sh
-bin/fm-lock*
-bin/fm-wake*
-bin/fm-watch*
-bin/fm-worker-guard*
-bin/fm-antidrift*
-bin/fm-wip*
-bin/size-gate*
+# Every supervision, merge, launch, cleanup, send, lock, wake, watch, size-gate
+# and auto-merge script under bin/ is sensitive. A small fix to a bin/ script
+# stays with the human or the parent on the normal merge path.
+bin/**
+
+# Supervision and destructive-command names denied wherever they appear
 **/*worker-guard*
 **/*antidrift*
 **/*wip*
 **/*spawn*
 **/*teardown*
 
-# This auto-merge framework
-bin/fm-auto-merge*
-bin/fm_auto_merge*
+# This auto-merge framework's own tests
 tests/fm-auto-merge*
-
-# Install, update and bootstrap scripts
-bin/fm-install-*
-bin/fm-update*
-bin/fm-bootstrap*
 
 # Configuration, credentials and security-sensitive or destructive names
 config/**
