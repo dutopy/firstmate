@@ -167,6 +167,43 @@ test_a_producer_that_never_publishes_is_launched_once_per_tick() {
   pass "fm-watch: a silent producer is relaunched once per tick, not on every poll"
 }
 
+# A producer that dies before publishing is relaunched; the first launch epoch survives the relaunches.
+test_the_first_launch_epoch_survives_relaunches_of_a_silent_producer() {
+  local dir out pid watcher first n AD
+  dir=$(make_home_case first-launch); out="$dir/watch.out"; watcher=$(make_stub_root "$dir")
+  AD="$ROOT/bin/fm-antidrift-check.sh"
+  : > "$dir/stub.log"
+  start_stub_watch "$dir" "$watcher" "$out" FM_CHECK_INTERVAL=2 FM_HEARTBEAT=999999
+  pid=$!
+  sleep 8
+  reap "$pid"
+  n=$(wc -l < "$dir/stub.log" | tr -d ' ')
+  [ "$n" -ge 2 ] || fail "the silent producer must have been relaunched (launches: $n)"
+  first=$(cat "$dir/state/.antidrift-first")
+  [ "$(cat "$dir/state/.antidrift-kick")" -gt "$first" ] || fail "the last launch must be newer than the first"
+  [ ! -f "$dir/state/.antidrift" ] || fail "the stub never publishes"
+  assert_contains "$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_WIP_NOW=$((first + 901)) FM_CHECK_INTERVAL=300 "$AD" cached)" \
+    "unknown: producer-stale" "relaunches do not hide a producer that never published"
+  [ -z "$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_WIP_NOW=$((first + 100)) FM_CHECK_INTERVAL=300 "$AD" cached)" ] \
+    || fail "a young first launch stays silent"
+  pass "fm-watch: the first launch epoch survives relaunches and ages the missing cache"
+}
+
+# Once a cache exists the watcher no longer records a first launch.
+test_no_first_launch_epoch_is_recorded_once_a_cache_exists() {
+  local dir out pid watcher
+  dir=$(make_home_case first-cached); out="$dir/watch.out"; watcher=$(make_stub_root "$dir")
+  printf 'fm-antidrift-v1\nepoch=%s\nline=\nsig=\n' "$(date +%s)" > "$dir/state/.antidrift"
+  : > "$dir/stub.log"
+  start_stub_watch "$dir" "$watcher" "$out" FM_CHECK_INTERVAL=2 FM_HEARTBEAT=999999
+  pid=$!
+  sleep 5
+  reap "$pid"
+  [ -s "$dir/stub.log" ] || fail "the producer should have been launched"
+  assert_absent "$dir/state/.antidrift-first" "a published cache needs no first-launch epoch"
+  pass "fm-watch: no first launch epoch is recorded once a cache exists"
+}
+
 # A4/B2: a status change that arrives while a producer runs is kept pending, not lost.
 test_a_status_change_during_a_running_producer_is_not_lost() {
   local dir out pid watcher n i
@@ -231,3 +268,5 @@ test_a_producer_that_never_publishes_is_launched_once_per_tick
 test_a_status_change_during_a_running_producer_is_not_lost
 test_new_drift_is_delivered_on_the_check_cadence
 test_the_heartbeat_streak_is_reset_by_a_drift_wake
+test_the_first_launch_epoch_survives_relaunches_of_a_silent_producer
+test_no_first_launch_epoch_is_recorded_once_a_cache_exists
