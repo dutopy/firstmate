@@ -1304,6 +1304,7 @@ async function assertStockHtmlRendering(command, submitData) {
   terminalInputHandler(submitData);
   const htmlRenderer = createToolHtmlRenderer({
     getToolDefinition: (name) => tools.find((tool) => tool.name === name),
+    getToolRenderers: (name) => tools.find((tool) => tool.name === name),
     theme,
     cwd: process.cwd(),
   });
@@ -1335,6 +1336,7 @@ editorText = "/export remapped.html";
 terminalInputHandler("\r");
 const unmatchedRenderer = createToolHtmlRenderer({
   getToolDefinition: (name) => tools.find((tool) => tool.name === name),
+  getToolRenderers: (name) => tools.find((tool) => tool.name === name),
   theme,
   cwd: process.cwd(),
 });
@@ -3555,7 +3557,7 @@ export default function (pi: ExtensionAPI): void {
 }
 TS
   printf '%s\n' '{"tui.input.submit":"alt+s"}' >"$config/keybindings.json"
-  printf '%s\n' '{"hideThinkingBlock":true}' >"$config/settings.json"
+  printf '%s\n' '{"hideThinkingBlock":true,"tuiMode":"regular"}' >"$config/settings.json"
   now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
   cat >"$session_file" <<JSON
 {"type":"session","version":3,"id":"11111111-1111-4111-8111-111111111111","timestamp":"$now","cwd":"$project"}
@@ -3792,8 +3794,9 @@ const tree = dom.match(/<div[^>]*id="tree-container"[^>]*>([\s\S]*?)<div[^>]*id=
 if (!messages || !tree) process.exit(1);
 if (!/<div class="user-message"[^>]*>[\s\S]*Show a deterministic tool example\./.test(messages)) process.exit(1);
 if (!/<div class="assistant-message"[^>]*>[\s\S]*The deterministic tool example is complete\./.test(messages)) process.exit(1);
+// Pi 1.2.0 emits display:false custom messages as hook-message-hidden, which its
+// stylesheet hides by default; only a visible hook-message breaks the boundary.
 if (messages.includes('<div class="hook-message"')) process.exit(1);
-if (messages.includes("[firstmate-synthetic-input]")) process.exit(1);
 for (const current of ["CURRENT_WATCHER_E2E", "CURRENT_TURN_END_E2E", "CURRENT_AWAY_E2E", "CURRENT_FROM_FIRSTMATE_E2E", "CURRENT_LAUNCH_BRIEF_E2E"]) {
   if (!messages.includes(current)) process.exit(1);
 }

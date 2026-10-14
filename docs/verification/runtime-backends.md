@@ -2022,6 +2022,30 @@ The same guard against the pre-change extension in the same lab measured a 676.9
 Measured through the same real `fm_branch_report` tool and real `bin/` scripts with a 1 ms interval timer, the largest single block of the JavaScript thread fell from 273 ms to 2.0 ms for a routine outcome, from 286 ms to 2.0 ms for a captain outcome, and from 134 ms to 1.9 ms for main's acknowledgement, against a 1.3-2.2 ms idle-loop floor.
 Those absolute figures are specific to this host and Pi version; the guards assert the relationship (delivery must stay in the class of the same machine's own floor) rather than a remembered millisecond number.
 
+### 2026-10-14 Pi 1.2.0 compatibility
+
+The tracked Pi extensions and their consumer tests were run against the public `@earendil-works/pi-coding-agent` 0.87.1, the version CI installed on the last green `main` run, and 1.2.0, the current release.
+No model was selected or prompted and no provider call was made.
+Three independent Pi changes broke the extensions between those versions:
+
+- Pi 1.2.0 turned `BeforeAgentStartEvent` into a user or custom union and only the user variant carries `prompt`, so the two `before_agent_start` handlers read it only when present.
+- Pi 1.1.0 renamed the `createToolHtmlRenderer` dependency from `getToolDefinition` to `getToolRenderers`, so the consumer fixtures supply both names.
+- Pi 0.99.0 made the stock tool-call header print the call arguments, so `fm_branch_outcomes` probes the installed Pi's stock header and prints the same arguments when it does.
+
+```sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-calm-pi-extension.test.sh
+tests/fm-pi-branch-extension.test.sh
+```
+
+```text
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 0.87.1
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.2.0
+ok - fm_branch_outcomes hides through ToolExecutionComponent while Calm-off and HTML export stay stock
+```
+
+`FM_PI_PACKAGE_DIR` selects the package under test, so the same commands refresh this record against any installed Pi.
+
 ### 2026-09-19 captain-message fast lane
 
 The captain-message fast lane delivers a captain-inbox note wake as Pi steering input instead of a follow-up, so a busy main run reaches it at its next LLM boundary.
