@@ -111,10 +111,10 @@ is_home_repo_worktree() {  # <worktree>
 # Print the pathspec exclusions (one per line) for a snapshot of <worktree>.
 exclusion_pathspecs() {  # <real-worktree> <shadow>
   local wt=$1 shadow=$2 g rel store
-  for g in ${DENY_GLOBS[@]+"${DENY_GLOBS[@]}"}; do printf ':(exclude,glob)%s\n' "$g"; done
+  for g in ${DENY_GLOBS[@]+"${DENY_GLOBS[@]}"}; do printf ':(exclude,glob,icase)%s\n' "$g"; done
   if is_home_repo_worktree "$wt"; then
     for g in "${HOME_PRIVATE_GLOBS[@]}"; do
-      printf ':(exclude,glob)%s\n' "$g"
+      printf ':(exclude,glob,icase)%s\n' "$g"
     done
   fi
   # The whole WIP store (shadow repos, info, locks, pass scratch) and the state
@@ -274,9 +274,9 @@ prove_private() {  # <owner/name>
 range_has_deny_hit() {  # <ref> <already-pushed-commit-or-empty>
   local ref=$1 pushed=$2 c specs=() g range idx hit
   load_deny_globs
-  for g in ${DENY_GLOBS[@]+"${DENY_GLOBS[@]}"}; do specs+=(":(glob)$g"); done
+  for g in ${DENY_GLOBS[@]+"${DENY_GLOBS[@]}"}; do specs+=(":(glob,icase)$g"); done
   if is_home_repo_worktree "$REAL_WT"; then
-    for g in "${HOME_PRIVATE_GLOBS[@]}"; do specs+=(":(glob)$g"); done
+    for g in "${HOME_PRIVATE_GLOBS[@]}"; do specs+=(":(glob,icase)$g"); done
   fi
   [ "${#specs[@]}" -gt 0 ] || return 1
   if [ -n "$pushed" ] && W cat-file -e "$pushed^{commit}" 2>/dev/null; then range="$pushed..$ref"; else range=$ref; fi

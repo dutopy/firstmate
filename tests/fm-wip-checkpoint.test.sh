@@ -50,6 +50,10 @@ make_src() {
   printf 'new\n' > "$src/new.txt"
   printf 'k\n' > "$src/untracked.key"
   printf 'db\n' > "$src/x.sqlite3"
+  local n
+  for n in app.db app.db-wal app.db-shm app.sqlite app.sqlite-wal app.sqlite3-shm .npmrc .git-credentials auth.p8 store.jks UPPER.PEM Id_RSA .ENV; do
+    printf 'secret\n' > "$src/$n"
+  done
   mkdir -p "$src/.artifacts" "$src/corpus" "$src/config"
   printf 'big\n' > "$src/.artifacts/blob"
   printf 'c\n' > "$src/corpus/c.txt"
