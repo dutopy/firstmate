@@ -63,7 +63,7 @@ assert code == 2 and rows[0]['whitelist'] is None
 print('ok - machine-specific authority cannot be borrowed')
 
 # These are representative user data and shared tool exclusions, not arbitrary defaults.
-for name in ('data', 'state', 'Hermes', 'Desktop', 'Documents', 'Audio',
+for name in ('Hermes', 'Desktop', 'Documents', 'Audio',
              'backups', 'StorageBox', 'Storage Box', 'storage_box',
              'restic', 'ms-playwright', 'ms_playwright'):
     path = layout / name / 'old'
@@ -71,7 +71,10 @@ for name in ('data', 'state', 'Hermes', 'Desktop', 'Documents', 'Audio',
     code, rows = invoke('imac', snapshot('imac', [obj(path, 'task-artifact')]))
     assert code == 2 and 'excluded-path' in rows[0]['reasons'], (name, rows)
     assert rows[0]['whitelist']['id'] == 'imac.task-artifact'
-print('ok - exclusions override valid whitelist rows')
+for name in ('data', 'state'):
+    code, rows = invoke('imac', snapshot('imac', [obj(root / name / 'old', 'task-artifact')]))
+    assert code == 2 and 'excluded-path' in rows[0]['reasons'], (name, rows)
+print('ok - exclusions and the firstmate home data/state override valid whitelist rows')
 
 # An innocuous parent cannot hide protected descendants or a symlink escape.
 parent = layout / 'scratch'
@@ -84,6 +87,10 @@ for descendant in ('Storage Box', 'ms_playwright'):
     (holder / descendant).mkdir(parents=True)
     code, rows = invoke('imac', snapshot('imac', [obj(holder, 'task-artifact')]))
     assert code == 2 and 'excluded-descendant' in rows[0]['reasons'], (descendant, rows)
+regular = layout / 'regular-object'
+regular.write_text('not a directory')
+code, rows = invoke('imac', snapshot('imac', [obj(regular, 'task-artifact')]))
+assert code == 2 and 'unsupported-object-type' in rows[0]['reasons'], rows
 link = layout / 'apparently-safe'
 link.symlink_to(layout / 'Documents', target_is_directory=True)
 code, rows = invoke('imac', snapshot('imac', [obj(link, 'task-artifact')]))
@@ -253,7 +260,8 @@ print('ok - Homebrew requires native cellar binding and excludes the linked keg'
 # Unavailable is necessary but not sufficient: a booted/available device refuses.
 udid = '12345678-1234-1234-1234-123456789ABC'
 device = layout / 'Library' / 'Developer' / 'CoreSimulator' / 'Devices' / udid
-device.mkdir(parents=True)
+(device / 'data').mkdir(parents=True)
+(device / 'device.plist').write_text('device')
 sim = idle_item(device, 'simulator')
 sim['udid'] = udid
 devices = {'devices': {'runtime': [{'udid': udid, 'isAvailable': False, 'state': 'Shutdown'}]}}

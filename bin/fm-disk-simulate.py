@@ -30,10 +30,12 @@ POLICY = {
     'staging': {'old-build': (60, 'anciens builds hors release courante et dernier rollback')},
     'ft': {},
 }
-EXCLUDED = frozenset(('data', 'state', 'hermes', 'desktop', 'documents', 'document',
+EXCLUDED = frozenset(('hermes', 'desktop', 'documents', 'document',
                       'audio', 'music', 'musique', 'spectrasonics', 'backups', 'backup',
                       'storagebox', 'storage-box', 'restic', 'ms-playwright', 'shared'))
 EXCLUDED_COMPACT = frozenset(re.sub(r'[-_ ]', '', name) for name in EXCLUDED)
+FIRSTMATE_HOME = Path(__file__).resolve().parent.parent
+HOME_PRIVATE_DIRECTORIES = frozenset(('data', 'state'))
 BUSY = re.compile(r'(?:^|[/\s-])(?:claude|codex|pi|opencode|herdr|hermes|cursor|'
                   r'chrome|chromium|playwright|xcode|simulator|simctl|npm|pnpm|yarn|'
                   r'brew|clang|gcc|make|cmake|ninja|xcodebuild|swift)(?:$|[/\s.-])', re.I)
@@ -44,7 +46,7 @@ Input JSON (schema 1):
   machine: exact entry point name
   provenance: {kind: "fixture"|"local", source: nonempty description,
                observed_at: timezone-qualified ISO8601 observation time}
-  objects: [{path: absolute explicitly named local path, kind: approved kind,
+  objects: [{path: absolute explicitly named local directory, kind: approved kind,
              owner_uid: numeric expected owner, evidence: {...}}]
 Snapshots must be current (at most five minutes old, no future timestamps).
 This bounds evidence age, not disk usage: no disk threshold/growth subsystem exists.
@@ -60,8 +62,10 @@ Common evidence keys (literal argv contracts):
   processes: ["ps", "-axo", "pid=,uid=,comm="] (complete, nonempty; active workers,
     tools, browsers, builds or simulators refuse, even outside the named directory)
   open-files: ["lsof", "-nP", "+D", PATH] (exit 1, empty stdout AND stderr = no use)
-All paths require owner_uid matching lstat, no symlink boundary/descendant, no
-protected ancestor or descendant, no mount boundary, and a named non-root path.
+Every object must be a directory; a regular file or other non-directory refuses
+as unsupported-object-type before any directory-only probe. All paths require
+owner_uid matching lstat, no symlink boundary/descendant, no protected ancestor
+or descendant, no mount boundary, and a named non-root path.
 
 Kinds and additional evidence:
   imac worktree / task-artifact: repository_root must equal path for worktree,
@@ -131,7 +135,13 @@ def protected_name(name):
 
 
 def protected(path):
-    return any(protected_name(part) for part in Path(path).parts)
+    if any(protected_name(part) for part in Path(path).parts):
+        return True
+    try:
+        relative = Path(path).relative_to(FIRSTMATE_HOME)
+    except ValueError:
+        return False
+    return bool(relative.parts) and relative.parts[0].casefold() in HOME_PRIVATE_DIRECTORIES
 
 
 def emit(machine, path, kind, provenance, reasons, facts=None):
@@ -178,7 +188,7 @@ def inspect_path(item, reasons, facts):
                 reasons.append('symlink-boundary')
                 return None
         st = path.lstat()
-        if not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode)):
+        if not stat.S_ISDIR(st.st_mode):
             reasons.append('unsupported-object-type')
             return None
         facts.append({'observation': 'local-lstat', 'uid': st.st_uid,
@@ -186,31 +196,30 @@ def inspect_path(item, reasons, facts):
         if type(item.get('owner_uid')) is not int or item['owner_uid'] != st.st_uid:
             reasons.append('unknown-ownership')
         # Traverse only the explicitly named object, never follow symlinks or mounts.
-        if path.is_dir():
-            pending = [path]
-            while pending:
-                directory = pending.pop()
-                with os.scandir(directory) as entries:
-                    for entry in entries:
-                        if protected_name(entry.name):
-                            reasons.append('excluded-descendant')
-                            return None
-                        if (entry.name in ('.lease', '.reserved', '.active')
-                                or entry.name.endswith('.lock')):
-                            reasons.append('leased-reserved-or-active-marker')
-                            return None
-                        if entry.is_symlink():
-                            reasons.append('symlink-descendant')
-                            return None
-                        metadata = entry.stat(follow_symlinks=False)
-                        if metadata.st_dev != st.st_dev:
-                            reasons.append('mount-boundary')
-                            return None
-                        if metadata.st_uid != st.st_uid:
-                            reasons.append('mixed-ownership')
-                            return None
-                        if entry.is_dir(follow_symlinks=False):
-                            pending.append(Path(entry.path))
+        pending = [path]
+        while pending:
+            directory = pending.pop()
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if protected(entry.path):
+                        reasons.append('excluded-descendant')
+                        return None
+                    if (entry.name in ('.lease', '.reserved', '.active')
+                            or entry.name.endswith('.lock')):
+                        reasons.append('leased-reserved-or-active-marker')
+                        return None
+                    if entry.is_symlink():
+                        reasons.append('symlink-descendant')
+                        return None
+                    metadata = entry.stat(follow_symlinks=False)
+                    if metadata.st_dev != st.st_dev:
+                        reasons.append('mount-boundary')
+                        return None
+                    if metadata.st_uid != st.st_uid:
+                        reasons.append('mixed-ownership')
+                        return None
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(Path(entry.path))
     except OSError as error:
         reasons.append('unreadable-or-missing-path')
         facts.append({'observation': 'path-error', 'error': str(error)})
