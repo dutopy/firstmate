@@ -839,7 +839,7 @@ test_transport_option_values_are_values() {
 # the guard never lets a worker kill an ancestor of the guard itself, whatever
 # the agent binary is called.
 test_owner_lookup_is_lazy_and_name_independent() {
-  local shim="$TMP_ROOT/pshim" log="$TMP_ROOT/pshim.log" real_ps target out
+  local shim="$TMP_ROOT/pshim" log="$TMP_ROOT/pshim.log" real_ps out
   real_ps=$(command -v ps)
   mkdir -p "$shim"
   : >"$log"
@@ -855,6 +855,77 @@ test_owner_lookup_is_lazy_and_name_independent() {
   pass "owner lookup is lazy and an ancestor of the guard is never killable"
 }
 
+test_external_memory_helper_supported_route() {
+  local helper="$ROOT/bin/fm-ensure-agents-md.sh" repo out code kind
+  for kind in fresh governed owned-link foreign-link agents-link real-conflict; do
+    repo="$WT/memory-$kind"
+    mkdir -p "$repo"
+    case "$kind" in
+      governed | owned-link | foreign-link | real-conflict)
+        printf '<!-- firstmate:maintained-by-project -->\n# Project memory\n\nRetain our project-specific maintenance guidance.\n' >"$repo/AGENTS.md"
+        cp "$repo/AGENTS.md" "$repo/before"
+        ;;
+    esac
+    case "$kind" in
+      owned-link) ln -s AGENTS.md "$repo/CLAUDE.md" ;;
+      foreign-link) ln -s "$FOREIGN/keep/data" "$repo/CLAUDE.md" ;;
+      agents-link) ln -s "$FOREIGN/keep/data" "$repo/AGENTS.md" ;;
+      real-conflict) printf 'Distinct project instructions.\n' >"$repo/CLAUDE.md" ;;
+    esac
+
+    # The helper is outside the fixture's task base: this exercises strict
+    # inspection of its real source, not the reviewed-script trust path.
+    assert_allowed "external memory helper: $kind" "\"$helper\" ." "$repo"
+    out=$(cd "$repo" && "$helper" . 2>&1)
+    code=$?
+    case "$kind" in
+      foreign-link | agents-link | real-conflict)
+        [ "$code" -ne 0 ] || fail "memory helper must refuse $kind"
+        [ "$(cat "$FOREIGN/keep/data")" = precious ] || fail "memory helper clobbered foreign content"
+        case "$kind" in
+          foreign-link) [ -L "$repo/CLAUDE.md" ] || fail "foreign link was removed" ;;
+          agents-link) [ -L "$repo/AGENTS.md" ] || fail "foreign AGENTS link was removed" ;;
+          real-conflict) [ "$(cat "$repo/CLAUDE.md")" = 'Distinct project instructions.' ] || fail "distinct instructions were overwritten" ;;
+        esac
+        ;;
+      *)
+        [ "$code" -eq 0 ] || fail "memory helper failed for $kind: $out"
+        [ -f "$repo/AGENTS.md" ] && [ ! -L "$repo/AGENTS.md" ] || fail "memory must be a real AGENTS file"
+        [ -f "$repo/CLAUDE.md" ] && [ ! -L "$repo/CLAUDE.md" ] || fail "pointer must be a real file"
+        cmp -s "$repo/CLAUDE.md" - <<'EOF' || fail "memory pointer does not import AGENTS.md"
+<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->
+@AGENTS.md
+EOF
+        if [ -f "$repo/before" ]; then
+          cmp -s "$repo/before" "$repo/AGENTS.md" || fail "project-owned governance was altered"
+        else
+          assert_grep '## Maintaining this file' "$repo/AGENTS.md" "new memory needs self-governance"
+        fi
+        cp "$repo/AGENTS.md" "$repo/agents-after"
+        cp "$repo/CLAUDE.md" "$repo/claude-after"
+        assert_allowed "external memory helper rerun: $kind" "\"$helper\" ." "$repo"
+        (cd "$repo" && "$helper" .) >/dev/null 2>&1 || fail "memory helper rerun failed"
+        cmp -s "$repo/agents-after" "$repo/AGENTS.md" || fail "memory helper rerun changed AGENTS"
+        cmp -s "$repo/claude-after" "$repo/CLAUDE.md" || fail "memory helper rerun changed pointer"
+        ;;
+    esac
+    if [ -f "$repo/before" ]; then
+      cmp -s "$repo/before" "$repo/AGENTS.md" || fail "memory helper altered existing governance"
+    fi
+  done
+  assert_denied "bare case syntax remains unsupported" 'case x in x) rm -rf ./keep ;; esac'
+  assert_contains "$HOOK_ERR" "[UNPARSEABLE]" "unsupported case syntax must not be exempted"
+  assert_denied "quoted heredoc in a group remains unsupported" "f() {
+cat <<'EOF'
+project's note
+EOF
+}
+rm -rf ./keep"
+  assert_contains "$HOOK_ERR" "[UNPARSEABLE]" "unsupported heredoc syntax must not be exempted"
+  assert_nothing_destroyed "memory helper supported route"
+  pass "external memory helper runs after strict policy inspection and preserves governance and file boundaries"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -862,6 +933,7 @@ test_scripts_are_shellcheck_clean() {
   pass "transport is shellcheck-clean"
 }
 
+test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied
 test_script_files_in_tree
