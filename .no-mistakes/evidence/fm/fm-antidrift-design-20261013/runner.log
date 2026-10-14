@@ -1,0 +1,87 @@
+FM_TEST_BEGIN 2026-10-14T16:12:42Z tests/fm-antidrift-check.test.sh family=unclassified expected_gate_skip=none
+ok - fm-antidrift-check: an empty inventory publishes an empty line
+ok - fm-antidrift-check: no-upstream alarm is immediate, annotated for local-only, scouts excluded
+ok - fm-antidrift-check: more than 10 unpushed commits alarms, exactly 10 does not
+ok - fm-antidrift-check: push-age alarms cover registry clones and the home root as unknown, never silently skipped
+ok - fm-antidrift-check: push age comes from the native receipt; absence is unknown, not guessed
+ok - fm-antidrift-check: dirty duration is observed continuously, persisted, never backdated from file times
+ok - fm-antidrift-check: deletions count as uncommitted changes
+ok - fm-antidrift-check: push DISABLED remotes are reported
+ok - fm-antidrift-check: PR age, registered-vs-presented, and forge-unknown are distinct
+ok - fm-antidrift-check: reassigned or unclaimed slots are skipped and alarmed, never snapshotted
+ok - fm-antidrift-check: a reused pool slot starts the new task with fresh WIP state
+ok - fm-antidrift-check: secondmate records are never adopted as worktrees
+ok - fm-antidrift-check: git worktree list is never used as an inventory
+ok - fm-antidrift-check: own task worktrees are inventoried without a registry
+ok - fm-antidrift-check: 30-minute cadence and immediate milestone checkpoints
+ok - fm-antidrift-check: first publication immediate, daily push action even when unchanged
+ok - fm-antidrift-check: blocked publication is alarmed with its reason; declared-off is silent
+ok - fm-antidrift-check: a full refresh leaves the source byte-identical
+ok - fm-antidrift-check: the cached reader reports a line once until it changes
+ok - fm-antidrift-check: thirty findings coalesce into one bounded line
+ok - fm-antidrift-check: a held producer lock makes refresh a no-op
+ok - fm-antidrift-check: a failed publication is retried after a backoff, not every tick
+ok - fm-antidrift-check: a publication declared off is not retried every tick
+ok - fm-antidrift-check: native status calls are cached (tasks 300 s, other worktrees 1800 s)
+ok - fm-antidrift-check: the dirty clock is continuous across unrelated commits
+ok - fm-antidrift-check: the unpushed count uses the native pushed head when it is newer than the tracking ref
+ok - fm-antidrift-check: a non-epoch native receipt is unknown
+ok - fm-antidrift-check: scout worktrees carry no push-age alarm
+ok - fm-antidrift-check: a truncated status log does not hide milestones
+ok - fm-antidrift-check: the GitHub upstream test is anchored to the real host
+ok - fm-antidrift-check: a non-GitHub upstream is alarmed (accepted requirement pinned)
+ok - fm-antidrift-check: an unparsable PR age is unknown, not clean
+ok - fm-antidrift-check: push DISABLED matches the value, not a substring
+ok - fm-antidrift-check: non-Treehouse worktrees rely on record exclusivity, ambiguity refuses
+ok - fm-antidrift-check: critical segments are composed first and survive the cap
+ok - fm-antidrift-check: a change hidden in the truncated tail is still news
+ok - fm-antidrift-check: segment names are sorted
+ok - fm-antidrift-check: a persistent alarm is re-announced after six hours
+ok - fm-antidrift-check: a stale cache is reported as a stale producer
+ok - fm-antidrift-check: a producer that never published is reported stale
+ok - fm-antidrift-check: a blocked git read is bounded and reported
+ok - fm-antidrift-check: one task on two copies publishes distinct references
+FM_TEST_END 2026-10-14T16:16:19Z tests/fm-antidrift-check.test.sh exit=0 duration_ms=216377 gate_skip=false
+FM_TEST_BEGIN 2026-10-14T16:16:19Z tests/fm-wip-checkpoint.test.sh family=unclassified expected_gate_skip=none
+ok - fm-wip-checkpoint: snapshot is filtered, orphan, and leaves the source untouched
+ok - fm-wip-checkpoint: idempotent snapshot, deletions tracked
+ok - fm-wip-checkpoint: an in-tree shadow store excludes itself
+ok - fm-wip-checkpoint: home-private directories are denied only in the home's own repository
+ok - fm-wip-checkpoint: a deny-list change opens a new lineage
+ok - fm-wip-checkpoint: snapshots happen only for a freshly proven slot owner
+ok - fm-wip-checkpoint: only an explicit private answer publishes, receipt on success
+ok - fm-wip-checkpoint: visibility is proven fresh before every push
+ok - fm-wip-checkpoint: no configured remote means no publication
+ok - fm-wip-checkpoint: publication declared off is a posture, not a failure
+ok - fm-wip-checkpoint: the publish range is re-checked against the deny list
+ok - fm-wip-checkpoint: the publish range is re-checked against the home-private directories
+ok - fm-wip-checkpoint: a rejected push is reported and never forced
+ok - fm-wip-checkpoint: an unreadable file is skipped, the snapshot still lands (best effort)
+ok - fm-wip-checkpoint: the size cap holds for odd names and special files do not hang
+ok - fm-wip-checkpoint: a large tree snapshots with deletions following
+ok - fm-wip-checkpoint: a slow push is a timeout result, not a rejection
+ok - fm-wip-checkpoint: an undeterminable home recognition refuses the push before any forge call
+FM_TEST_END 2026-10-14T16:17:16Z tests/fm-wip-checkpoint.test.sh exit=0 duration_ms=56986 gate_skip=false
+FM_TEST_BEGIN 2026-10-14T16:17:16Z tests/fm-pr-presented.test.sh family=unclassified expected_gate_skip=none
+ok - fm-pr-check --presented: explicit, exact-URL, idempotent receipt
+ok - fm-pr-check --presented: no registered PR means no receipt
+FM_TEST_END 2026-10-14T16:17:18Z tests/fm-pr-presented.test.sh exit=0 duration_ms=2012 gate_skip=false
+FM_TEST_BEGIN 2026-10-14T16:17:18Z tests/fm-watch-antidrift.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - fm-watch: the heartbeat raises one check wake per new drift line
+ok - fm-watch: the heartbeat reads the cache only and never reaches the forge
+ok - fm-watch: the status backstop still wakes when drift is pending too
+ok - fm-watch: a done: status line kicks the producer into a milestone checkpoint
+ok - fm-watch: a silent producer is relaunched once per tick, not on every poll
+ok - fm-watch: a status change during a running producer is kept pending and launches the next one
+ok - fm-watch: new drift is delivered on the check cadence as well as on heartbeats
+ok - fm-watch: the heartbeat streak is reset by a drift wake
+ok - fm-watch: the first launch epoch survives relaunches and ages the missing cache
+ok - fm-watch: no first launch epoch is recorded once a cache exists
+FM_TEST_END 2026-10-14T16:18:24Z tests/fm-watch-antidrift.test.sh exit=0 duration_ms=65779 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=342008
+FM_TEST_SUMMARY_FAMILY family=unclassified count=3 duration_ms=275375 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=65779 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-antidrift-check.test.sh duration_ms=216377
+FM_TEST_SLOWEST rank=2 script=tests/fm-watch-antidrift.test.sh duration_ms=65779
+FM_TEST_SLOWEST rank=3 script=tests/fm-wip-checkpoint.test.sh duration_ms=56986
+FM_TEST_SLOWEST rank=4 script=tests/fm-pr-presented.test.sh duration_ms=2012
