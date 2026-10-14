@@ -217,6 +217,14 @@ The bound is required rather than cosmetic because churn and pane staleness read
 The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which run their own crew mix.
 [`architecture.md`](architecture.md) owns the triage contract and `bin/fm-watch.sh`'s `signal_turnend_panes_churned` owns the exact evidence and fail-closed boundaries.
 
+## Disk cleanup simulation
+
+`bin/fm-disk-simulate-imac.sh`, `bin/fm-disk-simulate-vps.sh`, `bin/fm-disk-simulate-staging.sh`, and `bin/fm-disk-simulate-ft.sh` report explicitly named objects without executing cleanup or imported inventory commands.
+Their shared `--help`, owned by [`bin/fm-disk-simulate.py`](../bin/fm-disk-simulate.py), defines the native-evidence input contract, exact whitelist mapping, exclusions, refusal behavior and current limitations.
+Simulation candidates are observations, not permission to delete; fixture evidence does not establish live-machine eligibility.
+Staging execution is handed to Fred, FT has no approved inventory or whitelist, and neither archives nor remote deployment are implemented.
+Behavioral verification: `bin/fm-test-run.sh tests/fm-disk-simulate.test.sh`.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true` and pins `commands.lint` to `bin/fm-lint.sh`, the same owner CI invokes.
