@@ -4,8 +4,10 @@
 # Exit 0 prints one JSON object binding URL, final head, base tip, merge base,
 # authoritative actor IDs, native run ID and size-gate measurements.
 # Exit 1 refuses eligibility (including missing tools/evidence); stdout stays empty.
-# Only presentation-only trailing-space changes to non-executable plain prose
-# Markdown in docs/ are classified low-risk; other changes need explicit approval.
+# Only plain modifications outside the versioned deny list in
+# bin/fm-auto-merge-denylist.globs, within the installed size gate and the
+# deletion bound, are classified low-risk; every other change needs explicit
+# approval.
 # The installed size-gate.sh owns measured size exclusions, never safety exclusions.
 # No activation, persisted receipt, merge integration or journal is implemented here.
 # All merges still belong to fm-pr-merge.sh and its independent authority checks.

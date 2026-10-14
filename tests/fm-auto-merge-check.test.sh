@@ -72,6 +72,7 @@ class Eligibility(unittest.TestCase):
         self.tool = self.w/'tool'
         (self.tool/'bin').mkdir(parents=True)
         for name in ('fm-auto-merge-check.sh','fm_auto_merge_check.py',
+                     'fm-auto-merge-denylist.globs',
                      'fm-pr-lib.sh','fm-cli-lib.sh','fm-nm-run-lib.sh'):
             src = ROOT/'bin'/name
             if src.exists(): shutil.copy2(src, self.tool/'bin'/name)
@@ -286,23 +287,43 @@ steps[2]{{step,status,findings,duration_ms}}:
         self.native=''
         self.run_check(False,'native')
 
-    def test_sensitive_paths_and_arbitrary_semantics_refuse(self):
-        for path in ('bin/fm-worker-guard-x.sh','bin/fm-spawn.sh','bin/fm-teardown.sh',
-          'AGENTS.md','.agents/skills/a.md','bin/fm-antidrift.sh','bin/fm-wip.sh',
-          'config/a.md','docs/remote.md','docs/publication.md','docs/rights.md'):
+    def test_accepts_docs_tests_and_non_sensitive_scripts(self):
+        for path in ('docs/intro.md','tests/example.test.sh','bin/fm-calm.sh'):
             with self.subTest(path=path):
-                self.set_change('A useful sentence.  \n','A useful sentence.\n',path)
-                self.run_check(False)
-        self.set_change('A useful sentence.\n','An altered instruction.\n')
-        self.run_check(False,'category')
+                self.set_change('A useful sentence.\n','A different useful sentence.\n',path)
+                self.run_check()
 
-    def test_sensitive_content_binary_mode_and_large_deletion_refuse(self):
-        for content in ('Use GitHub carefully.','Delete secrets now.','Use force publication.',
-                        'Give permissions remotely.','Supprimer les droits.'):
-            with self.subTest(content=content):
-                self.set_change(content+'  \n',content+'\n'); self.run_check(False)
-        self.set_change(b'Before\x00  \n',b'Before\x00\n'); self.run_check(False)
-        self.set_change('A sentence.  \n'*51,'A sentence.\n'*51); self.run_check(False,'deletion')
+    def test_denylist_categories_refuse(self):
+        for path in ('AGENTS.md','docs/AGENTS.md','.agents/skills/a.md',
+                     '.github/workflows/ci.yml','.claude/settings.json','.codex/hooks.json',
+                     '.grok/hooks/a.json','.pi/extensions/a.ts','.omp/fm-worker-overlay.yml',
+                     'bin/fm-hook-host-lib.sh','bin/fm-cd-pretool-check.sh',
+                     'bin/fm-cd-command-policy.mjs',
+                     'bin/fm-pr-merge.sh','bin/fm-merge-local.sh','bin/fm-merge-authority-lib.sh',
+                     'bin/fm-teardown.sh','bin/fm-spawn.sh','bin/fm-lock-lib.sh',
+                     'bin/fm-wake-lib.sh','bin/fm-watch.sh','bin/size-gate.sh',
+                     'bin/fm-worker-guard-pretool-check.sh','bin/fm-antidrift-check.sh',
+                     'bin/fm-wip-lib.sh','bin/fm-auto-merge-check.sh',
+                     'bin/fm_auto_merge_check.py','tests/fm-auto-merge-check.test.sh',
+                     'bin/fm-install-shellcheck.sh','bin/fm-update.sh','bin/fm-bootstrap.sh',
+                     'config/a.md','secrets/a.md','docs/credential.md','docs/token.md',
+                     'docs/.env','docs/rights.md','docs/publication.md','docs/remote.md'):
+            with self.subTest(path=path):
+                self.set_change('A useful sentence.\n','A different useful sentence.\n',path)
+                self.run_check(False,'sensitive path')
+
+    def test_symlink_addition_and_binary_refuse(self):
+        self.git('reset','--hard','-q',self.base)
+        (self.repo/'docs/new.md').write_text('A new sentence.\n')
+        (self.repo/'docs/link.md').symlink_to('intro.md')
+        self.git('add','--','docs/new.md','docs/link.md')
+        self.git('commit','-qm','Addition and symlink')
+        self.head=self.git('rev-parse','HEAD'); self.refresh(); self.run_check(False)
+        self.set_change(b'Before\x00value\n',b'After\x00value\n'); self.run_check(False)
+
+    def test_mode_change_and_large_deletion_refuse(self):
+        self.set_change('A sentence.  \n'*51,'A sentence.\n'*51)
+        self.run_check(False,'deletion')
         self.set_change('A sentence.  \n','A sentence.\n')
         self.git('update-index','--chmod=+x',self.path); self.git('commit','-qm','Executable')
         self.head=self.git('rev-parse','HEAD'); self.refresh(); self.run_check(False)

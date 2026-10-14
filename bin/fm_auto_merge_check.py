@@ -2,6 +2,7 @@
 """Implementation of fm-auto-merge-check.sh; no merge or durable writes."""
 import base64
 import csv
+import fnmatch
 import json
 import os
 from pathlib import Path
@@ -12,10 +13,7 @@ import sys
 
 BIN = Path(__file__).resolve().parent
 SHA = re.compile(r"[0-9a-f]{40}")
-SENSITIVE = re.compile(
-    r"secret|credential|password|token|permission|rights|droits|chmod|chown|"
-    r"delet|remov|supprim|force|github|gitlab|remote|publish|publication|"
-    r"worker.guard|spawn|teardown|agents\.md|antidrift|wip|config", re.I)
+DENY = BIN/'fm-auto-merge-denylist.globs'
 CHECK_QUERY = '''query($owner:String!,$repo:String!,$number:Int!,$after:String){
  repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid
  statusCheckRollup{contexts(first:100,after:$after){totalCount
@@ -27,6 +25,14 @@ CHECK_QUERY = '''query($owner:String!,$repo:String!,$number:Int!,$after:String){
 def require(condition, reason):
     if not condition:
         raise ValueError(reason)
+
+
+def deny_patterns():
+    require(DENY.is_file(), 'auto-merge deny list unavailable')
+    values = [line.strip().lower() for line in DENY.read_text().splitlines()]
+    patterns = [value for value in values if value and not value.startswith('#')]
+    require(patterns, 'auto-merge deny list empty')
+    return patterns
 
 
 def run(args, *, cwd=None, data=None):
@@ -143,25 +149,17 @@ def git(wt, *args):
 
 def classify(wt, base, head, files, pr):
     flags = ['--no-ext-diff', '--no-textconv', '--no-renames', '--ignore-submodules=none']
+    patterns = deny_patterns()
     raw = git(wt, 'diff', '--raw', '-z', *flags, base, head).split(b'\0')
     require(raw[-1] == b'' and len(raw) % 2 == 1 and len(raw) > 1, 'unreadable real diff')
     records = {}
     for i in range(0, len(raw)-1, 2):
         old_mode, new_mode, _, _, status = raw[i].decode('ascii').split()
         path = raw[i+1].decode('ascii')
-        require(re.fullmatch(r'docs/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+\.md', path)
-                and not SENSITIVE.search(path), 'sensitive or unclassified path')
         require(old_mode == ':100644' and new_mode == '100644' and status == 'M',
                 'unclassified mode, rename, addition or removal')
-        before = git(wt, 'cat-file', 'blob', base + ':' + path)
-        after = git(wt, 'cat-file', 'blob', head + ':' + path)
-        for content in (before, after):
-            text = content.decode('ascii')
-            require(not SENSITIVE.search(text) and text.endswith('\n')
-                    and all(not line or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ,.;:!?'()\"-]*", line)
-                            for line in text.split('\n')), 'unclassified prose category or sensitive content')
-        require([s.rstrip(b' ') for s in before.split(b'\n')]
-                == [s.rstrip(b' ') for s in after.split(b'\n')], 'unclassified semantic category')
+        require(not any(fnmatch.fnmatchcase(path.lower(), pattern) for pattern in patterns),
+                'sensitive path')
         records[path] = git(wt, 'rev-parse', head + ':' + path).strip().decode()
     nums = git(wt, 'diff', '--numstat', '-z', *flags, base, head).split(b'\0')
     stats = {}
@@ -244,8 +242,8 @@ def main():
     require(native_proof(wt, head, branch, url) == native and meta.read_bytes() == snapshot,
             'native or task identity drift')
     print(json.dumps(dict(url=url, head=head, base_tip=base_tip, base=base, author_id=author[0],
-        merger_id=merger[0], native_run=native, added=added, deleted=deleted, lines=lines, files=count,
-        category='prose-trailing-spaces'), sort_keys=True))
+        merger_id=merger[0], native_run=native, added=added, deleted=deleted, lines=lines, files=count),
+        sort_keys=True))
 
 
 if __name__ == '__main__':
