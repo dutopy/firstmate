@@ -1,0 +1,45 @@
+########## SCENARIO: helper functional route (fresh/governed/owned-link + refusals)
+=== helper live run: fresh ===
+exit=0
+output: created: AGENTS.md and CLAUDE.md @AGENTS.md pointer in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/repo-fresh
+OK fresh
+
+=== helper live run: governed ===
+exit=0
+output: wrote: CLAUDE.md @AGENTS.md pointer in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/repo-governed
+OK governed
+
+=== helper live run: owned-link ===
+exit=0
+output: updated: replaced CLAUDE.md symlink with @AGENTS.md pointer in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/repo-owned-link
+OK owned-link
+
+=== helper live run: foreign-link ===
+exit=1
+output: conflict: CLAUDE.md is a symlink in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/repo-foreign-link but does not point to AGENTS.md
+OK foreign-link refused, foreign link + data preserved
+
+=== helper live run: agents-link ===
+exit=1
+output: conflict: AGENTS.md is a symlink in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/repo-agents-link; expected AGENTS.md to be the real file
+OK agents-link refused, foreign link + data preserved
+
+=== helper live run: real-conflict ===
+exit=1
+output: conflict: both AGENTS.md and CLAUDE.md are real files in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/repo-real-conflict; reconcile them manually
+OK real-conflict refused, distinct instructions preserved
+
+########## SCENARIO: -h and --help (rewritten case branch)
+-h exit=0 first-line=usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]
+--help exit=0 first-line=usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]
+
+########## SCENARIO: case-variant memory file refused (rewritten grep check)
+agents.md exit=1 msg=conflict: memory file is named agents.md in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/variant-1 but the convention is AGENTS.md; rename it to AGENTS.md so CLAUDE.md's @AGENTS.md pointer resolves portably
+AGENTS.MD exit=1 msg=conflict: memory file is named AGENTS.MD in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/variant-2 but the convention is AGENTS.md; rename it to AGENTS.md so CLAUDE.md's @AGENTS.md pointer resolves portably
+Agents.Md exit=1 msg=conflict: memory file is named Agents.Md in /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-mem-scen.T6dEyW/variant-3 but the convention is AGENTS.md; rename it to AGENTS.md so CLAUDE.md's @AGENTS.md pointer resolves portably
+
+########## SCENARIO: real transport strict inspection of the helper source
+pre-fix helper : exit=2 err=worker-guard [UNPARSEABLE]: command text contains kill/delete words but cannot be parsed (unsupported token at byte 2400). Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+current helper : exit=0 err=
+
+TOTAL FAILURES: 0

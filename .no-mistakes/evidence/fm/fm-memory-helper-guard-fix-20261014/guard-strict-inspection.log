@@ -1,0 +1,8 @@
+# Scenario: worker invokes the memory helper; the real PreToolUse transport inspects the helper SOURCE strictly
+
+$ <PreToolUse JSON command='"$PRE_FIX/bin/fm-ensure-agents-md.sh" .'> | bin/fm-worker-guard-pretool-check.sh --claude
+worker-guard [UNPARSEABLE]: command text contains kill/delete words but cannot be parsed (unsupported token at byte 2400). Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+
+$ <PreToolUse JSON command='"$REPO/bin/fm-ensure-agents-md.sh" .'> | bin/fm-worker-guard-pretool-check.sh --claude
+exit=0

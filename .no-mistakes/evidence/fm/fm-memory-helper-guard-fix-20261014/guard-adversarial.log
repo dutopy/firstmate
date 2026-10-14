@@ -1,0 +1,11 @@
+# Adversarial: the helper was fixed on its own source; the guard policy was NOT relaxed and the helper is NOT exempt
+
+$ <command='case x in x) rm -rf ./keep ;; esac'> | transport
+worker-guard [UNPARSEABLE]: command text contains kill/delete words but cannot be parsed (unsupported token at byte 11). Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+
+$ <command='f() { cat <<PE >"EOF" ... } rm -rf ./keep'> | transport   # quoted heredoc in a group (apostrophe in body)
+worker-guard [UNPARSEABLE]: command text contains kill/delete words but cannot be parsed (unclosed {). Allowed: kill a literal PID you started yourself (its cwd or ancestry is proven to be yours), and rm -r on paths inside your own copy. For anything else append `blocked: <what you need stopped or removed>` to your status file and let firstmate act.
+exit=2
+
+sentinel after both denials: precious  (worker copy entries: keep ok.sh )

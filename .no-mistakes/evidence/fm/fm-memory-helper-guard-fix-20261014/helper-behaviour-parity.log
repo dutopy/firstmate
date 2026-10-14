@@ -1,0 +1,17 @@
+# Behavioural parity: pre-fix helper vs post-fix helper, driven directly on identical disposable projects
+# A kind is PARITY only when exit code, message (path-normalised), and the full resulting tree (names, symlink targets, byte hashes) match.
+
+fresh          post-fix exit=0  pre-fix exit=0  PARITY
+  message: created: AGENTS.md and CLAUDE.md @AGENTS.md pointer in REPO
+governed       post-fix exit=0  pre-fix exit=0  PARITY
+  message: wrote: CLAUDE.md @AGENTS.md pointer in REPO
+owned-link     post-fix exit=0  pre-fix exit=0  PARITY
+  message: updated: replaced CLAUDE.md symlink with @AGENTS.md pointer in REPO
+foreign-link   post-fix exit=1  pre-fix exit=1  PARITY
+  message: conflict: CLAUDE.md is a symlink in REPO but does not point to AGENTS.md
+agents-link    post-fix exit=1  pre-fix exit=1  PARITY
+  message: conflict: AGENTS.md is a symlink in REPO; expected AGENTS.md to be the real file
+real-conflict  post-fix exit=1  pre-fix exit=1  PARITY
+  message: conflict: both AGENTS.md and CLAUDE.md are real files in REPO; reconcile them manually
+
+PARITY FAILURES: 0

@@ -1,0 +1,30 @@
+ok - external memory helper runs after strict policy inspection and preserves governance and file boundaries
+ok - pkill/killall/xargs kill/kill $(pgrep) denied, nothing killed
+ok - bash -c / eval / pipes / heredocs / python / node / ruby bypasses denied, nothing destroyed
+ok - in-tree scripts are read, never run: only base-identical scripts escape the strict scan
+ok - rm -r outside the copy, on the copy root, via symlink, expansion, cd, or script denied; sentinels intact
+ok - copy6evil never counts as copy6 (path and process cwd)
+ok - foreign / unknown / group / init / variable PIDs denied, foreign processes alive
+ok - kill of a cwd-proved owned PID is allowed and effective
+tests/fm-worker-guard.test.sh: line 944:  6068 Killed: 9                  ( cd "$WT" && exec sleep 601 ) > /dev/null 2>&1
+ok - ownership needs PID + physical cwd + coherent command line; ancestry alone and a shared cwd alone are refused
+ok - unreadable cwd, command line, or process facts are refused; readable evidence allows the same PID
+ok - own jobs, signal 0, dead PIDs, and own Popen children stay allowed
+ok - ordinary workflows (grep pkill, git commit text, rm inside the copy, scripts, builds, ps/pgrep reads) allowed
+ok - rm -r inside the copy is allowed and effective
+ok - firstmate-declared extra task roots are honored, and only those
+ok - transport fails closed; every command-carrying tool is guarded; non-exec tools pass
+ok - CLI --command and --code (omp eval) modes share the same decision
+ok - wrappers, find -exec shells, bulk deletes, git clean, rsync --delete, ssh, parallel, substituted and process-substituted code are denied; in-copy forms stay allowed
+ok - scripts outside the copy, versioned interpreters, ssh options, rsync options, substituted command words, and a movable base ref are all covered
+ok - an unset path, missing binary, or crashing policy always leaves exit 2
+ok - a failing ps cannot turn a live foreign PID into a dead one
+ok - xargs rm is refused only when recursive
+ok - a command word the guard cannot read is refused at top level
+ok - trap strings, concatenated pkill, and aliased kill primitives are denied; owned literal PIDs stay allowed
+ok - shadowed readers, laundered base scripts, and unreconstructable substitutions are denied
+ok - the PR 13 review bypasses are denied while ordinary look-alikes stay allowed
+ok - option values are consumed as values by the transport
+ok - owner lookup is lazy and an ancestor of the guard is never killable
+ok - transport is shellcheck-clean
+ok - fm-worker-guard suite complete
