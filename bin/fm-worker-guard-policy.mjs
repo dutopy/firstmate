@@ -659,6 +659,7 @@ function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
   const virtual = st.vfiles.get(physical) ?? st.vfiles.get(abs);
   let text;
   let strict = true;
+  if (virtual === null) deny("OPAQUE_EXEC", `${rawPath} was written with text the guard cannot read literally`);
   if (virtual !== undefined) {
     text = virtual;
   } else {
@@ -1046,7 +1047,10 @@ function literalProducerText(tokens) {
     // Only the leading options are options; a later "-rf" is text the shell will run.
     if (name === "echo") while (rest[0] && /^-[neE]+$/.test(rest[0].value)) rest.shift();
     else if (rest[0]?.value === "--") rest.shift();
-    return rest.map((w) => w.value).join(" ").replace(/\\n/g, "\n");
+    const text = rest.map((w) => w.value).join(" ");
+    // printf formats and echo/printf escapes other than \n make the run text differ from the literal.
+    if (/\\(?!n)/.test(text) || (name === "printf" && text.includes("%"))) return null;
+    return text.replace(/\\n/g, "\n");
   }
   return null;
 }
@@ -1117,7 +1121,15 @@ export function analyzeShell(text, st, ctx, depth = 0) {
         const value = wordValue(target, st);
         if (value === null) continue;
         const abs = path.isAbsolute(value) ? value : st.cwd ? path.join(st.cwd, value) : null;
-        if (abs) st.vfiles.set(ctx.roots.physical(abs), (st.vfiles.get(ctx.roots.physical(abs)) ?? "") + body);
+        const key = abs && ctx.roots.physical(abs);
+        if (abs) st.vfiles.set(key, st.vfiles.get(key) === null ? null : (st.vfiles.get(key) ?? "") + body);
+      }
+    } else if (position.command && /^(echo|printf)$/.test(basename(position.command.value))) {
+      for (const target of writeTargets) {
+        const value = wordValue(target, st);
+        if (value === null) continue;
+        const abs = path.isAbsolute(value) ? value : st.cwd ? path.join(st.cwd, value) : null;
+        if (abs) st.vfiles.set(ctx.roots.physical(abs), null);
       }
     }
 

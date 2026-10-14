@@ -403,7 +403,8 @@ export class Lexer {
           this.index += 2;
           continue;
         }
-        word.value += this.source[this.index + 1];
+        const escaped = this.source[this.index + 1];
+        word.value += '$`"\\'.includes(escaped) ? escaped : `\\${escaped}`;
         this.index += 2;
         continue;
       }
