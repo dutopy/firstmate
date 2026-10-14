@@ -217,6 +217,13 @@ test_ship_modes_generate_clean_briefs() {
     assert_grep "mid-task \`working:\` line (including setup complete) is nonterminal" "$brief" \
       "$id: brief missing nonterminal working:/setup-complete gate protection"
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
+    assert_grep "Checkpoint at least every 30 minutes of active work" "$brief" \
+      "$id: brief missing the mandatory 30-minute checkpoint rule"
+    assert_grep "automatic LOCAL checkpoint kept outside your worktree" "$brief" \
+      "$id: brief missing the custody clause that keeps the 30-minute cadence without a source commit"
+    assert_grep "published only where this home configured a private WIP remote" "$brief" \
+      "$id: brief must not promise coverage the home may not have configured"
+    assert_no_grep "covers you" "$brief" "$id: brief must not claim the checkpoint covers the worker"
   done
   pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
 }

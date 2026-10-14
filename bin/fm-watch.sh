@@ -122,6 +122,11 @@
 #                          rows do not feed this escalation, observation is
 #                          read-only, and one parent notification covers each
 #                          no-progress episode
+#   check: antidrift: <line>
+#                          the drift guard's cached one-line summary (bin/fm-antidrift-check.sh)
+#                          is new, changed, or an unchanged alarm is due its reminder; read
+#                          from the producer's cache on a heartbeat and on the check cadence,
+#                          never by running git or contacting the forge on those paths
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock.
@@ -177,6 +182,10 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/fm-x-lib.sh"
 # shellcheck source=bin/fm-check-lib.sh
 . "$SCRIPT_DIR/fm-check-lib.sh"
+# Cache readers for the anti-drift producer (bin/fm-antidrift-check.sh). The
+# heartbeat reads only the cache file they name: no git, no network.
+# shellcheck source=bin/fm-wip-lib.sh
+. "$SCRIPT_DIR/fm-wip-lib.sh"
 # Parent-owned secondmate missed-report guards: durable pending-reply
 # expectations created by fm-send on marked secondmate requests. The tick is
 # cheap when no records exist and never scrapes secondmate conversation.
@@ -2166,6 +2175,46 @@ home_summary_refresh_detached() {
   HOME_SUMMARY_PID=$!
 }
 
+# Anti-drift producer: same detached, single-instance pattern. It reads
+# worktrees, triggers due WIP checkpoints and pushes, and publishes one cached
+# line; the heartbeat below only reads that cache.
+ANTIDRIFT_PID=
+ANTIDRIFT_SIG_NEW=
+antidrift_refresh_detached() {
+  if [ -n "$ANTIDRIFT_PID" ]; then
+    if kill -0 "$ANTIDRIFT_PID" 2>/dev/null; then
+      # a producer is still running: the trigger stays pending (its signature is
+      # not recorded) and the next poll asks again
+      return 0
+    fi
+    wait "$ANTIDRIFT_PID" 2>/dev/null || true
+    ANTIDRIFT_PID=
+  fi
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-antidrift-check.sh" refresh </dev/null >/dev/null 2>&1 &
+  ANTIDRIFT_PID=$!
+  # recorded only once a producer was actually launched: the launch time bounds
+  # relaunches of a producer that dies without publishing, and the status
+  # signature marks which status changes this launch has taken in
+  printf '%s\n' "$(wip_now)" > "$STATE/.antidrift-kick" 2>/dev/null || true
+  if [ ! -f "$STATE/.antidrift" ] && [ ! -f "$STATE/.antidrift-first" ]; then
+    cp "$STATE/.antidrift-kick" "$STATE/.antidrift-first" 2>/dev/null || true
+  fi
+  if [ -n "$ANTIDRIFT_SIG_NEW" ]; then
+    printf '%s\n' "$ANTIDRIFT_SIG_NEW" > "$STATE/.antidrift-sig" 2>/dev/null || true
+  fi
+}
+
+# A status append is a possible milestone: kick the producer when any status
+# log changed size since the last kick, without waiting for the next due epoch.
+antidrift_status_changed() {
+  local sig prev=''
+  sig=$(wc -c "$STATE"/*.status 2>/dev/null | cksum)
+  [ ! -f "$STATE/.antidrift-sig" ] || IFS= read -r prev < "$STATE/.antidrift-sig" || true
+  ANTIDRIFT_SIG_NEW=$sig
+  [ "$sig" != "$prev" ]
+}
+
 RECONCILE_REQUEST_PID=
 reconcile_requests_pending() {
   local request
@@ -2329,6 +2378,13 @@ while :; do
 
   if [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_INTERVAL" ]; then
     home_summary_refresh_detached
+  fi
+
+  ad_kick=0
+  if antidrift_status_changed; then ad_kick=1; fi
+  if antidrift_refresh_due; then ad_kick=1; fi
+  if [ "$ad_kick" = 1 ]; then
+    antidrift_refresh_detached
   fi
 
   # Bearings publishes reconcile asks as local one-shot request files and
@@ -2501,6 +2557,14 @@ EOF
     touch "$STATE/.last-check"
     if [ -n "$contribution_check_output" ]; then
       wake "$contribution_check_output"
+    fi
+    # The drift guard's cached line is also delivered on this cadence, so its
+    # latency is at most one check interval even while the heartbeat backs off.
+    if antidrift_news_check; then
+      ad_reason="check: $AD_LINE"
+      fm_wake_append check antidrift "$ad_reason" || exit 1
+      antidrift_mark_reported "$AD_LINE" "$AD_SIG" || true
+      wake "$ad_reason"
     fi
   fi
 
@@ -2872,6 +2936,15 @@ EOF
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
+    # Anti-drift: read the producer's cached line (no git, no network). The row
+    # is enqueued before it is marked reported, and the status backstop below is
+    # never skipped: when the heartbeat would wake anyway it carries the row too.
+    ad_reason=
+    if antidrift_news_check; then
+      ad_reason="check: $AD_LINE"
+      fm_wake_append check antidrift "$ad_reason" || exit 1
+      antidrift_mark_reported "$AD_LINE" "$AD_SIG" || true
+    fi
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the
     # no-change case (advance the schedule and back off exactly as wake() would,
@@ -2897,6 +2970,9 @@ EOF
         wake "heartbeat"
       fi
       touch "$STATE/.last-heartbeat"
+      if [ -n "$ad_reason" ]; then
+        wake "$ad_reason"
+      fi
       echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
       triage_log "absorbed heartbeat (no captain-relevant change)"
     fi

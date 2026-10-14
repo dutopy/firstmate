@@ -143,7 +143,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated PR/MR-poll sidecars           |
 | `fm-contributions.sh`    | Observe owned publications, retain exact-head judgments, measure required actors, and wake on maintainer signals |
-| `fm-pr-check.sh`         | Record validated `pr=`, any available `pr_head=`, and the ready report's patch identity, then atomically arm a static merge poll |
+| `fm-pr-check.sh`         | Record validated `pr=`, any available `pr_head=`, and the ready report's patch identity, then atomically arm a static merge poll; `--presented` records the presentation receipt once the captain was told |
 | `fm-pr-merge.sh`         | Record PR metadata, merge a task's canonical full GitHub or GitLab URL, then refuse an outcome it cannot prove landed or queued |
 | `fm-pr-state.sh`         | Read-only: print one line per GitHub pull-request blocker it can see, reporting on checks that have reported rather than verdicting merge-readiness |
 | `fm-pr-reviewers.sh`     | Read-only: suggest reviewers from GitHub's own author mapping of recent commits on a pull request's changed files, never requesting one |
@@ -171,6 +171,9 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-mail.sh`             | General-purpose mail plane: read unseen IMAP mail, send one SMTP message, or surface new mail as a `check` wake via `poll` (configuration in the home's gitignored `.env`) |
 | `fm-mail.py`             | The IMAP/SMTP engine behind `fm-mail.sh` |
 | `fm-mail-check.sh`       | Standing received-mail poll: `arm` registers a watcher check that runs `fm-mail.sh poll` on the watcher cadence (new mail still wakes via the poll; the check's own line also wakes unless the poll is a proven no-op), `disarm` removes it |
+| `fm-antidrift-check.sh`  | Drift guard producer: inventory this home's worktrees, alarm on missing GitHub upstream, unpushed volume, stale or unknown push age, long-dirty trees, `push DISABLED` remotes and unpresented PRs, trigger due WIP checkpoints and pushes, and publish one cached line the watcher heartbeat reads |
+| `fm-wip-checkpoint.sh`   | Snapshot a worktree into a shadow repository (source only read, deny list applied) and publish that WIP lineage to a captain-approved private GitHub target, proving privacy fresh before every push |
+| `fm-wip-lib.sh`          | Shared WIP state paths, key-value records, git-read helper, and the anti-drift cache readers |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |
 | `fm_voice_frame.py`      | The wire format both machines share, copied to the laptop beside the client          |

@@ -18,6 +18,16 @@
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
+#        fm-pr-check.sh <task-id> <pr-url> --presented
+#
+# --presented is the explicit presentation receipt. Registering a PR (the
+# two-argument form) happens BEFORE firstmate tells anyone, so it never records
+# a presentation. Run --presented only AFTER the message carrying the PR's URL
+# has actually reached the captain or parent. It requires that the task already
+# registered this exact URL, and writes pr_presented=<epoch>:<url> to the task
+# metadata. There is no retroactive receipt: a registered PR with no receipt
+# reads as presentation unknown. A failed write exits non-zero and records
+# nothing, which also reads as unknown, never as presented.
 
 # Inert help: fm_cli_help prints this script's own usage and exits 0 before any
 # state change, so --help can never take a lock, write state, or reach the network.
@@ -42,7 +52,10 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-parent-channel-lib.sh
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
 
-if [ "$#" -ne 2 ]; then
+PRESENTED=0
+if [ "$#" -eq 3 ] && [ "$3" = --presented ]; then
+  PRESENTED=1
+elif [ "$#" -ne 2 ]; then
   echo "error: invalid PR check request" >&2
   exit 2
 fi
@@ -63,6 +76,53 @@ META="$STATE/$ID.meta"
 if [ ! -f "$META" ] || [ -L "$META" ] || [ "$(fm_pr_file_link_count "$META")" != 1 ]; then
   echo "error: task metadata is unavailable" >&2
   exit 1
+fi
+
+if [ "$PRESENTED" = 1 ]; then
+  PRES_LOCK=$(fm_meta_lock_path "$META") || exit 1
+  fm_lock_acquire_wait "$PRES_LOCK"
+  PRES_TMP=
+  trap '[ -z "$PRES_TMP" ] || rm -f -- "$PRES_TMP"; fm_lock_release "$PRES_LOCK" || true' EXIT
+  STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
+  [ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
+    && [ "$(fm_pr_file_device "$META")" = "$STATE_DEVICE" ] \
+    || { echo "error: task metadata is unavailable" >&2; exit 1; }
+  # The task must already have registered exactly this PR.
+  fm_pr_metadata_identity_parse "$META" || { echo "error: this task has not registered that PR" >&2; exit 1; }
+  [ "$FM_PR_META_PROVIDER" = "$PROVIDER" ] && [ "$FM_PR_META_URL" = "$URL" ] \
+    && [ "$FM_PR_META_HOST" = "$HOST" ] && [ "$FM_PR_META_PATH" = "$PROJECT_PATH" ] \
+    && [ "$FM_PR_META_NUMBER" = "$NUMBER" ] \
+    || { echo "error: this task has not registered that PR" >&2; exit 1; }
+  PRES_TMP=$(mktemp "$STATE/.fm-pr-presented.XXXXXX") || exit 1
+  # The receipt goes BEFORE the pr= line: the metadata identity parser rejects
+  # any unknown key after pr=, and a receipt must never invalidate a registration.
+  receipt_written=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      pr_presented=*) ;;
+      pr=*)
+        if [ "$receipt_written" = 0 ]; then
+          printf 'pr_presented=%s:%s\n' "$(date +%s)" "$URL" >> "$PRES_TMP" || exit 1
+          receipt_written=1
+        fi
+        printf '%s\n' "$line" >> "$PRES_TMP" || exit 1
+        ;;
+      *) printf '%s\n' "$line" >> "$PRES_TMP" || exit 1 ;;
+    esac
+  done < "$META"
+  [ "$receipt_written" = 1 ] || exit 1
+  chmod 0600 "$PRES_TMP" || exit 1
+  fm_pr_private_file_valid "$PRES_TMP" 600 "$STATE_DEVICE" || exit 1
+  fm_pr_metadata_identity_parse "$PRES_TMP" || exit 1
+  [ "$FM_PR_META_URL" = "$URL" ] || exit 1
+  fm_pr_regular_destination_on_device_or_absent "$META" "$STATE_DEVICE" || exit 1
+  mv -f -- "$PRES_TMP" "$META" || exit 1
+  PRES_TMP=
+  fm_pr_private_file_valid "$META" 600 "$STATE_DEVICE" || exit 1
+  fm_pr_metadata_identity_parse "$META" || exit 1
+  [ "$FM_PR_META_URL" = "$URL" ] || exit 1
+  echo "presented: $ID $URL"
+  exit 0
 fi
 
 # A prior exact merged result may have queued its durable wake immediately

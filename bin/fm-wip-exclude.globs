@@ -1,0 +1,33 @@
+# Central WIP deny list (one git glob per line, matched at any depth).
+# bin/fm-wip-checkpoint.sh applies it to tracked AND untracked files before a
+# snapshot, and again over every commit it is about to publish.
+# Approved scope: artifacts, sqlite databases, key material, corpus and card
+# data, and credential or secret files. This is a name list, not a scanner.
+# Matching is case-insensitive (icase pathspec magic).
+# Changing it opens a new WIP lineage; already published history is never rewritten.
+**/.artifacts/**
+**/*.sqlite*
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.p8
+**/*.jks
+**/id_rsa
+**/id_ecdsa
+**/id_ed25519
+**/.env
+**/.env.*
+**/.netrc
+**/.npmrc
+**/.git-credentials
+**/credentials.json
+**/*.secret
+**/*.secrets
+**/secrets/**
+**/identifiants/**
+**/corpus/**
+**/cartes/**
