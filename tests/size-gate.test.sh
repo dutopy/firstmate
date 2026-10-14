@@ -4,7 +4,6 @@ set -eu
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 TMP_ROOT=$(fm_test_tmproot size-gate)
-GATE=${SIZE_GATE_TEST_SCRIPT:-$ROOT/bin/size-gate.sh}
 failures=0
 new_repo() {
   repo="$TMP_ROOT/$1"
@@ -25,7 +24,7 @@ commit() { git add -A; git commit -qm change; }
 check() {
   local label=$1 expected_rc=$2 expected=$3 rc=0 actual
   shift 3
-  actual=$(bash "$GATE" "$@" 2>"$TMP_ROOT/error") || rc=$?
+  actual=$(bash "$ROOT/bin/size-gate.sh" "$@" 2>"$TMP_ROOT/error") || rc=$?
   if [ "$rc" != "$expected_rc" ] || [ "$actual" != "$expected" ]; then
     printf 'not ok - %s: rc=%s output=%s\n' "$label" "$rc" "$actual" >&2
     failures=$((failures + 1))
