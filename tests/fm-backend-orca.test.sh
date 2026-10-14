@@ -528,7 +528,7 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails() {
 }
 
 test_spawn_writes_orca_metadata_and_launches_harness() {
-  local proj wt data state config id out log
+  local proj wt data state config id out log sent
   id="orcaspawnz1"
   proj="$TMP_ROOT/spawn-project"
   wt="$TMP_ROOT/spawn-wt"
@@ -560,8 +560,13 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
     "spawn should reuse the implicit terminal returned by Orca worktree creation"
   assert_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-spawn'$'\x1f''--text'$'\x1f''export GOTMPDIR=/tmp/fm-orcaspawnz1/gotmp'$'\x1f''--enter'$'\x1f''--json' \
     "spawn did not export GOTMPDIR through the Orca terminal"
-  assert_contains "$(cat "$log")" "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
-    "spawn did not send the selected harness launch command through Orca"
+  # The launch text Orca was asked to type must start claude with the default
+  # permission flag and a settings policy.
+  sent=$(awk -F'\037' '{ for (i = 1; i < NF; i++) if ($i == "--text" && $(i + 1) ~ /claude /) { print $(i + 1); exit } }' "$log")
+  [ -n "$sent" ] || fail "spawn did not send a harness launch command through Orca"
+  fm_launch_capture "$sent" "$wt" "$TMP_ROOT/orca-capture" claude || fail "the launch sent through Orca never reached claude"
+  fm_launch_has_arg --dangerously-skip-permissions || fail "the Orca launch lost the default permission flag"
+  jq -e '.feedbackDrafts == "off"' <<<"$(fm_launch_arg_after --settings)" >/dev/null || fail "the Orca launch lost its settings policy"
   rm -rf "/tmp/fm-$id"
   pass "fm-spawn.sh --backend orca: reuses implicit terminal, records metadata, launches harness"
 }

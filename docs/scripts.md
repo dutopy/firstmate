@@ -52,6 +52,9 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
 | `fm-arm-command-policy.mjs` | Semantic owner of the watcher-arm PreToolUse policy (docs/arm-pretool-check.md)   |
 | `fm-subagent-pretool-check.sh` | Primary-home delegation-shape PreToolUse guard (docs/subagent-guard.md) |
+| `fm-worker-guard-pretool-check.sh` | Task-worker destructive-command guard transport for Claude and omp hooks (docs/worker-guard.md) |
+| `fm-worker-guard-policy.mjs` | Decision owner of the task-worker destructive-command guard (docs/worker-guard.md) |
+| `fm-worker-guard-omp-ext.ts` | omp `tool_call` adapter for the task-worker destructive-command guard (docs/worker-guard.md) |
 | `fm-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `fm-home-seed.sh`        | Transactionally provision a local secondmate home and maintain `data/secondmates.md` |
 | `fm-remote-home-seed.sh` | Register and provision a whole secondmate home on an SSH-reachable host              |

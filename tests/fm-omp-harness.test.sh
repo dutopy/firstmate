@@ -150,7 +150,7 @@ run_scout_spawn() {  # <home> <wt> <fakebin> <launch-log> <spawn-args...>
 }
 
 test_spawn_launch_line_and_worker_wiring() {
-  local rec id=omp-launch-q1 out status launch state
+  local rec id=omp-launch-q1 out status launch state n
   rec=$(make_spawn_case launch omp "$id")
   read_case_record "$rec"
   out=$(run_scout_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness omp --model openai-codex/gpt-6-astra --effort medium)
@@ -163,17 +163,29 @@ test_spawn_launch_line_and_worker_wiring() {
   assert_grep "effort=medium" "$state/$id.meta" "meta missing the pinned effort"
   assert_present "$state/$id.omp-ext.ts" "omp spawn did not write the per-task extension"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS FM_OMP_HARNESS=omp OMP_SKIP_SETUP=1 '$FAKEBIN_DIR/omp'" \
-    "omp launch did not clear foreign markers and establish its own at the launch boundary"
-  assert_contains "$launch" "--config '$ROOT/.omp/fm-worker-overlay.yml' --auto-approve --cwd '$WT_DIR'" \
-    "omp launch did not carry the tracked posture overlay, --auto-approve, and the pinned working directory"
-  assert_contains "$launch" "--model 'openai-codex/gpt-6-astra' --thinking 'medium' -e '$state/$id.omp-ext.ts'" \
-    "omp launch did not pass the model, thinking level, and the state-resident worker extension"
-  assert_contains "$launch" "encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md'" "omp launch lost the canonical typed launch-brief envelope"
-  case "$launch" in
-    *"-e '$state/$id.omp-ext.ts' \"\$("*) ;;
-    *) fail "omp launch must keep exactly one positional brief after the extension flag: $launch" ;;
-  esac
+  # What omp receives: a clean marker environment of its own, the posture
+  # overlay, auto-approve, the pinned cwd, the model and thinking level, the
+  # worker extension, and exactly one positional brief (the last argument).
+  CLAUDECODE=1 PI_CODING_AGENT=1 GROK_AGENT=1 FM_PI_HARNESS=1 GEMINI_CLI=1 CURSOR_AGENT=1 CURSOR_INVOKED_AS=x \
+    fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" "$FAKEBIN_DIR/omp" || fail "the omp launch never reached the resolved omp executable"
+  grep -q '^CLAUDECODE=\|^PI_CODING_AGENT=\|^GROK_AGENT=\|^FM_PI_HARNESS=\|^GEMINI_CLI=\|^CURSOR_AGENT=\|^CURSOR_INVOKED_AS=' "$CASE_DIR/capture/env" \
+    && fail "omp launch did not clear foreign markers"
+  grep -qx 'FM_OMP_HARNESS=omp' "$CASE_DIR/capture/env" || fail "omp launch did not establish its own harness marker"
+  grep -qx 'OMP_SKIP_SETUP=1' "$CASE_DIR/capture/env" || fail "omp launch did not skip first-run setup"
+  assert_equals "$ROOT/.omp/fm-worker-overlay.yml" "$(fm_launch_arg_after --config)" "omp launch did not carry the tracked posture overlay"
+  fm_launch_has_arg --auto-approve || fail "omp launch lost --auto-approve"
+  assert_equals "$WT_DIR" "$(fm_launch_arg_after --cwd)" "omp launch did not pin the working directory"
+  assert_equals "openai-codex/gpt-6-astra" "$(fm_launch_arg_after --model)" "omp launch did not pass the model"
+  assert_equals medium "$(fm_launch_arg_after --thinking)" "omp launch did not pass the thinking level"
+  assert_equals "$state/$id.omp-ext.ts" "$(fm_launch_arg_after -e)" "omp launch did not pass the state-resident worker extension"
+  assert_equals "$("$ROOT/bin/fm-operational-input.sh" encode launch-brief < "$HOME_DIR/data/$id/launch-brief.md")" "${LAUNCH_ARGS[${#LAUNCH_ARGS[@]}-1]}" \
+    "omp launch lost the canonical typed launch-brief envelope as its single positional brief"
+  # The worker extension and the destructive-command guard extension are the
+  # last two -e values; the brief is the only positional argument after them.
+  n=${#LAUNCH_ARGS[@]}
+  [ "${LAUNCH_ARGS[n-2]}" = "$ROOT/bin/fm-worker-guard-omp-ext.ts" ] && [ "${LAUNCH_ARGS[n-3]}" = -e ] \
+    && [ "${LAUNCH_ARGS[n-4]}" = "$state/$id.omp-ext.ts" ] && [ "${LAUNCH_ARGS[n-5]}" = -e ] \
+    || fail "omp launch must pass the worker and guard extensions, then exactly one positional brief"
   [ "$(fm_busy_classify tmux fake:w omp "$id" "$state")" = "busy fm-spawn" ] \
     || fail "omp spawn must seed the busy-state contract"
   pass "fm-spawn: the omp launch line clears markers, pins posture, and wires the state-resident extension"

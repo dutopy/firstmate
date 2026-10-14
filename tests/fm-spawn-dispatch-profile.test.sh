@@ -217,8 +217,16 @@ test_no_profile_keeps_claude_profile_defaults() {
   assert_meta_profile "$HOME_DIR/state/$id.meta" claude default default
 
   launch=$(cat "$LAUNCH_LOG")
-  expected="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md')\""
-  [ "$launch" = "$expected" ] || fail "no-profile claude launch did not use the canonical launch kind"$'\n'"expected: $expected"$'\n'"actual:   $launch"
+  CURSOR_AGENT=1 GEMINI_CLI=1 fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  fm_launch_has_arg --dangerously-skip-permissions || fail "no-profile claude launch lost the default permission flag"
+  jq -e '.feedbackDrafts == "off" and .attribution.sessionUrl == false' <<<"$(fm_launch_arg_after --settings)" >/dev/null \
+    || fail "no-profile claude launch lost its settings policy"
+  assert_contains "$(fm_launch_arg_after --append-system-prompt)" "task worker launched by Firstmate" "no-profile claude launch lost the task-worker role statement"
+  assert_equals "$("$ROOT/bin/fm-operational-input.sh" encode launch-brief < "$HOME_DIR/data/$id/launch-brief.md")" "${LAUNCH_ARGS[${#LAUNCH_ARGS[@]}-1]}" \
+    "no-profile claude launch did not deliver the canonical launch kind as its brief"
+  fm_launch_has_arg --model && fail "no-profile claude launch must not invent a model flag"
+  grep -q '^CURSOR_AGENT=\|^GEMINI_CLI=' "$CASE_DIR/capture/env" && fail "the launch must clear foreign harness markers"
+  grep -q '^CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false$' "$CASE_DIR/capture/env" || fail "the launch must disable prompt suggestions"
   pass "no --model/--effort records defaults and types the claude launch instructions"
 }
 
@@ -951,6 +959,54 @@ test_batch_forwards_shared_profile_flags() {
   pass "batch dispatch forwards shared --harness, --model, and --effort to every pair"
 }
 
+# Consumer-visible proof that a spawned claude task worker really carries the
+# destructive-command guard (docs/worker-guard.md): run the rendered launch line
+# with a recording claude, then execute the PreToolUse hook command it passed
+# in --settings under the environment it passed, exactly as claude would.
+test_claude_task_worker_launch_carries_a_working_guard() {
+  local rec id out status launch cap="" args_file env_file hook foreign_pid verdict
+  local -a guard_env
+  id=guard-claude-z40
+  rec=$(make_spawn_case guard-claude claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude ship spawn should succeed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  cap="$CASE_DIR/capture"
+  mkdir -p "$cap/bin"
+  args_file="$cap/args"
+  env_file="$cap/env"
+  cat > "$cap/bin/claude" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > '$args_file'
+env | grep '^FM_WORKER_GUARD_' > '$env_file'
+EOF
+  chmod +x "$cap/bin/claude"
+  (cd "$WT_DIR" && PATH="$cap/bin:$PATH" bash -c "$launch") >/dev/null 2>&1
+  [ -s "$env_file" ] || fail "the launched claude received no worker-guard identity"
+  mapfile -t guard_env < "$env_file"
+  hook=$(awk '/^--settings$/{getline; print; exit}' "$args_file" | jq -r '.hooks.PreToolUse[0].hooks[0].command')
+  [ -n "$hook" ] && [ "$hook" != null ] || fail "the launched claude received no PreToolUse hook"
+
+  (cd "$CASE_DIR" && exec sleep 604) >/dev/null 2>&1 &
+  foreign_pid=$!
+  verdict=$(jq -nc --arg d "$WT_DIR" '{cwd:$d,tool_name:"Bash",tool_input:{command:"pkill -f sleep"}}' \
+    | env "${guard_env[@]}" sh -c "$hook" 2>&1)
+  status=$?
+  kill -0 "$foreign_pid" 2>/dev/null || { fail "a foreign process died during a denied pkill"; }
+  kill "$foreign_pid" 2>/dev/null
+  expect_code 2 "$status" "the launched hook must deny pkill"
+  assert_contains "$verdict" "worker-guard" "the denial must come from the guard"
+  jq -nc --arg d "$WT_DIR" '{cwd:$d,tool_name:"Bash",tool_input:{command:"git status"}}' \
+    | env "${guard_env[@]}" sh -c "$hook" >/dev/null 2>&1
+  expect_code 0 "$?" "the launched hook must allow ordinary commands"
+  assert_contains "$(cat "$env_file")" "FM_WORKER_GUARD_ROOT=$WT_DIR" "the guard identity must name this task's copy"
+  assert_contains "$(cat "$env_file")" "FM_WORKER_GUARD_BASE=$(git -C "$WT_DIR" rev-parse HEAD)" "the guard's trusted script base must be the commit the worktree was launched at"
+  assert_contains "$(cat "$env_file")" "$id.worker-guard.log" "the denial audit trail must live under this task's state"
+  pass "a claude task worker launch carries a hook that denies pkill and allows ordinary work"
+}
+
 test_claude_forwards_firstmate_config_dir_when_set() {
   local rec id out status launch
   id=profile-claude-cfgdir-z17
@@ -965,8 +1021,9 @@ test_claude_forwards_firstmate_config_dir_when_set() {
   status=$?
   expect_code 0 "$status" "claude spawn with CLAUDE_CONFIG_DIR set should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
-    "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
+  fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  grep -qx "CLAUDE_CONFIG_DIR=$CASE_DIR/claude-work" "$CASE_DIR/capture/env" \
+    || fail "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
   pass "claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store"
 }
 
@@ -1409,13 +1466,8 @@ SH
 # config/claude-permission-mode (bin/fm-spawn.sh header): absent and `bypass`
 # must both produce today's launch byte-for-byte, `auto` swaps only the
 # permission flag, and any other token refuses before endpoint or metadata.
-claude_expected_launch() {  # <home> <id> <permission-flag>
-  local home=$1 id=$2 flag=$3
-  printf '%s' "env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $flag --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$home/data/$id/launch-brief.md')\""
-}
-
 test_claude_permission_mode_bypass_matches_absent_launch() {
-  local rec id out status launch expected
+  local rec id out status launch
   id=permmode-bypass-z19
   rec=$(make_spawn_case permmode-bypass claude "$id")
   read_case_record "$rec"
@@ -1425,13 +1477,14 @@ test_claude_permission_mode_bypass_matches_absent_launch() {
   status=$?
   expect_code 0 "$status" "claude spawn with claude-permission-mode=bypass should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  expected=$(claude_expected_launch "$HOME_DIR" "$id" --dangerously-skip-permissions)
-  [ "$launch" = "$expected" ] || fail "explicit bypass did not reproduce the absent-file launch"$'\n'"expected: $expected"$'\n'"actual:   $launch"
+  fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  fm_launch_has_arg --dangerously-skip-permissions || fail "explicit bypass did not reproduce the absent-file launch's permission flag"
+  fm_launch_has_arg --permission-mode && fail "explicit bypass must not carry auto mode"
   pass "config/claude-permission-mode=bypass launches exactly as an absent file does"
 }
 
 test_claude_permission_mode_auto_swaps_only_the_permission_flag() {
-  local rec id out status launch expected
+  local rec id out status launch
   id=permmode-auto-z20
   rec=$(make_spawn_case permmode-auto claude "$id")
   read_case_record "$rec"
@@ -1443,9 +1496,10 @@ test_claude_permission_mode_auto_swaps_only_the_permission_flag() {
   expect_code 0 "$status" "claude spawn with claude-permission-mode=auto should succeed"
   assert_contains "$out" "spawned $id harness=claude" "auto spawn did not report claude"
   launch=$(cat "$LAUNCH_LOG")
-  expected=$(claude_expected_launch "$HOME_DIR" "$id" '--permission-mode auto')
-  [ "$launch" = "$expected" ] || fail "auto changed more than the permission flag"$'\n'"expected: $expected"$'\n'"actual:   $launch"
-  assert_not_contains "$launch" "--dangerously-skip-permissions" "auto launch must not request bypass mode"
+  fm_launch_capture "$launch" "$WT_DIR" "$CASE_DIR/capture" claude || fail "the claude launch never reached claude"
+  assert_equals auto "$(fm_launch_arg_after --permission-mode)" "auto did not swap in its permission flag"
+  assert_equals "$("$ROOT/bin/fm-operational-input.sh" encode launch-brief < "$HOME_DIR/data/$id/launch-brief.md")" "${LAUNCH_ARGS[${#LAUNCH_ARGS[@]}-1]}" "auto changed the launch-brief envelope"
+  fm_launch_has_arg --dangerously-skip-permissions && fail "auto launch must not request bypass mode"
   pass "config/claude-permission-mode=auto replaces --dangerously-skip-permissions with --permission-mode auto"
 }
 
@@ -1534,6 +1588,7 @@ test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
 test_claude_forwards_firstmate_config_dir_when_set
+test_claude_task_worker_launch_carries_a_working_guard
 test_claude_omits_config_dir_prefix_when_unset
 test_claude_permission_mode_bypass_matches_absent_launch
 test_claude_permission_mode_auto_swaps_only_the_permission_flag

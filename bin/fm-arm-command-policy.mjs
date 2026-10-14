@@ -354,7 +354,7 @@ export class Lexer {
           this.error = "unclosed command substitution";
           return null;
         }
-        word.subs.push({ kind: "command", content: balanced.content });
+        word.subs.push({ kind: "command", content: balanced.content, at: word.value.length });
         word.literal = false;
         this.index = balanced.next;
         continue;
@@ -365,7 +365,7 @@ export class Lexer {
           this.error = "unclosed process substitution";
           return null;
         }
-        word.subs.push({ kind: "process", content: balanced.content });
+        word.subs.push({ kind: "process", content: balanced.content, at: word.value.length });
         word.literal = false;
         this.index = balanced.next;
         continue;
@@ -376,7 +376,7 @@ export class Lexer {
           this.error = "unclosed backtick substitution";
           return null;
         }
-        word.subs.push({ kind: "command", content: backticks.content });
+        word.subs.push({ kind: "command", content: backticks.content, at: word.value.length });
         word.literal = false;
         this.index = backticks.next;
         continue;
@@ -403,14 +403,15 @@ export class Lexer {
           this.index += 2;
           continue;
         }
-        word.value += this.source[this.index + 1];
+        const escaped = this.source[this.index + 1];
+        word.value += '$`"\\'.includes(escaped) ? escaped : `\\${escaped}`;
         this.index += 2;
         continue;
       }
       if (this.source.startsWith("$(", this.index)) {
         const balanced = extractBalanced(this.source, this.index + 2, "(", ")");
         if (!balanced) break;
-        word.subs.push({ kind: "command", content: balanced.content });
+        word.subs.push({ kind: "command", content: balanced.content, at: word.value.length });
         word.literal = false;
         this.index = balanced.next;
         continue;
@@ -418,7 +419,7 @@ export class Lexer {
       if (char === "`") {
         const backticks = extractBackticks(this.source, this.index + 1);
         if (!backticks) break;
-        word.subs.push({ kind: "command", content: backticks.content });
+        word.subs.push({ kind: "command", content: backticks.content, at: word.value.length });
         word.literal = false;
         this.index = backticks.next;
         continue;

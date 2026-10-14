@@ -2128,3 +2128,18 @@ A throwaway scout was spawned through `bin/fm-spawn.sh --scout --harness omp --m
 6. `bin/fm-control.sh <id> exit` stopped the agent and `bin/fm-teardown.sh` returned the worktree and closed the item.
 
 `FM_OMP_LIVE_E2E=1 tests/fm-omp-primary-live-e2e.test.sh` refreshes the primary evidence; the worker path above is refreshed by repeating the scout dispatch after any omp upgrade.
+
+## Worker destructive-command guard
+
+Contract: `docs/worker-guard.md`.
+Refresh command: `FM_WORKER_GUARD_LIVE_E2E=1 bash tests/fm-worker-guard-live-e2e.test.sh` (submits model prompts; run it after every Claude or omp upgrade).
+Verified 2026-10-10 on Claude Code 2.1.296 and omp 18.5.1 on macOS.
+
+- Claude: a hook given through `--settings <json>` with matcher `.*` blocks under `--dangerously-skip-permissions` on exit 2 with the reason on stderr and empty stdout.
+  The hook runs as a direct child of the `claude` process and inherits its environment.
+  A second `--settings` flag replaces the first instead of merging, so the guard hook rides the one inline settings JSON.
+- omp: a `tool_call` handler returning `{ block: true, reason }` refuses the call, and the reason reaches the model.
+  The handler also sees the `bash` call a `task` subagent makes, and omp's `eval` tool arrives as `{ language, code }`.
+  `omp -p` waits on stdin, so a headless run needs `< /dev/null`.
+- Both harnesses reset the bash working directory to the session directory between tool calls (a `cd` in one call, `pwd` in the next), so the guard's relative-path resolution against the session `cwd` holds across calls.
+- Observed live: `pkill`, a foreign `kill`, `rm -rf` outside the copy, `bash -c`, python `os.kill`, `kill $(pgrep ...)`, omp `eval`, and an omp subagent `pkill` were refused, the test-owned foreign `sleep` and tree survived, the in-copy `touch` ran, and the model's own background PID kill was allowed and effective.
