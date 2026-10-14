@@ -33,6 +33,7 @@ POLICY = {
 EXCLUDED = frozenset(('data', 'state', 'hermes', 'desktop', 'documents', 'document',
                       'audio', 'music', 'musique', 'spectrasonics', 'backups', 'backup',
                       'storagebox', 'storage-box', 'restic', 'ms-playwright', 'shared'))
+EXCLUDED_COMPACT = frozenset(re.sub(r'[-_ ]', '', name) for name in EXCLUDED)
 BUSY = re.compile(r'(?:^|[/\s-])(?:claude|codex|pi|opencode|herdr|hermes|cursor|'
                   r'chrome|chromium|playwright|xcode|simulator|simctl|npm|pnpm|yarn|'
                   r'brew|clang|gcc|make|cmake|ninja|xcodebuild|swift)(?:$|[/\s.-])', re.I)
@@ -121,8 +122,9 @@ class Refusal(Exception):
 
 def protected_name(name):
     normalized = name.casefold().lstrip('.')
-    return (normalized in EXCLUDED
-            or any(token in EXCLUDED for token in re.split(r'[-_ ]', normalized))
+    compact = re.sub(r'[-_ ]', '', normalized)
+    return (compact in EXCLUDED_COMPACT
+            or any(token in EXCLUDED_COMPACT for token in re.split(r'[-_ ]', normalized))
             or Path(normalized).suffix in ('.wav', '.mp3', '.aif', '.aiff', '.flac',
                                            '.m4a', '.ogg', '.pdf', '.doc', '.docx',
                                            '.bak', '.backup', '.dump'))

@@ -64,7 +64,8 @@ print('ok - machine-specific authority cannot be borrowed')
 
 # These are representative user data and shared tool exclusions, not arbitrary defaults.
 for name in ('data', 'state', 'Hermes', 'Desktop', 'Documents', 'Audio',
-             'backups', 'StorageBox', 'restic', 'ms-playwright'):
+             'backups', 'StorageBox', 'Storage Box', 'storage_box',
+             'restic', 'ms-playwright', 'ms_playwright'):
     path = layout / name / 'old'
     path.mkdir(parents=True)
     code, rows = invoke('imac', snapshot('imac', [obj(path, 'task-artifact')]))
@@ -78,6 +79,11 @@ parent = layout / 'scratch'
 (parent / 'backups' / 'important').write_text('keep')
 code, rows = invoke('imac', snapshot('imac', [obj(parent, 'task-artifact')]))
 assert code == 2 and 'excluded-descendant' in rows[0]['reasons']
+for descendant in ('Storage Box', 'ms_playwright'):
+    holder = layout / ('holder-' + descendant.replace(' ', '-'))
+    (holder / descendant).mkdir(parents=True)
+    code, rows = invoke('imac', snapshot('imac', [obj(holder, 'task-artifact')]))
+    assert code == 2 and 'excluded-descendant' in rows[0]['reasons'], (descendant, rows)
 link = layout / 'apparently-safe'
 link.symlink_to(layout / 'Documents', target_is_directory=True)
 code, rows = invoke('imac', snapshot('imac', [obj(link, 'task-artifact')]))
