@@ -586,7 +586,8 @@ test_budget_exhaustion_keeps_prior_record() { # exhaust|hang
   cp "$home/data/delivery/contributions.json" "$home/prior.json"
   if [ "$mode" = exhaust ]; then /bin/date +%s > "$home/forge/clock"; fi
   printf '%s\n' "$mode" > "$home/forge/fault"
-  out=$(with_home "$home" env FM_CONTRIBUTIONS_BUDGET=1 "$ROOT/bin/fm-contributions.sh" poll) \
+  # Whole-second clock: a 1s budget can lapse before the first forge call under load.
+  out=$(with_home "$home" env FM_CONTRIBUTIONS_BUDGET=2 "$ROOT/bin/fm-contributions.sh" poll) \
     || fail "poll failed when its budget ran out ($mode)"
   [ -z "$out" ] || fail "budget exhaustion ($mode) printed a wake line: $out"
   grep -F 'api repos/o/r/pulls/8' "$home/forge/calls" >/dev/null \
