@@ -1,0 +1,26 @@
+FM_TEST_BEGIN 2026-10-14T22:34:35Z tests/fm-disk-simulate.test.sh family=unclassified expected_gate_skip=none
+ok - FT refuses foreign authority and missing whitelist/inventory
+ok - all machine entry points refuse missing inventory
+ok - machine-specific authority cannot be borrowed
+ok - exclusions and the firstmate home data/state override valid whitelist rows
+ok - effective home, root override, per-directory overrides and alias spelling stay excluded
+ok - protected descendants and symlink escapes refuse
+ok - asserted eligibility booleans do not substitute for native evidence
+ok - every approved row retains exact policy mapping and fixture provenance
+ok - stale/empty inputs and destructive options refuse
+ok - real Git dirtiness and absent push proof refuse
+ok - staging candidates protect current/rollback, private audio and reservations
+ok - active workers and incomplete native inventory refuse
+ok - Docker stopped-container references refuse
+ok - malformed native observations refuse without losing the object
+ok - Homebrew requires native cellar binding and excludes the linked keg
+ok - simulator availability/state and malformed device inventory refuse
+ok - landing must bind to native default-branch SHA and leased copies refuse
+ok - task artifacts require native completed-task metadata association
+ok - imported commands never execute
+ok - invalid paths and ambiguous schema types refuse without losing objects
+ok - concrete candidate and protected contents remain unchanged
+FM_TEST_END 2026-10-14T22:34:49Z tests/fm-disk-simulate.test.sh exit=0 duration_ms=13835 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=14253
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=13835 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-disk-simulate.test.sh duration_ms=13835
