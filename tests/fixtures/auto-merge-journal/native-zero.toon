@@ -1,0 +1,11 @@
+run:
+  id: journal-fixture
+  branch: topic
+  status: completed
+  head: "777bc868fd46e01a4f63843cf708bdd309362fe8"
+  pr: "https://github.com/example/repo/pull/7"
+  findings: none
+outcome: passed
+steps[2]{step,status,findings,duration_ms}:
+  review,completed,0,12
+  ci,completed,0,12

@@ -12,6 +12,7 @@ FIXTURES = Path(__file__).resolve().parent
 ROOT = FIXTURES.parents[2]
 URL = 'https://github.com/example/repo/pull/7'
 HEAD = (FIXTURES / 'head.sha').read_text().strip()
+ZERO_HEAD = (FIXTURES / 'head-zero.sha').read_text().strip()
 
 class Journal(unittest.TestCase):
     def setUp(self):
@@ -81,6 +82,38 @@ class Journal(unittest.TestCase):
 
     def assert_receipt(self):
         self.assertEqual(self.journal(), [f'{URL}\t{HEAD}\t2\t1\t2026-10-15T12:30:00Z'])
+
+    def bind_excluded_note(self):
+        self.mode('zero-files')
+        shutil.rmtree(self.repo)
+        self.repo.mkdir()
+        self.git('init', '-q', '-b', 'topic')
+        self.git('config', 'user.name', 'Fixture')
+        self.git('config', 'user.email', 'fixture@example.invalid')
+        self.git('config', 'commit.gpgsign', 'false')
+        self.git('config', 'core.autocrlf', 'false')
+        note = self.repo / 'tests/fixtures/note.md'
+        note.parent.mkdir(parents=True)
+        note.write_text('A useful sentence.  \n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Base')
+        note.write_text('A useful sentence.\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Presentation')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), ZERO_HEAD)
+        meta = self.state / 'task.meta'
+        meta.write_text(meta.read_text().replace(f'pr_head={HEAD}', f'pr_head={ZERO_HEAD}'))
+        meta.chmod(0o600)
+
+    def test_zero_file_eligible_snapshot_is_journaled(self):
+        self.bind_excluded_note()
+        result = self.merge()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.world / 'accepted').exists())
+        self.assertEqual(self.journal(), [f'{URL}\t{ZERO_HEAD}\t0\t0\t2026-10-15T12:30:00Z'])
+        result = self.recover()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.journal(), [f'{URL}\t{ZERO_HEAD}\t0\t0\t2026-10-15T12:30:00Z'])
 
     def test_transparent_fixture_eligibility(self):
         result = self.command('fm-auto-merge-check.sh', 'task', URL)

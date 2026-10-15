@@ -133,7 +133,8 @@
 # misreported as a failed merge.
 # --automatic is an explicit GitHub-only, synchronous invocation, not activation
 # or a scheduler. It requires yolo=on, no overrides/extra forge args, the full
-# unchanged B1 eligibility check, and its exact head bound to the forge command.
+# unchanged B1 eligibility check. Its URL, exact head, lines and files are
+# validated before the forge command, and that head is bound to the command.
 # Accepted evidence is retained in the existing authority record for outcome recovery.
 
 # Inert help: fm_cli_help prints this script's own usage and exits 0 before any
@@ -1254,9 +1255,9 @@ case "$PROVIDER" in
         exit 1
       }
       AUTOMATIC_PROOF=$("$SCRIPT_DIR/fm-auto-merge-check.sh" "$ID" "$URL") || exit 1
-      AUTOMATIC_PROOF=$(printf '%s\n' "$AUTOMATIC_PROOF" | jq -ce \
-        --arg url "$URL" --arg head "$FM_PR_MERGE_HEAD" \
-        'select(.url == $url and .head == $head)') || exit 1
+      AUTOMATIC_PROOF=$(printf '%s\n' "$AUTOMATIC_PROOF" | jq -ce .) || exit 1
+      fm_merge_authority_automatic_snapshot_valid "$AUTOMATIC_PROOF" "$URL" \
+        "$FM_PR_MERGE_HEAD" || exit 1
       FM_PR_MERGE_AUTHORITY=yolo
     fi
     merge_status=0

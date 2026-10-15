@@ -19,7 +19,8 @@
 # or mismatched state means external; it is never resolved again from a later
 # away-posture record.
 # An explicit automatic attempt uses fm-merge-authority-v2 with one additional
-# compact JSON line: the unchanged eligibility command's URL/head/size snapshot.
+# compact JSON line: the unchanged eligibility command's URL/head/size snapshot,
+# including a measured file count of zero.
 # It is persisted only after forge acceptance, never for a failed command.
 # The confirmed-outcome owner consumes this evidence before committing its marker.
 #
@@ -92,6 +93,17 @@ EOF
   return 1
 }
 
+fm_merge_authority_automatic_snapshot_valid() {  # <json> <url> [head]
+  local json=$1 url=$2 head=${3-}
+  printf '%s\n' "$json" | jq -e \
+    --arg url "$url" --arg head "$head" '
+    .url == $url and (.head | test("^[0-9a-f]{40}$")) and
+    ($head == "" or .head == $head) and
+    (.lines | type == "number" and floor == . and . >= 0 and . <= 400) and
+    (.files | type == "number" and floor == . and . >= 0 and . <= 15)
+    ' >/dev/null 2>&1
+}
+
 fm_merge_authority_record_matches() {  # <record> <device> <provider> <host> <path> <number>
   local record=$1 device=$2 expected_provider=$3 expected_host=$4 expected_path=$5 expected_number=$6
   local version provider host path number authority
@@ -121,12 +133,8 @@ fm_merge_authority_record_matches() {  # <record> <device> <provider> <host> <pa
     && [ "$number" = "$expected_number" ] || return 1
   if [ "$version" = fm-merge-authority-v2 ]; then
     [ "$provider" = github ] && [ "$authority" = yolo ] || return 1
-    printf '%s\n' "$automatic" | jq -e \
-      --arg url "https://$host/$path/pull/$number" '
-      .url == $url and (.head | test("^[0-9a-f]{40}$")) and
-      (.lines | type == "number" and floor == . and . >= 0 and . <= 400) and
-      (.files | type == "number" and floor == . and . > 0 and . <= 15)
-      ' >/dev/null 2>&1 || return 1
+    fm_merge_authority_automatic_snapshot_valid "$automatic" \
+      "https://$host/$path/pull/$number" || return 1
     FM_MERGE_AUTHORITY_AUTOMATIC=$automatic
   fi
   FM_MERGE_AUTHORITY=$authority

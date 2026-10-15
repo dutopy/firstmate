@@ -14,18 +14,26 @@ accepted = (world / 'accepted').exists()
 with (world / 'calls').open('a') as log:
     log.write(json.dumps([name] + args) + '\n')
 
+def fixture_path(name):
+    path = fixtures / name
+    if mode == 'zero-files':
+        alt = fixtures / name.replace('.', '-zero.', 1)
+        if alt.is_file():
+            return alt
+    return path
+
 def emit(key):
-    print((fixtures / (key + '.b64')).read_text().strip())
+    print(fixture_path(key + '.b64').read_text().strip())
 
 if name == 'no-mistakes':
-    print((fixtures / 'native.toon').read_text())
+    print(fixture_path('native.toon').read_text())
 elif name == 'gh':
     if args == ['api', 'user', '--hostname', 'github.com']:
         print((fixtures / 'actor.json').read_text())
     elif args[:3] == ['pr', 'merge', '7']:
         if mode == 'failed':
             sys.exit(1)
-        expected = (fixtures / 'head.sha').read_text().strip()
+        expected = fixture_path('head.sha').read_text().strip()
         if args[args.index('--match-head-commit') + 1] != expected:
             sys.exit(2)
         (world / 'accepted').write_text('yes')
@@ -56,6 +64,6 @@ elif args[:2] == ['api', 'GET']:
     else:
         sys.exit(91)
 elif args[:2] == ['api', '/repos/example/repo/pulls/7']:
-    print((fixtures / 'head.sha').read_text().strip())
+    print(fixture_path('head.sha').read_text().strip())
 else:
     sys.exit(92)
