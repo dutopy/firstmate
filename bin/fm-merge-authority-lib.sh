@@ -132,7 +132,7 @@ fm_merge_authority_record_matches() {  # <record> <device> <provider> <host> <pa
   FM_MERGE_AUTHORITY=$authority
 }
 
-fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <path> <number> <authority>
+fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <path> <number> <authority> [automatic-snapshot]
   local state=$1 id=$2 meta=$3 provider=$4 host=$5 path=$6 number=$7 authority=$8
   local record tmp='' state_device lock status=0
   local automatic=${9-} version=fm-merge-authority-v1
