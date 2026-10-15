@@ -1,0 +1,282 @@
+{
+  "S10_native_review_contract": {
+    "active_fixer_refuses": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: native review has missing, open or unfinished evidence"
+    },
+    "ci_ready_monitoring_accepts": {
+      "rc": 0,
+      "stderr": ""
+    },
+    "missing_native_refuses": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: native run object missing or ambiguous"
+    },
+    "open_findings_refuses": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: native review has missing, open or unfinished evidence"
+    },
+    "pipeline_owned_refuses": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: native evidence unavailable or pipeline retains custody"
+    }
+  },
+  "S11_read_only_refusal": {
+    "empty_stdout": true,
+    "home_unchanged": true,
+    "no_mutating_calls": true,
+    "rc": 1,
+    "repo_unchanged": true
+  },
+  "S1_eligible_docs_edit_accepts": {
+    "base": "f3bf7af3aa471d144c6573c111ac004b1c1cebb1",
+    "head": "73566ec363355e800144662dd520f7a7024a8e60",
+    "home_unchanged": true,
+    "rc": 0,
+    "repo_unchanged": true,
+    "stderr": "",
+    "stdout": "{\"added\": 1, \"author_id\": 10, \"base\": \"f3bf7af3aa471d144c6573c111ac004b1c1cebb1\", \"base_tip\": \"f3bf7af3aa471d144c6573c111ac004b1c1cebb1\", \"deleted\": 0, \"files\": 1, \"head\": \"73566ec363355e800144662dd520f7a7024a8e60\", \"lines\": 1, \"merger_id\": 20, \"native_run\": \"fixture-run\", \"url\": \"https://github.com/example/repo/pull/7\"}"
+  },
+  "S2_bin_script_fix_refuses": {
+    "base": "2a40220a8d9d9bd962df53bf86cc74a3b2b16b60",
+    "head": "75e97b2e5ee13a51ba231e019a73c8f173bd16d1",
+    "home_unchanged": true,
+    "rc": 1,
+    "repo_unchanged": true,
+    "stderr": "refused: sensitive path",
+    "stdout": ""
+  },
+  "S3_denylist_categories_refuse": {
+    ".agents/skills/a.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".claude/settings.json": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".codex/hooks.json": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".gitattributes": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".github/workflows/ci.yml": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".greptile/rules.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".grok/hooks/a.json": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".no-mistakes.yaml": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".omp/overlay.yml": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".pi/extensions/a.ts": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    ".tasks.toml": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "AGENTS.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "CLAUDE.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "GROK_BOT.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "bin/fm-lock-lib.sh": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "bin/fm-merge-local.sh": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "bin/fm-pr-merge.sh": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "bin/fm-spawn.sh": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "bin/fm-teardown.sh": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "bin/fm-watch.sh": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "bin/size-gate.sh": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "config/a.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "docs/.env": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "docs/AGENTS.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "docs/CLAUDE.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "docs/credential.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "docs/token.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "secrets/a.md": {
+      "empty_stdout": true,
+      "rc": 1
+    },
+    "skills/stow/SKILL.md": {
+      "empty_stdout": true,
+      "rc": 1
+    }
+  },
+  "S4_credential_like_content_refuses": {
+    "api_key": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: sensitive content"
+    },
+    "aws_access_key": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: sensitive content"
+    },
+    "bearer": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: sensitive content"
+    },
+    "github_token": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: sensitive content"
+    },
+    "passwd": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: sensitive content"
+    },
+    "private_key": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: sensitive content"
+    }
+  },
+  "S5_executable_file_refuses": {
+    "mode_change_refuses": {
+      "rc": 1,
+      "stderr": "refused: unclassified mode, rename, addition or removal"
+    },
+    "unchanged_0755_refuses": {
+      "rc": 1,
+      "stderr": "refused: unclassified mode, rename, addition or removal"
+    }
+  },
+  "S6_size_and_deletion_bounds": {
+    "deletion_gt_50_refuses": {
+      "rc": 1,
+      "stderr": "refused: deletion exceeds 50 lines"
+    },
+    "exactly_50_deletions_accepts": {
+      "rc": 0,
+      "stderr": ""
+    },
+    "over_15_files_refuses": {
+      "rc": 1,
+      "stderr": "refused: size gate refused or unreadable"
+    },
+    "over_400_lines_refuses": {
+      "rc": 1,
+      "stderr": "refused: size gate refused or unreadable"
+    }
+  },
+  "S7_structural_changes_refuse": {
+    "addition_and_symlink_refuse": {
+      "rc": 1,
+      "stderr": "refused: unclassified mode, rename, addition or removal"
+    },
+    "binary_refuses": {
+      "rc": 1,
+      "stderr": "refused: binary or unreadable diff"
+    }
+  },
+  "S8_non_green_final_head_refuses": {
+    "late_page_failure": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: checks not green at final head"
+    },
+    "neutral": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: checks not green at final head"
+    },
+    "old_commit_oid": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: checks not green at final head"
+    },
+    "pending": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: checks not green at final head"
+    },
+    "zero_checks": {
+      "empty_stdout": true,
+      "rc": 1,
+      "stderr": "refused: checks count unreadable or changed"
+    }
+  },
+  "S9_identity_and_pr_state_refuse": {
+    "author_equals_merger": {
+      "rc": 1,
+      "stderr": "refused: author and actual merger identities are same or ambiguous"
+    },
+    "dirty_merge_state": {
+      "rc": 1,
+      "stderr": "refused: PR is not open, non-draft and CLEAN"
+    },
+    "draft": {
+      "rc": 1,
+      "stderr": "refused: PR is not open, non-draft and CLEAN"
+    }
+  }
+}
