@@ -347,10 +347,14 @@ A changed file whose content matches conservative credential-like or other sensi
 A path on that list, an executable mode, or an addition, removal, rename, mode change, symlink, binary, oversize patch or a patch deleting more than 50 lines, is refused rather than approved; only plain `100644` modifications outside the deny list with ordinary content, most commonly non-executable `docs/` or `tests/` files, are eligible.
 A small fix to a `bin/` script therefore stays with the human or the parent on the normal merge path rather than becoming automatically eligible.
 [`tests/fm-auto-merge-check.test.sh`](../tests/fm-auto-merge-check.test.sh) exercises the executable against isolated forge/native fixtures and real Git diffs; isolated fixtures pin the classifier's decisions and do not substitute for the live consumer smoke owed once this task's own run reaches published CI readiness.
-The classifier alone does not merge; the explicit `fm-pr-merge.sh --automatic` invocation reuses it without changing eligibility, requires recorded standing merge authority, validates the bound URL, exact head, measured lines and measured files, including a size-gate count of zero, before the guarded forge command, and binds that head to the command.
+The classifier alone does not merge.
+The explicit `fm-pr-merge.sh --automatic` invocation reuses it without changing eligibility, requires recorded `yolo=on`, validates the bound URL, exact head, measured lines, and measured files before the guarded forge command, and binds that head to the command.
+A measured file count of zero remains eligible and is accepted in that pre-merge snapshot.
 No automatic caller or activation is installed.
-[`bin/fm-merge-outcome-lib.sh`](../bin/fm-merge-outcome-lib.sh) owns the confirmed automatic journal format and writer; accepted evidence travels in the existing authority record so the existing merge poll can recover an interrupted publication.
-Attended merges, queued requests and failed attempts create no journal row; [`tests/fm-auto-merge-journal.test.sh`](../tests/fm-auto-merge-journal.test.sh) covers the public merge path and confirmed-outcome recovery with versioned static transport data.
+[`bin/fm-merge-outcome-lib.sh`](../bin/fm-merge-outcome-lib.sh) owns the confirmed automatic journal format and writer.
+Accepted evidence travels in the existing authority record so the existing merge poll can recover an interrupted publication.
+Attended merges, queued requests and failed attempts create no journal row.
+[`tests/fm-auto-merge-journal.test.sh`](../tests/fm-auto-merge-journal.test.sh) covers the public merge path and confirmed-outcome recovery with versioned static transport data.
 PR-based task merges go through `bin/fm-pr-merge.sh`, which records `pr=`, any available `pr_head=`, and the recorded patch identity through `bin/fm-pr-check.sh` before calling the forge CLI.
 The recorded patch identity is the ready report's promise that the patch it stood for is the patch that merges: the merge path recomputes the forge's live base-to-head patch identity and refuses when it differs, so a force-push that changes the patch is re-validated and recorded again rather than landing on green checks that only prove a different patch.
 A rebase that changes no patch content keeps that identity, so an ordinary rebase still merges.
