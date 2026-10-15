@@ -1,0 +1,18 @@
+bash tests/fm-auto-merge-journal.test.sh -v
+
+test_accepted_unreadable_outcome_recovers ... ok
+test_attended_merge_is_not_automatic ... ok
+test_automatic_cannot_use_attended_overrides ... ok
+test_automatic_requires_standing_authority ... ok
+test_b1_refusal_stops_automatic_merge ... ok
+test_confirmed_automatic_merge_and_idempotence ... ok
+test_failed_attempt_does_not_journal ... ok
+test_other_landed_head_is_never_journaled ... ok
+test_queued_request_does_not_journal ... ok
+test_recovery_after_journal_destination_failure ... ok
+test_recovery_rejects_misbound_evidence ... ok
+test_transparent_fixture_eligibility ... ok
+test_zero_file_eligible_snapshot_is_journaled ... ok
+
+Ran 13 tests in 146.641s
+OK

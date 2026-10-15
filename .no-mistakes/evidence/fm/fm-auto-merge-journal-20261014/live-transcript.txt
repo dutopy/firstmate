@@ -1,0 +1,72 @@
+Disposable forge only. Real bin/fm-pr-merge.sh, bin/fm-auto-merge-check.sh, bin/size-gate.sh, and bin/fm-merge-outcome-lib.sh. No GitHub merge and no automatic-merge activation.
+
+1. Pre-fix (35498b46) zero-file automatic merge
+   rc=1
+   accepted=True
+   forge_merge_called=True
+   journal=[]
+   authority=absent
+   stderr: actionable: the forge accepted the merge request for https://github.com/example/repo/pull/7 but its merge authority could not be persisted; the merge poll remains armed
+
+2. Current zero-file automatic merge
+   rc=0
+   checker_ran=True
+   forge_merge_called=True
+   authority=fm-merge-authority-v2
+   stdout: verified: https://github.com/example/repo/pull/7 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+   journal: https://github.com/example/repo/pull/7	777bc868fd46e01a4f63843cf708bdd309362fe8	0	0	2026-10-15T12:30:00Z
+
+3. Snapshot head differs from the verified merge head
+   rc=1
+   checker_ran=True
+   forge_merge_called=False
+   accepted=False
+   journal=[]
+   verified head was 0123456789abcdef0123456789abcdef01234567; forge merge was not called.
+
+4. files=16 snapshot injected into the real merge script
+   rc=1 stub_called=True forge_merge_called=False accepted=False journal=[]
+
+5. files=15 snapshot injected into the real merge script
+   rc=0 forge_merge_called=True
+   journal: https://github.com/example/repo/pull/7	abe11aae1386e1bb65bd1db24729a829601df19e	2	15	2026-10-15T12:30:00Z
+
+6. lines=401 snapshot injected into the real merge script
+   rc=1 stub_called=True forge_merge_called=False accepted=False journal=[]
+
+7. lines=400 snapshot injected into the real merge script
+   rc=0 forge_merge_called=True
+   journal: https://github.com/example/repo/pull/7	abe11aae1386e1bb65bd1db24729a829601df19e	400	1	2026-10-15T12:30:00Z
+
+8. Real checker, plain 100644 edit of bin/note.sh
+   rc=1 forge_merge_called=False accepted=False journal=[]
+   stderr: refused: sensitive path
+   The checker refuses this path before native evidence, so no-mistakes is not called. The forge merge is not called.
+
+9. Real size-gate and real checker, 16 modified docs files
+   size-gate rc=1
+   added=16 deleted=16 lines=32 files=16 max_lines=400 max_files=15
+   merge rc=1 forge_merge_called=False accepted=False journal=[]
+   stderr: refused: size gate refused or unreadable
+
+10. GitLab --automatic
+    rc=2
+    calls empty
+    stderr: error: --automatic requires GitHub without overrides or extra forge arguments
+
+11. Attended merge, then the existing poll recovery
+    merge rc=0 recover rc=0
+    accepted=True
+    authority=fm-merge-authority-v1
+    journal=[]
+
+12. Conflicting journal receipt for the same URL
+    merge rc=0 recover rc=1
+    journal left unchanged at the conflicting SHA 0123456789abcdef0123456789abcdef01234567
+
+13. Eligibility check alone
+    rc=0
+    stdout files=1 lines=2 head=abe11aae1386e1bb65bd1db24729a829601df19e
+    forge_merge_called=False accepted=False journal=[] authority=absent
+
+Public suite also drove confirmed journaling and idempotent recovery, queued and failed attempts, red-check refusal, wrong landed head, destination-failure recovery, unreadable-outcome recovery, yolo=off, attended overrides, and misbound evidence. See suite-output.txt.
