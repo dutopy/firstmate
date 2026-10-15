@@ -1,0 +1,183 @@
+{
+  "actor": {
+    "id": 20,
+    "login": "merger"
+  },
+  "pr": {
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "mergeable_state": "clean",
+    "head": {
+      "sha": "abe11aae1386e1bb65bd1db24729a829601df19e",
+      "ref": "topic"
+    },
+    "base": {
+      "sha": "2c90b89f8d3e96b8b8ee98f705b93427a9887ba4"
+    },
+    "user": {
+      "id": 10,
+      "login": "author"
+    },
+    "changed_files": 1,
+    "additions": 1,
+    "deletions": 1
+  },
+  "files": [
+    {
+      "filename": "docs/intro.md",
+      "status": "modified",
+      "sha": "81965e82b0ce1f98195ed318362d5359bef031d8",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "checks": {
+    "data": {
+      "repository": {
+        "pullRequest": {
+          "headRefOid": "abe11aae1386e1bb65bd1db24729a829601df19e",
+          "statusCheckRollup": {
+            "contexts": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "__typename": "CheckRun",
+                  "id": "ci-id",
+                  "name": "ci",
+                  "status": "COMPLETED",
+                  "conclusion": "SUCCESS",
+                  "checkSuite": {
+                    "commit": {
+                      "oid": "abe11aae1386e1bb65bd1db24729a829601df19e"
+                    }
+                  }
+                }
+              ],
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "end"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "checks-red": {
+    "data": {
+      "repository": {
+        "pullRequest": {
+          "headRefOid": "abe11aae1386e1bb65bd1db24729a829601df19e",
+          "statusCheckRollup": {
+            "contexts": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "__typename": "CheckRun",
+                  "id": "ci-id",
+                  "name": "ci",
+                  "status": "COMPLETED",
+                  "conclusion": "FAILURE",
+                  "checkSuite": {
+                    "commit": {
+                      "oid": "abe11aae1386e1bb65bd1db24729a829601df19e"
+                    }
+                  }
+                }
+              ],
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "end"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "mergeable": {
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN",
+    "headRefOid": "abe11aae1386e1bb65bd1db24729a829601df19e",
+    "baseRefName": "main",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "id": "ci-id",
+        "name": "ci",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": {
+          "commit": {
+            "oid": "abe11aae1386e1bb65bd1db24729a829601df19e"
+          }
+        }
+      }
+    ]
+  },
+  "rules": [],
+  "open": {
+    "state": "OPEN",
+    "merged": false,
+    "isInMergeQueue": false,
+    "baseRefName": "main"
+  },
+  "queued": {
+    "state": "OPEN",
+    "merged": false,
+    "isInMergeQueue": true,
+    "baseRefName": "main"
+  },
+  "merged": {
+    "state": "MERGED",
+    "merged": true,
+    "isInMergeQueue": false,
+    "baseRefName": "main"
+  },
+  "landed": {
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "mergeable_state": "clean",
+    "head": {
+      "sha": "abe11aae1386e1bb65bd1db24729a829601df19e",
+      "ref": "topic"
+    },
+    "base": {
+      "sha": "2c90b89f8d3e96b8b8ee98f705b93427a9887ba4"
+    },
+    "user": {
+      "id": 10,
+      "login": "author"
+    },
+    "changed_files": 1,
+    "additions": 1,
+    "deletions": 1,
+    "merged": true,
+    "merged_at": "2026-10-15T12:30:00Z"
+  },
+  "landed-wrong": {
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "mergeable_state": "clean",
+    "head": {
+      "sha": "ffffffffffffffffffffffffffffffffffffffff"
+    },
+    "base": {
+      "sha": "2c90b89f8d3e96b8b8ee98f705b93427a9887ba4"
+    },
+    "user": {
+      "id": 10,
+      "login": "author"
+    },
+    "changed_files": 1,
+    "additions": 1,
+    "deletions": 1,
+    "merged": true,
+    "merged_at": "2026-10-15T12:30:00Z"
+  }
+}
