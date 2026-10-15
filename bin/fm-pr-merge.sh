@@ -123,7 +123,7 @@
 # explicit captain instruction and never skips the live green check, the
 # away-grant check, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [-- <extra forge merge args>]
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--automatic] [--attended-override] [--allow-red <check-name>] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -131,6 +131,11 @@
 # destination, normal-case deduplication, and at-least-once recovery.
 # A landed merge whose outcome cannot be written is reported loudly rather than
 # misreported as a failed merge.
+# --automatic is an explicit GitHub-only, synchronous invocation, not activation
+# or a scheduler. It requires yolo=on, no overrides/extra forge args, the full
+# unchanged B1 eligibility check. Its URL, exact head, lines and files are
+# validated before the forge command, and that head is bound to the command.
+# Accepted evidence is retained in the existing authority record for outcome recovery.
 
 # Inert help: fm_cli_help prints this script's own usage and exits 0 before any
 # state change, so --help can never take a lock, write state, or reach the network.
@@ -182,8 +187,14 @@ PROJECT_URL="https://$FM_PR_HOST/$FM_PR_PATH"
 shift 2
 ATTENDED_OVERRIDE=false
 ALLOW_RED=()
+AUTOMATIC=false
+AUTOMATIC_PROOF=
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --automatic)
+      AUTOMATIC=true
+      shift
+      ;;
     --attended-override)
       ATTENDED_OVERRIDE=true
       shift
@@ -206,6 +217,11 @@ while [ "$#" -gt 0 ]; do
     *) break ;;
   esac
 done
+if [ "$AUTOMATIC" = true ] && { [ "$PROVIDER" != github ] \
+    || [ "$ATTENDED_OVERRIDE" = true ] || [ "${#ALLOW_RED[@]}" -gt 0 ] || [ "$#" -gt 0 ]; }; then
+  echo "error: --automatic requires GitHub without overrides or extra forge arguments" >&2
+  exit 2
+fi
 if [ "${#ALLOW_RED[@]}" -gt 0 ] && [ "$PROVIDER" = gitlab ]; then
   echo "error: --allow-red does not apply to GitLab, where a merge already requires the head pipeline to have succeeded" >&2
   exit 2
@@ -1002,7 +1018,7 @@ persist_accepted_merge_authority() {
   MERGE_META_LOCK=$(fm_meta_lock_path "$META") || return 1
   fm_lock_acquire_wait "$MERGE_META_LOCK" || return 1
   fm_merge_authority_persist "$STATE" "$ID" "$META" \
-    "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" "$FM_PR_MERGE_AUTHORITY" \
+    "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" "$FM_PR_MERGE_AUTHORITY" "$AUTOMATIC_PROOF" \
     || status=1
   fm_lock_release "$MERGE_META_LOCK" || status=1
   MERGE_META_LOCK=
@@ -1233,6 +1249,17 @@ case "$PROVIDER" in
     require_current_away_authority || away_status=$?
     [ "$away_status" -eq 0 ] || exit "$away_status"
     refuse_github_queue_while_away || exit 2
+    if [ "$AUTOMATIC" = true ]; then
+      [ "$(grep '^yolo=' "$META")" = yolo=on ] || {
+        echo "error: --automatic requires recorded yolo=on" >&2
+        exit 1
+      }
+      AUTOMATIC_PROOF=$("$SCRIPT_DIR/fm-auto-merge-check.sh" "$ID" "$URL") || exit 1
+      AUTOMATIC_PROOF=$(printf '%s\n' "$AUTOMATIC_PROOF" | jq -ce .) || exit 1
+      fm_merge_authority_automatic_snapshot_valid "$AUTOMATIC_PROOF" "$URL" \
+        "$FM_PR_MERGE_HEAD" || exit 1
+      FM_PR_MERGE_AUTHORITY=yolo
+    fi
     merge_status=0
     # Raw gh remainder: gh-axi's `pr merge` offers --method/--auto/--delete-branch
     # but no --match-head-commit, the head pin that stops a push landing between

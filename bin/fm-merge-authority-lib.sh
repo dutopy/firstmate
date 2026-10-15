@@ -18,6 +18,11 @@
 # when all identity fields match its own validated snapshot. Missing, malformed,
 # or mismatched state means external; it is never resolved again from a later
 # away-posture record.
+# An explicit automatic attempt uses fm-merge-authority-v2 with one additional
+# compact JSON line: the unchanged eligibility command's URL/head/size snapshot,
+# including a measured file count of zero.
+# It is persisted only after forge acceptance, never for a failed command.
+# The confirmed-outcome owner consumes this evidence before committing its marker.
 #
 # Resolution authorizes nothing by itself. bin/fm-pr-merge.sh owns the merge
 # gate and persists only after a forge command succeeds, before releasing the
@@ -42,6 +47,8 @@ FM_MERGE_AUTHORITY=
 FM_MERGE_AUTHORITY_REASON=
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
 FM_MERGE_AUTHORITY_RECORD_IDENTITY=
+# shellcheck disable=SC2034 # Public automatic-attempt evidence, empty for v1.
+FM_MERGE_AUTHORITY_AUTOMATIC=
 
 fm_merge_authority_resolve() {  # <home> <state> <meta> <task-id>
   local home=${1-} state=${2-} meta=${3-} id=${4-}
@@ -86,9 +93,22 @@ EOF
   return 1
 }
 
+fm_merge_authority_automatic_snapshot_valid() {  # <json> <url> [head]
+  local json=$1 url=$2 head=${3-}
+  printf '%s\n' "$json" | jq -e \
+    --arg url "$url" --arg head "$head" '
+    .url == $url and (.head | test("^[0-9a-f]{40}$")) and
+    ($head == "" or .head == $head) and
+    (.lines | type == "number" and floor == . and . >= 0 and . <= 400) and
+    (.files | type == "number" and floor == . and . >= 0 and . <= 15)
+    ' >/dev/null 2>&1
+}
+
 fm_merge_authority_record_matches() {  # <record> <device> <provider> <host> <path> <number>
   local record=$1 device=$2 expected_provider=$3 expected_host=$4 expected_path=$5 expected_number=$6
   local version provider host path number authority
+  local automatic=
+  FM_MERGE_AUTHORITY_AUTOMATIC=
   fm_pr_private_file_valid "$record" 600 "$device" || return 1
   exec 8< "$record" || return 1
   IFS= read -r version <&8 || { exec 8<&-; return 1; }
@@ -97,23 +117,34 @@ fm_merge_authority_record_matches() {  # <record> <device> <provider> <host> <pa
   IFS= read -r path <&8 || { exec 8<&-; return 1; }
   IFS= read -r number <&8 || { exec 8<&-; return 1; }
   IFS= read -r authority <&8 || { exec 8<&-; return 1; }
+  if [ "$version" = fm-merge-authority-v2 ]; then
+    IFS= read -r automatic <&8 || { exec 8<&-; return 1; }
+  fi
   if IFS= read -r _extra <&8; then
     exec 8<&-
     return 1
   fi
   exec 8<&-
   case "$authority" in yolo|away-grant|attended) ;; *) return 1 ;; esac
-  [ "$version" = fm-merge-authority-v1 ] \
-    && [ "$provider" = "$expected_provider" ] \
+  case "$version" in fm-merge-authority-v1|fm-merge-authority-v2) ;; *) return 1 ;; esac
+  [ "$provider" = "$expected_provider" ] \
     && [ "$host" = "$expected_host" ] \
     && [ "$path" = "$expected_path" ] \
     && [ "$number" = "$expected_number" ] || return 1
+  if [ "$version" = fm-merge-authority-v2 ]; then
+    [ "$provider" = github ] && [ "$authority" = yolo ] || return 1
+    fm_merge_authority_automatic_snapshot_valid "$automatic" \
+      "https://$host/$path/pull/$number" || return 1
+    FM_MERGE_AUTHORITY_AUTOMATIC=$automatic
+  fi
   FM_MERGE_AUTHORITY=$authority
 }
 
-fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <path> <number> <authority>
+fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <path> <number> <authority> [automatic-snapshot]
   local state=$1 id=$2 meta=$3 provider=$4 host=$5 path=$6 number=$7 authority=$8
   local record tmp='' state_device lock status=0
+  local automatic=${9-} version=fm-merge-authority-v1
+  [ -z "$automatic" ] || version=fm-merge-authority-v2
   fm_pr_task_id_valid "$id" || return 1
   case "$authority" in yolo|away-grant|attended) ;; *) return 1 ;; esac
   [ -d "$state" ] && [ ! -L "$state" ] || return 1
@@ -133,8 +164,11 @@ fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <pa
   fi
   if [ "$status" -eq 0 ]; then
     printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
-      fm-merge-authority-v1 "$provider" "$host" "$path" "$number" "$authority" > "$tmp" \
+      "$version" "$provider" "$host" "$path" "$number" "$authority" > "$tmp" \
       || status=1
+    if [ -n "$automatic" ]; then
+      printf '%s\n' "$automatic" >> "$tmp" || status=1
+    fi
   fi
   if [ "$status" -eq 0 ]; then
     chmod 0600 "$tmp" \
@@ -156,6 +190,8 @@ fm_merge_authority_read() {  # <state> <task-id> <provider> <host> <path> <numbe
   local record state_device lock status=0
   FM_MERGE_AUTHORITY='external'
   FM_MERGE_AUTHORITY_RECORD_IDENTITY=
+  # shellcheck disable=SC2034 # Public result consumed by the confirmed-outcome owner.
+  FM_MERGE_AUTHORITY_AUTOMATIC=
   fm_pr_task_id_valid "$id" || return 1
   [ -d "$state" ] && [ ! -L "$state" ] || return 1
   state_device=$(fm_pr_file_device "$state") || return 1

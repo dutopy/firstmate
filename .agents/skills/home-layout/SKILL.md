@@ -57,6 +57,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
   proposals.jsonl    durable proposal-lane ledger, one JSON record per proposal with its evidence and its decision; bin/fm-proposal-lane.jq owns the merge contract and docs/proposal-lane.md the states
+  auto-merge-journal.tsv  confirmed automatic GitHub merge receipts; bin/fm-merge-outcome-lib.sh owns the format, writer, and lock
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
 state/               runtime records and signals; gitignored
   <id>.status        appended by crewmates: "<state>: <note>" wake-event lines, not current-state truth

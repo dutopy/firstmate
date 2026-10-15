@@ -1,0 +1,110 @@
+{
+  "head": "777bc868fd46e01a4f63843cf708bdd309362fe8",
+  "base": "c0f6adea01ef3516e7a173c61de9b33def09ebc5",
+  "blob": "81965e82b0ce1f98195ed318362d5359bef031d8",
+  "pr": {
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "mergeable_state": "clean",
+    "head": {
+      "sha": "777bc868fd46e01a4f63843cf708bdd309362fe8",
+      "ref": "topic"
+    },
+    "base": {
+      "sha": "c0f6adea01ef3516e7a173c61de9b33def09ebc5"
+    },
+    "user": {
+      "id": 10,
+      "login": "author"
+    },
+    "changed_files": 1,
+    "additions": 1,
+    "deletions": 1
+  },
+  "files": [
+    {
+      "filename": "tests/fixtures/note.md",
+      "status": "modified",
+      "sha": "81965e82b0ce1f98195ed318362d5359bef031d8",
+      "additions": 1,
+      "deletions": 1
+    }
+  ],
+  "checks": {
+    "data": {
+      "repository": {
+        "pullRequest": {
+          "headRefOid": "777bc868fd46e01a4f63843cf708bdd309362fe8",
+          "statusCheckRollup": {
+            "contexts": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "__typename": "CheckRun",
+                  "id": "ci-id",
+                  "name": "ci",
+                  "status": "COMPLETED",
+                  "conclusion": "SUCCESS",
+                  "checkSuite": {
+                    "commit": {
+                      "oid": "777bc868fd46e01a4f63843cf708bdd309362fe8"
+                    }
+                  }
+                }
+              ],
+              "pageInfo": {
+                "hasNextPage": false,
+                "endCursor": "end"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "mergeable": {
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN",
+    "headRefOid": "777bc868fd46e01a4f63843cf708bdd309362fe8",
+    "baseRefName": "main",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "id": "ci-id",
+        "name": "ci",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": {
+          "commit": {
+            "oid": "777bc868fd46e01a4f63843cf708bdd309362fe8"
+          }
+        }
+      }
+    ]
+  },
+  "landed": {
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "mergeable_state": "clean",
+    "head": {
+      "sha": "777bc868fd46e01a4f63843cf708bdd309362fe8",
+      "ref": "topic"
+    },
+    "base": {
+      "sha": "c0f6adea01ef3516e7a173c61de9b33def09ebc5"
+    },
+    "user": {
+      "id": 10,
+      "login": "author"
+    },
+    "changed_files": 1,
+    "additions": 1,
+    "deletions": 1,
+    "merged": true,
+    "merged_at": "2026-10-15T12:30:00Z"
+  }
+}

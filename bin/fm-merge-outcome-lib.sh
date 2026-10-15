@@ -14,7 +14,7 @@
 #   - a main home reports to the captain through the durable wake queue.
 # A poll observed in a secondmate home also receives a local durable wake after
 # the upward write, so the mate can handle its own poll observation.
-# No new state file and no new transport are involved.
+# That supervision outcome uses the existing parent channel and wake queue.
 #
 # Normal operation deduplicates the task's latest canonical PR identity through
 # the merge-notification marker owned by bin/fm-pr-lib.sh. Main-home wake keys
@@ -22,6 +22,13 @@
 # distinct in queue presentation. The outcome is published before the marker
 # is committed, so a failed commit stays eligible for at-least-once retry and
 # may rarely duplicate rather than leave a merge silent.
+# Explicit automatic attempts additionally write data/auto-merge-journal.tsv:
+# URL, bound PR head, measured lines, measured files, forge merged_at UTC, tab-
+# separated without a header. Only accepted v2 authority evidence qualifies;
+# attended/external outcomes never create a row. A fresh forge read must prove
+# merged=true at that exact head. The journal is atomically replaced under its
+# home-wide lock before the notification marker; poll recovery uses this same
+# writer and rejects conflicting receipts instead of duplicating a row.
 #
 # Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
 # source beyond its sourced libraries.
@@ -31,6 +38,55 @@ _FM_MERGE_OUTCOME_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-parent-channel-lib.sh
 . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-parent-channel-lib.sh"
+# shellcheck source=bin/fm-merge-authority-lib.sh
+. "$_FM_MERGE_OUTCOME_LIB_DIR/fm-merge-authority-lib.sh"
+
+fm_merge_outcome_journal() {  # <home> <state> <id> <url> <provider> <host> <path> <number>
+  local home=$1 state=$2 id=$3 url=$4 provider=$5 host=$6 path=$7 number=$8
+  local record="$state/$id.merge-authority" version='' proof encoded live row
+  local data="$home/data" journal lock device tmp='' status=0
+  [ -f "$record" ] && [ ! -L "$record" ] || return 0
+  IFS= read -r version < "$record" || return 1
+  [ "$version" = fm-merge-authority-v2 ] || return 0
+  fm_merge_authority_read "$state" "$id" "$provider" "$host" "$path" "$number" || return 1
+  proof=$FM_MERGE_AUTHORITY_AUTOMATIC
+  [ -n "$proof" ] || return 1
+  encoded=$(gh-axi api GET "/repos/$path/pulls/$number" --full \
+    --jq '. | tojson | @base64 | @json') || return 1
+  live=$(fm_pr_base64_decode "$encoded") || return 1
+  row=$(printf '%s\n' "$live" | jq -er --argjson proof "$proof" --arg url "$url" '
+    select(.merged == true and .head.sha == $proof.head and $proof.url == $url)
+    | select(.merged_at | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+    | [$url, $proof.head, $proof.lines, $proof.files, .merged_at] | @tsv
+    ') || return 1
+  [ -d "$data" ] && [ ! -L "$data" ] || return 1
+  device=$(fm_pr_file_device "$data") || return 1
+  journal="$data/auto-merge-journal.tsv"
+  lock="$data/.auto-merge-journal.lock"
+  fm_lock_acquire_wait "$lock" || return 1
+  if ! fm_pr_regular_destination_on_device_or_absent "$journal" "$device"; then
+    status=1
+  elif [ -f "$journal" ] && grep -qxF "$row" "$journal"; then
+    fm_lock_release "$lock"
+    return 0
+  elif [ -f "$journal" ] && awk -F '\t' -v url="$url" '$1 == url {found=1} END {exit !found}' "$journal"; then
+    status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    tmp=$(mktemp "$data/.auto-merge-journal.XXXXXX") || status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    if [ -f "$journal" ]; then cat "$journal" > "$tmp" || status=1; fi
+    printf '%s\n' "$row" >> "$tmp" && chmod 0600 "$tmp" || status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    fm_pr_regular_destination_on_device_or_absent "$journal" "$device" \
+      && mv -f -- "$tmp" "$journal" || status=1
+  fi
+  [ -z "$tmp" ] || [ ! -f "$tmp" ] || rm -f -- "$tmp"
+  fm_lock_release "$lock" || status=1
+  return "$status"
+}
 
 # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_MERGE_OUTCOME_ALREADY_RECORDED=false
@@ -88,6 +144,11 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
   . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-wake-lib.sh"
   lock="$state/$id.pr-poll-merge-notified.lock"
   fm_lock_acquire_wait "$lock" || return 1
+  if ! fm_merge_outcome_journal "$home" "$state" "$id" "$url" \
+      "$provider" "$host" "$path" "$number"; then
+    fm_lock_release "$lock"
+    return 1
+  fi
   if fm_pr_poll_merge_already_notified "$state" "$id" \
     "$provider" "$host" "$path" "$number"; then
     # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
