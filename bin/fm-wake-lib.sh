@@ -1909,7 +1909,7 @@ fm_autoarm_release_abandoned() {  # <state-dir> [grace]
 }
 
 fm_wake_clean_field() {
-  LC_ALL=C tr '\t\r\n' '   '
+  env LC_ALL=C tr '\t\r\n' '   '
 }
 
 fm_wake_append() {
