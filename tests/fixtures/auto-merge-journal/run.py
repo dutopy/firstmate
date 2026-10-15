@@ -11,7 +11,7 @@ import unittest
 FIXTURES = Path(__file__).resolve().parent
 ROOT = FIXTURES.parents[2]
 URL = 'https://github.com/example/repo/pull/7'
-HEAD = (FIXTURES / 'head.txt').read_text().strip()
+HEAD = (FIXTURES / 'head.sha').read_text().strip()
 
 class Journal(unittest.TestCase):
     def setUp(self):
@@ -144,6 +144,46 @@ class Journal(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.journal(), [])
         self.assertFalse((self.state / 'task.pr-poll-merge-notified').exists())
+
+    def test_accepted_unreadable_outcome_recovers(self):
+        self.mode('unreadable')
+        result = self.merge()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.world / 'accepted').exists())
+        self.assertEqual(self.journal(), [])
+        result = self.recover()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_receipt()
+
+    def test_automatic_requires_standing_authority(self):
+        meta = self.state / 'task.meta'
+        meta.write_text(meta.read_text().replace('yolo=on', 'yolo=off'))
+        result = self.merge()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.world / 'accepted').exists())
+
+    def test_automatic_cannot_use_attended_overrides(self):
+        for flags in (['--attended-override'], ['--allow-red', 'ci'], ['--', '--auto']):
+            with self.subTest(flags=flags):
+                result = self.command('fm-pr-merge.sh', 'task', URL, '--automatic', *flags)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.world / 'accepted').exists())
+
+    def test_recovery_rejects_misbound_evidence(self):
+        path = self.home / 'data/auto-merge-journal.tsv'
+        path.mkdir()
+        self.merge()
+        path.rmdir()
+        record = self.state / 'task.merge-authority'
+        original = record.read_text()
+        record.write_text(original.replace(URL, 'https://github.com/example/repo/pull/8'))
+        result = self.recover()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.journal(), [])
+        self.assertFalse((self.state / 'task.pr-poll-merge-notified').exists())
+        record.write_text(original)
+        self.assertEqual(self.recover().returncode, 0)
+        self.assert_receipt()
 
 if __name__ == '__main__':
     unittest.main()
