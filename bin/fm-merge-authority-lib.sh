@@ -182,6 +182,7 @@ fm_merge_authority_read() {  # <state> <task-id> <provider> <host> <path> <numbe
   local record state_device lock status=0
   FM_MERGE_AUTHORITY='external'
   FM_MERGE_AUTHORITY_RECORD_IDENTITY=
+  # shellcheck disable=SC2034 # Public result consumed by the confirmed-outcome owner.
   FM_MERGE_AUTHORITY_AUTOMATIC=
   fm_pr_task_id_valid "$id" || return 1
   [ -d "$state" ] && [ ! -L "$state" ] || return 1
