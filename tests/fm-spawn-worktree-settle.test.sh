@@ -221,9 +221,179 @@ test_primary_checkout_that_never_settles_fails_at_the_deadline() {
   pass "a pane stuck on the primary checkout fails loudly at the deadline"
 }
 
+# make_exec_fakebin <dir> <treehouse-mode> builds a fake tmux that actually RUNS
+# the line sent for `treehouse get` in a shell (appending the echoed command and
+# its output to a pane log that capture-pane returns), with a fake treehouse that
+# either fails like a full pool (`fail`) or succeeds silently (`ok`). The pane's
+# cwd is a counted FM_FAKE_PANE_PATH / FM_FAKE_PANE_STALE sequence as above.
+make_exec_fakebin() {
+  local dir=$1 mode=$2 fakebin
+  fakebin=$(make_settle_fakebin "$dir")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+log="${FM_FAKE_PANE_LOG:?}"
+case "$*" in
+  *"#{pane_current_path}"*)
+    countfile="${FM_FAKE_PANE_COUNTFILE:?}"
+    n=0
+    [ -f "$countfile" ] && n=$(cat "$countfile")
+    n=$((n + 1))
+    printf '%s\n' "$n" > "$countfile"
+    if [ "$n" -le "${FM_FAKE_PANE_STALE_READS:-0}" ]; then
+      printf '%s\n' "${FM_FAKE_PANE_STALE:-}"
+    else
+      printf '%s\n' "${FM_FAKE_PANE_PATH:-}"
+    fi
+    exit 0 ;;
+esac
+case "${1:-}" in
+  display-message) printf 'firstmate\n'; exit 0 ;;
+  capture-pane) cat "$log" 2>/dev/null; exit 0 ;;
+  send-keys)
+    for last; do :; done
+    text=${*: -2:1}
+    case "$text" in
+      "treehouse get"*)
+        printf '$ %s\n' "$text" >> "$log"
+        bash -c "$text" >> "$log" 2>&1 ;;
+    esac
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  if [ "$mode" = fail ]; then
+    cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+echo "error: all 24 worktrees are in use or dirty; raise max_trees" >&2
+exit 1
+SH
+    chmod +x "$fakebin/treehouse"
+  fi
+  fm_test_fake_sleep_noop "$fakebin"
+  printf '%s\n' "$fakebin"
+}
+
+# run_exec_spawn <id> <wait-or-empty>: like run_settle_spawn but the pane log is
+# per case and the isolation wait may be configured.
+run_exec_spawn() {
+  local id=$1 wait=$2
+  FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" \
+    FM_FAKE_PANE_PATH="$WT_DIR" FM_FAKE_PANE_STALE="$STALE_DIR" \
+    FM_FAKE_PANE_STALE_READS="$STALE_READS" FM_FAKE_PANE_COUNTFILE="$COUNTFILE" \
+    FM_FAKE_PANE_LOG="$HOME_DIR/pane.log" \
+    FM_SPAWN_ISOLATION_WAIT_SECS="${wait:-60}" \
+    PATH="$FAKEBIN_DIR:$PATH" \
+    "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
+}
+
+use_exec_fakebin() { # <mode>: swap the case's fake for the executing one; the pane sits in the project (never isolated) until it settles
+  STALE_DIR=$PROJ_DIR
+  FAKEBIN_DIR=$(make_exec_fakebin "$HOME_DIR/fake-exec" "$1")
+}
+
+# An allocator that fails is reported from its own exit status, with its message,
+# long before the wait runs out - and is not reported as a timeout.
+test_allocator_failure_is_surfaced_not_timed_out() {
+  local rec id out status
+  id=settle-alloc-fail-z5
+  rec=$(make_settle_case settle-alloc-fail "$id" 0)
+  read_settle_record "$rec"
+  use_exec_fakebin fail
+  WT_DIR=$PROJ_DIR
+  out=$(run_exec_spawn "$id" "")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn succeeded although treehouse get failed"$'\n'"$out"
+  assert_contains "$out" "treehouse get failed (exit 1)" "allocator refusal was not reported as a refusal"
+  assert_contains "$out" "all 24 worktrees are in use" "the allocator's own message did not reach the error"
+  case "$out" in *"within"*) fail "an allocator refusal was reported as a wait timeout"$'\n'"$out" ;; esac
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "refused spawn published task metadata"
+  pass "a failing treehouse get is surfaced with its message instead of a bare timeout"
+}
+
+# A pane that never moves while get is silently running, plus a result file left
+# by some other attempt, is a timeout - never a refusal or a success.
+test_foreign_result_is_not_this_attempts_failure() {
+  local rec id out status
+  id=settle-foreign-z6
+  rec=$(make_settle_case settle-foreign "$id" 0)
+  read_settle_record "$rec"
+  use_exec_fakebin ok
+  printf '1\n' > "$HOME_DIR/state/.$id.treehouse-get.1.1.result"
+  printf 'error: all 24 worktrees are in use (previous attempt)\n' > "$HOME_DIR/pane.log"
+  WT_DIR=$PROJ_DIR
+  out=$(run_exec_spawn "$id" 3)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a pane that never entered a worktree"
+  assert_contains "$out" "did not enter an isolated worktree within 3s" "timeout was not reported as a timeout naming the configured wait"
+  case "$out" in *"treehouse get failed"*) fail "a foreign result or stale scrollback was read as this attempt's failure" ;; esac
+  pass "stale scrollback and another attempt's result are not this attempt's failure"
+}
+
+# The isolation wait defaults to 60s and honors FM_SPAWN_ISOLATION_WAIT_SECS: a
+# pane that settles after more than 60 reads fails by default and succeeds when
+# the wait is raised; a short configured wait bounds the polling.
+test_isolation_wait_is_configurable() {
+  local rec id out status reads
+  id=settle-wait-z7
+  rec=$(make_settle_case settle-wait-default "$id" 80)
+  read_settle_record "$rec"
+  use_exec_fakebin ok
+  out=$(run_exec_spawn "$id" "")
+  status=$?
+  [ "$status" -ne 0 ] || fail "default wait accepted a pane that settled after 80 reads"
+  assert_contains "$out" "within 60s" "default wait was not 60s"
+  reads=$(cat "$COUNTFILE")
+  [ "$reads" -eq 60 ] || fail "default wait polled $reads times, expected 60"
+
+  id=settle-wait-z8
+  rec=$(make_settle_case settle-wait-long "$id" 80)
+  read_settle_record "$rec"
+  use_exec_fakebin ok
+  out=$(run_exec_spawn "$id" 100)
+  status=$?
+  expect_code 0 "$status" "a configured 100s wait should accept a slow isolated allocation"$'\n'"$out"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "slow allocation did not record the isolated worktree"
+
+  id=settle-wait-z9
+  rec=$(make_settle_case settle-wait-short "$id" 100000)
+  read_settle_record "$rec"
+  use_exec_fakebin ok
+  out=$(run_exec_spawn "$id" 5)
+  status=$?
+  [ "$status" -ne 0 ] || fail "short wait unexpectedly succeeded"
+  reads=$(cat "$COUNTFILE")
+  [ "$reads" -eq 5 ] || fail "a 5s wait polled $reads times"
+  pass "the isolation wait defaults to 60s and honors FM_SPAWN_ISOLATION_WAIT_SECS"
+}
+
+test_invalid_isolation_wait_is_refused() {
+  local rec id out status bad
+  id=settle-badwait-z10
+  rec=$(make_settle_case settle-badwait "$id" 0)
+  read_settle_record "$rec"
+  use_exec_fakebin ok
+  for bad in 0 -5 abc 1.5 3601 007; do
+    out=$(run_exec_spawn "$id" "$bad")
+    status=$?
+    [ "$status" -ne 0 ] || fail "invalid FM_SPAWN_ISOLATION_WAIT_SECS=$bad was accepted"
+    assert_contains "$out" "FM_SPAWN_ISOLATION_WAIT_SECS must be a positive integer" "value $bad was refused without naming the setting"
+    [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "refused value $bad still published task metadata"
+  done
+  pass "a non-positive, non-integer, or over-long isolation wait is refused up front"
+}
+
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_read
 test_transient_primary_checkout_is_not_accepted
 test_primary_checkout_that_never_settles_fails_at_the_deadline
+test_allocator_failure_is_surfaced_not_timed_out
+test_foreign_result_is_not_this_attempts_failure
+test_isolation_wait_is_configurable
+test_invalid_isolation_wait_is_refused
 
 echo "# all fm-spawn-worktree-settle tests passed"
