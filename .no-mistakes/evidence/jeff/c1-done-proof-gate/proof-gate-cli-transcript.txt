@@ -1,0 +1,1175 @@
+INPUT complete.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\n'
+INPUT done.status: 'working: fixing\ndone: PR https://example.com/pr/1\n'
+
+## Accept substantive LF and CRLF proof packets directly and for a done claim
+INPUT complete-input.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete-input.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete-input.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT complete-input.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete-input.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete-input.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+
+## Refuse each missing field and whitespace-padded placeholder through both CLI forms
+INPUT invalid.proof: 'regression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tunknown \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tunknown\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tn/a \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tn/a\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tnone \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tnone\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tna \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tna\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \t? \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \t?\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tTODO later \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tTODO later\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tTBD later \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: \tTBD later\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: root_cause'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: \tunknown \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: \tunknown\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: \tn/a \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: \tn/a\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: \tnone \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: \tnone\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: \tna \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: \tna\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: \t? \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: \t?\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: \tTODO later \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: \tTODO later\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: \tTBD later \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: \tTBD later\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: regression_test'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: \tunknown \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: \tunknown\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: \tn/a \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: \tn/a\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: \tnone \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: \tnone\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: \tna \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: \tna\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: \t? \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: \t?\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: \tTODO later \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: \tTODO later\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: \tTBD later \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: \tTBD later\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: retest'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: \tunknown \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: \tunknown\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: \tn/a \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: \tn/a\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: \tnone \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: \tnone\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: \tna \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: \tna\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: \t? \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: \t?\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: \tTODO later \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: \tTODO later\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: \tTBD later \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: \tTBD later\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: authoritative_state'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nrollback: git revert 0123456789abcdef\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: \tunknown \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: \tunknown\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: \tn/a \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: \tn/a\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: \tnone \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: \tnone\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: \tna \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: \tna\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: \t? \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: \t?\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: \tTODO later \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: \tTODO later\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: \tTBD later \t\nrollback: git revert 0123456789abcdef \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: \tTBD later\r\nrollback: git revert 0123456789abcdef\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: artifact_or_scope'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: \tunknown \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: \tunknown\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: \tn/a \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: \tn/a\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: \tnone \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: \tnone\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: \tna \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: \tna\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: \t? \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: \t?\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: \tTODO later \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: \tTODO later\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use \t\nregression_test: isolated daemon CPU reproduction \t\nretest: CPU remained below the specified limit after the fix \t\nauthoritative_state: process table re-read after the change \t\nartifact_or_scope: disposable local daemon instance \t\nrollback: \tTBD later \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+INPUT invalid.proof: 'root_cause: daemon restart concealed sustained CPU use\r\nregression_test: isolated daemon CPU reproduction\r\nretest: CPU remained below the specified limit after the fix\r\nauthoritative_state: process table re-read after the change\r\nartifact_or_scope: disposable local daemon instance\r\nrollback: \tTBD later\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/invalid.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: rollback'
+
+## Refuse workaround completion including mixed case, trailing spaces, and carriage returns
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: workaround\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: WORKAROUND\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: \tWorkaround \t\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: workaround\r\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+
+## Allow unfinished work without proof and honor a later working event
+INPUT non-done.status: ''
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/non-done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=0
+stdout='ok: latest status is not a done claim'
+stderr=''
+INPUT non-done.status: 'working: fixing\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/non-done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=0
+stdout='ok: latest status is not a done claim'
+stderr=''
+INPUT non-done.status: 'done: previous completion\nworking: follow-up\n checks green\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/non-done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=0
+stdout='ok: latest status is not a done claim'
+stderr=''
+INPUT non-done.status: 'paused: waiting for upstream\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/non-done.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=0
+stdout='ok: latest status is not a done claim'
+stderr=''
+
+## Require proof for keyed and indented done declarations despite continuation prose and long tails
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: workaround\n'
+INPUT event.status: 'working: fixing\ndone: PR https://example.com/pr/1\n checks green\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone: PR https://example.com/pr/1\n verification finished\n checks green\n\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone: PR https://example.com/pr/1\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone [key=fix]: ready\n checks green\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone [key=fix]: ready\n verification finished\n checks green\n\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone [key=fix]: ready\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone: [key=fix] ready\n checks green\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone: [key=fix] ready\n verification finished\n checks green\n\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone: [key=fix] ready\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\n \tdone: ready\n checks green\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\n \tdone: ready\n verification finished\n checks green\n\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\n \tdone: ready\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone [corr=0123456789abcdef] [key=fix]: ready\n checks green\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone [corr=0123456789abcdef] [key=fix]: ready\n verification finished\n checks green\n\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone [corr=0123456789abcdef] [key=fix]: ready\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone corr=0123456789abcdef [key=fix]: ready\n checks green\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone corr=0123456789abcdef [key=fix]: ready\n verification finished\n checks green\n\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT event.status: 'working: fixing\ndone corr=0123456789abcdef [key=fix]: ready\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n continuation text\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof']
+exit=1
+stdout=''
+stderr='refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/absent.proof)'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh', '--status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/event.status', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+
+## Run every delivery mode’s generated proof command from another project with spaces in the installation path
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-brief.sh', 'direct-PR', 'disposable-project', '--mode', 'direct-PR']
+exit=0
+stdout='scaffolded: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/home/data/direct-PR/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})'
+stderr=''
+GENERATED INSTRUCTION: Before any 'done:' line, write the proof packet for a fix or incident and make "/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" <packet> pass; a workaround is not done.
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['bash', '-c', '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" "$1"', '_', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: workaround\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['bash', '-c', '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" "$1"', '_', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-brief.sh', 'local-only', 'disposable-project', '--mode', 'local-only']
+exit=0
+stdout='scaffolded: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/home/data/local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})'
+stderr=''
+GENERATED INSTRUCTION: Before any 'done:' line, write the proof packet for a fix or incident and make "/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" <packet> pass; a workaround is not done.
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['bash', '-c', '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" "$1"', '_', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: workaround\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['bash', '-c', '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" "$1"', '_', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-brief.sh', 'no-mistakes', 'disposable-project', '--mode', 'no-mistakes']
+exit=0
+stdout='scaffolded: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/home/data/no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})'
+stderr=''
+GENERATED INSTRUCTION: Before any 'done:' line, write the proof packet for a fix or incident and make "/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" <packet> pass; a workaround is not done.
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['bash', '-c', '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" "$1"', '_', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/complete.proof']
+exit=0
+stdout='ok: proof packet complete'
+stderr=''
+INPUT workaround.proof: 'root_cause: daemon restart concealed sustained CPU use\nregression_test: isolated daemon CPU reproduction\nretest: CPU remained below the specified limit after the fix\nauthoritative_state: process table re-read after the change\nartifact_or_scope: disposable local daemon instance\nrollback: git revert 0123456789abcdef\nstatus: workaround\n'
+$ (cwd=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/unrelated worker) ['bash', '-c', '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/firstmate scripts/fm-done-proof.sh" "$1"', '_', '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.local-test/proof-live-z7gfcjz0/workaround.proof']
+exit=1
+stdout=''
+stderr='refused: not done, fix: status=workaround'

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Accept substantive LF and CRLF proof packets directly and for a done claim",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Refuse each missing field and whitespace-padded placeholder through both CLI forms",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Refuse workaround completion including mixed case, trailing spaces, and carriage returns",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Allow unfinished work without proof and honor a later working event",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Require proof for keyed and indented done declarations despite continuation prose and long tails",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Run every delivery mode\u2019s generated proof command from another project with spaces in the installation path",
+    "result": "pass",
+    "live": true
+  }
+]

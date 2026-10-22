@@ -1,0 +1,17 @@
+$ TMPDIR="$PWD/.phase-test/tmp" bash tests/fm-done-proof.test.sh
+ok - complete packet accepted
+ok - missing regression test refused and named
+ok - placeholder value refused
+ok - workaround refused as done
+ok - absent file is a usage error
+ok - gate ignores non-done status
+ok - done without packet refused
+ok - done with incomplete packet refused
+ok - done with complete packet passes
+ok - shared status event grammar requires proof for every done representation
+ok - padded placeholders and workaround refused through both interfaces
+ok - complete CRLF packet accepted through both interfaces
+ok - all delivery modes emit executable cross-project proof commands
+not ok - checks-green continuation must not bypass done proof requirement: expected exit 1, got 0
+
+exit=1

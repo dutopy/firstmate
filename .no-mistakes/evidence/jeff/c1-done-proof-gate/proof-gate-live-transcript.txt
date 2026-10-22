@@ -1,0 +1,1144 @@
+# Live proof-gate CLI validation
+Isolated packets and homes; actual product scripts, no product substitutes.
+Complete packet:
+root_cause: continuation prose masked completion
+regression_test: replay completion event
+retest: replayed against isolated task
+authoritative_state: task status re-read after append
+artifact_or_scope: disposable task only
+rollback: restore previous parser implementation
+
+## Complete packet accepted
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+## Complete CRLF packet accepted
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete-crlf.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+## Missing root_cause refused and named
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+Packet mutation: 'root_cause: \tunknown \t\r\n'
+## Padded CRLF root_cause=unknown refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Padded CRLF root_cause=unknown refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+Packet mutation: 'root_cause: \tn/a \t\r\n'
+## Padded CRLF root_cause=n/a refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Padded CRLF root_cause=n/a refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+Packet mutation: 'root_cause: \tnone \t\r\n'
+## Padded CRLF root_cause=none refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Padded CRLF root_cause=none refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+Packet mutation: 'root_cause: \tna \t\r\n'
+## Padded CRLF root_cause=na refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Padded CRLF root_cause=na refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+Packet mutation: 'root_cause: \t? \t\r\n'
+## Padded CRLF root_cause=? refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Padded CRLF root_cause=? refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+Packet mutation: 'root_cause: \tTODO \t\r\n'
+## Padded CRLF root_cause=TODO refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Padded CRLF root_cause=TODO refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+Packet mutation: 'root_cause: \tTBD \t\r\n'
+## Padded CRLF root_cause=TBD refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Padded CRLF root_cause=TBD refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: root_cause
+
+exit=1; expected=1
+
+## Missing regression_test refused and named
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+Packet mutation: 'regression_test: \tunknown \t\r\n'
+## Padded CRLF regression_test=unknown refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Padded CRLF regression_test=unknown refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+Packet mutation: 'regression_test: \tn/a \t\r\n'
+## Padded CRLF regression_test=n/a refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Padded CRLF regression_test=n/a refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+Packet mutation: 'regression_test: \tnone \t\r\n'
+## Padded CRLF regression_test=none refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Padded CRLF regression_test=none refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+Packet mutation: 'regression_test: \tna \t\r\n'
+## Padded CRLF regression_test=na refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Padded CRLF regression_test=na refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+Packet mutation: 'regression_test: \t? \t\r\n'
+## Padded CRLF regression_test=? refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Padded CRLF regression_test=? refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+Packet mutation: 'regression_test: \tTODO \t\r\n'
+## Padded CRLF regression_test=TODO refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Padded CRLF regression_test=TODO refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+Packet mutation: 'regression_test: \tTBD \t\r\n'
+## Padded CRLF regression_test=TBD refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Padded CRLF regression_test=TBD refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: regression_test
+
+exit=1; expected=1
+
+## Missing retest refused and named
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+Packet mutation: 'retest: \tunknown \t\r\n'
+## Padded CRLF retest=unknown refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Padded CRLF retest=unknown refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+Packet mutation: 'retest: \tn/a \t\r\n'
+## Padded CRLF retest=n/a refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Padded CRLF retest=n/a refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+Packet mutation: 'retest: \tnone \t\r\n'
+## Padded CRLF retest=none refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Padded CRLF retest=none refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+Packet mutation: 'retest: \tna \t\r\n'
+## Padded CRLF retest=na refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Padded CRLF retest=na refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+Packet mutation: 'retest: \t? \t\r\n'
+## Padded CRLF retest=? refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Padded CRLF retest=? refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+Packet mutation: 'retest: \tTODO \t\r\n'
+## Padded CRLF retest=TODO refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Padded CRLF retest=TODO refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+Packet mutation: 'retest: \tTBD \t\r\n'
+## Padded CRLF retest=TBD refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Padded CRLF retest=TBD refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: retest
+
+exit=1; expected=1
+
+## Missing authoritative_state refused and named
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+Packet mutation: 'authoritative_state: \tunknown \t\r\n'
+## Padded CRLF authoritative_state=unknown refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Padded CRLF authoritative_state=unknown refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+Packet mutation: 'authoritative_state: \tn/a \t\r\n'
+## Padded CRLF authoritative_state=n/a refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Padded CRLF authoritative_state=n/a refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+Packet mutation: 'authoritative_state: \tnone \t\r\n'
+## Padded CRLF authoritative_state=none refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Padded CRLF authoritative_state=none refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+Packet mutation: 'authoritative_state: \tna \t\r\n'
+## Padded CRLF authoritative_state=na refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Padded CRLF authoritative_state=na refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+Packet mutation: 'authoritative_state: \t? \t\r\n'
+## Padded CRLF authoritative_state=? refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Padded CRLF authoritative_state=? refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+Packet mutation: 'authoritative_state: \tTODO \t\r\n'
+## Padded CRLF authoritative_state=TODO refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Padded CRLF authoritative_state=TODO refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+Packet mutation: 'authoritative_state: \tTBD \t\r\n'
+## Padded CRLF authoritative_state=TBD refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Padded CRLF authoritative_state=TBD refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: authoritative_state
+
+exit=1; expected=1
+
+## Missing artifact_or_scope refused and named
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+Packet mutation: 'artifact_or_scope: \tunknown \t\r\n'
+## Padded CRLF artifact_or_scope=unknown refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Padded CRLF artifact_or_scope=unknown refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+Packet mutation: 'artifact_or_scope: \tn/a \t\r\n'
+## Padded CRLF artifact_or_scope=n/a refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Padded CRLF artifact_or_scope=n/a refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+Packet mutation: 'artifact_or_scope: \tnone \t\r\n'
+## Padded CRLF artifact_or_scope=none refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Padded CRLF artifact_or_scope=none refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+Packet mutation: 'artifact_or_scope: \tna \t\r\n'
+## Padded CRLF artifact_or_scope=na refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Padded CRLF artifact_or_scope=na refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+Packet mutation: 'artifact_or_scope: \t? \t\r\n'
+## Padded CRLF artifact_or_scope=? refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Padded CRLF artifact_or_scope=? refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+Packet mutation: 'artifact_or_scope: \tTODO \t\r\n'
+## Padded CRLF artifact_or_scope=TODO refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Padded CRLF artifact_or_scope=TODO refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+Packet mutation: 'artifact_or_scope: \tTBD \t\r\n'
+## Padded CRLF artifact_or_scope=TBD refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Padded CRLF artifact_or_scope=TBD refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: artifact_or_scope
+
+exit=1; expected=1
+
+## Missing rollback refused and named
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'rollback: \tunknown \t\r\n'
+## Padded CRLF rollback=unknown refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+## Padded CRLF rollback=unknown refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'rollback: \tn/a \t\r\n'
+## Padded CRLF rollback=n/a refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+## Padded CRLF rollback=n/a refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'rollback: \tnone \t\r\n'
+## Padded CRLF rollback=none refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+## Padded CRLF rollback=none refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'rollback: \tna \t\r\n'
+## Padded CRLF rollback=na refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+## Padded CRLF rollback=na refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'rollback: \t? \t\r\n'
+## Padded CRLF rollback=? refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+## Padded CRLF rollback=? refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'rollback: \tTODO \t\r\n'
+## Padded CRLF rollback=TODO refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+## Padded CRLF rollback=TODO refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'rollback: \tTBD \t\r\n'
+## Padded CRLF rollback=TBD refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+## Padded CRLF rollback=TBD refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/invalid.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: rollback
+
+exit=1; expected=1
+
+Packet mutation: 'status: \tWoRkArOuNd\n'
+## Workaround refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Workaround refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+Packet mutation: 'status: \tWoRkArOuNd \t\n'
+## Workaround refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Workaround refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+Packet mutation: 'status: \tWoRkArOuNd\r\n'
+## Workaround refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Workaround refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+Packet mutation: 'status: \tWoRkArOuNd \t\r\n'
+## Workaround refused directly
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Workaround refused at done gate
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+Status input: 'working: fixing\ndone: PR https://example.com/pr/1\n verification finished\n\n'
+## Completion requires proof: 'done: PR https://example.com/pr/1', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof)
+
+exit=1; expected=1
+
+## Completion rejects workaround: 'done: PR https://example.com/pr/1', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Completion accepts complete proof: 'done: PR https://example.com/pr/1', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone: PR https://example.com/pr/1\n checks green\n\n'
+## Completion requires proof: 'done: PR https://example.com/pr/1', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion rejects workaround: 'done: PR https://example.com/pr/1', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion accepts complete proof: 'done: PR https://example.com/pr/1', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Later working supersedes completion
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone [key=fix]: ready\n verification finished\n\n'
+## Completion requires proof: 'done [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof)
+
+exit=1; expected=1
+
+## Completion rejects workaround: 'done [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Completion accepts complete proof: 'done [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone [key=fix]: ready\n checks green\n\n'
+## Completion requires proof: 'done [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion rejects workaround: 'done [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion accepts complete proof: 'done [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Later working supersedes completion
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone: [key=fix] ready\n verification finished\n\n'
+## Completion requires proof: 'done: [key=fix] ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof)
+
+exit=1; expected=1
+
+## Completion rejects workaround: 'done: [key=fix] ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Completion accepts complete proof: 'done: [key=fix] ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone: [key=fix] ready\n checks green\n\n'
+## Completion requires proof: 'done: [key=fix] ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion rejects workaround: 'done: [key=fix] ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion accepts complete proof: 'done: [key=fix] ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Later working supersedes completion
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+Status input: 'working: fixing\n \tdone: ready\n verification finished\n\n'
+## Completion requires proof: ' \tdone: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof)
+
+exit=1; expected=1
+
+## Completion rejects workaround: ' \tdone: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Completion accepts complete proof: ' \tdone: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+Status input: 'working: fixing\n \tdone: ready\n checks green\n\n'
+## Completion requires proof: ' \tdone: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion rejects workaround: ' \tdone: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion accepts complete proof: ' \tdone: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Later working supersedes completion
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone [corr=0123456789abcdef] [key=fix]: ready\n verification finished\n\n'
+## Completion requires proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof)
+
+exit=1; expected=1
+
+## Completion rejects workaround: 'done [corr=0123456789abcdef] [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Completion accepts complete proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone [corr=0123456789abcdef] [key=fix]: ready\n checks green\n\n'
+## Completion requires proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion rejects workaround: 'done [corr=0123456789abcdef] [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion accepts complete proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Later working supersedes completion
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone corr=0123456789abcdef [key=fix]: ready\n verification finished\n\n'
+## Completion requires proof: 'done corr=0123456789abcdef [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof)
+
+exit=1; expected=1
+
+## Completion rejects workaround: 'done corr=0123456789abcdef [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Completion accepts complete proof: 'done corr=0123456789abcdef [key=fix]: ready', ' verification finished'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: proof packet complete
+
+exit=0; expected=0
+
+Status input: 'working: fixing\ndone corr=0123456789abcdef [key=fix]: ready\n checks green\n\n'
+## Completion requires proof: 'done corr=0123456789abcdef [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion rejects workaround: 'done corr=0123456789abcdef [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=1
+
+## Completion accepts complete proof: 'done corr=0123456789abcdef [key=fix]: ready', ' checks green'
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Later working supersedes completion
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Working task needs no packet
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh --status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/task.status /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+ok: latest status is not a done claim
+
+exit=0; expected=0
+
+## Missing direct packet is usage error
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/bin/fm-done-proof.sh /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/absent.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+usage: fm-done-proof.sh <proof-file>
+
+exit=2; expected=2
+
+## Generate direct-PR instructions
+$ '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-brief.sh' proof-direct-PR disposable-project --mode direct-PR
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+scaffolded: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/home/data/proof-direct-PR/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+
+exit=0; expected=0
+
+Generated public instruction:
+Before any 'done:' line, write the proof packet for a fix or incident and make "/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" <packet> pass; a workaround is not done.
+## direct-PR generated checker accepts proof in other project
+$ bash -c '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" "$1"' _ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/other project
+ok: proof packet complete
+
+exit=0; expected=0
+
+## direct-PR generated checker refuses workaround in other project
+$ bash -c '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" "$1"' _ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/other project
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Generate local-only instructions
+$ '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-brief.sh' proof-local-only disposable-project --mode local-only
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+scaffolded: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/home/data/proof-local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+
+exit=0; expected=0
+
+Generated public instruction:
+Before any 'done:' line, write the proof packet for a fix or incident and make "/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" <packet> pass; a workaround is not done.
+## local-only generated checker accepts proof in other project
+$ bash -c '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" "$1"' _ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/other project
+ok: proof packet complete
+
+exit=0; expected=0
+
+## local-only generated checker refuses workaround in other project
+$ bash -c '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" "$1"' _ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/other project
+refused: not done, fix: status=workaround
+
+exit=1; expected=1
+
+## Generate no-mistakes instructions
+$ '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-brief.sh' proof-no-mistakes disposable-project --mode no-mistakes
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV
+scaffolded: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/home/data/proof-no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+
+exit=0; expected=0
+
+Generated public instruction:
+Before any 'done:' line, write the proof packet for a fix or incident and make "/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" <packet> pass; a workaround is not done.
+## no-mistakes generated checker accepts proof in other project
+$ bash -c '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" "$1"' _ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/complete.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/other project
+ok: proof packet complete
+
+exit=0; expected=0
+
+## no-mistakes generated checker refuses workaround in other project
+$ bash -c '"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/Firstmate scripts/bin/fm-done-proof.sh" "$1"' _ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/workaround.proof
+cwd: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JPEAWA3T74QGH46PH6WQMV/.phase-test/other project
+refused: not done, fix: status=workaround
+
+exit=1; expected=1

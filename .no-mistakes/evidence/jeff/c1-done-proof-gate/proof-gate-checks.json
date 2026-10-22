@@ -1,0 +1,614 @@
+[
+  {
+    "check": "Complete packet accepted",
+    "pass": true
+  },
+  {
+    "check": "Complete CRLF packet accepted",
+    "pass": true
+  },
+  {
+    "check": "Missing root_cause refused and named",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=unknown refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=unknown refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=n/a refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=n/a refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=none refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=none refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=na refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=na refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=? refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=? refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=TODO refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=TODO refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=TBD refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF root_cause=TBD refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Missing regression_test refused and named",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=unknown refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=unknown refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=n/a refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=n/a refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=none refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=none refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=na refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=na refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=? refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=? refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=TODO refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=TODO refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=TBD refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF regression_test=TBD refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Missing retest refused and named",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=unknown refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=unknown refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=n/a refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=n/a refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=none refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=none refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=na refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=na refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=? refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=? refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=TODO refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=TODO refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=TBD refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF retest=TBD refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Missing authoritative_state refused and named",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=unknown refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=unknown refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=n/a refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=n/a refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=none refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=none refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=na refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=na refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=? refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=? refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=TODO refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=TODO refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=TBD refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF authoritative_state=TBD refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Missing artifact_or_scope refused and named",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=unknown refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=unknown refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=n/a refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=n/a refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=none refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=none refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=na refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=na refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=? refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=? refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=TODO refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=TODO refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=TBD refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF artifact_or_scope=TBD refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Missing rollback refused and named",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=unknown refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=unknown refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=n/a refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=n/a refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=none refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=none refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=na refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=na refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=? refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=? refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=TODO refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=TODO refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=TBD refused directly",
+    "pass": true
+  },
+  {
+    "check": "Padded CRLF rollback=TBD refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused directly",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused directly",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused directly",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused directly",
+    "pass": true
+  },
+  {
+    "check": "Workaround refused at done gate",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done: PR https://example.com/pr/1', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion rejects workaround: 'done: PR https://example.com/pr/1', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion accepts complete proof: 'done: PR https://example.com/pr/1', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done: PR https://example.com/pr/1', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion rejects workaround: 'done: PR https://example.com/pr/1', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion accepts complete proof: 'done: PR https://example.com/pr/1', ' checks green'",
+    "pass": true
+  },
+  {
+    "check": "Later working supersedes completion",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion rejects workaround: 'done [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion accepts complete proof: 'done [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done [key=fix]: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion rejects workaround: 'done [key=fix]: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion accepts complete proof: 'done [key=fix]: ready', ' checks green'",
+    "pass": true
+  },
+  {
+    "check": "Later working supersedes completion",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done: [key=fix] ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion rejects workaround: 'done: [key=fix] ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion accepts complete proof: 'done: [key=fix] ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done: [key=fix] ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion rejects workaround: 'done: [key=fix] ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion accepts complete proof: 'done: [key=fix] ready', ' checks green'",
+    "pass": true
+  },
+  {
+    "check": "Later working supersedes completion",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: ' \\tdone: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion rejects workaround: ' \\tdone: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion accepts complete proof: ' \\tdone: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: ' \\tdone: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion rejects workaround: ' \\tdone: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion accepts complete proof: ' \\tdone: ready', ' checks green'",
+    "pass": true
+  },
+  {
+    "check": "Later working supersedes completion",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion rejects workaround: 'done [corr=0123456789abcdef] [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion accepts complete proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion rejects workaround: 'done [corr=0123456789abcdef] [key=fix]: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion accepts complete proof: 'done [corr=0123456789abcdef] [key=fix]: ready', ' checks green'",
+    "pass": true
+  },
+  {
+    "check": "Later working supersedes completion",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done corr=0123456789abcdef [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion rejects workaround: 'done corr=0123456789abcdef [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion accepts complete proof: 'done corr=0123456789abcdef [key=fix]: ready', ' verification finished'",
+    "pass": true
+  },
+  {
+    "check": "Completion requires proof: 'done corr=0123456789abcdef [key=fix]: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion rejects workaround: 'done corr=0123456789abcdef [key=fix]: ready', ' checks green'",
+    "pass": false
+  },
+  {
+    "check": "Completion accepts complete proof: 'done corr=0123456789abcdef [key=fix]: ready', ' checks green'",
+    "pass": true
+  },
+  {
+    "check": "Later working supersedes completion",
+    "pass": true
+  },
+  {
+    "check": "Working task needs no packet",
+    "pass": true
+  },
+  {
+    "check": "Missing direct packet is usage error",
+    "pass": true
+  },
+  {
+    "check": "Generate direct-PR instructions",
+    "pass": true
+  },
+  {
+    "check": "direct-PR generated checker accepts proof in other project",
+    "pass": true
+  },
+  {
+    "check": "direct-PR generated checker refuses workaround in other project",
+    "pass": true
+  },
+  {
+    "check": "Generate local-only instructions",
+    "pass": true
+  },
+  {
+    "check": "local-only generated checker accepts proof in other project",
+    "pass": true
+  },
+  {
+    "check": "local-only generated checker refuses workaround in other project",
+    "pass": true
+  },
+  {
+    "check": "Generate no-mistakes instructions",
+    "pass": true
+  },
+  {
+    "check": "no-mistakes generated checker accepts proof in other project",
+    "pass": true
+  },
+  {
+    "check": "no-mistakes generated checker refuses workaround in other project",
+    "pass": true
+  }
+]
