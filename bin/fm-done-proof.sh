@@ -2,18 +2,30 @@
 # fm-done-proof.sh - the single owner of the "done/resolved" proof packet check.
 #
 # A task or incident may be called done or resolved only when its proof packet
-# names, as non-empty `key: value` lines, the root cause, the regression test,
-# the retest result, the authoritative state re-read after the change, the
-# artifact or scope, and the exact rollback.
+# contains these non-empty `key: value` lines:
+#   root_cause: the root cause
+#   regression_test: the regression test
+#   retest: the retest result
+#   authoritative_state: the authoritative state re-read after the change
+#   artifact_or_scope: the artifact or scope
+#   rollback: the exact rollback
+# Keys start at column zero; the first occurrence of each key is checked.
+# Values are trimmed of surrounding whitespace and checked case-insensitively.
+# Empty values, TODO*/TBD* prefixes, none, n/a, na, unknown, and ? are refused.
 # A workaround is not a resolution: label it `status: workaround` and the check
 # refuses it as done.
 #
 # Usage: fm-done-proof.sh <proof-file>
 #        fm-done-proof.sh --status <status-file> <proof-file>
 # The --status form is the executable gate: it passes when the status file's
-# latest line is not a `done:` claim, and otherwise requires the proof packet.
-# Exit 0 when the packet is complete; exit 1 listing every missing or
-# placeholder field; exit 2 on a usage error.
+# latest recognized event is not a done claim, and otherwise requires the packet.
+# Event selection and verb parsing use fm-classify-lib.sh, including keyed and
+# indented declarations; continuation prose and blanks do not supersede events.
+# This gate runs only when invoked; it does not intercept status-file writes.
+# Exit 0 when the packet is complete or --status finds no done claim; exit 1
+# for a missing packet required by --status, missing/placeholder fields, or a
+# workaround; exit 2 on a usage error.
+# Regression coverage: tests/fm-done-proof.test.sh.
 set -u
 
 required_keys="root_cause regression_test retest authoritative_state artifact_or_scope rollback"
