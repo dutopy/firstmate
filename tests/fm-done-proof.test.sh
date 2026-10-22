@@ -67,11 +67,13 @@ for declaration in \
   $' \tdone: ready' \
   'done [corr=0123456789abcdef] [key=fix]: ready' \
   'done corr=0123456789abcdef [key=fix]: ready'; do
-  printf 'working: fixing\n%s\n verification finished\n\n' "$declaration" >"$TMP_ROOT/event.status"
+  printf 'working: fixing\n%s\n verification finished\n checks green\n\n' "$declaration" >"$TMP_ROOT/event.status"
   "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/absent.proof" >/dev/null 2>&1
   expect_code 1 $? "done event requires proof: $declaration"
   "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/missing.proof" >/dev/null 2>&1
   expect_code 1 $? "done event rejects incomplete proof: $declaration"
+  "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/workaround.proof" >/dev/null 2>&1
+  expect_code 1 $? "done event rejects workaround proof: $declaration"
   "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/complete.proof" >/dev/null 2>&1
   expect_code 0 $? "done event accepts complete proof: $declaration"
   printf 'working: follow-up\n continuation\n' >>"$TMP_ROOT/event.status"
@@ -118,3 +120,8 @@ for mode in direct-PR local-only no-mistakes; do
   expect_code 1 $? "$mode proof command refuses a workaround"
 done
 pass "all delivery modes emit executable cross-project proof commands"
+
+printf 'done: PR https://example.com/pr/1\n checks green\n' >"$TMP_ROOT/green-continuation.status"
+"$SCRIPT" --status "$TMP_ROOT/green-continuation.status" "$TMP_ROOT/absent.proof" >/dev/null 2>&1
+expect_code 1 $? "checks-green continuation must not bypass done proof requirement"
+pass "checks-green continuation retains the done proof requirement"

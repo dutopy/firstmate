@@ -158,10 +158,10 @@ last_status_line() {  # <status-file> [<previous-event-var>]
 # nonblank line as the latest, matching the read this replaced.
 # Keep decision-closing events: skipping a resolved line would revive its opener.
 # A bare legacy free-text line counts as an event only when a captain token leads
-# it, so continuation prose that merely mentions one cannot hide a declaration.
+# at column zero, so indented continuation prose cannot hide a declaration.
 _fm_status_event_scan() {
   local line last='' prev='' fallback='' verb legacy_re
-  legacy_re="^[[:space:]]*(${FM_CAPTAIN_RE:-$FM_CLASSIFY_CAPTAIN_RE_DEFAULT})"
+  legacy_re="^(${FM_CAPTAIN_RE:-$FM_CLASSIFY_CAPTAIN_RE_DEFAULT})"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in *[![:space:]]*) fallback=$line ;; *) continue ;; esac
     case "$line" in *:*) status_line_verb "$line" verb ;; *) verb='' ;; esac
