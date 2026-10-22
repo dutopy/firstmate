@@ -173,7 +173,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-mail.py`             | The IMAP/SMTP engine behind `fm-mail.sh` |
 | `fm-mail-check.sh`       | Standing received-mail poll: `arm` registers a watcher check that runs `fm-mail.sh poll` on the watcher cadence (new mail still wakes via the poll; the check's own line also wakes unless the poll is a proven no-op), `disarm` removes it |
 | `fm-antidrift-check.sh`  | Drift guard producer: inventory this home's worktrees, alarm on missing GitHub upstream, unpushed volume, stale or unknown push age, long-dirty trees, `push DISABLED` remotes and unpresented PRs, trigger due WIP checkpoints and pushes, and publish one cached line the watcher heartbeat reads |
-| `fm-wip-checkpoint.sh`   | Snapshot a worktree into a shadow repository (source only read, deny list applied) and publish that WIP lineage to a captain-approved private GitHub target, proving privacy fresh before every push |
+| `fm-wip-checkpoint.sh`   | Snapshot a worktree into a shadow repository (source only read, deny list applied) and publish that WIP lineage to a captain-approved private GitHub target, requiring fresh privacy proof and the mandatory Gitleaks content guard before every push |
 | `fm-wip-lib.sh`          | Shared WIP state paths, key-value records, git-read helper, and the anti-drift cache readers |
 | `fm-disk-simulate-imac.sh` | Simulation-only iMac report: one row per explicitly named object with its approved section 3 whitelist line, and no deletion |
 | `fm-disk-simulate-vps.sh` | Simulation-only dutopy VPS report for explicitly named objects; contacts no server |

@@ -711,6 +711,9 @@ Publication targets are explicit and per project.
 Nothing here creates a repository, changes visibility or falls back to another target.
 Before every push, repository visibility is read fresh from the forge and only an explicit `private` answer allows it; public, unknown or unreachable refuses and alarms.
 Every commit about to leave is checked against the deny list again, the refspec never carries a leading `+`, and a rejected push is reported and never forced.
+Publication additionally requires installed Gitleaks 8.30.1, with the mandatory content-scan contract and bounded invocation owned by [`bin/fm-wip-checkpoint.sh`](../bin/fm-wip-checkpoint.sh)'s header.
+A content finding, unavailable scanner or incomplete scan refuses publication and raises `content-unproven`, without reporting secret values or source lines.
+A clean scan is not proof that the history contains no private business or personal data, so destination approval and content qualification remain separate requirements.
 A milestone checkpoint is pushed immediately, otherwise a push happens within 90 minutes of the oldest unpublished checkpoint, and at least once every 24 hours the push action runs even with nothing new.
 
 A failed or not-applicable publication is retried no sooner than 15 minutes after the previous attempt, and a project declared `none` is not attempted at all.
