@@ -1,0 +1,57 @@
+Actual producer and Gitleaks 8.30.1; only visibility endpoint is disposable; Git URL rewrite targets local bare repositories. No real GitHub or user data used.
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh snapshot $FIXTURE/content/src
+checkpoint refs/heads/wip/wt-3e076002975b/e1 96b985689a9a808f92075a2fe48422701eccec3c
+exit=0
+
+SCENARIO: clean backup scans on every publication, even unchanged
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh push $FIXTURE/content/src --project proj
+pushed fixture/content refs/heads/wip/wt-3e076002975b/e1
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh push $FIXTURE/content/src --project proj
+pushed fixture/content refs/heads/wip/wt-3e076002975b/e1
+exit=0
+Destination refs:
+96b985689a9a808f92075a2fe48422701eccec3c refs/heads/wip/wt-3e076002975b/e1
+Actual scanner invocations: ['version', 'git', 'version', 'git']
+
+SCENARIO: synthetic content secret defeats local and ambient suppressions; nothing published
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh snapshot $FIXTURE/content/src
+checkpoint refs/heads/wip/wt-3e076002975b/e1 32cdd3276203d5e5c45de81e4bab7ce4164a94ba
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh snapshot $FIXTURE/content/src
+checkpoint refs/heads/wip/wt-3e076002975b/e1 f76b639fe6154433186c8b80703e56feefd2095c
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh push $FIXTURE/content/src --project proj
+fm-wip-checkpoint: Gitleaks 8.30.1 content safety not proven (finding, unavailable scanner or incomplete scan); publication refused
+exit=9
+Destination refs unchanged:
+96b985689a9a808f92075a2fe48422701eccec3c refs/heads/wip/wt-3e076002975b/e1
+Persisted publication result:
+last_push=1792696643
+last_verified=1792696643
+pushed_commit=96b985689a9a808f92075a2fe48422701eccec3c
+result=content-not-proven
+
+Scanner scratch reports removed; diagnostics and publication receipt contain no synthetic credential value.
+
+SCENARIO: deleting the credential and forging a success receipt does not bypass history scan
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh snapshot $FIXTURE/content/src
+checkpoint refs/heads/wip/wt-3e076002975b/e1 5067b27ab497259aa35e38351f1e343ed6969546
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh push $FIXTURE/content/src --project proj
+fm-wip-checkpoint: Gitleaks 8.30.1 content safety not proven (finding, unavailable scanner or incomplete scan); publication refused
+exit=9
+Destination refs still unchanged:
+96b985689a9a808f92075a2fe48422701eccec3c refs/heads/wip/wt-3e076002975b/e1
+
+SCENARIO: absent and wrong-version scanner prevent clean backup publication
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh snapshot $FIXTURE/scanner-required/src
+checkpoint refs/heads/wip/wt-b90c6a2a5e94/e1 1c355e3285dc6ad41d8abdf6acf24994476afed5
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh push $FIXTURE/scanner-required/src --project proj
+fm-wip-checkpoint: Gitleaks 8.30.1 content safety not proven (finding, unavailable scanner or incomplete scan); publication refused
+exit=9
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5JGEWWV296TDJZYGS3MCYBN/bin/fm-wip-checkpoint.sh push $FIXTURE/scanner-required/src --project proj
+fm-wip-checkpoint: Gitleaks 8.30.1 content safety not proven (finding, unavailable scanner or incomplete scan); publication refused
+exit=9
+Destination has no refs after both refused attempts.

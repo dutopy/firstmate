@@ -1,0 +1,20 @@
+ok - fm-wip-checkpoint: current and deleted synthetic secrets block publication without values
+ok - fm-wip-checkpoint: merge-only and binary deleted secrets cannot bypass the scan
+ok - fm-wip-checkpoint: snapshot is filtered, orphan, and leaves the source untouched
+ok - fm-wip-checkpoint: idempotent snapshot, deletions tracked
+ok - fm-wip-checkpoint: an in-tree shadow store excludes itself
+ok - fm-wip-checkpoint: home-private directories are denied only in the home's own repository
+ok - fm-wip-checkpoint: a deny-list change opens a new lineage
+ok - fm-wip-checkpoint: snapshots happen only for a freshly proven slot owner
+ok - fm-wip-checkpoint: only an explicit private answer publishes, receipt on success
+ok - fm-wip-checkpoint: visibility is proven fresh before every push
+ok - fm-wip-checkpoint: no configured remote means no publication
+ok - fm-wip-checkpoint: publication declared off is a posture, not a failure
+ok - fm-wip-checkpoint: the publish range is re-checked against the deny list
+ok - fm-wip-checkpoint: the publish range is re-checked against the home-private directories
+ok - fm-wip-checkpoint: a rejected push is reported and never forced
+ok - fm-wip-checkpoint: an unreadable file is skipped, the snapshot still lands (best effort)
+ok - fm-wip-checkpoint: the size cap holds for odd names and special files do not hang
+ok - fm-wip-checkpoint: a large tree snapshots with deletions following
+ok - fm-wip-checkpoint: a slow push is a timeout result, not a rejection
+ok - fm-wip-checkpoint: an undeterminable home recognition refuses the push before any forge call
