@@ -43,7 +43,7 @@ proof=$1
 problems=""
 
 for key in $required_keys; do
-  value=$(sed -n "s/^${key}:[[:space:]]*//p" "$proof" | head -n 1)
+  value=$(sed -n "/^${key}:/ { s/^${key}:[[:space:]]*//; s/[[:space:]]*$//; p; }" "$proof" | head -n 1)
   lowered=$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')
   case "$lowered" in
     ""|todo*|tbd*|none|n/a|na|unknown|"?")
@@ -52,7 +52,7 @@ for key in $required_keys; do
   esac
 done
 
-status=$(sed -n 's/^status:[[:space:]]*//p' "$proof" | head -n 1 | tr '[:upper:]' '[:lower:]')
+status=$(sed -n '/^status:/ { s/^status:[[:space:]]*//; s/[[:space:]]*$//; p; }' "$proof" | head -n 1 | tr '[:upper:]' '[:lower:]')
 if [ "$status" = "workaround" ]; then
   problems="$problems status=workaround"
 fi

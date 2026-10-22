@@ -59,3 +59,42 @@ pass "done with incomplete packet refused"
 "$SCRIPT" --status "$TMP_ROOT/b.status" "$TMP_ROOT/complete.proof" >/dev/null 2>&1
 expect_code 0 $? "done with complete packet passes"
 pass "done with complete packet passes"
+
+for key in root_cause regression_test retest authoritative_state artifact_or_scope rollback status; do
+  if [ "$key" = status ]; then
+    values=(workaround)
+  else
+    values=(unknown n/a none na '?' TODO TBD)
+  fi
+  for value in "${values[@]}"; do
+    for ending in $' \t' $'\r'; do
+      sed "/^${key}:/d" "$TMP_ROOT/complete.proof" >"$TMP_ROOT/padded.proof"
+      printf '%s: \t%s%s\n' "$key" "$value" "$ending" >>"$TMP_ROOT/padded.proof"
+      "$SCRIPT" "$TMP_ROOT/padded.proof" >/dev/null 2>&1
+      expect_code 1 $? "padded $key=$value is refused"
+      "$SCRIPT" --status "$TMP_ROOT/b.status" "$TMP_ROOT/padded.proof" >/dev/null 2>&1
+      expect_code 1 $? "done with padded $key=$value is refused"
+    done
+  done
+done
+pass "padded placeholders and workaround refused through both interfaces"
+
+sed $'s/$/\r/' "$TMP_ROOT/complete.proof" >"$TMP_ROOT/crlf.proof"
+"$SCRIPT" "$TMP_ROOT/crlf.proof" >/dev/null 2>&1
+expect_code 0 $? "complete CRLF packet is accepted"
+"$SCRIPT" --status "$TMP_ROOT/b.status" "$TMP_ROOT/crlf.proof" >/dev/null 2>&1
+expect_code 0 $? "done with complete CRLF packet passes"
+pass "complete CRLF packet accepted through both interfaces"
+
+mkdir -p "$TMP_ROOT/firstmate scripts" "$TMP_ROOT/worker"
+cp "$ROOT/bin/fm-dod-lib.sh" "$SCRIPT" "$TMP_ROOT/firstmate scripts/"
+for mode in direct-PR local-only no-mistakes; do
+  rendered=$(cd "$TMP_ROOT/worker" && . "$TMP_ROOT/firstmate scripts/fm-dod-lib.sh" && fm_dod_block "$mode" proof-test)
+  command=$(printf '%s\n' "$rendered" | sed -n "s/^Before any 'done:'.* and make \(.*\) <packet> pass;.*/\1/p")
+  [ -n "$command" ] || fail "missing proof command for $mode"
+  (cd "$TMP_ROOT/worker" && bash -c "$command \"\$1\"" _ "$TMP_ROOT/complete.proof") >/dev/null 2>&1
+  expect_code 0 $? "$mode proof command works outside Firstmate with spaces in its path"
+  (cd "$TMP_ROOT/worker" && bash -c "$command \"\$1\"" _ "$TMP_ROOT/workaround.proof") >/dev/null 2>&1
+  expect_code 1 $? "$mode proof command refuses a workaround"
+done
+pass "all delivery modes emit executable cross-project proof commands"

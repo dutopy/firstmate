@@ -233,7 +233,8 @@ EOF
 }
 
 fm_dod_block() {  # <mode> <task-id>
-  local mode=$1 id=$2
+  local mode=$1 id=$2 proof_checker
+  proof_checker="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-done-proof.sh" || return 1
   case "$mode" in
     direct-PR)
       cat <<EOF
@@ -241,7 +242,7 @@ fm_dod_block() {  # <mode> <task-id>
 Delivery contract: mode=direct-PR
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-Before any 'done:' line, write the proof packet for a fix or incident and make bin/fm-done-proof.sh <packet> pass; a workaround is not done.
+Before any 'done:' line, write the proof packet for a fix or incident and make "$proof_checker" <packet> pass; a workaround is not done.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
@@ -252,7 +253,7 @@ EOF
 Delivery contract: mode=local-only
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$id\`. Do NOT push, do NOT open a PR, do NOT merge.
-Before any 'done:' line, write the proof packet for a fix or incident and make bin/fm-done-proof.sh <packet> pass; a workaround is not done.
+Before any 'done:' line, write the proof packet for a fix or incident and make "$proof_checker" <packet> pass; a workaround is not done.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
 When it is implemented and committed, append \`done: ready in branch fm/$id\` to the status file and stop.
 The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
@@ -263,7 +264,7 @@ EOF
 # Definition of done
 Delivery contract: mode=no-mistakes
 The task is complete only when committed on your branch.
-Before any 'done:' line, write the proof packet for a fix or incident and make bin/fm-done-proof.sh <packet> pass; a workaround is not done.
+Before any 'done:' line, write the proof packet for a fix or incident and make "$proof_checker" <packet> pass; a workaround is not done.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
 
