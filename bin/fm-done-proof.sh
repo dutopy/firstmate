@@ -23,9 +23,10 @@ if [ "${1:-}" = "--status" ]; then
     echo "usage: fm-done-proof.sh --status <status-file> <proof-file>" >&2
     exit 2
   fi
-  last=$(grep -v '^[[:space:]]*$' "$2" | tail -n 1)
-  case "$last" in
-    done:*) ;;
+  . "$(dirname "${BASH_SOURCE[0]}")/fm-classify-lib.sh"
+  last=$(last_status_line "$2")
+  case "$(status_line_verb "$last")" in
+    done) ;;
     *) echo "ok: latest status is not a done claim"; exit 0 ;;
   esac
   if [ ! -f "$3" ]; then

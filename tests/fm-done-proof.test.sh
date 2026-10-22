@@ -60,6 +60,26 @@ pass "done with incomplete packet refused"
 expect_code 0 $? "done with complete packet passes"
 pass "done with complete packet passes"
 
+for declaration in \
+  'done: PR https://example.com/pr/1' \
+  'done [key=fix]: ready' \
+  'done: [key=fix] ready' \
+  $' \tdone: ready' \
+  'done [corr=0123456789abcdef] [key=fix]: ready' \
+  'done corr=0123456789abcdef [key=fix]: ready'; do
+  printf 'working: fixing\n%s\n verification finished\n\n' "$declaration" >"$TMP_ROOT/event.status"
+  "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/absent.proof" >/dev/null 2>&1
+  expect_code 1 $? "done event requires proof: $declaration"
+  "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/missing.proof" >/dev/null 2>&1
+  expect_code 1 $? "done event rejects incomplete proof: $declaration"
+  "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/complete.proof" >/dev/null 2>&1
+  expect_code 0 $? "done event accepts complete proof: $declaration"
+  printf 'working: follow-up\n continuation\n' >>"$TMP_ROOT/event.status"
+  "$SCRIPT" --status "$TMP_ROOT/event.status" "$TMP_ROOT/absent.proof" >/dev/null 2>&1
+  expect_code 0 $? "later working event supersedes done: $declaration"
+done
+pass "shared status event grammar requires proof for every done representation"
+
 for key in root_cause regression_test retest authoritative_state artifact_or_scope rollback status; do
   if [ "$key" = status ]; then
     values=(workaround)
