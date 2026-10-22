@@ -9,11 +9,31 @@
 # refuses it as done.
 #
 # Usage: fm-done-proof.sh <proof-file>
+#        fm-done-proof.sh --status <status-file> <proof-file>
+# The --status form is the executable gate: it passes when the status file's
+# latest line is not a `done:` claim, and otherwise requires the proof packet.
 # Exit 0 when the packet is complete; exit 1 listing every missing or
 # placeholder field; exit 2 on a usage error.
 set -u
 
 required_keys="root_cause regression_test retest authoritative_state artifact_or_scope rollback"
+
+if [ "${1:-}" = "--status" ]; then
+  if [ "$#" -ne 3 ] || [ ! -f "$2" ]; then
+    echo "usage: fm-done-proof.sh --status <status-file> <proof-file>" >&2
+    exit 2
+  fi
+  last=$(grep -v '^[[:space:]]*$' "$2" | tail -n 1)
+  case "$last" in
+    done:*) ;;
+    *) echo "ok: latest status is not a done claim"; exit 0 ;;
+  esac
+  if [ ! -f "$3" ]; then
+    echo "refused: done claimed without a proof packet ($3)" >&2
+    exit 1
+  fi
+  shift 2
+fi
 
 if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
   echo "usage: fm-done-proof.sh <proof-file>" >&2

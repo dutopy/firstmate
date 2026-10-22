@@ -41,3 +41,21 @@ pass "workaround refused as done"
 "$SCRIPT" "$TMP_ROOT/absent.proof" >/dev/null 2>&1
 expect_code 2 $? "absent file is a usage error"
 pass "absent file is a usage error"
+
+printf 'working: x\n' >"$TMP_ROOT/a.status"
+"$SCRIPT" --status "$TMP_ROOT/a.status" "$TMP_ROOT/absent.proof" >/dev/null 2>&1
+expect_code 0 $? "non-done status passes the gate"
+pass "gate ignores non-done status"
+
+printf 'working: x\ndone: PR u\n' >"$TMP_ROOT/b.status"
+"$SCRIPT" --status "$TMP_ROOT/b.status" "$TMP_ROOT/absent.proof" >/dev/null 2>&1
+expect_code 1 $? "done without packet is refused"
+pass "done without packet refused"
+
+"$SCRIPT" --status "$TMP_ROOT/b.status" "$TMP_ROOT/missing.proof" >/dev/null 2>&1
+expect_code 1 $? "done with incomplete packet is refused"
+pass "done with incomplete packet refused"
+
+"$SCRIPT" --status "$TMP_ROOT/b.status" "$TMP_ROOT/complete.proof" >/dev/null 2>&1
+expect_code 0 $? "done with complete packet passes"
+pass "done with complete packet passes"
