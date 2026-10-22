@@ -35,6 +35,7 @@ if [ "${1:-}" = "--status" ]; then
     echo "usage: fm-done-proof.sh --status <status-file> <proof-file>" >&2
     exit 2
   fi
+  # shellcheck source=bin/fm-classify-lib.sh
   . "$(dirname "${BASH_SOURCE[0]}")/fm-classify-lib.sh"
   last=$(last_status_line "$2")
   case "$(status_line_verb "$last")" in

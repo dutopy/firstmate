@@ -111,6 +111,7 @@ pass "complete CRLF packet accepted through both interfaces"
 mkdir -p "$TMP_ROOT/firstmate scripts" "$TMP_ROOT/worker"
 cp "$ROOT/bin/fm-dod-lib.sh" "$SCRIPT" "$TMP_ROOT/firstmate scripts/"
 for mode in direct-PR local-only no-mistakes; do
+  # shellcheck source=/dev/null
   rendered=$(cd "$TMP_ROOT/worker" && . "$TMP_ROOT/firstmate scripts/fm-dod-lib.sh" && fm_dod_block "$mode" proof-test)
   command=$(printf '%s\n' "$rendered" | sed -n "s/^Before any 'done:'.* and make \(.*\) <packet> pass;.*/\1/p")
   [ -n "$command" ] || fail "missing proof command for $mode"
