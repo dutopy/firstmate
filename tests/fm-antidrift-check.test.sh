@@ -46,6 +46,20 @@ printf 'branch_sync:\n  state: pipeline_owned\n  pipeline:\n    run: "r1"\n    p
 SH
 chmod +x "$FAKEBIN/gh-axi" "$FAKEBIN/no-mistakes"
 
+# Content scanning behavior belongs to fm-wip-checkpoint.test.sh; this fixture
+# lets the real producer exercise publication cadence and visible refusals.
+cat > "$FAKEBIN/gitleaks" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != version ] || { echo 8.30.1; exit 0; }
+[ ! -f "$0.fail" ] || exit 2
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --report-path ]; then printf '0\n' > "$2"; exit 0; fi
+  shift
+done
+exit 2
+SH
+chmod +x "$FAKEBIN/gitleaks"
+
 mk_home() {  # <name>
   local h="$TMP_ROOT/$1/home"
   mkdir -p "$h/state" "$h/data" "$h/config" "$h/projects"
@@ -386,6 +400,26 @@ test_blocked_publication_is_visible_not_silent() {
   assert_not_contains "$(line_of "$home")" "WIP-blocked" "a project declared 'none' is a posture, not a fault"
   pass "fm-antidrift-check: blocked publication is alarmed with its reason; declared-off is silent"
 }
+
+test_content_scan_refusal_is_visible_and_never_publishes() {
+  local home repo remote
+  home=$(mk_home contentblocked)
+  repo=$(mk_task "$home" t1 ship)
+  git -C "$repo" push -q -u origin "fm/t1"
+  remote="$TMP_ROOT/contentblocked/wip.git"
+  git init -q --bare "$remote"
+  git config --file "$GIT_GLOBAL" --add "url.$remote.insteadOf" "https://github.com/acme/contentguard.git"
+  printf 'none acme/contentguard\n' > "$home/config/wip-remotes"
+  printf 'work\n' > "$repo/w.txt"
+  : > "$FAKEBIN/gitleaks.fail"
+  refresh "$home" $T0 FAKE_NM_PUSHED_AT=$T0
+  rm "$FAKEBIN/gitleaks.fail"
+  assert_contains "$(line_of "$home")" "WIP-blocked 1 (t1:content-unproven)" "a content scan refusal is reported to supervision"
+  assert_equals "" "$(git --git-dir="$remote" for-each-ref)" "a refused content scan never publishes"
+  pass "fm-antidrift-check: content-scan refusal alarms and leaves the destination unchanged"
+}
+
+test_content_scan_refusal_is_visible_and_never_publishes
 
 test_source_repositories_are_never_touched_by_a_full_refresh() {
   local home repo before after idx_mtime_before idx_mtime_after

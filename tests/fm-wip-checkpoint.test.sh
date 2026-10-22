@@ -37,6 +37,61 @@ esac
 SH
 chmod +x "$FAKEBIN/gh-axi"
 
+# Deterministic scanner double reads the actual selected history; the optional
+# real-tool run exercises the same publication cases with installed Gitleaks.
+REAL_GITLEAKS=$(command -v gitleaks || true)
+cat > "$FAKEBIN/gitleaks" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = version ]; then
+  [ ! -f "$0.wrong-version" ] || { echo 8.29.0; exit 0; }
+  echo 8.30.1
+  exit 0
+fi
+if [ -f "$0.fail" ]; then echo 'SYNTHETIC-SECRET-SOURCE-LINE' >&2; exit 2; fi
+if [ -f "$0.timeout" ]; then sleep 10; exit 0; fi
+[ ! -f "$0.unknown" ] || exit 0
+shift
+repo=$1; shift
+report= opts=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --report-path) report=$2; shift 2 ;;
+    --log-opts) opts=$2; shift 2 ;;
+    --log-opts=*) opts=${1#*=}; shift ;;
+    *) shift ;;
+  esac
+done
+if [ -f "$0.mutate" ]; then
+  shadow=$repo
+  if [ -f "$repo/objects/info/alternates" ]; then
+    objects=$(cat "$repo/objects/info/alternates")
+    shadow=${objects%/objects}
+  fi
+  ref=$(git -C "$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  before=$(git -C "$shadow" rev-parse "$ref")
+  tree=$(git -C "$shadow" rev-parse "$before^{tree}")
+  next=$(git -C "$shadow" -c user.name=test -c user.email=test@example.invalid commit-tree "$tree" -p "$before" -m concurrent)
+  git -C "$shadow" update-ref "$ref" "$next"
+fi
+[ -n "$report" ] && [ -n "$opts" ] || exit 2
+# Real 8.30.1 always loads this source-side ignore independently of -i.
+[ ! -s "$repo/.gitleaksignore" ] || { printf '0\n' > "$report"; exit 0; }
+# Only fake test credentials carry this marker, never a real credential.
+# Intentional word splitting models the scanner's documented log-opts parsing.
+if git -C "$repo" log -p $opts | grep -q 'ghp_k7F9'; then
+  printf '1\n' > "$report"
+  echo 'SYNTHETIC-SECRET-SOURCE-LINE' >&2
+  exit 1
+fi
+printf '0\n' > "$report"
+SH
+chmod +x "$FAKEBIN/gitleaks"
+if [ "${FM_WIP_TEST_REAL_GITLEAKS:-0}" = 1 ]; then
+  [ -n "$REAL_GITLEAKS" ] || fail "real scanner smoke requires installed Gitleaks"
+  rm "$FAKEBIN/gitleaks"
+  ln -s "$REAL_GITLEAKS" "$FAKEBIN/gitleaks"
+fi
+
 # make_src <name>: a source repo with a tracked file, a tracked denied file and
 # a mix of untracked, denied, ignored and info/exclude'd files.
 make_src() {
@@ -415,6 +470,123 @@ test_an_undeterminable_home_state_refuses_the_push_without_a_forge_call() {
   [ -z "$(git --git-dir="$remote" for-each-ref)" ] || fail "nothing may reach the remote"
   pass "fm-wip-checkpoint: an undeterminable home recognition refuses the push before any forge call"
 }
+
+# Removing the content guard, scanning only the tip tree, or trusting a receipt
+# would all publish the synthetic secret in these cases.
+test_content_in_current_and_deleted_history_blocks_publication() {
+  local src home remote before out rc shadow ref commit
+  read -r src home remote < <(setup_push content)
+  run_push "$home" "$src" private >/dev/null 2>&1 || fail "clean history must publish"
+  before=$(git --git-dir="$remote" for-each-ref)
+  # Deliberately synthetic, unissued credential; split so this test source is not
+  # itself a credential fixture in the repository's own content scan.
+  printf 'github_token = "ghp_%s" # gitleaks:allow\n' 'k7F9bQ2mX4rT8vW1nY5pL3sA6dE0cH9jK2uZ' > "$src/settings.txt"
+  printf '[allowlist]\npaths = [".*"]\n' > "$src/.gitleaks.toml"
+  printf '[allowlist]\npaths = [".*"]\n' > "$home/untrusted.toml"
+  FM_HOME="$home" "$CK" snapshot "$src" >/dev/null || fail "synthetic checkpoint must exist"
+  shadow=$(shadow_of "$home")
+  ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  commit=$(git --git-dir="$shadow" rev-parse "$ref")
+  printf '%s:settings.txt:github-pat:1\n' "$commit" > "$src/.gitleaksignore"
+  cp "$src/.gitleaks.toml" "$shadow/.gitleaks.toml"
+  cp "$src/.gitleaksignore" "$shadow/.gitleaksignore"
+  FM_HOME="$home" "$CK" snapshot "$src" >/dev/null
+  rc=0
+  out=$(GITLEAKS_CONFIG="$home/untrusted.toml" GITLEAKS_CONFIG_TOML="$(cat "$home/untrusted.toml")" \
+    GITLEAKS_ENABLE_RULE=nonexistent run_push "$home" "$src" private 2>&1) || rc=$?
+  expect_code 9 "$rc" "a content finding refuses publication despite repository and ambient suppressions"
+  assert_equals "$before" "$(git --git-dir="$remote" for-each-ref)" "a finding leaves all remote refs unchanged"
+  assert_not_contains "$out" "k7F9" "no synthetic secret value appears in diagnostics"
+  assert_not_contains "$out" "SYNTHETIC-SECRET-SOURCE-LINE" "scanner error output is never relayed"
+  rm "$src/settings.txt"
+  FM_HOME="$home" "$CK" snapshot "$src" >/dev/null
+  # A forged or old receipt must not shrink the content scan.
+  printf 'pushed_commit=%s\n' "$(git --git-dir="$shadow" rev-parse "$ref")" > "$(dirname "$shadow")/$(basename "$shadow" .git)/push"
+  rc=0; out=$(run_push "$home" "$src" private 2>&1) || rc=$?
+  expect_code 9 "$rc" "a secret introduced then deleted is still refused"
+  assert_equals "$before" "$(git --git-dir="$remote" for-each-ref)" "deleted secret history never reaches the remote"
+  pass "fm-wip-checkpoint: current and deleted synthetic secrets block publication without values"
+}
+
+test_merge_and_binary_content_cannot_hide_deleted_secrets() {
+  local kind src home remote shadow ref base left right blob tree merged tip rc before
+  for kind in merge binary; do
+    read -r src home remote < <(setup_push "$kind")
+    shadow=$(shadow_of "$home")
+    ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+    base=$(git --git-dir="$shadow" rev-parse "$ref")
+    before=$(git --git-dir="$remote" for-each-ref)
+    tree=$(git --git-dir="$shadow" rev-parse "$base^{tree}")
+    left=$(git --git-dir="$shadow" commit-tree "$tree" -p "$base" -m left)
+    right=$(git --git-dir="$shadow" commit-tree "$tree" -p "$base" -m right)
+    blob=$({
+      [ "$kind" != binary ] || printf '\0'
+      printf 'github_token = "ghp_%s"\n' 'k7F9bQ2mX4rT8vW1nY5pL3sA6dE0cH9jK2uZ'
+    } | git --git-dir="$shadow" hash-object -w --stdin)
+    GIT_INDEX_FILE="$TMP_ROOT/content.idx" git --git-dir="$shadow" read-tree "$base"
+    GIT_INDEX_FILE="$TMP_ROOT/content.idx" git --git-dir="$shadow" update-index --add --cacheinfo "100644,$blob,settings.txt"
+    tree=$(GIT_INDEX_FILE="$TMP_ROOT/content.idx" git --git-dir="$shadow" write-tree)
+    if [ "$kind" = merge ]; then
+      merged=$(git --git-dir="$shadow" commit-tree "$tree" -p "$left" -p "$right" -m merge-only-secret)
+    else
+      merged=$(git --git-dir="$shadow" commit-tree "$tree" -p "$base" -m binary-secret)
+    fi
+    tip=$(git --git-dir="$shadow" commit-tree "$(git --git-dir="$shadow" rev-parse "$base^{tree}")" -p "$merged" -m removed)
+    git --git-dir="$shadow" update-ref "$ref" "$tip"
+    rc=0; run_push "$home" "$src" private >/dev/null 2>&1 || rc=$?
+    expect_code 9 "$rc" "$kind content introduced then deleted must refuse publication"
+    assert_equals "$before" "$(git --git-dir="$remote" for-each-ref)" "$kind secret never reaches remote refs"
+  done
+  pass "fm-wip-checkpoint: merge-only and binary deleted secrets cannot bypass the scan"
+}
+
+test_scanner_failure_and_unknown_results_refuse_publication() {
+  local src home remote mode rc out before
+  [ "${FM_WIP_TEST_REAL_GITLEAKS:-0}" != 1 ] || return 0
+  read -r src home remote < <(setup_push scanerrors)
+  before=$(git --git-dir="$remote" for-each-ref)
+  for mode in fail timeout unknown wrong-version; do
+    : > "$FAKEBIN/gitleaks.$mode"
+    rc=0
+    out=$(FM_WIP_SCAN_TIMEOUT=1 run_push "$home" "$src" private 2>&1) || rc=$?
+    rm "$FAKEBIN/gitleaks.$mode"
+    expect_code 9 "$rc" "scanner $mode must refuse publication"
+    assert_equals "$before" "$(git --git-dir="$remote" for-each-ref)" "scanner $mode leaves remote refs unchanged"
+    assert_not_contains "$out" "SYNTHETIC-SECRET-SOURCE-LINE" "scanner errors do not expose source text"
+  done
+  # An unavailable executable must refuse even on hosts with real Gitleaks.
+  mv "$FAKEBIN/gitleaks" "$FAKEBIN/scanner.saved"
+  ln -s "$TMP_ROOT/absent-scanner" "$FAKEBIN/gitleaks"
+  rc=0
+  out=$(PATH="$FAKEBIN:/usr/bin:/bin" run_push "$home" "$src" private 2>&1) || rc=$?
+  rm "$FAKEBIN/gitleaks"
+  mv "$FAKEBIN/scanner.saved" "$FAKEBIN/gitleaks"
+  expect_code 9 "$rc" "missing scanner must refuse publication"
+  assert_equals "$before" "$(git --git-dir="$remote" for-each-ref)" "missing scanner leaves remote unchanged"
+  pass "fm-wip-checkpoint: unavailable, failed, timed-out and unknown scans refuse publication"
+}
+
+test_push_uses_the_scanned_commit_even_if_the_ref_moves() {
+  local src home remote shadow ref expected receipt
+  [ "${FM_WIP_TEST_REAL_GITLEAKS:-0}" != 1 ] || return 0
+  read -r src home remote < <(setup_push immutable)
+  shadow=$(shadow_of "$home")
+  ref=$(git --git-dir="$shadow" for-each-ref --format='%(refname)' | head -n 1)
+  expected=$(git --git-dir="$shadow" rev-parse "$ref")
+  : > "$FAKEBIN/gitleaks.mutate"
+  run_push "$home" "$src" private >/dev/null 2>&1 || fail "scanned clean commit can publish"
+  rm "$FAKEBIN/gitleaks.mutate"
+  assert_not_equals "$expected" "$(git --git-dir="$shadow" rev-parse "$ref")" "fixture moved the mutable ref during scanning"
+  assert_equals "$expected" "$(git --git-dir="$remote" rev-parse "$ref")" "only the immutable scanned commit was published"
+  receipt=$(cat "$(find "$home/state/wip" -name push | head -n 1)")
+  assert_contains "$receipt" "pushed_commit=$expected" "the receipt names the scanned commit"
+  pass "fm-wip-checkpoint: scan, push and receipt bind the same immutable commit"
+}
+
+test_content_in_current_and_deleted_history_blocks_publication
+test_merge_and_binary_content_cannot_hide_deleted_secrets
+test_scanner_failure_and_unknown_results_refuse_publication
+test_push_uses_the_scanned_commit_even_if_the_ref_moves
 
 test_snapshot_contents_and_source_untouched
 test_second_pass_is_idempotent_and_deletions_follow

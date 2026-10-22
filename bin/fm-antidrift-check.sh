@@ -366,6 +366,7 @@ process_entry() {  # <index>
       no-remote) C_WIPBLOCK+=("$label:no-remote") ;;
       private-not-proven) C_WIPBLOCK+=("$label:private-unproven") ;;
       deny-hit) C_WIPBLOCK+=("$label:denied-path") ;;
+      content-not-proven) C_WIPBLOCK+=("$label:content-unproven") ;;
       push-timeout) C_WIPBLOCK+=("$label:push-timeout") ;;
       push-failed-*) C_WIPBLOCK+=("$label:push-rejected") ;;
     esac
