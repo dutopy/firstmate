@@ -1,0 +1,201 @@
+{
+  "isolation": "Disposable FM_HOME and HOME under the worktree; real tmux on per-case sockets; ps -u suppressed solely to prevent unrelated host orphan reaping. No product implementation is stubbed.",
+  "scenarios": [
+    {
+      "scenario": "missing-packet-force",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: ready\n",
+      "proof_input": null,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/missing-packet-force/home/data/t1/done-proof.md)\nerror: teardown refused: task t1 requires a done proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/missing-packet-force/home/data/t1/done-proof.md); nothing was changed\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control",
+        "fm-t1"
+      ],
+      "metadata_exists_after": true,
+      "all_home_files_unchanged": true,
+      "result": "pass"
+    },
+    {
+      "scenario": "placeholder-force",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: ready\n",
+      "proof_input": "root_cause: stale cache key\nregression_test: isolated completion cleanup reproduction\nretest: cleanup retried after repairing the packet\nauthoritative_state: task metadata and endpoint checked after invocation\nartifact_or_scope: disposable task t1\nrollback: TODO\n",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "refused: not done, fix: rollback\nerror: teardown refused: task t1 requires a done proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/placeholder-force/home/data/t1/done-proof.md); nothing was changed\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control",
+        "fm-t1"
+      ],
+      "metadata_exists_after": true,
+      "all_home_files_unchanged": true,
+      "result": "pass"
+    },
+    {
+      "scenario": "padded-placeholder-force",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: ready\n",
+      "proof_input": "root_cause: stale cache key\nregression_test: isolated completion cleanup reproduction\nretest: cleanup retried after repairing the packet\nauthoritative_state: task metadata and endpoint checked after invocation\nartifact_or_scope: disposable task t1\nrollback: \tunknown \t\n",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "refused: not done, fix: rollback\nerror: teardown refused: task t1 requires a done proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/padded-placeholder-force/home/data/t1/done-proof.md); nothing was changed\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control",
+        "fm-t1"
+      ],
+      "metadata_exists_after": true,
+      "all_home_files_unchanged": true,
+      "result": "pass"
+    },
+    {
+      "scenario": "crlf-workaround-force",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: ready\n",
+      "proof_input": "root_cause: stale cache key\r\nregression_test: isolated completion cleanup reproduction\r\nretest: cleanup retried after repairing the packet\r\nauthoritative_state: task metadata and endpoint checked after invocation\r\nartifact_or_scope: disposable task t1\r\nrollback: restore disposable task records\r\nstatus: workaround \t\r\n",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "refused: not done, fix: status=workaround\nerror: teardown refused: task t1 requires a done proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/crlf-workaround-force/home/data/t1/done-proof.md); nothing was changed\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control",
+        "fm-t1"
+      ],
+      "metadata_exists_after": true,
+      "all_home_files_unchanged": true,
+      "result": "pass"
+    },
+    {
+      "scenario": "continuation-cannot-hide-done",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: PR https://example.invalid/pr/1\n checks green\n",
+      "proof_input": null,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/continuation-cannot-hide-done/home/data/t1/done-proof.md)\nerror: teardown refused: task t1 requires a done proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/continuation-cannot-hide-done/home/data/t1/done-proof.md); nothing was changed\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control",
+        "fm-t1"
+      ],
+      "metadata_exists_after": true,
+      "all_home_files_unchanged": true,
+      "result": "pass"
+    },
+    {
+      "scenario": "keyed-indented-done",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": " \tdone [key=fix]: ready\n checks green\n",
+      "proof_input": null,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "refused: done claimed without a proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/keyed-indented-done/home/data/t1/done-proof.md)\nerror: teardown refused: task t1 requires a done proof packet (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/keyed-indented-done/home/data/t1/done-proof.md); nothing was changed\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control",
+        "fm-t1"
+      ],
+      "metadata_exists_after": true,
+      "all_home_files_unchanged": true,
+      "result": "pass"
+    },
+    {
+      "scenario": "complete-packet-cleans-endpoint",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: ready\n",
+      "proof_input": "root_cause: stale cache key\nregression_test: isolated completion cleanup reproduction\nretest: cleanup retried after repairing the packet\nauthoritative_state: task metadata and endpoint checked after invocation\nartifact_or_scope: disposable task t1\nrollback: restore disposable task records\n",
+      "exit_code": 0,
+      "stdout": "teardown t1 complete (window proof:fm-t1, worktree /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/complete-packet-cleans-endpoint/worktree)\nBacklog: t1 just finished (config/backlog-backend selects manual editing). Update /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/complete-packet-cleans-endpoint/home/data/backlog.md - move t1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.\n",
+      "stderr": "ok: proof packet complete\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the guarded operation WILL still run.\n\u25cf  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control"
+      ],
+      "metadata_exists_after": false,
+      "all_home_files_unchanged": false,
+      "result": "pass"
+    },
+    {
+      "scenario": "complete-crlf-packet-cleans-endpoint",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done [key=fix]: ready\n checks green\n",
+      "proof_input": "root_cause: stale cache key\r\nregression_test: isolated completion cleanup reproduction\r\nretest: cleanup retried after repairing the packet\r\nauthoritative_state: task metadata and endpoint checked after invocation\r\nartifact_or_scope: disposable task t1\r\nrollback: restore disposable task records\r\n",
+      "exit_code": 0,
+      "stdout": "teardown t1 complete (window proof:fm-t1, worktree /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/complete-crlf-packet-cleans-endpoint/worktree)\nBacklog: t1 just finished (config/backlog-backend selects manual editing). Update /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/complete-crlf-packet-cleans-endpoint/home/data/backlog.md - move t1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.\n",
+      "stderr": "ok: proof packet complete\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the guarded operation WILL still run.\n\u25cf  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control"
+      ],
+      "metadata_exists_after": false,
+      "all_home_files_unchanged": false,
+      "result": "pass"
+    },
+    {
+      "scenario": "non-optin-needs-no-packet",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: ready\n",
+      "proof_input": null,
+      "exit_code": 0,
+      "stdout": "teardown t1 complete (window proof:fm-t1, worktree /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/non-optin-needs-no-packet/worktree)\nBacklog: t1 just finished (config/backlog-backend selects manual editing). Update /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/non-optin-needs-no-packet/home/data/backlog.md - move t1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.\n",
+      "stderr": "\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the guarded operation WILL still run.\n\u25cf  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control"
+      ],
+      "metadata_exists_after": false,
+      "all_home_files_unchanged": false,
+      "result": "pass"
+    },
+    {
+      "scenario": "later-working-event-needs-no-packet",
+      "command": "FM_HOME=<isolated-home> bin/fm-teardown.sh t1 --force",
+      "status_input": "done: ready\nworking: follow-up\n continuation\n",
+      "proof_input": null,
+      "exit_code": 0,
+      "stdout": "teardown t1 complete (window proof:fm-t1, worktree /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/later-working-event-needs-no-packet/worktree)\nBacklog: t1 just finished (config/backlog-backend selects manual editing). Update /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.test-phase-tmp/live/later-working-event-needs-no-packet/home/data/backlog.md - move t1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.\n",
+      "stderr": "ok: latest status is not a done claim\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the guarded operation WILL still run.\n\u25cf  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5M3VXTJ16AYP7T1V2RR6XK9/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n",
+      "windows_before": [
+        "control",
+        "fm-t1"
+      ],
+      "windows_after": [
+        "control"
+      ],
+      "metadata_exists_after": false,
+      "all_home_files_unchanged": false,
+      "result": "pass"
+    }
+  ]
+}
