@@ -27,6 +27,13 @@
 # automatic backend without compatible tasks-axi refuses before cleanup.
 # None of this loosens the landed-work gates below: the transition runs only on
 # the paths that already proceed to remove the record.
+# Completion-proof gate: only tasks with meta `proof=required` opt in.
+# Before cleanup, invoke bin/fm-done-proof.sh --status on state/<id>.status
+# and data/<id>/done-proof.md under the selected home. The checker owns packet
+# validation and latest-event selection; a done event requires a complete packet,
+# and a missing status file also refuses. --force never lifts this refusal.
+# Tasks without the opt-in retain their existing teardown behavior.
+# Regression coverage: tests/fm-teardown-done-proof.test.sh.
 # The close - and only the close - is replaced by `tasks-axi reopen` with the
 # deliverable recorded while the backlog item is still an open captain call
 # (bin/fm-captain-hold.sh `open` owns that predicate), because the policy holds
@@ -450,6 +457,14 @@ CONTROL_LOCK_HELD=1
 # down a worktree (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
 FM_LOCK_LOG_PREFIX=teardown
+
+# Apply the opt-in completion-proof gate described in this script's header.
+if [ "$(fm_meta_get "$META" proof)" = required ]; then
+  if ! "$SCRIPT_DIR/fm-done-proof.sh" --status "$STATE/$ID.status" "$DATA/$ID/done-proof.md" >&2; then
+    echo "error: teardown refused: task $ID requires a done proof packet ($DATA/$ID/done-proof.md); nothing was changed" >&2
+    exit 1
+  fi
+fi
 
 fm_backlog_record_present "$META" "task record" "$STATE" || {
   echo "error: teardown refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
