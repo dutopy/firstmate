@@ -10,9 +10,11 @@
 # --squash, --merge, --rebase, or --method after the optional -- separator.
 # A GitHub merge is refused unless every pre-merge condition holds, each read
 # live at merge time rather than taken from recorded metadata: the pull request
-# is open, not a draft, mergeable, free of conflicts, and every unwaived check
-# is green at the exact current head commit, where github_checks_not_green below
-# owns what makes a check green and judges each one by its current run.
+# is open, not a draft, mergeable, free of conflicts, has at least one check
+# result at the exact current head commit, and every unwaived check is green,
+# where github_checks_not_green below owns what makes a check green and judges
+# each one by its current run. An empty check rollup refuses with the exact head
+# and instructions to rerun CI there first; --allow-red cannot waive that refusal.
 # Every failing condition is reported, not
 # just the first. The verified head is then passed to gh as
 # --match-head-commit, so a push that lands between that read and the merge
@@ -624,7 +626,7 @@ github_checks_not_green() {
 # Pre-merge conditions for a GitHub pull request, read from one live view.
 # Sets FM_PR_MERGE_HEAD to the verified head on success.
 github_verify_mergeable() {
-  local json fields line red name covered
+  local json fields line red name covered checks_seen
   local total=0 named=0 refusals=''
   local state='' draft='' mergeable='' merge_state='' live_head='' base=''
 
@@ -694,6 +696,17 @@ FIELDS
 "
   [ "$merge_state" != DIRTY ] \
     || refusals="$refusals  - mergeStateStatus is DIRTY (conflicts)
+"
+  # A head with no check result at all reads as "nothing red". That is not
+  # green: CI never reported on this exact commit (for example a merge or push
+  # that produced no run), so the merge would land unvalidated code.
+  if ! checks_seen=$(printf '%s' "$json" | jq -r '.statusCheckRollup | length' 2>/dev/null) \
+      || ! [ "$checks_seen" -ge 0 ] 2>/dev/null; then
+    echo "error: could not read the GitHub pull request state before merging" >&2
+    return 1
+  fi
+  [ "$checks_seen" -gt 0 ] \
+    || refusals="$refusals  - no check result exists on head $live_head: relancer le CI d'abord (rerun CI on this exact head first)
 "
 
   uncovered=''

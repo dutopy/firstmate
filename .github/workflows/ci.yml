@@ -72,7 +72,10 @@ jobs:
     # A packed hint sum is not a measured job wall time or proof of headroom.
     # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
     # Changes to this cap or the lane count require a separate scope decision.
-    timeout-minutes: 10
+    # Scope decision (Firstmate/captain, 24 Oct): main ran this lane in 9m54s
+    # against the former 10 minute cap, so GitHub cancelled healthy runs
+    # without a verdict. The cap is 15 minutes: a hang tripwire with margin.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -115,8 +118,9 @@ jobs:
   tests-portable-parallel-2:
     name: Behavior portable parallel 2
     runs-on: ubuntu-latest
-    # Same timeout rationale as portable parallel shard 1 above.
-    timeout-minutes: 10
+    # Same timeout rationale and 24 Oct scope decision as portable parallel
+    # shard 1 above.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -159,10 +163,12 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    # Current runners can take ~20 min for a balanced shard. This 30-minute cap
-    # preserves the timeout as a hang tripwire while allowing runner-speed and
-    # job-setup margin; it is not the expected healthy end of the lane.
-    timeout-minutes: 30
+    # Scope decision (Firstmate, 24 Oct): serial 5 was cancelled at exactly the
+    # former 30 minute cap with no failing test, so the cap is 45 minutes.
+    # This remains a hang tripwire with runner-speed and job-setup margin,
+    # not the expected healthy end of the lane.
+    # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
+    timeout-minutes: 45
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
