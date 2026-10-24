@@ -228,6 +228,7 @@ test_failed_budget_write_preserves_holder() {
   [ "$status" -ne 0 ] || fail "replacement proceeded without a persisted budget"
   kill -0 "$old" 2>/dev/null || fail "budget write failure killed the holder"
   [ "$(cat "$state/.watch.lock/pid")" = "$old" ] || fail "budget write failure changed the holder"
+  rmdir "$state/.watcher-replace.log"
   kill -CONT "$old"
   sleep 0.5
   kill -0 "$old" 2>/dev/null || fail "budget write failure sent a deferred TERM"
@@ -260,9 +261,9 @@ test_failed_loud_publication_preserves_holder() {
   fakebin="$dir/fakebin"
   now=$(date +%s)
   printf '%s\t999\t400\n' "$((now - 2000))" > "$state/.watcher-replace.log"
-  mkdir "$state/.watcher-replace-loud"
   start_frozen_watcher "$state" "$fakebin"
   old=$FROZEN_PID
+  mkdir "$state/.watcher-replace-loud"
   (watch_env "$state" "$fakebin" "$WATCH") > "$dir/out" 2> "$dir/err" || status=$?
   [ "$status" -ne 0 ] || fail "replacement proceeded without a published loud marker"
   kill -0 "$old" 2>/dev/null || fail "loud publication failure killed the holder"
@@ -270,6 +271,9 @@ test_failed_loud_publication_preserves_holder() {
   lines=$(wc -l < "$state/.watcher-replace.log")
   [ "$lines" -eq 2 ] || fail "loud publication failure lost the reserved budget"
   if grep -F 'LOUD' "$dir/err" > /dev/null; then fail "failed loud publication promised delivery"; fi
+  # Remove the injected fault before resuming: a directory can satisfy -s,
+  # causing the holder's ordinary loud-marker delivery to exit without TERM.
+  rmdir "$state/.watcher-replace-loud"
   kill -CONT "$old"
   sleep 0.5
   kill -0 "$old" 2>/dev/null || fail "loud publication failure sent a deferred TERM"
