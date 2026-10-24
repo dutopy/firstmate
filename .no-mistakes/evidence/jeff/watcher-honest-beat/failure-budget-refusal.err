@@ -1,0 +1,2 @@
+/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/bin/fm-watch.sh: line 2150: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/.test-phase/live/failure-budget/state/.watcher-replace.log: Is a directory
+watcher: lock held by live pid 3807 but heartbeat is stale for 846153487s (>30s); inspect or stop that watcher before re-arming.

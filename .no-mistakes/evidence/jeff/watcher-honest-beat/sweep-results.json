@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Running ten registered slow custom checks advances the beacon during the check sweep",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/check-sweep.json",
+    "reason": ""
+  }
+]

@@ -1,0 +1,48 @@
+{
+  "registrations": [
+    "registered: state/poll0.check.sh",
+    "registered: state/poll1.check.sh",
+    "registered: state/poll2.check.sh",
+    "registered: state/poll3.check.sh",
+    "registered: state/poll4.check.sh",
+    "registered: state/poll5.check.sh",
+    "registered: state/poll6.check.sh",
+    "registered: state/poll7.check.sh",
+    "registered: state/poll8.check.sh",
+    "registered: state/poll9.check.sh"
+  ],
+  "executed": [
+    "poll0",
+    "poll1",
+    "poll2",
+    "poll3",
+    "poll4",
+    "poll5",
+    "poll6",
+    "poll7",
+    "poll8",
+    "poll9"
+  ],
+  "beacon_advances": [
+    {
+      "observed": 1792838335.6577668,
+      "beacon_mtime_ns": 1792838335655507000,
+      "completed_checks": 2
+    },
+    {
+      "observed": 1792838340.738936,
+      "beacon_mtime_ns": 1792838340614380000,
+      "completed_checks": 4
+    },
+    {
+      "observed": 1792838345.557892,
+      "beacon_mtime_ns": 1792838345539900000,
+      "completed_checks": 6
+    },
+    {
+      "observed": 1792838350.610044,
+      "beacon_mtime_ns": 1792838350577063000,
+      "completed_checks": 8
+    }
+  ]
+}

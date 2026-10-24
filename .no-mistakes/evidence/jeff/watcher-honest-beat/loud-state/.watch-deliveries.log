@@ -1,0 +1,1 @@
+88228	Sat Oct 24 12:37:55 2026     bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/bin/fm-watch.sh	stale: watcher replaced twice in a row within 21600s (pids 86205, stale 846153475s): the watcher keeps getting stuck, inspect state/.watcher-replace.log 

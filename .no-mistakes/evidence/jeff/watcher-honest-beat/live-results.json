@@ -1,0 +1,79 @@
+[
+  {
+    "name": "Monitoring a 5 MB keyed-decision journal with 3000 handled messages keeps its beacon advancing",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/progress-fold-beacon.json",
+    "reason": ""
+  },
+  {
+    "name": "Monitoring a 5 MB working-only journal keeps its beacon advancing",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/progress-span-beacon.json",
+    "reason": ""
+  },
+  {
+    "name": "Rearming replaces a frozen same-home watcher once; concurrent and immediate repeat arms cannot spend a second budget",
+    "result": "pass",
+    "live": true,
+    "evidence": "replacement-replacement.out, replacement-concurrent.err, replacement-budget-refusal.err, replacement-state/.watcher-replace.log",
+    "reason": ""
+  },
+  {
+    "name": "Rearming refuses foreign-home without signalling the existing holder",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/guard-foreign-home-refused.err",
+    "reason": ""
+  },
+  {
+    "name": "Rearming refuses foreign-script without signalling the existing holder",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/guard-foreign-script-refused.err",
+    "reason": ""
+  },
+  {
+    "name": "Rearming refuses recycled-identity without signalling the existing holder",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/guard-recycled-identity-refused.err",
+    "reason": ""
+  },
+  {
+    "name": "Rearming refuses fresh-beacon without signalling the existing holder",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/guard-fresh-beacon-refused.err",
+    "reason": ""
+  },
+  {
+    "name": "A repeat replacement within six hours uses the latest entry, delivers a durable stale notification, and preserves all history",
+    "result": "pass",
+    "live": true,
+    "evidence": "loud-repeat.out, loud-repeat.err, loud-state/.wake-queue, loud-state/.watcher-replace.log",
+    "reason": ""
+  },
+  {
+    "name": "An unwritable budget path preserves the holder or retains escalation for successful retry",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/failure-budget-refusal.err; failure-budget-state",
+    "reason": ""
+  },
+  {
+    "name": "An unwritable publication path preserves the holder or retains escalation for successful retry",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/failure-publication-refusal.err; failure-publication-state",
+    "reason": ""
+  },
+  {
+    "name": "An unwritable queue path preserves the holder or retains escalation for successful retry",
+    "result": "pass",
+    "live": true,
+    "evidence": "/Users/pierre/.no-mistakes/evidence/01M5PKPM7M52DH0Z731MB2BN97/failure-queue-refusal.err; failure-queue-state",
+    "reason": ""
+  }
+]

@@ -1,0 +1,11 @@
+ok - a multi-MB fold keeps the watcher beacon fresh at the default cadence (2 advances)
+ok - a multi-MB span keeps the watcher beacon fresh at the default cadence (2 advances)
+ok - failed loud publication preserves the holder and reserved budget
+ok - failed budget persistence never signals the holder
+ok - failed loud persistence retains the marker for the next arm
+tests/fm-watch-stuck-replacement.test.sh: line 138:  1567 Killed: 9                  watch_env "$state" "$fakebin" "$WATCH" > "$state/../frozen.out" 2>&1
+ok - a frozen stale watcher of this home is replaced exactly once
+ok - a second replacement inside the window is refused loudly
+tests/fm-watch-stuck-replacement.test.sh: line 184: 15099 Killed: 9                  watch_env "$state" "$fakebin" "$WATCH" > "$state/../frozen.out" 2>&1
+ok - two replacements in a row surface a wake
+ok - a live holder without this home's lock identity is never killed

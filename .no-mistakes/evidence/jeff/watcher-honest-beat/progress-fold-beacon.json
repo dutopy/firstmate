@@ -1,0 +1,32 @@
+{
+  "journal_bytes": 5373870,
+  "handled_files": 3000,
+  "initial_mtime_ns": 1792838201346311781,
+  "advances": [
+    {
+      "observed": 1792838204.97946,
+      "beacon_mtime_ns": 1792838204869420000
+    },
+    {
+      "observed": 1792838206.6573539,
+      "beacon_mtime_ns": 1792838206619862000
+    },
+    {
+      "observed": 1792838207.611866,
+      "beacon_mtime_ns": 1792838207537232000
+    },
+    {
+      "observed": 1792838212.240192,
+      "beacon_mtime_ns": 1792838212121334000
+    },
+    {
+      "observed": 1792838217.113558,
+      "beacon_mtime_ns": 1792838217040719000
+    },
+    {
+      "observed": 1792838222.168372,
+      "beacon_mtime_ns": 1792838222118802000
+    }
+  ],
+  "watcher_running": true
+}

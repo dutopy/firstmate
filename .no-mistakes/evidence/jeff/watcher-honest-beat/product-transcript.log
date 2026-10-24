@@ -1,0 +1,86 @@
+=== replacement-replacement.err ===
+watcher: replacing stuck watcher pid 43612 (heartbeat stale 846153449s, lock identity matches this home).
+
+=== replacement-replacement.out ===
+check: rearm-resurface
+
+=== replacement-concurrent.err ===
+watcher: lock held by live pid 43612 but heartbeat is stale for 846153450s (>30s); inspect or stop that watcher before re-arming.
+
+=== replacement-budget-refusal.err ===
+watcher: stale holder pid 63667 not replaced again: one replacement per 900s window (last 1792838249).
+watcher: lock held by live pid 63667 but heartbeat is stale for 846153461s (>30s); inspect or stop that watcher before re-arming.
+
+=== guard-foreign-home-refused.err ===
+watcher: lock held by live pid 68242 but heartbeat is stale for 846153464s (>30s); inspect or stop that watcher before re-arming.
+
+=== guard-foreign-script-refused.err ===
+watcher: lock held by live pid 74235 but heartbeat is stale for 846153467s (>30s); inspect or stop that watcher before re-arming.
+
+=== guard-recycled-identity-refused.err ===
+watcher: lock held by live pid 78191 but heartbeat is stale for 846153470s (>30s); inspect or stop that watcher before re-arming.
+
+=== guard-fresh-beacon-refused.out ===
+watcher: already running pid 82375
+
+=== loud-repeat.err ===
+watcher: LOUD - second replacement inside 21600s; the captain will be told.
+watcher: replacing stuck watcher pid 86205 (heartbeat stale 846153475s, lock identity matches this home).
+
+=== loud-repeat.out ===
+stale: watcher replaced twice in a row within 21600s (pids 86205, stale 846153475s): the watcher keeps getting stuck, inspect state/.watcher-replace.log 
+
+=== loud-state/.watcher-replace.log ===
+1792813073	999	400
+1792813072	999	400
+1792813071	999	400
+1792813070	999	400
+1792813069	999	400
+1792813068	999	400
+1792813067	999	400
+1792813066	999	400
+1792813065	999	400
+1792813064	999	400
+1792813063	999	400
+1792813062	999	400
+1792813061	999	400
+1792813060	999	400
+1792813059	999	400
+1792813058	999	400
+1792813057	999	400
+1792813056	999	400
+1792813055	999	400
+1792813054	999	400
+1792813053	999	400
+1792813052	999	400
+1792813051	999	400
+1792813050	999	400
+1792813049	999	400
+1792836273	999	400
+1792838276	86205	846153475
+
+=== loud-state/.wake-queue ===
+1792838284	1	stale	watcher-replacement	stale: watcher replaced twice in a row within 21600s (pids 86205, stale 846153475s): the watcher keeps getting stuck, inspect state/.watcher-replace.log 
+
+=== failure-budget-refusal.err ===
+/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/bin/fm-watch.sh: line 2150: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/.test-phase/live/failure-budget/state/.watcher-replace.log: Is a directory
+watcher: lock held by live pid 3807 but heartbeat is stale for 846153487s (>30s); inspect or stop that watcher before re-arming.
+
+=== failure-publication-refusal.err ===
+/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/bin/fm-watch.sh: line 2152: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/.test-phase/live/failure-publication/state/.watcher-replace-loud: Is a directory
+watcher: lock held by live pid 7417 but heartbeat is stale for 846153489s (>30s); inspect or stop that watcher before re-arming.
+
+=== failure-queue-refusal.err ===
+/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/bin/fm-wake-lib.sh: line 1970: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5PKPM7M52DH0Z731MB2BN97/.test-phase/live/failure-queue/state/.wake-queue: Is a directory
+
+=== failure-queue-retry.out ===
+stale: watcher replaced twice in a row 
+
+=== failure-queue-state/.wake-queue ===
+1792838293	2	stale	watcher-replacement	stale: watcher replaced twice in a row 
+
+=== outside-loud-window-replacement.err ===
+watcher: replacing stuck watcher pid 66742 (heartbeat stale 846153601s, lock identity matches this home).
+
+=== outside-loud-window-replacement.out ===
+check: rearm-resurface

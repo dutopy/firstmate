@@ -1,0 +1,24 @@
+{
+  "journal_bytes": 5265000,
+  "handled_files": 3000,
+  "initial_mtime_ns": 1792838225492012261,
+  "advances": [
+    {
+      "observed": 1792838229.052073,
+      "beacon_mtime_ns": 1792838229014411000
+    },
+    {
+      "observed": 1792838234.138397,
+      "beacon_mtime_ns": 1792838234009133000
+    },
+    {
+      "observed": 1792838239.087478,
+      "beacon_mtime_ns": 1792838239029071000
+    },
+    {
+      "observed": 1792838244.108265,
+      "beacon_mtime_ns": 1792838244008665000
+    }
+  ],
+  "watcher_running": true
+}

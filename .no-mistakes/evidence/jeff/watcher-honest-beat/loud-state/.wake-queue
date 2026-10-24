@@ -1,0 +1,1 @@
+1792838284	1	stale	watcher-replacement	stale: watcher replaced twice in a row within 21600s (pids 86205, stale 846153475s): the watcher keeps getting stuck, inspect state/.watcher-replace.log 

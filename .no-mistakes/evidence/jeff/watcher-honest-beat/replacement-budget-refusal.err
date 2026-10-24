@@ -1,0 +1,2 @@
+watcher: stale holder pid 63667 not replaced again: one replacement per 900s window (last 1792838249).
+watcher: lock held by live pid 63667 but heartbeat is stale for 846153461s (>30s); inspect or stop that watcher before re-arming.

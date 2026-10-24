@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Rearming after the six-hour escalation window replaces the stuck holder without a repeated-replacement alarm",
+    "result": "pass",
+    "live": true,
+    "evidence": "outside-loud-window-replacement.out; outside-loud-window-replacement.err; outside-loud-window-state/.watcher-replace.log",
+    "reason": ""
+  }
+]
