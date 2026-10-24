@@ -46,44 +46,62 @@ start_frozen_watcher() {  # <state> <fakebin> ; sets FROZEN_PID
   touch -t 200001010000 "$state/.last-watcher-beat"
 }
 
-test_fold_touches_beacon_while_running() {
-  local dir state beat journal i n m1 m2 changes=0 pid last
-  dir=$(make_case beat)
-  state="$dir/state"
-  beat="$state/.last-beat"
-  journal="$state/big.status"
-  mkdir -p "$state/big-task.inbox/handled"
-  i=0
-  while [ "$i" -lt 3000 ]; do
-    : > "$state/big-task.inbox/handled/r$i.md"
-    i=$((i + 1))
+test_status_scans_touch_beacon_while_running() {
+  local dir state beat journal mode i n m1 m2 changes pid last too_fast
+  for mode in fold span; do
+    dir=$(make_case "beat-$mode")
+    state="$dir/state"
+    beat="$state/.last-beat"
+    journal="$state/big.status"
+    mkdir -p "$state/big-task.inbox/handled"
+    i=0
+    while [ "$i" -lt 3000 ]; do
+      : > "$state/big-task.inbox/handled/r$i.md"
+      i=$((i + 1))
+    done
+    awk -v mode="$mode" 'BEGIN {
+      pad = sprintf("%800s", ""); gsub(/ /, "x", pad)
+      for (i = 1; i <= 6500; i++) {
+        if (mode == "fold") printf "needs-decision [key=k%d]: %s\n", i % 40, pad
+        else printf "working: %s\n", pad
+      }
+    }' > "$journal"
+    n=$(wc -c < "$journal")
+    [ "$n" -ge 5000000 ] || fail "fixture journal is only $n bytes"
+    printf 'kind=ship\n' > "$state/big.meta"
+    touch -t 200001010000 "$beat"
+    (
+      FM_BEAT_FILE="$beat" FM_BEAT_LAST=$SECONDS
+      if [ "$mode" = fold ]; then
+        _fm_status_open_decision_origins "$journal" ship
+      else
+        status_span_first_actionable_record "$journal" 0
+      fi
+    ) > "$dir/result" 2> "$dir/err" &
+    pid=$!
+    m1=$(fm_path_mtime "$beat")
+    i=0
+    changes=0
+    too_fast=0
+    while [ "$i" -lt 12 ]; do
+      sleep 1
+      kill -0 "$pid" 2>/dev/null || break
+      m2=$(fm_path_mtime "$beat")
+      if [ "$m2" != "$m1" ]; then
+        if [ "$changes" -gt 0 ] && [ $((m2 - m1)) -lt 5 ]; then too_fast=1; fi
+        changes=$((changes + 1))
+        m1=$m2
+      fi
+      i=$((i + 1))
+    done
+    last=$(kill -0 "$pid" 2>/dev/null && echo running || echo finished)
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    [ "$last" = running ] || [ "$changes" -ge 1 ] || fail "$mode finished too early to prove anything"
+    [ "$changes" -ge 2 ] || fail "beacon advanced only $changes time(s) during a multi-MB $mode"
+    [ "$too_fast" -eq 0 ] || fail "$mode refreshed the beacon faster than the fixed 5-second cadence"
+    pass "a multi-MB $mode keeps the watcher beacon fresh at the default cadence ($changes advances)"
   done
-  # ~5.2 MB: keyed decisions padded to ~800 bytes per line, like the real log.
-  awk 'BEGIN { pad = sprintf("%760s", ""); gsub(/ /, "x", pad); for (i = 1; i <= 6500; i++) printf "needs-decision [key=k%d]: %s\n", i % 40, pad }' > "$journal"
-  n=$(wc -c < "$journal")
-  [ "$n" -ge 5000000 ] || fail "fixture journal is only $n bytes"
-  printf 'kind=ship\n' > "$state/big.meta"
-  touch -t 200001010000 "$beat"
-  (
-    FM_BEAT_FILE="$beat" FM_BEAT_PROGRESS_SECONDS=1
-    _fm_status_open_decision_origins "$journal" ship > /dev/null 2>&1
-  ) &
-  pid=$!
-  m1=$(fm_path_mtime "$beat")
-  i=0
-  while [ "$i" -lt 12 ]; do
-    sleep 1
-    kill -0 "$pid" 2>/dev/null || break
-    m2=$(fm_path_mtime "$beat")
-    [ "$m2" != "$m1" ] && { changes=$((changes + 1)); m1=$m2; }
-    i=$((i + 1))
-  done
-  last=$(kill -0 "$pid" 2>/dev/null && echo running || echo finished)
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  [ "$last" = running ] || [ "$changes" -ge 1 ] || fail "fold finished too early to prove anything"
-  [ "$changes" -ge 2 ] || fail "beacon advanced only $changes time(s) during a multi-MB fold (stale beacon: the watcher looks dead)"
-  pass "a multi-MB fold keeps the watcher beacon fresh ($changes advances)"
 }
 
 test_stuck_watcher_replaced_once() {
@@ -151,7 +169,7 @@ test_repeated_replacement_is_loud() {
   old=$FROZEN_PID
   out="$dir/new.out"
   err="$dir/new.err"
-  FM_WATCHER_REPLACE_WINDOW=900 watch_env "$state" "$fakebin" "$WATCH" > "$out" 2> "$err" &
+  watch_env "$state" "$fakebin" "$WATCH" > "$out" 2> "$err" &
   new=$!
   while [ "$i" -lt 100 ] && ! grep -F 'replaced twice in a row' "$out" > /dev/null 2>&1; do
     sleep 0.1
@@ -227,7 +245,33 @@ test_failed_loud_delivery_preserves_marker() {
   pass "failed loud persistence retains the marker for the next arm"
 }
 
-test_fold_touches_beacon_while_running
+test_failed_loud_publication_preserves_holder() {
+  local dir state fakebin old now lines status=0
+  dir=$(make_case loud-publication-failure)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  now=$(date +%s)
+  printf '%s\t999\t400\n' "$((now - 2000))" > "$state/.watcher-replace.log"
+  mkdir "$state/.watcher-replace-loud"
+  start_frozen_watcher "$state" "$fakebin"
+  old=$FROZEN_PID
+  (watch_env "$state" "$fakebin" "$WATCH") > "$dir/out" 2> "$dir/err" || status=$?
+  [ "$status" -ne 0 ] || fail "replacement proceeded without a published loud marker"
+  kill -0 "$old" 2>/dev/null || fail "loud publication failure killed the holder"
+  [ "$(cat "$state/.watch.lock/pid")" = "$old" ] || fail "loud publication failure changed the holder"
+  lines=$(wc -l < "$state/.watcher-replace.log")
+  [ "$lines" -eq 2 ] || fail "loud publication failure lost the reserved budget"
+  if grep -F 'LOUD' "$dir/err" > /dev/null; then fail "failed loud publication promised delivery"; fi
+  kill -CONT "$old"
+  sleep 0.5
+  kill -0 "$old" 2>/dev/null || fail "loud publication failure sent a deferred TERM"
+  kill -KILL "$old" 2>/dev/null || true
+  wait "$old" 2>/dev/null || true
+  pass "failed loud publication preserves the holder and reserved budget"
+}
+
+test_status_scans_touch_beacon_while_running
+test_failed_loud_publication_preserves_holder
 test_failed_budget_write_preserves_holder
 test_failed_loud_delivery_preserves_marker
 test_stuck_watcher_replaced_once

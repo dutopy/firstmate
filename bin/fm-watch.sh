@@ -2112,12 +2112,12 @@ fi
 # Replaces only when every guard holds: the recorded pid is alive, its lock
 # metadata names this home and this watcher path, its process identity still
 # matches (so a recycled pid is never killed), and its beacon is older than the
-# stale grace. At most one replacement per FM_WATCHER_REPLACE_WINDOW (900s); a
-# second replacement inside FM_WATCHER_REPLACE_LOUD_WINDOW (6h) is recorded in
+# stale grace. At most one replacement per 900 seconds; a
+# second replacement inside 6 hours is recorded in
 # state/.watcher-replace-loud so the new watcher surfaces it as a wake the
 # captain sees. Anything else falls through to the refusal below, unchanged.
-WATCHER_REPLACE_WINDOW=${FM_WATCHER_REPLACE_WINDOW:-900}
-WATCHER_REPLACE_LOUD_WINDOW=${FM_WATCHER_REPLACE_LOUD_WINDOW:-21600}
+WATCHER_REPLACE_WINDOW=900
+WATCHER_REPLACE_LOUD_WINDOW=21600
 watcher_replace_stale_holder() {
   local pid=${FM_LOCK_HELD_PID:-} lock="$STATE/.watcher-replace.lock" status=0
   if ! fm_lock_try_acquire "$lock"; then
@@ -2150,7 +2150,7 @@ watcher_replace_stale_holder_locked() {
   printf '%s\t%s\t%s\n' "$now" "$pid" "$age" >> "$ledger" 2>/dev/null || return 1
   if [ "$last" -gt 0 ] && [ $((now - last)) -lt "$WATCHER_REPLACE_LOUD_WINDOW" ]; then
     printf 'watcher replaced twice in a row within %ss (pids %s, stale %ss): the watcher keeps getting stuck, inspect state/.watcher-replace.log\n' \
-      "$WATCHER_REPLACE_LOUD_WINDOW" "$pid" "$age" > "$STATE/.watcher-replace-loud" 2>/dev/null || true
+      "$WATCHER_REPLACE_LOUD_WINDOW" "$pid" "$age" > "$STATE/.watcher-replace-loud" 2>/dev/null || return 1
     echo "watcher: LOUD - second replacement inside ${WATCHER_REPLACE_LOUD_WINDOW}s; the captain will be told." >&2
   fi
   echo "watcher: replacing stuck watcher pid $pid (heartbeat stale ${age}s, lock identity matches this home)." >&2

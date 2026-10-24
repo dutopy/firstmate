@@ -108,13 +108,13 @@ fm_path_age() {
 # Honest liveness: the watcher sets FM_BEAT_FILE (a plain shell variable, never
 # exported, so only the watcher's own shell and its subshells beat) and long
 # phases call this so the beacon advances while work is happening, not only once
-# per loop iteration. Rate-limited to one touch per FM_BEAT_PROGRESS_SECONDS (5).
+# per loop iteration. Rate-limited to one touch per 5 seconds.
 # A no-op everywhere FM_BEAT_FILE is unset, so libraries stay safe to source.
 FM_BEAT_LAST=0
 fm_beat_progress() {
   [ -n "${FM_BEAT_FILE:-}" ] || return 0
   local now=$SECONDS
-  [ $((now - FM_BEAT_LAST)) -ge "${FM_BEAT_PROGRESS_SECONDS:-5}" ] || return 0
+  [ $((now - FM_BEAT_LAST)) -ge 5 ] || return 0
   FM_BEAT_LAST=$now
   touch "$FM_BEAT_FILE" 2>/dev/null || true
   return 0

@@ -146,9 +146,11 @@ Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited s
 
 ## Honest beacon and bounded replacement
 
-The watcher advances `state/.last-watcher-beat` inside long phases (status-journal fold, signal scan, check sweep) through `fm_beat_progress`, rate-limited to one touch per 5 seconds, so a slow cycle no longer looks like a dead watcher.
+The watcher advances `state/.last-watcher-beat` inside long phases (status-journal fold and span scan, signal scan, check sweep) through `fm_beat_progress`, rate-limited to one touch per 5 seconds, so a slow cycle no longer looks like a dead watcher.
 When a new watcher finds the lock held by a live pid whose beacon is older than the stale grace, it replaces that holder only if the lock metadata names this home and this `fm-watch.sh` and the pid identity still matches.
 A holder that does not match is never signalled, and the refusal message is unchanged.
-At most one replacement runs per `FM_WATCHER_REPLACE_WINDOW` (900 s), recorded in `state/.watcher-replace.log`.
-A second replacement inside `FM_WATCHER_REPLACE_LOUD_WINDOW` (6 h) writes `state/.watcher-replace-loud`, and the new watcher surfaces it as a `stale:` wake for the captain.
-`tests/fm-watch-stuck-replacement.test.sh` covers the beacon during a 5 MB fold with a 3000-file handled inbox, the single replacement of a frozen watcher, the window refusal, the loud wake, and the never-kill-a-foreign-holder case.
+Replacement attempts are serialized, with at most one budget reservation per 900 seconds recorded in the append-only `state/.watcher-replace.log` before signalling the holder.
+A replacement whose latest previous reservation is less than 21600 seconds (6 hours) old must also write `state/.watcher-replace-loud` before signalling; a failed write refuses replacement and retains the reserved budget.
+The new watcher queues a durable `stale:` wake for the captain before removing the loud marker.
+The replacement windows and the 5-second progress cadence are fixed, not environment-configurable.
+`tests/fm-watch-stuck-replacement.test.sh` covers the default beacon cadence during a 5 MB fold and span scan with a 3000-file handled inbox, the single replacement of a frozen watcher, the window refusal, failed budget and loud-marker writes, durable loud delivery, and the never-kill-a-foreign-holder case.
