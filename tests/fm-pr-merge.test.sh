@@ -2778,6 +2778,40 @@ test_oversized_check_rollup_reads_fully() {
   pass "fm-pr-merge reads an oversized check rollup fully, keeping the head pin and the refusal"
 }
 
+test_github_head_with_no_check_result_refuses_and_allow_red_does_not_waive() {
+  local case_dir rc head
+  head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  case_dir=$(make_case github-no-check-result)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  write_github_live_json "$case_dir" "$head"
+  jq -c '.statusCheckRollup = []' "$case_dir/github-view.json" > "$case_dir/github-view.empty"
+  mv "$case_dir/github-view.empty" "$case_dir/github-view.json"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/82 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "github-no-check: a head with no check result must refuse"
+  assert_grep "relancer le CI d'abord" "$case_dir/stderr" \
+    "github-no-check: the refusal did not tell the operator to rerun CI"
+  assert_grep "$head" "$case_dir/stderr" \
+    "github-no-check: the refusal did not name the exact head"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-no-check: gh pr merge ran with no check result"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/82 \
+    --allow-red lint > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "github-no-check: --allow-red must not waive an absent result"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-no-check: gh pr merge ran after --allow-red with no check result"
+  pass "fm-pr-merge refuses a head that has no check result at all"
+}
+
 test_github_red_checks_refuse_and_allow_red_waives_named() {
   local case_dir rc head
   head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -3505,6 +3539,7 @@ test_supersession_never_crosses_check_names
 test_undated_runs_never_supersede
 test_allow_red_still_waives_only_the_current_failure
 test_allow_red_is_refused_while_away
+test_github_head_with_no_check_result_refuses_and_allow_red_does_not_waive
 test_allow_red_requires_one_separate_name
 test_away_grant_and_yolo_and_hold_for_return
 test_away_posture_refuses_asynchronous_merge_paths

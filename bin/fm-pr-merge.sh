@@ -624,7 +624,7 @@ github_checks_not_green() {
 # Pre-merge conditions for a GitHub pull request, read from one live view.
 # Sets FM_PR_MERGE_HEAD to the verified head on success.
 github_verify_mergeable() {
-  local json fields line red name covered
+  local json fields line red name covered checks_seen
   local total=0 named=0 refusals=''
   local state='' draft='' mergeable='' merge_state='' live_head='' base=''
 
@@ -694,6 +694,17 @@ FIELDS
 "
   [ "$merge_state" != DIRTY ] \
     || refusals="$refusals  - mergeStateStatus is DIRTY (conflicts)
+"
+  # A head with no check result at all reads as "nothing red". That is not
+  # green: CI never reported on this exact commit (for example a merge or push
+  # that produced no run), so the merge would land unvalidated code.
+  if ! checks_seen=$(printf '%s' "$json" | jq -r '.statusCheckRollup | length' 2>/dev/null) \
+      || ! [ "$checks_seen" -ge 0 ] 2>/dev/null; then
+    echo "error: could not read the GitHub pull request state before merging" >&2
+    return 1
+  fi
+  [ "$checks_seen" -gt 0 ] \
+    || refusals="$refusals  - no check result exists on head $live_head: relancer le CI d'abord (rerun CI on this exact head first)
 "
 
   uncovered=''
