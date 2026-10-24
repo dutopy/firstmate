@@ -2603,12 +2603,12 @@ HPACE_RACE="$TMP_ROOT/registration-pacing-race"; new_home "$HPACE_RACE"
 fm_test_track_procevent_home "$HPACE_RACE"
 PACE_RACE_LOG="$TMP_ROOT/registration-pacing-race.log"
 pe_register "$HPACE_RACE" lavish pace-race-src -- "$FAST_SOURCE" "$PACE_RACE_LOG" >/dev/null
-# The floor is far longer than any runner stall: the second start must still be
-# waiting on it when the source is re-registered, however slow the runner is.
+# A bounded 30 s floor gives re-registration margin on slow runners while
+# letting the superseded runner finish after the remaining pacing sleep.
 # A 3 s floor let a slow runner expire the wait first, so the superseded runner
 # launched its stale command (main run 40029484321).
-FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=3600 pe "$HPACE_RACE" start pace-race-src >/dev/null
-FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=3600 \
+FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=30 pe "$HPACE_RACE" start pace-race-src >/dev/null
+FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=30 \
   pe "$HPACE_RACE" start pace-race-src > "$TMP_ROOT/registration-pacing-race.out" 2>&1 &
 PACE_RACE_PID=$!
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/pace-race-src.claim" \
@@ -2616,6 +2616,12 @@ wait_for "$FM_PROCEVENT_CLAIM_ROOT/pace-race-src.claim" \
 [ "$(wc -l < "$PACE_RACE_LOG" | tr -d ' ')" = 1 ] \
   || fail "the superseded pacing fixture was not waiting on its launch floor"
 pe_register "$HPACE_RACE" lavish pace-race-src -- "$FAST_SOURCE" "$PACE_RACE_LOG" >/dev/null
+pace_race_deadline=$((SECONDS + 60))
+while kill -0 "$PACE_RACE_PID" 2>/dev/null; do
+  [ "$SECONDS" -lt "$pace_race_deadline" ] \
+    || fail "the superseded paced runner did not exit within 60 seconds after re-registration"
+  sleep 0.1
+done
 wait "$PACE_RACE_PID" || fail "the superseded paced runner failed"
 [ "$(wc -l < "$PACE_RACE_LOG" | tr -d ' ')" = 1 ] \
   || fail "the superseded paced runner invoked its stale command"
