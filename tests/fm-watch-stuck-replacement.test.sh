@@ -72,6 +72,14 @@ test_status_scans_touch_beacon_while_running() {
     touch -t 200001010000 "$beat"
     (
       FM_BEAT_FILE="$beat" FM_BEAT_LAST=$SECONDS
+      # Keep both scans busy across two real refresh intervals even on fast
+      # runners. Delegate to the real helper so its fixed cadence is tested.
+      beat_impl=$(declare -f fm_beat_progress)
+      eval "${beat_impl/fm_beat_progress/fm_test_real_beat_progress}"
+      fm_beat_progress() {
+        sleep 1
+        fm_test_real_beat_progress
+      }
       if [ "$mode" = fold ]; then
         _fm_status_open_decision_origins "$journal" ship
       else
@@ -83,7 +91,7 @@ test_status_scans_touch_beacon_while_running() {
     i=0
     changes=0
     too_fast=0
-    while [ "$i" -lt 12 ]; do
+    while [ "$i" -lt 30 ] && [ "$changes" -lt 2 ]; do
       sleep 1
       kill -0 "$pid" 2>/dev/null || break
       m2=$(fm_path_mtime "$beat")
