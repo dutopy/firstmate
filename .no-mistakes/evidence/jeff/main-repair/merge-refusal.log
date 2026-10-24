@@ -1,0 +1,8 @@
+ok - fm-pr-merge refuses a head that has no check result at all
+
+NO-CHECK REFUSAL (allow-red attempt):
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: refusing to merge https://github.com/example/repo/pull/82
+  - no check result exists on head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: relancer le CI d'abord (rerun CI on this exact head first)
+
+FORGE COMMAND TRANSCRIPT:

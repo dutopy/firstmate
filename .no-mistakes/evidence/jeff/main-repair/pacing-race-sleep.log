@@ -1,0 +1,10 @@
+Allowing the claimed runner 2 seconds to enter its real pacing sleep before replacement
+ok - a superseded sleeping runner cannot recreate stale pacing state
+
+ACTUAL SOURCE INVOCATION TIMESTAMPS:
+1792869477.385940
+1792869508.867717
+
+SUPERSEDED RUNNER OUTPUT:
+
+ELAPSED=37s; remaining pacing stamps=1

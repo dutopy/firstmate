@@ -1,0 +1,19 @@
+tmux send-keys -t @spawnwid treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5QNCE96MVMPWTRSY5M7DTJV/.phase-runtime/tmp/fm-tangle-guard.4hbsRL/spawn-rec-home/state/.rec-win-gg7.treehouse-get.67510.18044.result' Enter
+ok - fm-spawn: appends windows by session-colon, pins the name, and targets the window id
+
+RECORDED SPAWN COMMANDS (tmux fixture):
+tmux display-message -p #S
+tmux list-windows -t firstmate -F #{window_name}
+tmux new-window -dP -F #{window_id} -t firstmate: -n fm-rec-win-gg7 -c /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5QNCE96MVMPWTRSY5M7DTJV/.phase-runtime/tmp/fm-tangle-guard.4hbsRL/spawn-rec-proj
+tmux set-window-option -t @spawnwid automatic-rename off
+tmux set-window-option -t @spawnwid allow-rename off
+tmux send-keys -t @spawnwid treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5QNCE96MVMPWTRSY5M7DTJV/.phase-runtime/tmp/fm-tangle-guard.4hbsRL/spawn-rec-home/state/.rec-win-gg7.treehouse-get.67510.18044.result' Enter
+tmux display-message -p -t @spawnwid #{pane_current_path}
+tmux display-message -p -t @spawnwid #{pane_current_path}
+tmux display-message -p -t firstmate:fm-rec-win-gg7 #{pane_id}
+tmux display-message -p -t firstmate:fm-rec-win-gg7 #{pane_id}
+tmux send-keys -t firstmate:fm-rec-win-gg7 export GOTMPDIR=/tmp/fm-rec-win-gg7/gotmp Enter
+tmux send-keys -t firstmate:fm-rec-win-gg7 export FM_TASK_ID=rec-win-gg7 Enter
+tmux send-keys -t firstmate:fm-rec-win-gg7 -l env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dangerously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5QNCE96MVMPWTRSY5M7DTJV/.phase-runtime/tmp/fm-tangle-guard.4hbsRL/spawn-rec-home/state/rec-win-gg7.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5QNCE96MVMPWTRSY5M7DTJV/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5QNCE96MVMPWTRSY5M7DTJV/.phase-runtime/tmp/fm-tangle-guard.4hbsRL/spawn-rec-home/data/rec-win-gg7/launch-brief.md')"
+tmux display-message -p -t firstmate:fm-rec-win-gg7 #{pane_id}
+tmux send-keys -t firstmate:fm-rec-win-gg7 Enter

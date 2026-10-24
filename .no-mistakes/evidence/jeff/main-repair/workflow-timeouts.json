@@ -1,18 +1,26 @@
 {
-  "workflow_timeout_contract": [
-    {
-      "job": "tests-portable-parallel-1",
-      "name": "Behavior portable parallel 1",
-      "previous_timeout_minutes": 10,
-      "timeout_minutes": 15
-    },
-    {
-      "job": "tests-portable-parallel-2",
-      "name": "Behavior portable parallel 2",
-      "previous_timeout_minutes": 10,
-      "timeout_minutes": 15
+  "tests-portable-parallel-1": {
+    "name": "Behavior portable parallel 1",
+    "timeout-minutes": 15
+  },
+  "tests-portable-parallel-2": {
+    "name": "Behavior portable parallel 2",
+    "timeout-minutes": 15
+  },
+  "tests-portable-serial": {
+    "name": "Behavior portable serial ${{ matrix.shard }}",
+    "timeout-minutes": 45,
+    "strategy": {
+      "fail-fast": false,
+      "matrix": {
+        "shard": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
     }
-  ],
-  "all_other_workflow_semantics_unchanged": true,
-  "execution": "YAML parsed into typed mappings; no GitHub Actions job was dispatched (remote CI belongs to outer executor)."
+  }
 }

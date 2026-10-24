@@ -1,0 +1,9 @@
+ok - a superseded sleeping runner cannot recreate stale pacing state
+
+ACTUAL SOURCE INVOCATION TIMESTAMPS:
+1792869434.650830
+1792869441.469849
+
+SUPERSEDED RUNNER OUTPUT:
+
+ELAPSED=10s; remaining pacing stamps=1
