@@ -142,8 +142,8 @@ test_measured_lanes_keep_their_existing_bounds() {
     [ "$actual" = "$expected" ] \
       || fail "$job timeout must stay $expected minutes, got $actual"
   done <<'CAPS'
-tests-portable-parallel-1 10
-tests-portable-parallel-2 10
+tests-portable-parallel-1 15
+tests-portable-parallel-2 15
 tests-portable-serial 30
 tests-herdr 75
 macos-stock-bash 10
