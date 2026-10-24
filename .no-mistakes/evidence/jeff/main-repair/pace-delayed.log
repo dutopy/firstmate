@@ -1,0 +1,5 @@
+ok - a superseded sleeping runner cannot recreate stale pacing state
+Launch timestamps (first generation then replacement only):
+1792854454.246234
+1792854485.744132
+Superseded runner output:

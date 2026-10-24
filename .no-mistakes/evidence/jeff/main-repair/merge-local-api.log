@@ -1,0 +1,18 @@
+COMMAND: bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/82 waiver=none
+armed: state/task-x1.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Q6Q4YNEN0Q7JVQG7MR243D/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Q6Q4YNEN0Q7JVQG7MR243D/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: refusing to merge https://github.com/example/repo/pull/82
+  - no check result exists on head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: relancer le CI d'abord (rerun CI on this exact head first)
+EXIT: 1
+COMMAND: bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/82 waiver=lint
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: refusing to merge https://github.com/example/repo/pull/82
+  - no check result exists on head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: relancer le CI d'abord (rerun CI on this exact head first)
+EXIT: 1

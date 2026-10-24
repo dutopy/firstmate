@@ -1,0 +1,26 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/v3/graphql",
+    "body": {
+      "query": "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isDraft mergeable mergeStateStatus headRefOid baseRefName isInMergeQueue statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion startedAt} ... on StatusContext{context state}}}}}}}",
+      "variables": {
+        "owner": "example",
+        "repo": "repo",
+        "number": 82
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/v3/graphql",
+    "body": {
+      "query": "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isDraft mergeable mergeStateStatus headRefOid baseRefName isInMergeQueue statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion startedAt} ... on StatusContext{context state}}}}}}}",
+      "variables": {
+        "owner": "example",
+        "repo": "repo",
+        "number": 82
+      }
+    }
+  }
+]

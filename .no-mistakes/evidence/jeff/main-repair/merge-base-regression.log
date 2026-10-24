@@ -1,0 +1,9 @@
+CASE: *
+--- stderr
+--- stdout
+--- gh.log
+CASE: *
+--- stderr
+--- stdout
+--- gh.log
+not ok - github-no-check: a head with no check result must refuse: expected exit 1, got 0
