@@ -109,8 +109,8 @@ Each record includes arm and watcher PIDs, start and end timestamps, exit code a
 The file is size-capped through `FM_WATCH_CYCLE_LOG_MAX_BYTES` and `FM_WATCH_CYCLE_LOG_KEEP_LINES`.
 `state/.watch-triage.log` remains only the watcher's bounded absorbed-wake debug log and carries no lifecycle semantics.
 
-The default 300-second grace is unchanged.
-Only the watcher process touches `state/.last-watcher-beat`; no helper process can make a wedged watcher appear healthy.
+[`turnend-guard.md`](turnend-guard.md#guard-grace-and-the-poll-cadence) owns the poll-derived default grace.
+Only the watcher's shell and its subshells refresh `state/.last-watcher-beat`; the progress-beat variable is not exported to external helpers.
 
 ## Pi extension continuity diagnostics
 
@@ -146,8 +146,8 @@ Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited s
 
 ## Honest beacon and bounded replacement
 
-The watcher advances `state/.last-watcher-beat` inside long phases (status-journal fold and span scan, signal scan, check sweep) through `fm_beat_progress`, rate-limited to one touch per 5 seconds, so a slow cycle no longer looks like a dead watcher.
-When a new watcher finds the lock held by a live pid whose beacon is older than the stale grace, it replaces that holder only if the lock metadata names this home and this `fm-watch.sh` and the pid identity still matches.
+The watcher advances `state/.last-watcher-beat` inside long phases (status-journal fold and span scan, signal scan, check sweep) through `fm_beat_progress`, rate-limited to one touch per 5 seconds in each shell, so continued scan progress refreshes liveness during a slow cycle.
+When a new watcher finds the lock held by a live pid whose existing beacon is at least as old as the stale grace, it replaces that holder only if the lock metadata names this home and this `fm-watch.sh` and the pid identity still matches.
 A holder that does not match is never signalled, and the refusal message is unchanged.
 Replacement attempts are serialized, with at most one budget reservation per 900 seconds recorded in the append-only `state/.watcher-replace.log` before signalling the holder.
 A replacement whose latest previous reservation is less than 21600 seconds (6 hours) old must also write `state/.watcher-replace-loud` before signalling; a failed write refuses replacement and retains the reserved budget.
