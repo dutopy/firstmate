@@ -104,6 +104,22 @@ fm_path_age() {
   echo $(( $(date +%s) - m ))
 }
 
+# fm_beat_progress
+# Honest liveness: the watcher sets FM_BEAT_FILE (a plain shell variable, never
+# exported, so only the watcher's own shell and its subshells beat) and long
+# phases call this so the beacon advances while work is happening, not only once
+# per loop iteration. Rate-limited to one touch per FM_BEAT_PROGRESS_SECONDS (5).
+# A no-op everywhere FM_BEAT_FILE is unset, so libraries stay safe to source.
+FM_BEAT_LAST=0
+fm_beat_progress() {
+  [ -n "${FM_BEAT_FILE:-}" ] || return 0
+  local now=$SECONDS
+  [ $((now - FM_BEAT_LAST)) -ge "${FM_BEAT_PROGRESS_SECONDS:-5}" ] || return 0
+  FM_BEAT_LAST=$now
+  touch "$FM_BEAT_FILE" 2>/dev/null || true
+  return 0
+}
+
 # fm_poll_derived_grace [poll-seconds]
 # Default guard-grace derivation: max(300, poll + 60). A watcher touches its
 # liveness beacon once per poll cycle, so a fixed 300s grace stops correctly

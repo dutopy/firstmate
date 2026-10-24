@@ -143,3 +143,12 @@ OpenCode support targets persistent TUI sessions rather than headless `opencode 
 Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited stop-hook park, Grok retains native background-completion notifications, and Codex retains bounded foreground checkpoints.
 
 [`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the current five-harness live evidence, the 2026-07-24 Stop-owned Claude auto-arm results, and exact opt-in commands.
+
+## Honest beacon and bounded replacement
+
+The watcher advances `state/.last-watcher-beat` inside long phases (status-journal fold, signal scan, check sweep) through `fm_beat_progress`, rate-limited to one touch per 5 seconds, so a slow cycle no longer looks like a dead watcher.
+When a new watcher finds the lock held by a live pid whose beacon is older than the stale grace, it replaces that holder only if the lock metadata names this home and this `fm-watch.sh` and the pid identity still matches.
+A holder that does not match is never signalled, and the refusal message is unchanged.
+At most one replacement runs per `FM_WATCHER_REPLACE_WINDOW` (900 s), recorded in `state/.watcher-replace.log`.
+A second replacement inside `FM_WATCHER_REPLACE_LOUD_WINDOW` (6 h) writes `state/.watcher-replace-loud`, and the new watcher surfaces it as a `stale:` wake for the captain.
+`tests/fm-watch-stuck-replacement.test.sh` covers the beacon during a 5 MB fold with a 3000-file handled inbox, the single replacement of a frozen watcher, the window refusal, the loud wake, and the never-kill-a-foreign-holder case.

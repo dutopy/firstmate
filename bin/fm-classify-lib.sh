@@ -1774,6 +1774,7 @@ _fm_status_open_decision_origins() {  # <status-file> [<kind>]
   held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
   while IFS= read -r line || [ -n "$line" ]; do
     number=$((number + 1))
+    fm_beat_progress 2>/dev/null || true
     after=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind")
     [ -n "$after" ] || origins=''
     key=$(_fm_decision_key "$line") || { open=$after; continue; }
