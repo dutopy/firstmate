@@ -144,7 +144,7 @@ test_measured_lanes_keep_their_existing_bounds() {
   done <<'CAPS'
 tests-portable-parallel-1 15
 tests-portable-parallel-2 15
-tests-portable-serial 30
+tests-portable-serial 45
 tests-herdr 75
 macos-stock-bash 10
 CAPS

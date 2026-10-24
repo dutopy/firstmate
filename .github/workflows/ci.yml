@@ -166,7 +166,10 @@ jobs:
     # Current runners can take ~20 min for a balanced shard. This 30-minute cap
     # preserves the timeout as a hang tripwire while allowing runner-speed and
     # job-setup margin; it is not the expected healthy end of the lane.
-    timeout-minutes: 30
+    # Scope decision (Firstmate, 24 Oct): serial 5 was cancelled at exactly the
+    # former 30 minute cap with no failing test, as parallel 1 was at 10, so the
+    # cap is 45 minutes.
+    timeout-minutes: 45
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
