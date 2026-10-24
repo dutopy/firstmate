@@ -28,7 +28,7 @@ watch_env() {  # <state> <fakebin> -- cmd...
   local state=$1 fakebin=$2
   shift 2
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$@"
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 exec "$@"
 }
 
 start_frozen_watcher() {  # <state> <fakebin> ; sets FROZEN_PID
@@ -40,6 +40,8 @@ start_frozen_watcher() {  # <state> <fakebin> ; sets FROZEN_PID
     i=$((i + 1))
   done
   [ -s "$state/.watch.lock/pid-identity" ] || fail "first watcher never published its lock identity"
+  [ "$(cat "$state/.watch.lock/pid")" = "$FROZEN_PID" ] || fail "background pid is not the watcher"
+  FROZEN_PID=$(cat "$state/.watch.lock/pid")
   kill -STOP "$FROZEN_PID"
   touch -t 200001010000 "$state/.last-watcher-beat"
 }
@@ -85,7 +87,7 @@ test_fold_touches_beacon_while_running() {
 }
 
 test_stuck_watcher_replaced_once() {
-  local dir state fakebin out err old new status=0 lines
+  local dir state fakebin out err old new status=0 lines i
   dir=$(make_case replace)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -96,25 +98,34 @@ test_stuck_watcher_replaced_once() {
   watch_env "$state" "$fakebin" "$WATCH" > "$out" 2> "$err" &
   new=$!
   i=0
-  while [ "$i" -lt 100 ] && [ "$(cat "$state/.watch.lock/pid" 2>/dev/null)" != "$new" ]; do
+  while [ "$i" -lt 100 ] && [ ! -s "$state/.watcher-replace.log" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -s "$state/.watcher-replace.log" ] || fail "replacement budget was not reserved"
+  kill -0 "$old" 2>/dev/null || fail "budget was not recorded before retiring the frozen watcher"
+  (watch_env "$state" "$fakebin" "$WATCH") > "$dir/contender.out" 2> "$dir/contender.err" || true
+  i=0
+  while [ "$i" -lt 150 ] && ! grep -F 'check: rearm-resurface' "$out" > /dev/null 2>&1; do
     sleep 0.1
     i=$((i + 1))
   done
   kill -0 "$old" 2>/dev/null && fail "the stuck watcher is still alive after replacement"
-  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null)" = "$new" ] || fail "the replacement does not hold the lock"
+  grep -F 'check: rearm-resurface' "$out" > /dev/null || fail "replacement did not deliver recovery"
+  wait "$new" 2>/dev/null || fail "replacement recovery failed"
+  awk -F '\t' -v pid="$new" '$1 == pid { found=1 } END { exit !found }' \
+    "$state/.watch-deliveries.log" || fail "recovery was not delivered by the replacement pid"
   grep -F 'replacing stuck watcher' "$err" > /dev/null || fail "replacement was not announced"
   lines=$(wc -l < "$state/.watcher-replace.log")
   [ "$lines" -eq 1 ] || fail "expected one ledger line, got $lines"
   [ ! -e "$state/.watcher-replace-loud" ] || fail "a first replacement must not be loud"
-  kill "$new" 2>/dev/null || true
-  wait "$new" 2>/dev/null || true
   wait "$old" 2>/dev/null || true
   pass "a frozen stale watcher of this home is replaced exactly once"
 
   # Second replacement inside the window is refused.
   start_frozen_watcher "$state" "$fakebin"
   old=$FROZEN_PID
-  watch_env "$state" "$fakebin" "$WATCH" > "$out" 2> "$err" || status=$?
+  (watch_env "$state" "$fakebin" "$WATCH") > "$out" 2> "$err" || status=$?
   [ "$status" -ne 0 ] || fail "a second replacement inside the window was allowed"
   grep -F 'one replacement per' "$err" > /dev/null || fail "the window refusal was not explained"
   kill -0 "$old" 2>/dev/null || fail "the second stuck watcher was killed despite the window"
@@ -124,12 +135,18 @@ test_stuck_watcher_replaced_once() {
 }
 
 test_repeated_replacement_is_loud() {
-  local dir state fakebin out err old new now i=0
+  local dir state fakebin out err old new now lines i=0
   dir=$(make_case loud)
   state="$dir/state"
   fakebin="$dir/fakebin"
   now=$(date +%s)
-  printf '%s\t999\t400\n' "$((now - 2000))" > "$state/.watcher-replace.log"
+  while [ "$i" -lt 25 ]; do
+    printf '%s\t999\t400\n' "$((now - 25200 - i))" >> "$state/.watcher-replace.log"
+    i=$((i + 1))
+  done
+  printf '%s\t999\t400\n' "$((now - 2000))" >> "$state/.watcher-replace.log"
+  cp "$state/.watcher-replace.log" "$dir/history"
+  i=0
   start_frozen_watcher "$state" "$fakebin"
   old=$FROZEN_PID
   out="$dir/new.out"
@@ -142,8 +159,14 @@ test_repeated_replacement_is_loud() {
   done
   grep -F 'LOUD' "$err" > /dev/null || fail "second replacement did not announce LOUD"
   grep -F 'replaced twice in a row' "$out" > /dev/null || fail "no wake carried the repeated replacement to the captain"
-  kill "$new" 2>/dev/null || true
-  wait "$new" 2>/dev/null || true
+  awk -F '\t' '$3 == "stale" && $4 == "watcher-replacement" && $5 ~ /replaced twice in a row/ { found=1 } END { exit !found }' \
+    "$state/.wake-queue" || fail "repeated replacement was not durably queued"
+  [ ! -e "$state/.watcher-replace-loud" ] || fail "delivered loud marker was not consumed"
+  lines=$(wc -l < "$state/.watcher-replace.log")
+  [ "$lines" -eq 27 ] || fail "replacement history was truncated"
+  head -n 26 "$state/.watcher-replace.log" > "$dir/history-after"
+  cmp "$dir/history" "$dir/history-after" || fail "replacement history was rewritten"
+  wait "$new" 2>/dev/null || fail "loud replacement delivery failed"
   wait "$old" 2>/dev/null || true
   pass "two replacements in a row surface a wake"
 }
@@ -158,7 +181,7 @@ test_foreign_holder_is_never_killed() {
   mkdir "$state/.watch.lock"
   printf '%s\n' "$holder" > "$state/.watch.lock/pid"
   touch -t 200001010000 "$state/.last-watcher-beat"
-  watch_env "$state" "$fakebin" "$WATCH" > "$dir/out" 2> "$dir/err" || status=$?
+  (watch_env "$state" "$fakebin" "$WATCH") > "$dir/out" 2> "$dir/err" || status=$?
   [ "$status" -ne 0 ] || fail "watcher accepted a holder it cannot identify"
   kill -0 "$holder" 2>/dev/null || fail "a holder without this home's identity was killed"
   grep -F 'heartbeat is stale' "$dir/err" > /dev/null || fail "the unchanged refusal message is gone"
@@ -167,7 +190,46 @@ test_foreign_holder_is_never_killed() {
   pass "a live holder without this home's lock identity is never killed"
 }
 
+test_failed_budget_write_preserves_holder() {
+  local dir state fakebin old status=0
+  dir=$(make_case budget-failure)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  start_frozen_watcher "$state" "$fakebin"
+  old=$FROZEN_PID
+  mkdir "$state/.watcher-replace.log"
+  (watch_env "$state" "$fakebin" "$WATCH") > "$dir/out" 2> "$dir/err" || status=$?
+  [ "$status" -ne 0 ] || fail "replacement proceeded without a persisted budget"
+  kill -0 "$old" 2>/dev/null || fail "budget write failure killed the holder"
+  [ "$(cat "$state/.watch.lock/pid")" = "$old" ] || fail "budget write failure changed the holder"
+  kill -CONT "$old"
+  sleep 0.5
+  kill -0 "$old" 2>/dev/null || fail "budget write failure sent a deferred TERM"
+  kill -KILL "$old" 2>/dev/null || true
+  wait "$old" 2>/dev/null || true
+  pass "failed budget persistence never signals the holder"
+}
+
+test_failed_loud_delivery_preserves_marker() {
+  local dir state fakebin status=0
+  dir=$(make_case loud-failure)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  printf 'watcher replaced twice in a row\n' > "$state/.watcher-replace-loud"
+  mkdir "$state/.wake-queue"
+  (watch_env "$state" "$fakebin" "$WATCH") > "$dir/out" 2> "$dir/err" || status=$?
+  [ "$status" -ne 0 ] || fail "failed loud queue write was ignored"
+  [ -s "$state/.watcher-replace-loud" ] || fail "failed loud delivery lost the marker"
+  rmdir "$state/.wake-queue"
+  (watch_env "$state" "$fakebin" "$WATCH") > "$dir/retry.out" 2> "$dir/retry.err" || fail "loud delivery retry failed"
+  grep -F 'stale: watcher replaced twice in a row' "$dir/retry.out" > /dev/null || fail "retained marker was not delivered"
+  [ ! -e "$state/.watcher-replace-loud" ] || fail "successful retry retained the marker"
+  pass "failed loud persistence retains the marker for the next arm"
+}
+
 test_fold_touches_beacon_while_running
+test_failed_budget_write_preserves_holder
+test_failed_loud_delivery_preserves_marker
 test_stuck_watcher_replaced_once
 test_repeated_replacement_is_loud
 test_foreign_holder_is_never_killed

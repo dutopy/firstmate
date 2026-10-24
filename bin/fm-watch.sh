@@ -2119,8 +2119,22 @@ fi
 WATCHER_REPLACE_WINDOW=${FM_WATCHER_REPLACE_WINDOW:-900}
 WATCHER_REPLACE_LOUD_WINDOW=${FM_WATCHER_REPLACE_LOUD_WINDOW:-21600}
 watcher_replace_stale_holder() {
-  local pid=${FM_LOCK_HELD_PID:-} beat="$STATE/.last-watcher-beat" ledger="$STATE/.watcher-replace.log"
-  local age now last prev i
+  local pid=${FM_LOCK_HELD_PID:-} lock="$STATE/.watcher-replace.lock" status=0
+  if ! fm_lock_try_acquire "$lock"; then
+    FM_LOCK_HELD_PID=$pid
+    return 1
+  fi
+  watcher_replace_stale_holder_locked "$pid" || status=$?
+  fm_lock_release "$lock"
+  if [ "$status" -ne 0 ]; then
+    FM_LOCK_HELD_PID=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
+  fi
+  return "$status"
+}
+
+watcher_replace_stale_holder_locked() {
+  local pid=$1 beat="$STATE/.last-watcher-beat" ledger="$STATE/.watcher-replace.log"
+  local age now last i
   [ -n "$pid" ] && fm_pid_alive "$pid" || return 1
   fm_watcher_lock_matches_pid "$STATE" "$WATCH_PATH" "$pid" "$FM_HOME" || return 1
   [ -e "$beat" ] || return 1
@@ -2128,12 +2142,16 @@ watcher_replace_stale_holder() {
   [ "$age" -ge "$WATCHER_STALE_GRACE" ] || return 1
   now=$(date +%s)
   last=$(tail -n 1 "$ledger" 2>/dev/null | cut -f1)
-  prev=$(tail -n 2 "$ledger" 2>/dev/null | head -n 1 | cut -f1)
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  case "$prev" in ''|*[!0-9]*) prev=0 ;; esac
   if [ "$last" -gt 0 ] && [ $((now - last)) -lt "$WATCHER_REPLACE_WINDOW" ]; then
     echo "watcher: stale holder pid $pid not replaced again: one replacement per ${WATCHER_REPLACE_WINDOW}s window (last ${last})." >&2
     return 1
+  fi
+  printf '%s\t%s\t%s\n' "$now" "$pid" "$age" >> "$ledger" 2>/dev/null || return 1
+  if [ "$last" -gt 0 ] && [ $((now - last)) -lt "$WATCHER_REPLACE_LOUD_WINDOW" ]; then
+    printf 'watcher replaced twice in a row within %ss (pids %s, stale %ss): the watcher keeps getting stuck, inspect state/.watcher-replace.log\n' \
+      "$WATCHER_REPLACE_LOUD_WINDOW" "$pid" "$age" > "$STATE/.watcher-replace-loud" 2>/dev/null || true
+    echo "watcher: LOUD - second replacement inside ${WATCHER_REPLACE_LOUD_WINDOW}s; the captain will be told." >&2
   fi
   echo "watcher: replacing stuck watcher pid $pid (heartbeat stale ${age}s, lock identity matches this home)." >&2
   kill -TERM "$pid" 2>/dev/null || true
@@ -2150,13 +2168,6 @@ watcher_replace_stale_holder() {
     sleep 0.2
   fi
   fm_pid_alive "$pid" && return 1
-  printf '%s\t%s\t%s\n' "$now" "$pid" "$age" >> "$ledger" 2>/dev/null || true
-  tail -n 20 "$ledger" > "$ledger.tmp" 2>/dev/null && mv "$ledger.tmp" "$ledger" 2>/dev/null || true
-  if [ "$prev" -gt 0 ] && [ $((now - prev)) -lt "$WATCHER_REPLACE_LOUD_WINDOW" ]; then
-    printf 'watcher replaced twice in a row within %ss (pids %s, stale %ss): the watcher keeps getting stuck, inspect state/.watcher-replace.log\n' \
-      "$WATCHER_REPLACE_LOUD_WINDOW" "$pid" "$age" > "$STATE/.watcher-replace-loud" 2>/dev/null || true
-    echo "watcher: LOUD - second replacement inside ${WATCHER_REPLACE_LOUD_WINDOW}s; the captain will be told." >&2
-  fi
   fm_lock_try_acquire "$WATCH_LOCK"
 }
 
@@ -2420,6 +2431,7 @@ replacement_loud_surface() {
   local marker="$STATE/.watcher-replace-loud" msg
   [ -s "$marker" ] || return 0
   msg=$(head -n 1 "$marker" 2>/dev/null | tr '\t\n' '  ')
+  fm_wake_append stale watcher-replacement "stale: $msg" || exit 1
   rm -f "$marker"
   wake "stale: $msg"
 }
