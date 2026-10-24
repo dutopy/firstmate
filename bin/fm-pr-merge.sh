@@ -10,9 +10,11 @@
 # --squash, --merge, --rebase, or --method after the optional -- separator.
 # A GitHub merge is refused unless every pre-merge condition holds, each read
 # live at merge time rather than taken from recorded metadata: the pull request
-# is open, not a draft, mergeable, free of conflicts, and every unwaived check
-# is green at the exact current head commit, where github_checks_not_green below
-# owns what makes a check green and judges each one by its current run.
+# is open, not a draft, mergeable, free of conflicts, has at least one check
+# result at the exact current head commit, and every unwaived check is green,
+# where github_checks_not_green below owns what makes a check green and judges
+# each one by its current run. An empty check rollup refuses with the exact head
+# and instructions to rerun CI there first; --allow-red cannot waive that refusal.
 # Every failing condition is reported, not
 # just the first. The verified head is then passed to gh as
 # --match-head-commit, so a push that lands between that read and the merge
