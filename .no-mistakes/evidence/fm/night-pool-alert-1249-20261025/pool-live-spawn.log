@@ -1,0 +1,79 @@
+$ treehouse status --json
+[{"name":"1","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/1/repo","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"2cd3f6c0b61623388f1643c11135f141","lease_holder":"","leased_at":"2026-10-25T03:39:18.644303+01:00","processes":[]},{"name":"2","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"a0f35deb35ed9a653bf44a1fd0c7d4e1","lease_holder":"","leased_at":"2026-10-25T03:40:18.503175+01:00","processes":[]},{"name":"3","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/3/repo","status":"dirty","branch":"","detached":true,"flavor":"git","lease_id":"","lease_holder":"","leased_at":null,"processes":[]},{"name":"4","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/4/repo","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"d89cb26749fdca4f6ccf4ca32e18bf0d","lease_holder":"","leased_at":"2026-10-25T03:39:20.003221+01:00","processes":[]},{"name":"5","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/5/repo","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"7f9ea81cb2c1a777355ac451d2391f5d","lease_holder":"","leased_at":"2026-10-25T03:39:21.074143+01:00","processes":[]}]
+[exit 0]
+
+$ tmux set-environment -g HOME /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/home
+[exit 0]
+
+$ tmux set-environment -g XDG_CONFIG_HOME /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/home/.config
+[exit 0]
+
+$ tmux set-environment -g TREEHOUSE_ROOT /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool
+[exit 0]
+
+$ tmux set-environment -g TREEHOUSE_NO_UPDATE_CHECK 1
+[exit 0]
+
+$ tmux set-environment -g TMPDIR /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/tmp
+[exit 0]
+
+$ tmux set-environment -g PATH /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/tools:/Users/pierre/.pi/agent/bin:/Users/pierre/.opencode/bin:/Users/pierre/Dev/i4tus/bin:/Users/pierre/.local/bin:/Users/pierre/.bun/bin:/usr/local/lib/ruby/gems/3.4.0/bin:/usr/local/opt/ruby/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/pierre/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/Little Snitch.app/Contents/Components:/Users/pierre/.local/bin:/Users/pierre/go/bin:/Users/pierre/.cargo/bin:/Users/pierre/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/pierre/_Dev/flutter/bin
+[exit 0]
+
+$ tmux set-environment -g GIT_CONFIG_GLOBAL /dev/null
+[exit 0]
+
+$ tmux set-environment -g GIT_CONFIG_NOSYSTEM 1
+[exit 0]
+
+$ tmux set-option -g default-shell /bin/bash
+[exit 0]
+
+$ tmux set-option -g default-command /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux kill-window -t firstmate:fm-live-full
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-spawn.sh live-full /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo --mode no-mistakes --yolo off --backend tmux
+warning: treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:40:50Z read_s=3
+warning: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+warning: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/fm/data/live-full/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: treehouse get failed (exit 1) without entering an isolated worktree; spawning project '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo'; last pane lines: H910R/.pool-validation/fm/state/.live-full.treehouse-get.11939.29711.result'
+🌳 Setting up worktree...
+all 5 worktrees are in use or dirty (max_trees = 5). Run 'treehouse status' to see details, or increase max_trees in tre
+ehouse.toml
+bash-3.2$; inspect window firstmate:fm-live-full
+treehouse-pool: treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:40:55Z read_s=2
+treehouse-pool: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 1]
+
+Real fm-spawn + real tmux (120x36) + real Treehouse: full-pool warning and allocator refusal diagnostics verified; no agent launched.
+
+$ treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo
+🌳 Worktree returned to pool.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-spawn.sh live-saturated /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo touch /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/launch-observed; /bin/sleep 30 --mode no-mistakes --yolo off --backend tmux
+warning: treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=4 available=1 unknown=0 entries=5 saturation=80% state=saturated observed_at=2026-10-25T02:41:01Z read_s=2
+warning: new copies may wait or fail: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+warning: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/fm/data/live-saturated/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-saturated harness=touch kind=ship mode=no-mistakes yolo=off window=firstmate:fm-live-saturated worktree=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo
+[exit 0]
+
+Persisted task metadata:
+window=firstmate:fm-live-saturated
+endpoint_task_id=live-saturated
+worktree=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo
+project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+harness=touch
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-live-saturated
+model=default
+effort=default
+guard_base=2712ea9d452a76d4d66cadeb45ddeb40e6482857
+spawn_gen=s1792896068.32684.25294
+
+Saturated real allocation continued into an isolated checkout; disposable raw touch/sleep launch executed successfully without invoking an agent.

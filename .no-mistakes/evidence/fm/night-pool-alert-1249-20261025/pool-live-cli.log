@@ -1,0 +1,152 @@
+$ git init -q
+[exit 0]
+
+$ git commit -qm fixture --allow-empty
+[exit 0]
+
+$ treehouse --version
+v3.1.0
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=0 available=0 unknown=0 entries=0 saturation=0% state=ok observed_at=2026-10-25T02:39:18Z read_s=1
+[exit 0]
+
+$ treehouse get --lease --no-fetch --json
+{"path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/1/repo","lease_id":"2cd3f6c0b61623388f1643c11135f141","lease_holder":"","leased_at":"2026-10-25T03:39:18.644303+01:00","base_branch":"master"}
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/1/repo. Run 'treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/1/repo' to release it.
+[exit 0]
+
+$ treehouse get --lease --no-fetch --json
+{"path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo","lease_id":"82904052f5e9ccf721c7580b24b1eda6","lease_holder":"","leased_at":"2026-10-25T03:39:19.100283+01:00","base_branch":"master"}
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo. Run 'treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo' to release it.
+[exit 0]
+
+$ treehouse get --lease --no-fetch --json
+{"path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/3/repo","lease_id":"a8f2b4b322d3f1c19fe9970b3d5e88f9","lease_holder":"","leased_at":"2026-10-25T03:39:19.56217+01:00","base_branch":"master"}
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/3/repo. Run 'treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/3/repo' to release it.
+[exit 0]
+
+$ treehouse get --lease --no-fetch --json
+{"path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/4/repo","lease_id":"d89cb26749fdca4f6ccf4ca32e18bf0d","lease_holder":"","leased_at":"2026-10-25T03:39:20.003221+01:00","base_branch":"master"}
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/4/repo. Run 'treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/4/repo' to release it.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=4 available=0 unknown=0 entries=4 saturation=80% state=saturated observed_at=2026-10-25T02:39:20Z read_s=0
+fm-pool-status.sh: new copies may wait or fail: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ treehouse get --lease --no-fetch --json
+{"path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/5/repo","lease_id":"7f9ea81cb2c1a777355ac451d2391f5d","lease_holder":"","leased_at":"2026-10-25T03:39:21.074143+01:00","base_branch":"master"}
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/5/repo. Run 'treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/5/repo' to release it.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:39:21Z read_s=0
+fm-pool-status.sh: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ treehouse get --lease --no-fetch
+🌳 Setting up worktree...
+all 5 worktrees are in use or dirty (max_trees = 5). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml
+[exit 1]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:39:23Z read_s=1
+fm-pool-status.sh: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/1/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/1/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:39:23Z read_s=0
+fm-pool-status.sh: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:39:24Z read_s=1
+fm-pool-status.sh: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:39:25Z read_s=1
+fm-pool-status.sh: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=5 available=0 unknown=0 entries=5 saturation=100% state=full observed_at=2026-10-25T02:39:25Z read_s=0
+fm-pool-status.sh: no copy can be handed out: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=10 occupied=5 available=0 unknown=0 entries=5 saturation=50% state=ok observed_at=2026-10-25T02:39:26Z read_s=1
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=16 occupied=5 available=0 unknown=0 entries=5 saturation=31% state=ok observed_at=2026-10-25T02:39:27Z read_s=1
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=unknown occupied=unknown available=unknown unknown=unknown entries=unknown saturation=unknown state=unknown observed_at=2026-10-25T02:39:27Z read_s=0
+fm-pool-status.sh: pool capacity is unknown, so availability must not be treated as available: treehouse status failed (exit 1): failed to load config: toml: line 1 (last key "max_trees"): expected value but found "banana" instead
+[exit 1]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+fm-pool-status.sh - report effective Treehouse pool capacity, read-only.
+
+Usage: fm-pool-status.sh [--project <dir>]
+
+Prints exactly one stable line on stdout:
+  treehouse-pool: project=<path> max=<n|unknown> occupied=<n|unknown>
+    available=<n|unknown> unknown=<n|unknown> entries=<n|unknown>
+    saturation=<n>%|unknown state=<ok|saturated|full|unknown>
+    observed_at=<UTC> read_s=<n>
+
+occupied is Treehouse's in-use + leased + dirty count, available is its
+available count, and unknown is any entry whose status is not one of those
+four. Unknown is never counted as available: an unreadable status read, a
+malformed inventory, or an unrecognized entry reports available=unknown or an
+explicit unknown count instead. The maximum comes from the primary checkout's
+treehouse.toml, falling back to ~/.config/treehouse/config.toml when absent.
+The default is 16 when neither file exists or the selected file omits max_trees.
+
+saturated means occupied is at least 80% of the effective maximum. full means
+no slot is available and the materialized count has reached the maximum, so
+Treehouse can neither hand out nor create a copy. Actionable guidance goes to
+stderr so stdout stays machine-parseable.
+
+This command never allocates, returns, prunes, leases, or edits anything.
+Exit status: 0 complete inventory (including saturated or full), 1 unknown
+inventory, 2 usage error.
+
+Project selection defaults to the current directory and resolves its pool
+through Treehouse itself; pass --project for another checkout.
+[exit 2]
+
+$ treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo
+🌳 Worktree returned to pool.
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=4 available=1 unknown=0 entries=5 saturation=80% state=saturated observed_at=2026-10-25T02:39:28Z read_s=0
+fm-pool-status.sh: new copies may wait or fail: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+$ treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/3/repo
+🌳 Worktree returned to pool.
+[exit 0]
+
+$ treehouse status --json
+[{"name":"1","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/1/repo","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"2cd3f6c0b61623388f1643c11135f141","lease_holder":"","leased_at":"2026-10-25T03:39:18.644303+01:00","processes":[]},{"name":"2","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/2/repo","status":"available","branch":"","detached":true,"flavor":"git","lease_id":"","lease_holder":"","leased_at":null,"processes":[]},{"name":"3","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/3/repo","status":"dirty","branch":"","detached":true,"flavor":"git","lease_id":"","lease_holder":"","leased_at":null,"processes":[]},{"name":"4","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/4/repo","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"d89cb26749fdca4f6ccf4ca32e18bf0d","lease_holder":"","leased_at":"2026-10-25T03:39:20.003221+01:00","processes":[]},{"name":"5","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/pool/.treehouse/repo-13b5be/5/repo","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"7f9ea81cb2c1a777355ac451d2391f5d","lease_holder":"","leased_at":"2026-10-25T03:39:21.074143+01:00","processes":[]}]
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-pool-status.sh --project /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo
+treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=5 occupied=4 available=1 unknown=0 entries=5 saturation=80% state=saturated observed_at=2026-10-25T02:39:30Z read_s=0
+fm-pool-status.sh: new copies may wait or fail: close a finished task (bin/fm-teardown.sh <task-id>) or wait for a running task to finish; this read-only check never changes max_trees.
+[exit 0]
+
+All live CLI assertions passed. Read-only checks compared SHA-256 hashes of every pool, repository, and config file before/after reports.

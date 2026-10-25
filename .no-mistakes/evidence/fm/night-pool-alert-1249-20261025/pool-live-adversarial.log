@@ -1,0 +1,31 @@
+$ tmux kill-window -t firstmate:fm-live-unknown
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-spawn.sh live-unknown /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo --mode no-mistakes --yolo off --backend tmux
+warning: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/fm/data/live-unknown/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: treehouse get failed (exit 1) without entering an isolated worktree; spawning project '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo'; last pane lines: For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4
+H910R/.pool-validation/fm/state/.live-unknown.treehouse-get.51401.10027.result'
+failed to load config: toml: line 1 (last key "max_trees"): expected value but found "banana" instead
+bash-3.2$; inspect window firstmate:fm-live-unknown
+treehouse-pool: treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/repo max=unknown occupied=unknown available=unknown unknown=unknown entries=unknown saturation=unknown state=unknown observed_at=2026-10-25T02:42:23Z read_s=0
+treehouse-pool: pool capacity is unknown, so availability must not be treated as available: treehouse status failed (exit 1): failed to load config: toml: line 1 (last key "max_trees"): expected value but found "banana" instead
+[exit 1]
+
+$ git init -q /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/healthy
+[exit 0]
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/healthy -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm fixture
+[exit 0]
+
+$ tmux set-option -g default-command /usr/bin/env SHELL=/usr/bin/true /bin/bash --noprofile --norc
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/bin/fm-spawn.sh live-timeout2 /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/healthy /bin/sleep 20 --mode no-mistakes --yolo off --backend tmux
+warning: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/fm/data/live-timeout2/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: treehouse get did not enter an isolated worktree within 8s (set FM_SPAWN_ISOLATION_WAIT_SECS to change this wait) (last seen '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/healthy': it is the spawning project itself; spawning project '/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/healthy'); inspect window firstmate:fm-live-timeout2
+treehouse-pool: treehouse-pool: project=/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5RDVSTX3ATVFXKHQF4H910R/.pool-validation/healthy max=2 occupied=1 available=1 unknown=0 entries=2 saturation=50% state=ok observed_at=2026-10-25T02:42:35Z read_s=1
+treehouse-pool: this is an isolation timeout in bin/fm-spawn.sh, not a capacity refusal; capacity is reported above.
+[exit 1]
+
+Real invalid-config allocation refusal preserves unknown availability. Real allocator with immediately exiting shell produces healthy-pool isolation timeout, not capacity refusal.
