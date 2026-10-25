@@ -499,25 +499,14 @@ EOF
   pass "fm-tasks-axi: a close preserves an existing interruption recovery marker"
 }
 
-# FM_CLOSE_RETURN_CASES bounds a changed-fixture smoke to named cases; the
-# default runs the whole matrix.
-SELECTED=${FM_CLOSE_RETURN_CASES:-all}
-selected() {  # <case-slug>
-  [ "$SELECTED" = all ] && return 0
-  case " $SELECTED " in
-    *" $1 "*) return 0 ;;
-  esac
-  return 1
-}
-
-selected landed && test_close_returns_clean_landed_copy
-selected dirty && test_dirty_copy_is_preserved
-selected unlanded && test_unlanded_copy_is_preserved
-selected reassigned && test_reassigned_slot_is_preserved
-selected retry && test_failed_return_is_preserved_and_retried
-selected repeat && test_repeated_close_converges
-selected open && test_after_close_refuses_an_open_row
-selected secondmate && test_secondmate_record_is_never_torn_down
-selected foreign && test_foreign_backlog_close_preserves_copy
-selected concurrent && test_concurrent_close_converges
-selected recovery-marker && test_recovery_marker_is_preserved
+test_close_returns_clean_landed_copy
+test_dirty_copy_is_preserved
+test_unlanded_copy_is_preserved
+test_reassigned_slot_is_preserved
+test_failed_return_is_preserved_and_retried
+test_repeated_close_converges
+test_after_close_refuses_an_open_row
+test_secondmate_record_is_never_torn_down
+test_foreign_backlog_close_preserves_copy
+test_concurrent_close_converges
+test_recovery_marker_is_preserved
