@@ -8,22 +8,23 @@
 #
 # The maximum is `max_trees` from the PRIMARY checkout's treehouse.toml, or
 # ~/.config/treehouse/config.toml when the repository file is absent, with
-# default 16 when neither file exists or the selected file omits the key. The inventory is
-# `treehouse status --json` run from the project's top level with
+# default 16 when neither file exists or the selected file omits the key.
+# The inventory is `treehouse status --json` run from the project's top level with
 # TREEHOUSE_NO_UPDATE_CHECK=1, so the read never reaches the network.
 #
 # Status classification:
 #   available  - Treehouse reports the slot as available
-#   occupied   - in-use, leased, or dirty (the parent pool-saturation metric's
-#                "occupied-or-dirty")
+#   occupied   - in-use, leased, or dirty
 #   unknown    - any other status, a malformed entry, or an unreadable read
-# Unknown is never folded into available. A discarded, unreadable, malformed,
-# or incomplete inventory reports available=unknown rather than available=0.
+# Unknown is never folded into available. A discarded, unreadable, or malformed
+# inventory reports available=unknown rather than available=0. Unrecognized or
+# malformed entries retain known bucket counts but make the overall state unknown.
 #
-# Saturation is occupancy against the effective maximum, the same ratio the
-# pool-watch owner alerts on: >=80% is saturated, and full means no slot is
-# available and the materialized count has reached the maximum, so Treehouse
-# can neither hand out a copy nor create one.
+# Saturation is occupied slots against the effective maximum: >=80% is saturated.
+# With a known maximum and no unknown entries, full means no slot is available
+# and the materialized count has reached the maximum, so Treehouse can neither
+# hand out a copy nor create one. An unknown maximum or any unknown entry takes
+# precedence over saturated or full.
 #
 # Output contract, set by fm_treehouse_pool_capacity:
 #   FM_POOL_PROJECT       resolved project top level

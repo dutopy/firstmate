@@ -33,6 +33,12 @@
 #   `treehouse get` to move the pane into an isolated worktree. If the allocator
 #   itself fails (for example a full pool) the spawn stops at once, reporting its
 #   exit status and the last pane lines, rather than reporting a timeout.
+#   Before allocation, a fresh Treehouse-backed ship/scout spawn reports a
+#   read-only saturation warning without refusing allocation; an unknown read
+#   stays silent at this point. Allocator failures and isolation timeouts include
+#   a fresh capacity report, even when capacity is unknown. bin/fm-pool-lib.sh's
+#   header owns the shared capacity classification; bin/fm-pool-status.sh exposes
+#   it for standalone inspection. These snapshots do not reserve copies.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is
@@ -2698,8 +2704,8 @@ else
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # Early actionable saturation notice at the dispatch boundary. This is a
-  # read-only snapshot before the project lock, so it never blocks or delays
-  # another allocation, and an unreadable snapshot stays silent here (the
+  # read-only snapshot before the project lock, so it holds no allocation lock
+  # while waiting for status. An unreadable snapshot stays silent here (the
   # allocator's own failure path below reports the explicit unknown state).
   if fm_treehouse_pool_capacity "$PROJ_ABS"; then
     case "$FM_POOL_STATE" in
