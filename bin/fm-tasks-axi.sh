@@ -32,6 +32,18 @@
 # The data directory is FM_DATA_OVERRIDE, else $FM_HOME/data, else the code
 # root's data/ (FM_HOME unset keeps the single-home layout unchanged).
 #
+# CLOSE HOOK. `done` and its `close` alias are this home's public task-close
+# commands, so a launched task's close also owes its copy return. After
+# tasks-axi reports the close, this command runs
+# bin/fm-teardown.sh <id> --after-close for that task record. That is the only
+# cleanup owner: the close stays authoritative and the hook never changes its
+# result, never forces, and preserves a dirty, unlanded, reassigned, ambiguous,
+# or captain-held copy. Teardown's record, incarnation, ownership, landed-work,
+# and recovery-marker guards all still apply, and the hook is skipped for a
+# secondmate record and for a close that landed in a backlog other than this
+# home's own. A repeated or concurrent close converges: a missing record is a
+# no-op and teardown's locks serialize the rest, so cleanup is never repeated.
+#
 # Refusals (exit 2, nothing run):
 #   - tasks-axi missing from PATH;
 #   - a caller-supplied --file, because this command owns the addressing and
@@ -74,6 +86,65 @@ case "${1:-}" in
 esac
 
 CALLER_DIR=$(pwd)
+
+# `done` and its `close` alias are the public task-close commands. A launched
+# task's close also owes its copy return; that runs after the close lands, under
+# bin/fm-teardown.sh's guards (see close_return_copy below).
+CLOSE_COMMAND=
+CLOSE_ID=
+case "${1:-}" in
+  done|close)
+    CLOSE_COMMAND=$1
+    CLOSE_ID=${2:-}
+    ;;
+esac
+
+absolute_dir() {  # <path>
+  case "$1" in
+    ''|/*) printf '%s\n' "$1" ;;
+    *) { CDPATH='' cd -- "$1" 2>/dev/null && pwd -P; } || printf '%s\n' "$1" ;;
+  esac
+}
+
+CLOSE_HOME=$(absolute_dir "$FM_HOME")
+CLOSE_DATA=$(absolute_dir "$DATA")
+CLOSE_STATE=$(absolute_dir "${FM_STATE_OVERRIDE:-$FM_HOME/state}")
+CLOSE_CONFIG=$(absolute_dir "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}")
+# The close hook pairs cleanup only with this home's own backlog. A guardian
+# home or a test may point FM_DATA_OVERRIDE at another directory; that close
+# must never tear down a same-id task in this home.
+close_owns_this_home_backlog() {
+  [ "$(absolute_dir "$CLOSE_DATA")" = "$(absolute_dir "$CLOSE_HOME/data")" ]
+}
+
+close_return_copy() {  # <task-id>
+  local id=$1 meta kind
+  case "$id" in
+    ''|.*|*[!A-Za-z0-9._-]*) return 0 ;;
+  esac
+  meta="$CLOSE_HOME/state/$id.meta"
+  # No task record means no launched endpoint or copy; nothing is owed.
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
+  kind=$(LC_ALL=C sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -1)
+  # Persistent secondmates are never backlog items, so a close can never retire
+  # one. Preserve the home and its children untouched.
+  [ "$kind" = secondmate ] && return 0
+  if ! close_owns_this_home_backlog; then
+    echo "copy: task $id's copy was preserved; its close landed in $CLOSE_DATA, not this home's own backlog" >&2
+    return 0
+  fi
+  echo "copy: task $id closed; running the guarded copy return" >&2
+  if FM_HOME="$CLOSE_HOME" FM_STATE_OVERRIDE="$CLOSE_STATE" \
+     FM_DATA_OVERRIDE="$CLOSE_DATA" FM_CONFIG_OVERRIDE="$CLOSE_CONFIG" \
+     "$SCRIPT_DIR/fm-teardown.sh" "$id" --after-close >&2; then
+    echo "copy: task $id's copy passed the guarded return and is available again" >&2
+  elif [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
+    echo "copy: task $id's copy was already finished by another close" >&2
+  else
+    echo "copy: task $id's copy was preserved; the guarded cleanup refused above" >&2
+  fi
+  return 0
+}
 
 absolute_from_caller() {  # <path-value>
   case "$1" in
@@ -124,4 +195,15 @@ else
 fi
 
 cd "$FM_BACKLOG_AXI_ROOT" || fail "cannot enter the backlog root $FM_BACKLOG_AXI_ROOT"
+# A close lands first and stays authoritative: the guarded copy return runs only
+# after tasks-axi reports success, never changes the close result, and never
+# forces. A refusal preserves the dirty, unlanded, reassigned, or otherwise
+# ambiguous copy for an ordinary teardown or a later close retry.
+if [ -n "$CLOSE_COMMAND" ]; then
+  tasks-axi ${ARGS[@]+"${ARGS[@]}"}
+  close_status=$?
+  [ "$close_status" -eq 0 ] || exit "$close_status"
+  close_return_copy "$CLOSE_ID"
+  exit 0
+fi
 exec tasks-axi ${ARGS[@]+"${ARGS[@]}"}
