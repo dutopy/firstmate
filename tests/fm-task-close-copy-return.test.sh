@@ -189,7 +189,7 @@ run_close() {  # <case> <id> [state-dir]
     FM_RUNTIME_LOG="$dir/runtime.log" \
     FM_FIXTURE_REAPER_LOG="$dir/reaper.log" \
     PATH="$dir/fakebin:$PATH" \
-    "$CLOSE" done "$id" )
+    "$CLOSE" "done" "$id" )
 }
 
 run_close_in_backlog() {  # <case> <id> <other-data-dir>
@@ -201,7 +201,7 @@ run_close_in_backlog() {  # <case> <id> <other-data-dir>
     FM_RUNTIME_LOG="$dir/runtime.log" \
     FM_FIXTURE_REAPER_LOG="$dir/reaper.log" \
     PATH="$dir/fakebin:$PATH" \
-    "$CLOSE" done "$id" )
+    "$CLOSE" "done" "$id" )
 }
 
 run_after_close() {  # <case> <id>
@@ -237,7 +237,7 @@ test_close_returns_clean_landed_copy() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "close refused a clean landed task: $(cat "$dir/close.err")"
-  [ "$(row_state "$dir" "$id")" = done ] \
+  [ "$(row_state "$dir" "$id")" = "done" ] \
     || fail "close did not land the backlog row: $(row_state "$dir" "$id")"
   assert_absent "$dir/home/state/$id.meta" "the close left the task record behind"
   [ "$(return_count "$dir")" -eq 1 ] \
@@ -264,7 +264,7 @@ test_dirty_copy_is_preserved() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "a refused copy return failed the close itself: $(cat "$dir/close.err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "the dirty-copy close did not land the row"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "the dirty-copy close did not land the row"
   assert_present "$dir/home/state/$id.meta" "the dirty copy's task record was removed"
   assert_present "$dir/wt/untracked.txt" "the dirty copy was modified"
   [ "$(return_count "$dir")" -eq 0 ] \
@@ -287,7 +287,7 @@ test_unlanded_copy_is_preserved() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "an unlanded refusal failed the close itself: $(cat "$dir/close.err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "the unlanded close did not land the row"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "the unlanded close did not land the row"
   assert_present "$dir/home/state/$id.meta" "the unlanded copy's task record was removed"
   [ "$(return_count "$dir")" -eq 0 ] \
     || fail "unlanded work was returned: $(cat "$dir/runtime.log")"
@@ -309,7 +309,7 @@ test_reassigned_slot_is_preserved() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "a reassigned-slot close was not a clean close: $(cat "$dir/close.err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "the reassigned-slot close did not land the row"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "the reassigned-slot close did not land the row"
   [ "$(return_count "$dir")" -eq 0 ] \
     || fail "another task's reassigned copy was returned: $(cat "$dir/runtime.log")"
   assert_present "$dir/pool/1/.fm-slot-owner" "the other task's slot claim was removed"
@@ -336,7 +336,7 @@ test_failed_return_is_preserved_and_retried() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "the failed-return close itself failed: $(cat "$dir/first.err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "the failed-return close did not land the row"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "the failed-return close did not land the row"
   assert_present "$dir/home/state/$id.meta" "the failed return removed the task record"
   assert_present "$dir/wt" "the failed return removed the copy"
   grep -F 'copy was preserved' "$dir/first.err" >/dev/null \
@@ -365,7 +365,7 @@ test_repeated_close_converges() {
   run_close "$dir" "$id" > "$dir/second.out" 2> "$dir/second.err"; rc=$?
 
   [ "$rc" -eq 0 ] || fail "the repeated close failed: $(cat "$dir/second.err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "the repeated close reopened the row"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "the repeated close reopened the row"
   [ "$(return_count "$dir")" -eq 1 ] \
     || fail "the repeated close returned the copy twice: $(cat "$dir/runtime.log")"
   pass "fm-tasks-axi: a repeated close converges without a second copy return"
@@ -470,7 +470,7 @@ test_concurrent_close_converges() {
 
   [ "$r1" -eq 0 ] || [ "$r2" -eq 0 ] \
     || fail "neither concurrent close landed the row: $(cat "$dir/first.err" "$dir/second.err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "the concurrent close left the row open"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "the concurrent close left the row open"
   assert_absent "$dir/home/state/$id.meta" "the concurrent close left the task record behind"
   [ "$(return_count "$dir")" -eq 1 ] \
     || fail "concurrent closes returned the copy more than once: $(cat "$dir/runtime.log")"
@@ -536,7 +536,7 @@ test_completed_scout_copy_safety() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "scout $state close failed: $(cat "$dir/close.err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "scout $state close left its row open"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "scout $state close left its row open"
   assert_present "$dir/home/data/$id/report.md" "scout $state report was removed"
   if [ "$state" = landed ]; then
     assert_absent "$dir/home/state/$id.meta" "landed scout record was not removed"
@@ -563,11 +563,11 @@ test_close_help_never_cleans_up() {
   dir=$(make_case close-help)
   seed_task "$dir" "$id" ship
   land_task_branch "$dir" "$id"
-  tasks-axi done "$id" --file "$dir/home/data/backlog.md" >/dev/null
+  tasks-axi "done" "$id" --file "$dir/home/data/backlog.md" >/dev/null
   cp "$dir/home/data/backlog.md" "$dir/backlog.before"
   cp "$dir/home/state/$id.meta" "$dir/meta.before"
 
-  for command in done close; do
+  for command in "done" close; do
     for flag in --help -h; do
       for position in before after; do
         if [ "$position" = before ]; then
@@ -626,7 +626,7 @@ test_equivalent_backlog_path_returns_copy() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "$spelling close failed: $(cat "$dir/err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "$spelling close left the row open"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "$spelling close left the row open"
   assert_absent "$dir/home/state/$id.meta" "$spelling close left the task record"
   [ "$(return_count "$dir")" -eq 1 ] || fail "$spelling close did not return the copy once"
   pass "fm-tasks-axi: $spelling spelling of this home's backlog returns its copy"
@@ -644,7 +644,7 @@ test_state_override_returns_copy() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "state-override close failed: $(cat "$dir/err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "state-override close left row open"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "state-override close left row open"
   assert_absent "$state/$id.meta" "state-override close left the task record"
   [ "$(return_count "$dir")" -eq 1 ] || fail "state-override close did not return the copy once"
   pass "fm-tasks-axi: close returns a copy from the configured state directory"
@@ -673,7 +673,7 @@ test_after_close_preserves_completion() {
     fi
   fi
   land_task_branch "$dir" "$id"
-  tasks-axi done "$id" --file "$dir/home/data/backlog.md" >/dev/null
+  tasks-axi "done" "$id" --file "$dir/home/data/backlog.md" >/dev/null
   perl -pi -e 's/\(done \d{4}-\d{2}-\d{2}\)/(done 2020-01-02)/g' "$dir/home/data/backlog.md"
   tasks-axi show "$id" --file "$dir/home/data/backlog.md" | \
     grep -Fx '  closed: 2020-01-02' >/dev/null \
@@ -683,7 +683,7 @@ test_after_close_preserves_completion() {
   rc=$?
 
   [ "$rc" -eq 0 ] || fail "$artifact backfill failed: $(cat "$dir/err")"
-  [ "$(row_state "$dir" "$id")" = done ] || fail "$artifact backfill reopened row"
+  [ "$(row_state "$dir" "$id")" = "done" ] || fail "$artifact backfill reopened row"
   grep -F "$expected" "$dir/home/data/backlog.md" >/dev/null \
     || fail "$artifact completion data was lost"
   tasks-axi show "$id" --file "$dir/home/data/backlog.md" | \
