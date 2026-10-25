@@ -25,7 +25,8 @@ TMP_ROOT=$(fm_test_tmproot fm-pool-status)
 FAKEBIN="$TMP_ROOT/fakebin"
 STATUS_FILE="$TMP_ROOT/status.json"
 ERR_FILE="$TMP_ROOT/stderr"
-mkdir -p "$FAKEBIN"
+TEST_HOME="$TMP_ROOT/home"
+mkdir -p "$FAKEBIN" "$TEST_HOME/.config/treehouse"
 
 cat > "$FAKEBIN/treehouse" <<'SH'
 #!/usr/bin/env bash
@@ -43,7 +44,7 @@ chmod +x "$FAKEBIN/treehouse"
 
 run_pool() { # <project> <json> <status-rc> [status-stderr]
   printf '%s\n' "$2" > "$STATUS_FILE"
-  OUT=$(FM_FAKE_TH_STATUS_FILE="$STATUS_FILE" \
+  OUT=$(HOME="$TEST_HOME" FM_FAKE_TH_STATUS_FILE="$STATUS_FILE" \
     FM_FAKE_TH_STATUS_RC="$3" \
     FM_FAKE_TH_STATUS_ERR="${4:-}" \
     PATH="$FAKEBIN:$PATH" \
@@ -187,6 +188,68 @@ test_table_scoped_max_is_not_top_level() {
   pass "(j) a table-scoped max_trees is not the effective top-level maximum"
 }
 
+test_user_config_precedence() {
+  local repo wt config project
+  repo=$(new_repo user-config)
+  wt="$TMP_ROOT/user-config-wt"
+  git -C "$repo" worktree add --quiet --detach "$wt"
+  config="$TEST_HOME/.config/treehouse/config.toml"
+  printf 'max_trees = 4\n' > "$config"
+  for project in "$repo" "$wt"; do
+    run_pool "$project" '[{"status":"in-use"},{"status":"dirty"},{"status":"leased"},{"status":"in-use"}]' 0
+    expect_code 0 "$RC" "user-config inventory"
+    assert_contains "$OUT" "max=4 occupied=4 available=0 unknown=0 entries=4 saturation=100% state=full" \
+      "user configuration did not determine the effective ceiling"
+    assert_contains "$ERR" "no copy can be handed out" "user-config full alert was suppressed"
+  done
+  printf 'max_trees = 8\n' > "$repo/treehouse.toml"
+  for project in "$repo" "$wt"; do
+    run_pool "$project" '[]' 0
+    expect_code 0 "$RC" "repository-config inventory"
+    assert_contains "$OUT" "max=8" "repository configuration did not override user configuration"
+  done
+  printf '' > "$repo/treehouse.toml"
+  run_pool "$wt" '[]' 0
+  expect_code 0 "$RC" "repository config without a maximum"
+  assert_contains "$OUT" "max=16" "an absent repository key incorrectly fell back to user configuration"
+  printf 'max_trees = banana\n' > "$repo/treehouse.toml"
+  run_pool "$wt" '[]' 0
+  expect_code 1 "$RC" "invalid repository configuration"
+  assert_contains "$OUT" "max=unknown" "invalid repository configuration fell back to user configuration"
+  rm "$repo/treehouse.toml"
+  printf 'max_trees = banana\n' > "$config"
+  run_pool "$repo" '[]' 0
+  expect_code 1 "$RC" "invalid user configuration"
+  assert_contains "$OUT" "max=unknown" "invalid user configuration was replaced by the default"
+  printf '' > "$config"
+  run_pool "$repo" '[]' 0
+  expect_code 0 "$RC" "user config without a maximum"
+  assert_contains "$OUT" "max=16" "an absent user-config key did not use the default"
+  rm "$config"
+  pass "repository and user configuration follow Treehouse precedence"
+}
+
+test_equivalent_max_keys() {
+  local repo config key
+  repo=$(new_repo quoted-keys)
+  for config in "$repo/treehouse.toml" "$TEST_HOME/.config/treehouse/config.toml"; do
+    for key in max_trees '"max_trees"' "'max_trees'"; do
+      printf '  %s = 4 # ceiling\r\n' "$key" > "$config"
+      run_pool "$repo" '[{"status":"in-use"},{"status":"dirty"},{"status":"leased"},{"status":"in-use"}]' 0
+      expect_code 0 "$RC" "equivalent max_trees key $key"
+      assert_contains "$OUT" "max=4 occupied=4 available=0 unknown=0 entries=4 saturation=100% state=full" \
+        "equivalent key $key lost the effective maximum"
+      assert_contains "$ERR" "no copy can be handed out" "equivalent key $key suppressed the full alert"
+    done
+    printf 'max_trees = 4\n\047max_trees\047 = 8\n' > "$config"
+    run_pool "$repo" '[]' 0
+    expect_code 1 "$RC" "duplicate equivalent keys"
+    assert_contains "$OUT" "max=unknown" "duplicate equivalent keys were silently accepted"
+    rm "$config"
+  done
+  pass "equivalent max_trees keys preserve capacity and duplicate detection"
+}
+
 test_project_equals_is_rejected
 test_buckets_are_split
 test_80_percent_is_saturated
@@ -198,3 +261,5 @@ test_absent_config_uses_treehouse_default
 test_invalid_max_is_unknown
 test_linked_worktree_reads_primary_config
 test_table_scoped_max_is_not_top_level
+test_user_config_precedence
+test_equivalent_max_keys

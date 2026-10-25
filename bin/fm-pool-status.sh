@@ -14,8 +14,8 @@
 # four. Unknown is never counted as available: an unreadable status read, a
 # malformed inventory, or an unrecognized entry reports available=unknown or an
 # explicit unknown count instead. The maximum comes from the primary checkout's
-# treehouse.toml (Treehouse's own config), with its documented default 16 when
-# absent.
+# treehouse.toml, falling back to ~/.config/treehouse/config.toml when absent.
+# The default is 16 when neither file exists or the selected file omits max_trees.
 #
 # saturated means occupied is at least 80% of the effective maximum. full means
 # no slot is available and the materialized count has reached the maximum, so

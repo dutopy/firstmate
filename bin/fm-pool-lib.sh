@@ -6,9 +6,9 @@
 # available, or unknown, and whether the pool is saturated. It never allocates,
 # returns, prunes, leases, or edits Treehouse state.
 #
-# The maximum is `max_trees` from the PRIMARY checkout's treehouse.toml, which
-# is the config Treehouse itself reads from a linked worktree, and the
-# documented default 16 when the file or the key is absent. The inventory is
+# The maximum is `max_trees` from the PRIMARY checkout's treehouse.toml, or
+# ~/.config/treehouse/config.toml when the repository file is absent, with
+# default 16 when neither file exists or the selected file omits the key. The inventory is
 # `treehouse status --json` run from the project's top level with
 # TREEHOUSE_NO_UPDATE_CHECK=1, so the read never reaches the network.
 #
@@ -27,7 +27,7 @@
 #
 # Output contract, set by fm_treehouse_pool_capacity:
 #   FM_POOL_PROJECT       resolved project top level
-#   FM_POOL_CONFIG        canonical treehouse.toml path (may not exist)
+#   FM_POOL_CONFIG        selected config path (may not exist)
 #   FM_POOL_MAX           integer or unknown
 #   FM_POOL_OCCUPIED      integer or unknown
 #   FM_POOL_AVAILABLE     integer or unknown
@@ -46,8 +46,8 @@ FM_POOL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$FM_POOL_LIB_DIR/fm-timeout-lib.sh"
 
-# Treehouse's documented default when treehouse.toml or its max_trees key is
-# absent (the value `treehouse init` writes).
+# Treehouse's documented default when neither config exists or the selected
+# config omits max_trees (the value `treehouse init` writes).
 FM_POOL_DEFAULT_MAX_TREES=16
 # A read-only inventory must not hold dispatch open on a wedged provider.
 FM_POOL_READ_TIMEOUT=10
@@ -89,7 +89,11 @@ fm_pool_config_path() {  # <project-dir>
     */.git) ;;
     *) root=$(git -C "$project" rev-parse --show-toplevel 2>/dev/null) || return 1 ;;
   esac
-  printf '%s/treehouse.toml\n' "$root"
+  if [ -e "$root/treehouse.toml" ] || [ -L "$root/treehouse.toml" ]; then
+    printf '%s/treehouse.toml\n' "$root"
+  else
+    printf '%s/.config/treehouse/config.toml\n' "$HOME"
+  fi
 }
 
 # Print the effective integer maximum, or return 1 when the config exists but
@@ -103,12 +107,12 @@ fm_pool_max_trees() {  # <config-path>
   if [ ! -f "$config" ] || [ ! -r "$config" ]; then
     return 1
   fi
-  if ! value=$(awk -v default="$FM_POOL_DEFAULT_MAX_TREES" '
+  if ! value=$(awk -v default="$FM_POOL_DEFAULT_MAX_TREES" -v quote="'" '
     {
       line = $0
       sub(/\r$/, "", line)
       if (line ~ /^[[:space:]]*\[/) { in_table = 1; next }
-      if (!in_table && line ~ /^[[:space:]]*"?max_trees"?[[:space:]]*=/) {
+      if (!in_table && line ~ ("^[[:space:]]*(max_trees|\"max_trees\"|" quote "max_trees" quote ")[[:space:]]*=")) {
         seen++
         sub(/#.*/, "", line)
         sub(/^[^=]*=/, "", line)
