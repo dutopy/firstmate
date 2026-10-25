@@ -499,7 +499,64 @@ EOF
   pass "fm-tasks-axi: a close preserves an existing interruption recovery marker"
 }
 
+test_completed_scout_copy_safety() {
+  local state=$1 dir id=scout-x1 rc before_head before_status
+  dir=$(make_case "scout-$state")
+  seed_task "$dir" "$id" scout
+  mkdir -p "$dir/home/data/$id"
+  printf 'Completed scout report\n' > "$dir/home/data/$id/report.md"
+  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" \
+    FM_DATA_OVERRIDE="$dir/home/data" FM_CONFIG_OVERRIDE="$dir/home/config" \
+    "$FIXTURE_ROOT/bin/fm-captain-hold.sh" complete "$id" --none \
+    > "$dir/complete.out" 2> "$dir/complete.err" \
+    || fail "scout completion inventory failed: $(cat "$dir/complete.err")"
+
+  case "$state" in
+    dirty)
+      land_task_branch "$dir" "$id"
+      printf 'scout scratch work\n' > "$dir/wt/scratch.txt"
+      ;;
+    unlanded)
+      printf 'scout scratch work\n' > "$dir/wt/scratch.txt"
+      git -C "$dir/wt" add scratch.txt
+      git -C "$dir/wt" -c user.email=t@t -c user.name=t \
+        commit -q -m 'unlanded scout work'
+      ;;
+    landed) land_task_branch "$dir" "$id" ;;
+  esac
+  before_head=$(git -C "$dir/wt" rev-parse HEAD)
+  before_status=$(git -C "$dir/wt" status --porcelain)
+
+  run_close "$dir" "$id" > "$dir/close.out" 2> "$dir/close.err"
+  rc=$?
+
+  [ "$rc" -eq 0 ] || fail "scout $state close failed: $(cat "$dir/close.err")"
+  [ "$(row_state "$dir" "$id")" = done ] || fail "scout $state close left its row open"
+  assert_present "$dir/home/data/$id/report.md" "scout $state report was removed"
+  if [ "$state" = landed ]; then
+    assert_absent "$dir/home/state/$id.meta" "landed scout record was not removed"
+    [ "$(return_count "$dir")" -eq 1 ] || fail "landed scout copy was not returned once"
+  else
+    assert_present "$dir/home/state/$id.meta" "scout $state record was removed"
+    [ "$(return_count "$dir")" -eq 0 ] || fail "scout $state copy was returned"
+    [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$before_head" ] \
+      || fail "scout $state HEAD changed"
+    [ "$(git -C "$dir/wt" status --porcelain)" = "$before_status" ] \
+      || fail "scout $state working files changed"
+    [ "$(git -C "$dir/wt" branch --show-current)" = fm/task-x1 ] \
+      || fail "scout $state branch was detached or deleted"
+    grep -Fx 'scout scratch work' "$dir/wt/scratch.txt" >/dev/null \
+      || fail "scout $state work was lost"
+    grep -F 'copy was preserved' "$dir/close.err" >/dev/null \
+      || fail "scout $state preservation was not reported"
+  fi
+  pass "fm-tasks-axi: completed-report scout $state copy obeys automatic return safety"
+}
+
 test_close_returns_clean_landed_copy
+test_completed_scout_copy_safety dirty
+test_completed_scout_copy_safety unlanded
+test_completed_scout_copy_safety landed
 test_dirty_copy_is_preserved
 test_unlanded_copy_is_preserved
 test_reassigned_slot_is_preserved
