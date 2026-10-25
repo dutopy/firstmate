@@ -1,0 +1,11 @@
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5REVXSEQ3FCCTZXWYGVM01B/.local-test-tmp/fm-task-close-copy-return.pVtuKo/active-lease/pool/.treehouse/project-2cea56/1/project. Run 'treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5REVXSEQ3FCCTZXWYGVM01B/.local-test-tmp/fm-task-close-copy-return.pVtuKo/active-lease/pool/.treehouse/project-2cea56/1/project' to release it.
+error: teardown (fm-teardown) refused - task 'task-x1' is leased to the branch supervision actor (state/.lease-task-x1); retry after that actor releases it
+branch 35879 1792898913 live
+LIVE: active other-actor lease preserved; close still Done
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5REVXSEQ3FCCTZXWYGVM01B/.local-test-tmp/fm-task-close-copy-return.pVtuKo/real-return-retry/pool/.treehouse/project-779b70/1/project. Run 'treehouse return /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5REVXSEQ3FCCTZXWYGVM01B/.local-test-tmp/fm-task-close-copy-return.pVtuKo/real-return-retry/pool/.treehouse/project-779b70/1/project' to release it.
+worktree /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5REVXSEQ3FCCTZXWYGVM01B/.local-test-tmp/fm-task-close-copy-return.pVtuKo/real-return-retry/wt is not managed by treehouse
+LIVE: real return failure preserved copy; corrected-path retry returned it; third close did not return twice
+active-lease [{"name":"1","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5REVXSEQ3FCCTZXWYGVM01B/.local-test-tmp/fm-task-close-copy-return.pVtuKo/active-lease/pool/.treehouse/project-2cea56/1/project","status":"leased","branch":"fm/task-x1","flavor":"git","lease_id":"5f44c6f736c8647979f600d1a8c8db41","lease_holder":"","leased_at":"2026-10-25T04:28:33.322899+01:00","processes":[]}]
+real-return-retry [{"name":"1","path":"/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5REVXSEQ3FCCTZXWYGVM01B/.local-test-tmp/fm-task-close-copy-return.pVtuKo/real-return-retry/pool/.treehouse/project-779b70/1/project","status":"available","branch":"","detached":true,"flavor":"git","lease_id":"","lease_holder":"","leased_at":null,"processes":[]}]
