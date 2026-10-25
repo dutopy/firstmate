@@ -158,6 +158,9 @@ absolute_from_caller() {  # <path-value>
 ARGS=()
 path_value_next=0
 for arg in "$@"; do
+  case "$arg" in
+    --help|-h) CLOSE_COMMAND= ;;
+  esac
   if [ "$path_value_next" = 1 ]; then
     ARGS+=("$(absolute_from_caller "$arg")")
     path_value_next=0

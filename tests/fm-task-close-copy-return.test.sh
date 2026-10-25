@@ -558,6 +558,56 @@ test_completed_scout_copy_safety() {
   pass "fm-tasks-axi: completed-report scout $state copy obeys automatic return safety"
 }
 
+test_close_help_never_cleans_up() {
+  local dir id=task-x1 command flag position rc expected_rc
+  dir=$(make_case close-help)
+  seed_task "$dir" "$id" ship
+  land_task_branch "$dir" "$id"
+  tasks-axi done "$id" --file "$dir/home/data/backlog.md" >/dev/null
+  cp "$dir/home/data/backlog.md" "$dir/backlog.before"
+  cp "$dir/home/state/$id.meta" "$dir/meta.before"
+
+  for command in done close; do
+    for flag in --help -h; do
+      for position in before after; do
+        if [ "$position" = before ]; then
+          set -- "$command" "$flag" "$id"
+        else
+          set -- "$command" "$id" "$flag"
+        fi
+        ( cd "$dir/home" || exit 1
+          TASKS_AXI_FILE="$dir/home/data/backlog.md" tasks-axi "$@"
+        ) > "$dir/native.out" 2> "$dir/native.err"
+        expected_rc=$?
+        ( cd "$dir/home" || exit 1
+          FM_HOME="$dir/home" \
+          FM_STATE_OVERRIDE="$dir/home/state" FM_DATA_OVERRIDE="$dir/home/data" \
+          FM_CONFIG_OVERRIDE="$dir/home/config" \
+          FM_RUNTIME_LOG="$dir/runtime.log" \
+          FM_FIXTURE_REAPER_LOG="$dir/reaper.log" \
+          PATH="$dir/fakebin:$PATH" \
+          "$CLOSE" "$@" ) > "$dir/help.out" 2> "$dir/help.err"
+        rc=$?
+
+        [ "$rc" -eq "$expected_rc" ] || fail "$command $flag $position changed tasks-axi's exit status"
+        cmp -s "$dir/native.out" "$dir/help.out" \
+          || fail "$command $flag $position changed tasks-axi's help output"
+        cmp -s "$dir/native.err" "$dir/help.err" \
+          || fail "$command $flag $position changed tasks-axi's help diagnostic"
+        cmp -s "$dir/meta.before" "$dir/home/state/$id.meta" \
+          || fail "$command $flag $position changed or removed the task record"
+        cmp -s "$dir/backlog.before" "$dir/home/data/backlog.md" \
+          || fail "$command $flag $position changed the backlog"
+        [ ! -s "$dir/runtime.log" ] || fail "$command $flag $position touched the worker or copy"
+        assert_absent "$dir/reaper.log" "$command $flag $position invoked cleanup"
+        [ "$(git -C "$dir/wt" branch --show-current)" = fm/task-x1 ] \
+          || fail "$command $flag $position detached or deleted the task branch"
+      done
+    done
+  done
+  pass "fm-tasks-axi: done and close help never clean up an already-Done task"
+}
+
 test_equivalent_backlog_path_returns_copy() {
   local spelling=$1 dir id=task-x1 data rc
   dir=$(make_case "backlog-$spelling")
@@ -646,6 +696,7 @@ test_after_close_preserves_completion() {
 
 test_close_returns_clean_landed_copy
 test_state_override_returns_copy
+test_close_help_never_cleans_up
 test_equivalent_backlog_path_returns_copy trailing-slash
 test_equivalent_backlog_path_returns_copy symlink
 test_equivalent_backlog_path_returns_copy dot-segments
