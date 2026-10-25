@@ -3598,11 +3598,19 @@ BACKLOG_TRANSITION=$TEARDOWN_BACKLOG_TRANSITION
 BACKLOG_TRANSITION_FLAGS=()
 [ "$BACKLOG_TRANSITION" = close ] || BACKLOG_TRANSITION_FLAGS=(--retain)
 BACKLOG_SKIP_REASON=
-if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ] && [ "$AFTER_CLOSE" = 0 ]; then
+if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
   backlog_done_args || {
     echo "error: the pending backlog $BACKLOG_TRANSITION for $ID is not replayable; refusing destructive teardown" >&2
     exit 1
   }
+  if [ "$AFTER_CLOSE" = 1 ]; then
+    fm_backlog_done "$DATA" "$ID" "${BACKLOG_DONE_ARGS[@]+"${BACKLOG_DONE_ARGS[@]}"}" || {
+      echo "error: cannot preserve completion links for $ID; refusing destructive teardown" >&2
+      exit 1
+    }
+  fi
+fi
+if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ] && [ "$AFTER_CLOSE" = 0 ]; then
 # Roll the accepted legacy incarnation's stamp back to the record's exact
 # pre-stamp bytes. Uses perl - already in the teardown lifecycle's curated PATH
 # (truncate is not, and is absent on stock macOS) - and verifies the restored

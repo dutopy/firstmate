@@ -122,7 +122,7 @@ close_return_copy() {  # <task-id>
   case "$id" in
     ''|.*|*[!A-Za-z0-9._-]*) return 0 ;;
   esac
-  meta="$CLOSE_HOME/state/$id.meta"
+  meta="$CLOSE_STATE/$id.meta"
   # No task record means no launched endpoint or copy; nothing is owed.
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
   kind=$(LC_ALL=C sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -1)
@@ -137,7 +137,7 @@ close_return_copy() {  # <task-id>
   if FM_HOME="$CLOSE_HOME" FM_STATE_OVERRIDE="$CLOSE_STATE" \
      FM_DATA_OVERRIDE="$CLOSE_DATA" FM_CONFIG_OVERRIDE="$CLOSE_CONFIG" \
      "$SCRIPT_DIR/fm-teardown.sh" "$id" --after-close >&2; then
-    echo "copy: task $id's copy passed the guarded return and is available again" >&2
+    echo "copy: task $id's guarded cleanup completed" >&2
   elif [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
     echo "copy: task $id's copy was already finished by another close" >&2
   else

@@ -180,11 +180,11 @@ land_task_branch() {  # <case> <id>
   git -C "$dir/project" fetch -q origin
 }
 
-run_close() {  # <case> <id>
-  local dir=$1 id=$2
+run_close() {  # <case> <id> [state-dir]
+  local dir=$1 id=$2 state=${3:-$1/home/state}
   ( cd "$dir/home" || exit 1
     FM_HOME="$dir/home" \
-    FM_STATE_OVERRIDE="$dir/home/state" FM_DATA_OVERRIDE="$dir/home/data" \
+    FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$dir/home/data" \
     FM_CONFIG_OVERRIDE="$dir/home/config" \
     FM_RUNTIME_LOG="$dir/runtime.log" \
     FM_FIXTURE_REAPER_LOG="$dir/reaper.log" \
@@ -242,8 +242,8 @@ test_close_returns_clean_landed_copy() {
   assert_absent "$dir/home/state/$id.meta" "the close left the task record behind"
   [ "$(return_count "$dir")" -eq 1 ] \
     || fail "the close did not return the owned copy exactly once: $(cat "$dir/runtime.log")"
-  grep -F "copy: task $id's copy passed the guarded return" "$dir/close.err" >/dev/null \
-    || fail "the close did not report the guarded copy return: $(cat "$dir/close.err")"
+  grep -F "copy: task $id's guarded cleanup completed" "$dir/close.err" >/dev/null \
+    || fail "the close did not report guarded cleanup completion: $(cat "$dir/close.err")"
   assert_present "$dir/reaper.log" "the fixture teardown never reached its stub reaper"
   grep -F "$FIXTURE_ROOT/bin/fm-remote-job-reap-orphans.sh" "$dir/reaper.log" >/dev/null \
     || fail "teardown ran a reaper outside the disposable fixture: $(cat "$dir/reaper.log")"
@@ -316,6 +316,11 @@ test_reassigned_slot_is_preserved() {
   assert_present "$dir/pool/1/project" "the other task's copy was removed"
   grep -F 'reassigned to task other-live' "$dir/close.err" >/dev/null \
     || fail "the close did not name the reassignment: $(cat "$dir/close.err")"
+  grep -F 'guarded cleanup completed' "$dir/close.err" >/dev/null \
+    || fail "the reassigned-slot close did not report cleanup completion"
+  if grep -F 'available again' "$dir/close.err" >/dev/null; then
+    fail "the reassigned-slot close claimed pool availability"
+  fi
   pass "fm-tasks-axi: a close never returns or mutates a slot reassigned to another task"
 }
 
@@ -553,7 +558,73 @@ test_completed_scout_copy_safety() {
   pass "fm-tasks-axi: completed-report scout $state copy obeys automatic return safety"
 }
 
+test_state_override_returns_copy() {
+  local dir id=task-x1 rc state
+  dir=$(make_case state-override)
+  seed_task "$dir" "$id" ship
+  land_task_branch "$dir" "$id"
+  state="$dir/home/relocated-state"
+  mv "$dir/home/state" "$state"
+
+  run_close "$dir" "$id" "$state" > "$dir/out" 2> "$dir/err"
+  rc=$?
+
+  [ "$rc" -eq 0 ] || fail "state-override close failed: $(cat "$dir/err")"
+  [ "$(row_state "$dir" "$id")" = done ] || fail "state-override close left row open"
+  assert_absent "$state/$id.meta" "state-override close left the task record"
+  [ "$(return_count "$dir")" -eq 1 ] || fail "state-override close did not return the copy once"
+  pass "fm-tasks-axi: close returns a copy from the configured state directory"
+}
+
+test_after_close_preserves_completion() {
+  local artifact=$1 dir id=task-x1 rc expected
+  dir=$(make_case "completion-$artifact")
+  if [ "$artifact" = report ]; then
+    seed_task "$dir" "$id" scout
+    mkdir -p "$dir/home/data/$id"
+    printf 'Completed scout report\n' > "$dir/home/data/$id/report.md"
+    FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" \
+      FM_DATA_OVERRIDE="$dir/home/data" FM_CONFIG_OVERRIDE="$dir/home/config" \
+      "$FIXTURE_ROOT/bin/fm-captain-hold.sh" complete "$id" --none \
+      > "$dir/complete.out" 2> "$dir/complete.err" \
+      || fail "completion inventory failed: $(cat "$dir/complete.err")"
+    expected="data/$id/report.md"
+  else
+    seed_task "$dir" "$id" ship
+    expected='local main'
+    if [ "$artifact" = pr ]; then
+      perl -pi -e 's/^mode=local-only$/mode=no-mistakes/' "$dir/home/state/$id.meta"
+      expected='https://github.com/example/repo/pull/42'
+      printf 'pr=%s\n' "$expected" >> "$dir/home/state/$id.meta"
+    fi
+  fi
+  land_task_branch "$dir" "$id"
+  tasks-axi done "$id" --file "$dir/home/data/backlog.md" >/dev/null
+  perl -pi -e 's/\(done \d{4}-\d{2}-\d{2}\)/(done 2020-01-02)/g' "$dir/home/data/backlog.md"
+  tasks-axi show "$id" --file "$dir/home/data/backlog.md" | \
+    grep -Fx '  closed: 2020-01-02' >/dev/null \
+    || fail "fixture did not establish an earlier close date"
+
+  run_after_close "$dir" "$id" > "$dir/out" 2> "$dir/err"
+  rc=$?
+
+  [ "$rc" -eq 0 ] || fail "$artifact backfill failed: $(cat "$dir/err")"
+  [ "$(row_state "$dir" "$id")" = done ] || fail "$artifact backfill reopened row"
+  grep -F "$expected" "$dir/home/data/backlog.md" >/dev/null \
+    || fail "$artifact completion data was lost"
+  tasks-axi show "$id" --file "$dir/home/data/backlog.md" | \
+    grep -Fx '  closed: 2020-01-02' >/dev/null \
+    || fail "$artifact backfill moved the close date"
+  assert_absent "$dir/home/state/$id.meta" "$artifact backfill left task record"
+  [ "$(return_count "$dir")" -eq 1 ] || fail "$artifact backfill did not return copy once"
+  pass "fm-teardown: after-close preserves $artifact completion and the original close date"
+}
+
 test_close_returns_clean_landed_copy
+test_state_override_returns_copy
+test_after_close_preserves_completion pr
+test_after_close_preserves_completion report
+test_after_close_preserves_completion note
 test_completed_scout_copy_safety dirty
 test_completed_scout_copy_safety unlanded
 test_completed_scout_copy_safety landed
