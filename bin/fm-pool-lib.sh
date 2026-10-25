@@ -108,7 +108,7 @@ fm_pool_max_trees() {  # <config-path>
   if [ ! -f "$config" ] || [ ! -r "$config" ]; then
     return 1
   fi
-  if ! value=$(awk -v default="$FM_POOL_DEFAULT_MAX_TREES" -v quote="'" '
+  if ! value=$(awk -v default_max="$FM_POOL_DEFAULT_MAX_TREES" -v quote="'" '
     {
       line = $0
       sub(/\r$/, "", line)
@@ -122,7 +122,7 @@ fm_pool_max_trees() {  # <config-path>
       }
     }
     END {
-      if (seen == 0) { print default; exit 0 }
+      if (seen == 0) { print default_max; exit 0 }
       if (seen > 1) { exit 1 }
       if (value !~ /^\+?[0-9][0-9_]*$/) { exit 1 }
       gsub(/_/, "", value)
