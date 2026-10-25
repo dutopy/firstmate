@@ -76,10 +76,12 @@
 # local-only projects additionally accept work merged into the local default
 # branch (firstmate performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.
-# Scout tasks (kind=scout in meta) carve out of that check: their worktree is
-# declared scratch and the report at data/<task-id>/report.md is the work
-# product. Teardown proceeds only once the report exists and the shared
-# unresolved-decision completion gate verifies its captain-held inventory.
+# Manual teardown exempts scout tasks (kind=scout in meta) from the dirty and
+# landed-work checks: their worktree is declared scratch and the report at
+# data/<task-id>/report.md is the work product. Automatic --after-close cleanup
+# does not use that exemption: scouts must pass the same dirty and landed-work
+# checks as ships. Both paths require the report and the shared unresolved-
+# decision completion gate's verification of its captain-held inventory.
 # Before destructive cleanup, teardown validates task check artifacts as
 # ordinary single-link files on the state device. It refuses and preserves
 # task state when that proof fails; otherwise it removes the task's check,
@@ -196,12 +198,16 @@
 #   --after-close finishes cleanup for a close its caller already landed, as
 #   bin/fm-tasks-axi.sh's `done`/`close` hook does. It requires this task's
 #   backlog row to be Done when the automatic transition applies, refuses that
-#   mode for a secondmate record, and skips the close transition and its
-#   pending-close marker because the row is not owed again. A missing task
-#   record is a converged no-op, so repeated and concurrent closes converge.
-#   Every other guard is unchanged - incarnation, ownership, landed-work, dirty
-#   checks, captain-held deferral, endpoint close, record removal - so this mode
-#   can never be used to skip a close and destroy a live task's copy.
+#   mode for a secondmate record, and preserves completion links through
+#   bin/fm-backlog-transition-lib.sh's fm_backlog_done before cleanup without
+#   reopening the row or changing its close date. It creates no pending-close
+#   marker and leaves any existing recovery marker for session-start replay.
+#   A missing task record is a converged no-op; task locks serialize cleanup.
+#   The scout scratch exemption above does not apply, and combining this mode
+#   with --force is refused. Incarnation, ownership, lease, completion-proof,
+#   endpoint-close, and record-removal guards remain in force. The already-Done
+#   row proof replaces the ordinary open-row captain-held deferral.
+#   Regression coverage: tests/fm-task-close-copy-return.test.sh.
 #   --legacy-record accepts a task record that predates the spawn_gen field:
 #   teardown then proceeds only when the recorded endpoint is confirmed dead or
 #   agent-less (bin/fm-backend.sh's recovery-grade classifier), and without

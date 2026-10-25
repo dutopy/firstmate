@@ -33,16 +33,14 @@
 # root's data/ (FM_HOME unset keeps the single-home layout unchanged).
 #
 # CLOSE HOOK. `done` and its `close` alias are this home's public task-close
-# commands, so a launched task's close also owes its copy return. After
-# tasks-axi reports the close, this command runs
-# bin/fm-teardown.sh <id> --after-close for that task record. That is the only
-# cleanup owner: the close stays authoritative and the hook never changes its
-# result, never forces, and preserves a dirty, unlanded, reassigned, ambiguous,
-# or captain-held copy. Teardown's record, incarnation, ownership, landed-work,
-# and recovery-marker guards all still apply, and the hook is skipped for a
-# secondmate record and for a close that landed in a backlog other than this
-# home's own. A repeated or concurrent close converges: a missing record is a
-# no-op and teardown's locks serialize the rest, so cleanup is never repeated.
+# commands. After tasks-axi reports success, this command attempts the launched
+# task's copy return through bin/fm-teardown.sh <id> --after-close, whose header
+# owns cleanup safety, completion links, recovery markers, and convergence.
+# The close stays authoritative: cleanup never changes tasks-axi's exit status.
+# The hook is skipped when --help or -h appears anywhere in the arguments, when
+# the selected state directory has no regular non-symlink task record, for a
+# secondmate record, or when the close addresses another backlog rather than
+# this home's own data directory (compared by canonical directory path).
 #
 # Refusals (exit 2, nothing run):
 #   - tasks-axi missing from PATH;
@@ -87,9 +85,7 @@ esac
 
 CALLER_DIR=$(pwd)
 
-# `done` and its `close` alias are the public task-close commands. A launched
-# task's close also owes its copy return; that runs after the close lands, under
-# bin/fm-teardown.sh's guards (see close_return_copy below).
+# Close-hook dispatch and exclusions are documented in the header above.
 CLOSE_COMMAND=
 CLOSE_ID=
 case "${1:-}" in
@@ -200,10 +196,7 @@ else
 fi
 
 cd "$FM_BACKLOG_AXI_ROOT" || fail "cannot enter the backlog root $FM_BACKLOG_AXI_ROOT"
-# A close lands first and stays authoritative: the guarded copy return runs only
-# after tasks-axi reports success, never changes the close result, and never
-# forces. A refusal preserves the dirty, unlanded, reassigned, or otherwise
-# ambiguous copy for an ordinary teardown or a later close retry.
+# Keep tasks-axi's result independent of the cleanup attempt (header above).
 if [ -n "$CLOSE_COMMAND" ]; then
   tasks-axi ${ARGS[@]+"${ARGS[@]}"}
   close_status=$?
