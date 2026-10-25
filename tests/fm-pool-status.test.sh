@@ -61,6 +61,18 @@ new_repo() { # <name> [max]
   printf '%s\n' "$dir"
 }
 
+test_project_equals_is_rejected() {
+  local project out rc
+  for project in "$TMP_ROOT" ''; do
+    out=$("$POOL" "--project=$project" 2>"$ERR_FILE")
+    rc=$?
+    expect_code 2 "$rc" "equals-form project selection is a usage error"
+    [ -z "$out" ] || fail "a usage error emitted a capacity report: $out"
+    assert_contains "$(cat "$ERR_FILE")" "Usage:" "a usage error omitted usage guidance"
+  done
+  pass "equals-form project selection is rejected"
+}
+
 test_buckets_are_split() {
   local repo out
   repo=$(new_repo buckets 4)
@@ -175,6 +187,7 @@ test_table_scoped_max_is_not_top_level() {
   pass "(j) a table-scoped max_trees is not the effective top-level maximum"
 }
 
+test_project_equals_is_rejected
 test_buckets_are_split
 test_80_percent_is_saturated
 test_full_means_no_available_and_no_room

@@ -46,10 +46,6 @@ while [ "$#" -gt 0 ]; do
       PROJECT=$2
       shift 2
       ;;
-    --project=*)
-      PROJECT=${1#--project=}
-      shift
-      ;;
     -h|--help)
       usage
       exit 0
