@@ -107,14 +107,16 @@ absolute_dir() {  # <path>
 }
 
 CLOSE_HOME=$(absolute_dir "$FM_HOME")
-CLOSE_DATA=$(absolute_dir "$DATA")
+CLOSE_DATA=$(fm_backlog_data_absolute "$DATA") || fail "data directory cannot be resolved: $DATA"
 CLOSE_STATE=$(absolute_dir "${FM_STATE_OVERRIDE:-$FM_HOME/state}")
 CLOSE_CONFIG=$(absolute_dir "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}")
 # The close hook pairs cleanup only with this home's own backlog. A guardian
 # home or a test may point FM_DATA_OVERRIDE at another directory; that close
 # must never tear down a same-id task in this home.
 close_owns_this_home_backlog() {
-  [ "$(absolute_dir "$CLOSE_DATA")" = "$(absolute_dir "$CLOSE_HOME/data")" ]
+  local home_data
+  home_data=$(fm_backlog_data_absolute "$CLOSE_HOME/data") || return 1
+  [ "$CLOSE_DATA" = "$home_data" ]
 }
 
 close_return_copy() {  # <task-id>

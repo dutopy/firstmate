@@ -558,6 +558,30 @@ test_completed_scout_copy_safety() {
   pass "fm-tasks-axi: completed-report scout $state copy obeys automatic return safety"
 }
 
+test_equivalent_backlog_path_returns_copy() {
+  local spelling=$1 dir id=task-x1 data rc
+  dir=$(make_case "backlog-$spelling")
+  seed_task "$dir" "$id" ship
+  land_task_branch "$dir" "$id"
+  case "$spelling" in
+    trailing-slash) data="$dir/home/data/" ;;
+    symlink)
+      ln -s home/data "$dir/data-alias"
+      data="$dir/data-alias"
+      ;;
+    dot-segments) data="$dir/home/data/../data/." ;;
+  esac
+
+  run_close_in_backlog "$dir" "$id" "$data" > "$dir/out" 2> "$dir/err"
+  rc=$?
+
+  [ "$rc" -eq 0 ] || fail "$spelling close failed: $(cat "$dir/err")"
+  [ "$(row_state "$dir" "$id")" = done ] || fail "$spelling close left the row open"
+  assert_absent "$dir/home/state/$id.meta" "$spelling close left the task record"
+  [ "$(return_count "$dir")" -eq 1 ] || fail "$spelling close did not return the copy once"
+  pass "fm-tasks-axi: $spelling spelling of this home's backlog returns its copy"
+}
+
 test_state_override_returns_copy() {
   local dir id=task-x1 rc state
   dir=$(make_case state-override)
@@ -622,6 +646,9 @@ test_after_close_preserves_completion() {
 
 test_close_returns_clean_landed_copy
 test_state_override_returns_copy
+test_equivalent_backlog_path_returns_copy trailing-slash
+test_equivalent_backlog_path_returns_copy symlink
+test_equivalent_backlog_path_returns_copy dot-segments
 test_after_close_preserves_completion pr
 test_after_close_preserves_completion report
 test_after_close_preserves_completion note
