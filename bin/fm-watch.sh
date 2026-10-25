@@ -234,12 +234,8 @@ fi
 # turn-ended signature, annotation staleness checks, and guarded bookkeeping writes.
 
 POLL=${FM_POLL:-15}                   # seconds between cycles
-# The liveness beacon is touched once per cycle, immediately before the
-# terminal wait below (event_wait_or_sleep) as well as at the top of the next
-# one, so a healthy cycle's beacon can legitimately age up to POLL seconds
-# between touches. fm_poll_derived_grace (bin/fm-wake-lib.sh, already sourced
-# transitively above) is the single owner of the max(300, poll+60)
-# derivation - see docs/turnend-guard.md "Guard grace and the poll cadence".
+# docs/turnend-guard.md "Guard grace and the poll cadence" owns the grace
+# rationale; docs/watcher-continuity.md owns progress refreshes during scans.
 # This recomputes the library default above now that the real configured
 # POLL is known.
 WATCHER_STALE_GRACE=${FM_WATCHER_STALE_GRACE:-${FM_GUARD_GRACE:-$(fm_poll_derived_grace "$POLL")}}
@@ -1656,6 +1652,7 @@ scan_signals() {
     if [ ! -e "$f" ]; then
       case "$f" in *.status) [ -L "$f" ] || continue ;; *) continue ;; esac
     fi
+    fm_beat_progress
     sig=$(fm_wake_signal_sig "$f") || continue
     [ -n "$sig" ] || continue
     sf=$(fm_wake_signal_seen_path "$STATE" "$f")
@@ -2107,7 +2104,70 @@ if ! fm_procevent_launch_confirm_seconds >/dev/null; then
   exit 1
 fi
 
-if ! fm_lock_try_acquire "$WATCH_LOCK"; then
+# Bounded replacement of a live-but-stuck watcher holding THIS home's lock.
+# Replaces only when every guard holds: the recorded pid is alive, its lock
+# metadata names this home and this watcher path, its process identity still
+# matches (so a recycled pid is never killed), and its beacon is older than the
+# stale grace. At most one replacement per 900 seconds; a
+# second replacement inside 6 hours is recorded in
+# state/.watcher-replace-loud so the new watcher surfaces it as a wake the
+# captain sees. Anything else falls through to the refusal below, unchanged.
+WATCHER_REPLACE_WINDOW=900
+WATCHER_REPLACE_LOUD_WINDOW=21600
+watcher_replace_stale_holder() {
+  local pid=${FM_LOCK_HELD_PID:-} lock="$STATE/.watcher-replace.lock" status=0
+  if ! fm_lock_try_acquire "$lock"; then
+    FM_LOCK_HELD_PID=$pid
+    return 1
+  fi
+  watcher_replace_stale_holder_locked "$pid" || status=$?
+  fm_lock_release "$lock"
+  if [ "$status" -ne 0 ]; then
+    FM_LOCK_HELD_PID=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
+  fi
+  return "$status"
+}
+
+watcher_replace_stale_holder_locked() {
+  local pid=$1 beat="$STATE/.last-watcher-beat" ledger="$STATE/.watcher-replace.log"
+  local age now last i
+  [ -n "$pid" ] && fm_pid_alive "$pid" || return 1
+  fm_watcher_lock_matches_pid "$STATE" "$WATCH_PATH" "$pid" "$FM_HOME" || return 1
+  [ -e "$beat" ] || return 1
+  age=$(fm_path_age "$beat")
+  [ "$age" -ge "$WATCHER_STALE_GRACE" ] || return 1
+  now=$(date +%s)
+  last=$(tail -n 1 "$ledger" 2>/dev/null | cut -f1)
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  if [ "$last" -gt 0 ] && [ $((now - last)) -lt "$WATCHER_REPLACE_WINDOW" ]; then
+    echo "watcher: stale holder pid $pid not replaced again: one replacement per ${WATCHER_REPLACE_WINDOW}s window (last ${last})." >&2
+    return 1
+  fi
+  printf '%s\t%s\t%s\n' "$now" "$pid" "$age" >> "$ledger" 2>/dev/null || return 1
+  if [ "$last" -gt 0 ] && [ $((now - last)) -lt "$WATCHER_REPLACE_LOUD_WINDOW" ]; then
+    printf 'watcher replaced twice in a row within %ss (pids %s, stale %ss): the watcher keeps getting stuck, inspect state/.watcher-replace.log\n' \
+      "$WATCHER_REPLACE_LOUD_WINDOW" "$pid" "$age" > "$STATE/.watcher-replace-loud" 2>/dev/null || return 1
+    echo "watcher: LOUD - second replacement inside ${WATCHER_REPLACE_LOUD_WINDOW}s; the captain will be told." >&2
+  fi
+  echo "watcher: replacing stuck watcher pid $pid (heartbeat stale ${age}s, lock identity matches this home)." >&2
+  kill -TERM "$pid" 2>/dev/null || true
+  i=0
+  while [ "$i" -lt 50 ] && fm_pid_alive "$pid"; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if fm_pid_alive "$pid"; then
+    # TERM is deferred while bash waits on a foreground child, which is exactly
+    # how a stuck watcher stays alive; re-verify identity before the KILL.
+    fm_watcher_lock_matches_pid "$STATE" "$WATCH_PATH" "$pid" "$FM_HOME" \
+      && kill -KILL "$pid" 2>/dev/null || true
+    sleep 0.2
+  fi
+  fm_pid_alive "$pid" && return 1
+  fm_lock_try_acquire "$WATCH_LOCK"
+}
+
+if ! fm_lock_try_acquire "$WATCH_LOCK" && ! watcher_replace_stale_holder; then
   BEAT="$STATE/.last-watcher-beat"
   if [ -n "${FM_LOCK_HELD_PID:-}" ]; then
     if [ -e "$BEAT" ]; then
@@ -2361,6 +2421,19 @@ resurface_after_downtime() {
   wake "check: rearm-resurface"
 }
 
+# A replacement that repeated is the captain's business, not a log line: the
+# marker written by watcher_replace_stale_holder becomes one stale wake here.
+replacement_loud_surface() {
+  local marker="$STATE/.watcher-replace-loud" msg
+  [ -s "$marker" ] || return 0
+  msg=$(head -n 1 "$marker" 2>/dev/null | tr '\t\n' '  ')
+  fm_wake_append stale watcher-replacement "stale: $msg" || exit 1
+  rm -f "$marker"
+  wake "stale: $msg"
+}
+
+FM_BEAT_FILE="$STATE/.last-watcher-beat"
+
 while :; do
   # Self-eviction: if the singleton lock no longer names this process, a second
   # watcher has taken over (e.g. a transient duplicate from a racy arm). Stand
@@ -2421,6 +2494,7 @@ while :; do
 
   # A process-event result carries richer adapter-owned wake context than the
   # generic recovery reason, so give that owner first refusal.
+  replacement_loud_surface
   resurface_after_downtime
 
   # The existing poll loop also owns the bounded inactive-outcome cadence.
@@ -2448,6 +2522,7 @@ while :; do
     contribution_check_output=
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
+      fm_beat_progress
       is_pr_poll=0
       if [ "$(basename "$c")" = x-watch.check.sh ]; then
         if fmx_poll_shim_valid "$c" "$FM_HOME" "$FM_ROOT" \

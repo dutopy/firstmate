@@ -1774,6 +1774,7 @@ _fm_status_open_decision_origins() {  # <status-file> [<kind>]
   held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
   while IFS= read -r line || [ -n "$line" ]; do
     number=$((number + 1))
+    fm_beat_progress 2>/dev/null || true
     after=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind")
     [ -n "$after" ] || origins=''
     key=$(_fm_decision_key "$line") || { open=$after; continue; }
@@ -1832,6 +1833,7 @@ status_span_first_actionable_record() {  # <status-file> <start-offset> [record-
   [ "$cur_ident" = "$ident" ] || { rm -f "$chunk_file" "$full_file" "$prefix_file"; return 2; }
   while IFS= read -r line || [ -n "$line" ]; do
     line_number=$((line_number + 1))
+    fm_beat_progress 2>/dev/null || true
     case "$line" in *[![:space:]]*) ;; *) continue ;; esac
     if status_is_captain_held "$line"; then
       # A transfer closes the status-log decision and remains non-actionable to
@@ -1864,7 +1866,10 @@ status_span_first_actionable_record() {  # <status-file> <start-offset> [record-
           if [ "$start" -gt 0 ]; then
             _fm_status_read_span "$full_file" 0 "$start" > "$prefix_file" 2>/dev/null \
               || { failed=1; break; }
-            while IFS= read -r _line || [ -n "$_line" ]; do prefix_lines=$((prefix_lines + 1)); done < "$prefix_file"
+            while IFS= read -r _line || [ -n "$_line" ]; do
+              fm_beat_progress 2>/dev/null || true
+              prefix_lines=$((prefix_lines + 1))
+            done < "$prefix_file"
           fi
           origins=$(_fm_status_open_decision_origins "$full_file" "$(_fm_status_kind "$f")") || { failed=1; break; }
           folded=1

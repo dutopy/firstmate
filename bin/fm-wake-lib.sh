@@ -104,12 +104,24 @@ fm_path_age() {
   echo $(( $(date +%s) - m ))
 }
 
+# fm_beat_progress
+# Honest liveness: the watcher sets FM_BEAT_FILE (a plain shell variable, never
+# exported, so only the watcher's own shell and its subshells beat) and long
+# phases call this so the beacon advances while work is happening, not only once
+# per loop iteration. Rate-limited to one touch per 5 seconds.
+# A no-op everywhere FM_BEAT_FILE is unset, so libraries stay safe to source.
+FM_BEAT_LAST=0
+fm_beat_progress() {
+  [ -n "${FM_BEAT_FILE:-}" ] || return 0
+  local now=$SECONDS
+  [ $((now - FM_BEAT_LAST)) -ge 5 ] || return 0
+  FM_BEAT_LAST=$now
+  touch "$FM_BEAT_FILE" 2>/dev/null || true
+  return 0
+}
+
 # fm_poll_derived_grace [poll-seconds]
-# Default guard-grace derivation: max(300, poll + 60). A watcher touches its
-# liveness beacon once per poll cycle, so a fixed 300s grace stops correctly
-# bounding staleness once the poll cadence reaches or exceeds it; growing the
-# default with the cadence while keeping the historical 300s floor for the
-# common short-poll case fixes that without a caller-specific constant.
+# Default guard-grace derivation: max(300, poll + 60).
 # Defaults to $FM_POLL (fm-watch.sh's own poll env var) when no argument is
 # given, so a caller with no independent notion of the poll cadence still
 # derives the same default fm-watch.sh itself would use.
