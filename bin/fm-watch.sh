@@ -2167,18 +2167,44 @@ watcher_replace_stale_holder_locked() {
   fm_lock_try_acquire "$WATCH_LOCK"
 }
 
+# A live holder whose beacon is late but under the hard limit, with its lock
+# identity verified for this home, is a slow cycle, not a failure: report it as
+# running. Only a beacon at or past the hard limit (3 x the stale grace; the
+# beacon is refreshed every cycle and inside long scans, so 3 missed windows is
+# a hung watcher), or an unverifiable identity, is a failure. Every refusal
+# prints one typed line on STDOUT because bin/fm-watch-arm.sh relays the
+# child's stdout only; the prose stays on stderr for the operator.
+WATCHER_HARD_LIMIT=$((WATCHER_STALE_GRACE * 3))
+watcher_typed_failure() {
+  local reason=$1 pid=${2:-none} age=${3:-none} next=$4
+  echo "watcher: FAILED - reason=$reason pid=$pid beat_age=${age}s grace=${WATCHER_STALE_GRACE}s hard_limit=${WATCHER_HARD_LIMIT}s next=$next"
+  exit 1
+}
 if ! fm_lock_try_acquire "$WATCH_LOCK" && ! watcher_replace_stale_holder; then
   BEAT="$STATE/.last-watcher-beat"
   if [ -n "${FM_LOCK_HELD_PID:-}" ]; then
+    # The holder can vanish between the liveness check and this report: retry
+    # the normal recovery once instead of reporting a dead pid as live.
+    if ! fm_pid_alive "$FM_LOCK_HELD_PID" && [ "${FM_WATCH_REVALIDATED:-0}" != 1 ]; then
+      FM_WATCH_REVALIDATED=1 exec "$0" "$@"
+    fi
     if [ -e "$BEAT" ]; then
       beat_age=$(fm_path_age "$BEAT")
       if [ "$beat_age" -ge "$WATCHER_STALE_GRACE" ]; then
+        if [ "$beat_age" -lt "$WATCHER_HARD_LIMIT" ] && fm_pid_alive "$FM_LOCK_HELD_PID" \
+          && fm_watcher_lock_matches_pid "$STATE" "$WATCH_PATH" "$FM_LOCK_HELD_PID" "$FM_HOME"; then
+          echo "watcher: already running pid $FM_LOCK_HELD_PID (heartbeat late ${beat_age}s, identity verified; hard limit ${WATCHER_HARD_LIMIT}s)"
+          exit 0
+        fi
         echo "watcher: lock held by live pid $FM_LOCK_HELD_PID but heartbeat is stale for ${beat_age}s (>${WATCHER_STALE_GRACE}s); inspect or stop that watcher before re-arming." >&2
-        exit 1
+        if fm_watcher_lock_matches_pid "$STATE" "$WATCH_PATH" "$FM_LOCK_HELD_PID" "$FM_HOME"; then
+          watcher_typed_failure stale-hung "$FM_LOCK_HELD_PID" "$beat_age" "inspect pid $FM_LOCK_HELD_PID and stop it (the next supervised cycle re-arms); do not arm manually"
+        fi
+        watcher_typed_failure identity-mismatch "$FM_LOCK_HELD_PID" "$beat_age" "lock pid $FM_LOCK_HELD_PID is not this home's fm-watch.sh; check state/.watch.lock/pid and remove the lock only after confirming the pid is not a watcher"
       fi
     elif [ "$(fm_path_age "$WATCH_LOCK")" -ge "$WATCHER_STALE_GRACE" ]; then
       echo "watcher: lock held by live pid $FM_LOCK_HELD_PID but no heartbeat exists; inspect or stop that watcher before re-arming." >&2
-      exit 1
+      watcher_typed_failure lock-unverifiable "$FM_LOCK_HELD_PID" none "inspect pid $FM_LOCK_HELD_PID: it holds the lock but never wrote a heartbeat"
     fi
     echo "watcher: already running pid $FM_LOCK_HELD_PID"
   else

@@ -116,6 +116,88 @@ test_live_stale_watch_lock_is_actionable() {
   pass "live watcher lock with stale heartbeat is actionable"
 }
 
+# Holder fixture: a real live process recorded as THIS home's watcher (identity
+# taken from the live pid), a beacon aged <age> seconds, and a replacement
+# ledger entry from now so the bounded replacement refuses and the refusal
+# classification is what runs. Sets HOLDER_DIR / HOLDER_PID.
+make_live_holder() {  # <case> <beat-age-seconds>
+  local state now
+  HOLDER_DIR=$(make_case "$1")
+  state="$HOLDER_DIR/state"
+  sleep 300 &
+  HOLDER_PID=$!
+  mkdir "$state/.watch.lock"
+  printf '%s\n' "$HOLDER_PID" > "$state/.watch.lock/pid"
+  printf '%s\n' "$HOLDER_DIR" > "$state/.watch.lock/fm-home"
+  printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
+  ( . "$LIB"; fm_pid_identity "$HOLDER_PID" ) > "$state/.watch.lock/pid-identity"
+  now=$(date +%s)
+  printf '%s\t%s\t%s\n' "$now" "$HOLDER_PID" 1 > "$state/.watcher-replace.log"
+  touch -t "$(date -r $((now - $2)) +%Y%m%d%H%M.%S)" "$state/.last-watcher-beat"
+}
+
+run_holder_watch() {  # <dir> <out> <err>; GRACE 60 so hard limit is 180
+  FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_GUARD_GRACE=60 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$2" 2> "$3"
+}
+
+test_live_late_holder_is_running_not_failed() {
+  local out err status=0
+  make_live_holder live-late 120
+  out="$HOLDER_DIR/watch.out"; err="$HOLDER_DIR/watch.err"
+  run_holder_watch "$HOLDER_DIR" "$out" "$err" || status=$?
+  kill "$HOLDER_PID" 2>/dev/null || true; wait "$HOLDER_PID" 2>/dev/null || true
+  [ "$status" -eq 0 ] || fail "live late holder was failed (exit $status): $(cat "$out" "$err")"
+  grep -F 'already running pid' "$out" | grep -F 'heartbeat late' >/dev/null || fail "no late-but-running line: $(cat "$out")"
+  ! grep -F 'FAILED' "$out" "$err" >/dev/null || fail "late holder reported FAILED"
+  pass "live holder with a late beacon under the hard limit is running, not failed"
+}
+
+test_vanished_holder_is_recovered_not_reported_live() {
+  local out err status=0
+  make_live_holder vanished-holder 120
+  out="$HOLDER_DIR/watch.out"; err="$HOLDER_DIR/watch.err"
+  kill "$HOLDER_PID" 2>/dev/null || true; wait "$HOLDER_PID" 2>/dev/null || true
+  FM_HOME="$HOLDER_DIR" FM_STATE_OVERRIDE="$HOLDER_DIR/state" FM_GUARD_GRACE=60 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 timeout_bg_watch "$out" "$err"
+  ! grep -E 'FAILED|lock held by live pid' "$out" "$err" >/dev/null || fail "vanished holder reported as live/failed: $(cat "$out" "$err")"
+  grep -F 'FM_WATCH_REVALIDATED' "$WATCH" >/dev/null || fail "revalidation guard missing from fm-watch.sh"
+  pass "vanished holder pid is recovered, never reported as live"
+}
+
+timeout_bg_watch() {  # <out> <err>: start a watcher, give it 2s, stop it
+  local pid
+  "$WATCH" > "$1" 2> "$2" &
+  pid=$!
+  sleep 2
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+test_hung_holder_past_hard_limit_is_typed_failure() {
+  local out err status=0
+  make_live_holder hung-holder 400
+  out="$HOLDER_DIR/watch.out"; err="$HOLDER_DIR/watch.err"
+  run_holder_watch "$HOLDER_DIR" "$out" "$err" || status=$?
+  kill "$HOLDER_PID" 2>/dev/null || true; wait "$HOLDER_PID" 2>/dev/null || true
+  [ "$status" -eq 1 ] || fail "hung holder did not fail (exit $status)"
+  grep -E "^watcher: FAILED - reason=stale-hung pid=$HOLDER_PID beat_age=[0-9]+s grace=60s hard_limit=180s next=" "$out" >/dev/null || fail "no typed stale-hung line on stdout: $(cat "$out")"
+  grep -F 'heartbeat is stale' "$err" >/dev/null || fail "stderr lost the stale explanation"
+  pass "hung holder past the hard limit fails with a typed actionable line"
+}
+
+test_arm_relays_typed_failure_without_generic_reason() {
+  local out status=0 i=0 pid
+  make_live_holder arm-relay 400
+  out="$HOLDER_DIR/arm.out"
+  FM_HOME="$HOLDER_DIR" FM_STATE_OVERRIDE="$HOLDER_DIR/state" FM_GUARD_GRACE=60 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" > "$out" 2>&1 &
+  pid=$!
+  while [ "$i" -lt "$ARM_FAIL_EXIT_POLLS" ] && is_live_non_zombie "$pid"; do sleep 0.1; i=$((i + 1)); done
+  wait "$pid" 2>/dev/null || status=$?
+  kill "$HOLDER_PID" 2>/dev/null || true; wait "$HOLDER_PID" 2>/dev/null || true
+  grep -E 'watcher: FAILED - reason=stale-hung pid=' "$out" >/dev/null || fail "arm did not relay the typed line: $(cat "$out")"
+  ! grep -F 'without an actionable reason' "$out" >/dev/null || fail "arm still emitted the generic reason: $(cat "$out")"
+  pass "arm relays the typed failure line and drops the generic reason"
+}
+
 test_guard_warnings() {
   # The guard's two operator-visible states, with resilient substrings instead of
   # four copy-coupled tests:
@@ -1115,6 +1197,10 @@ test_msys_pid_identity_uses_proc
 test_stale_watch_lock_reclaimed
 test_stale_watch_reclaim_publishes_before_clear
 test_live_stale_watch_lock_is_actionable
+test_live_late_holder_is_running_not_failed
+test_vanished_holder_is_recovered_not_reported_live
+test_hung_holder_past_hard_limit_is_typed_failure
+test_arm_relays_typed_failure_without_generic_reason
 test_guard_warnings
 test_lock_single_winner_under_concurrency
 test_lock_steals_dead_pid_lock
