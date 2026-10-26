@@ -2111,7 +2111,7 @@ fi
 # stale grace. At most one replacement per 900 seconds; a
 # second replacement inside 6 hours is recorded in
 # state/.watcher-replace-loud so the new watcher surfaces it as a wake the
-# captain sees. Anything else falls through to the refusal below, unchanged.
+# captain sees. Anything else falls through to holder classification below.
 WATCHER_REPLACE_WINDOW=900
 WATCHER_REPLACE_LOUD_WINDOW=21600
 watcher_replace_stale_holder() {
@@ -2167,13 +2167,9 @@ watcher_replace_stale_holder_locked() {
   fm_lock_try_acquire "$WATCH_LOCK"
 }
 
-# A live holder whose beacon is late but under the hard limit, with its lock
-# identity verified for this home, is a slow cycle, not a failure: report it as
-# running. Only a beacon at or past the hard limit (3 x the stale grace; the
-# beacon is refreshed every cycle and inside long scans, so 3 missed windows is
-# a hung watcher), or an unverifiable identity, is a failure. Every refusal
-# prints one typed line on STDOUT because bin/fm-watch-arm.sh relays the
-# child's stdout only; the prose stays on stderr for the operator.
+# docs/watcher-continuity.md "Honest beacon and bounded replacement" owns the
+# holder-classification contract. Keep typed failures on stdout: the arm wrapper
+# relays only that stream, so stderr alone loses the actionable failure reason.
 WATCHER_HARD_LIMIT=$((WATCHER_STALE_GRACE * 3))
 watcher_typed_failure() {
   local reason=$1 pid=${2:-none} age=${3:-none} next=$4
