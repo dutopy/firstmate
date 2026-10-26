@@ -1,0 +1,51 @@
+=== verified-late (real watcher holder pid=65929) ===
+$ FM_HOME=<disposable> FM_GUARD_GRACE=60 bin/fm-watch.sh
+exit=0; holder remains alive
+STDOUT:
+watcher: already running pid 65929 (heartbeat late 120s, identity verified; hard limit 180s)
+STDERR:
+watcher: stale holder pid 65929 not replaced again: one replacement per 900s window (last 1793026955).
+
+
+=== verified-hung (real watcher holder pid=69066) ===
+$ FM_HOME=<disposable> FM_GUARD_GRACE=60 bin/fm-watch.sh
+exit=1; holder remains alive
+STDOUT:
+watcher: FAILED - reason=stale-hung pid=69066 beat_age=401s grace=60s hard_limit=180s next=inspect pid 69066 and stop it (the next supervised cycle re-arms); do not arm manually
+STDERR:
+watcher: stale holder pid 69066 not replaced again: one replacement per 900s window (last 1793026956).
+watcher: lock held by live pid 69066 but heartbeat is stale for 401s (>60s); inspect or stop that watcher before re-arming.
+
+
+=== foreign-identity-late (real watcher holder pid=72248) ===
+$ FM_HOME=<disposable> FM_GUARD_GRACE=60 bin/fm-watch.sh
+exit=1; holder remains alive
+STDOUT:
+watcher: FAILED - reason=identity-mismatch pid=72248 beat_age=121s grace=60s hard_limit=180s next=lock pid 72248 is not this home's fm-watch.sh; check state/.watch.lock/pid and remove the lock only after confirming the pid is not a watcher
+STDERR:
+watcher: lock held by live pid 72248 but heartbeat is stale for 121s (>60s); inspect or stop that watcher before re-arming.
+
+
+=== missing-beat-old-lock (real watcher holder pid=75229) ===
+$ FM_HOME=<disposable> FM_GUARD_GRACE=60 bin/fm-watch.sh
+exit=1; holder remains alive
+STDOUT:
+watcher: FAILED - reason=lock-unverifiable pid=75229 beat_age=nones grace=60s hard_limit=180s next=inspect pid 75229: it holds the lock but never wrote a heartbeat
+STDERR:
+watcher: lock held by live pid 75229 but no heartbeat exists; inspect or stop that watcher before re-arming.
+
+
+=== fresh-beat-startup-exception (real watcher holder pid=77953) ===
+$ FM_HOME=<disposable> FM_GUARD_GRACE=60 bin/fm-watch.sh
+exit=0; holder remains alive
+STDOUT:
+watcher: already running pid 77953
+STDERR:
+
+
+=== young-lock-startup-exception (real watcher holder pid=81448) ===
+$ FM_HOME=<disposable> FM_GUARD_GRACE=60 bin/fm-watch.sh
+exit=0; holder remains alive
+STDOUT:
+watcher: already running pid 81448
+STDERR:

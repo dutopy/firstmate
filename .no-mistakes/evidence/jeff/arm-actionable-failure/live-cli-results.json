@@ -1,0 +1,32 @@
+[
+  {
+    "name": "verified-late",
+    "exit": 0,
+    "result": "pass"
+  },
+  {
+    "name": "verified-hung",
+    "exit": 1,
+    "result": "pass"
+  },
+  {
+    "name": "foreign-identity-late",
+    "exit": 1,
+    "result": "pass"
+  },
+  {
+    "name": "missing-beat-old-lock",
+    "exit": 1,
+    "result": "pass"
+  },
+  {
+    "name": "fresh-beat-startup-exception",
+    "exit": 0,
+    "result": "pass"
+  },
+  {
+    "name": "young-lock-startup-exception",
+    "exit": 0,
+    "result": "pass"
+  }
+]

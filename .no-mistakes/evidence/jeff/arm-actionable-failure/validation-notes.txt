@@ -1,0 +1,13 @@
+Scope: direct fm-watch.sh refusal classification and existing fm-watch-arm.sh typed-output relay. Recorded decisions retain fresh-beacon/young-lock exceptions and exclude the late-holder auto-arm consumer follow-up.
+Selected existing executable checks, loaded without the suite's unconditional invocation tail:
+  test_live_late_holder_is_running_not_failed
+  test_vanished_holder_is_recovered_not_reported_live
+  test_hung_holder_past_hard_limit_is_typed_failure
+  test_arm_relays_typed_failure_without_generic_reason
+Command: HOME="$PWD/.local-validation/home" TMPDIR="$PWD/.local-validation/tmp" FM_HOME="$PWD/.local-validation/home" EVIDENCE=<evidence directory> bash tests/.local-validation.test.sh
+The disappearance regression executes production fm-watch.sh with a clock-read synchronization hook; it kills and reaps a real fixture holder during classification, checking exactly one recovery exec or an honest terminal refusal across stale, fresh, missing-old and missing-young heartbeat states. No implementation-source assertions were used.
+Additional command: python3 .local-validation/live_cli.py
+The additional driver starts actual fm-watch.sh instances in six separate FM_HOME directories, waits for published identity and heartbeat, suspends those instances, manipulates disposable heartbeat/lock metadata, and invokes the real CLI again. Every original holder remains alive after classification. All process groups are killed/reaped during cleanup.
+Fixture correction: first extra run aged the target directory instead of the lock symlink; measured lstat/stat ages confirmed this setup error. Repeated all six rows with follow_symlinks=False, all passing. No product change was made.
+Evidence consists of end-user CLI stdout/stderr and actual exit statuses. No visual UI changed. No full suite, lint, formatter, static analysis, push, PR, CI or pipeline-control command was run.
+Transient drivers and disposable homes were removed from the worktree after capture.

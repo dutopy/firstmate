@@ -1,0 +1,4 @@
+ok - live holder with a late beacon under the hard limit is running, not failed
+ok - holder death during classification recovers once or fails honestly across beacon states
+ok - hung holder past the hard limit fails with a typed actionable line
+ok - arm relays the typed failure line and drops the generic reason

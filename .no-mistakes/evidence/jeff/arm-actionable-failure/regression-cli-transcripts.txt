@@ -1,0 +1,81 @@
+
+=== arm-relay ===
+--- arm.out ---
+watcher: stale holder pid 81296 not replaced again: one replacement per 900s window (last 1793026880).
+watcher: lock held by live pid 81296 but heartbeat is stale for 401s (>60s); inspect or stop that watcher before re-arming.
+watcher: FAILED - reason=stale-hung pid=81296 beat_age=401s grace=60s hard_limit=180s next=inspect pid 81296 and stop it (the next supervised cycle re-arms); do not arm manually
+
+=== hung-holder ===
+--- watch.out ---
+watcher: FAILED - reason=stale-hung pid=78991 beat_age=401s grace=60s hard_limit=180s next=inspect pid 78991 and stop it (the next supervised cycle re-arms); do not arm manually
+--- watch.err ---
+watcher: stale holder pid 78991 not replaced again: one replacement per 900s window (last 1793026878).
+watcher: lock held by live pid 78991 but heartbeat is stale for 401s (>60s); inspect or stop that watcher before re-arming.
+
+=== live-late ===
+--- watch.out ---
+watcher: already running pid 53434 (heartbeat late 121s, identity verified; hard limit 180s)
+--- watch.err ---
+watcher: stale holder pid 53434 not replaced again: one replacement per 900s window (last 1793026860).
+
+=== vanished-fresh-0 ===
+--- watch.out ---
+check: rearm-resurface
+--- watch.err ---
+--- launches ---
+0
+1
+
+=== vanished-fresh-1 ===
+--- watch.out ---
+watcher: FAILED - reason=lock-unverifiable pid=64411 beat_age=1s grace=60s hard_limit=180s next=holder vanished; inspect state/.watch.lock before the next supervised cycle
+--- watch.err ---
+--- launches ---
+1
+
+=== vanished-no-beat-old-0 ===
+--- watch.out ---
+check: rearm-resurface
+--- watch.err ---
+--- launches ---
+0
+1
+
+=== vanished-no-beat-old-1 ===
+--- watch.out ---
+watcher: FAILED - reason=lock-unverifiable pid=70130 beat_age=nones grace=60s hard_limit=180s next=holder vanished; inspect state/.watch.lock before the next supervised cycle
+--- watch.err ---
+--- launches ---
+1
+
+=== vanished-no-beat-young-0 ===
+--- watch.out ---
+check: rearm-resurface
+--- watch.err ---
+--- launches ---
+0
+1
+
+=== vanished-no-beat-young-1 ===
+--- watch.out ---
+watcher: FAILED - reason=lock-unverifiable pid=77172 beat_age=nones grace=60s hard_limit=180s next=holder vanished; inspect state/.watch.lock before the next supervised cycle
+--- watch.err ---
+--- launches ---
+1
+
+=== vanished-stale-0 ===
+--- watch.out ---
+check: rearm-resurface
+--- watch.err ---
+watcher: stale holder pid 54690 not replaced again: one replacement per 900s window (last 1793026861).
+--- launches ---
+0
+1
+
+=== vanished-stale-1 ===
+--- watch.out ---
+watcher: FAILED - reason=lock-unverifiable pid=58773 beat_age=120s grace=60s hard_limit=180s next=holder vanished; inspect state/.watch.lock before the next supervised cycle
+--- watch.err ---
+watcher: stale holder pid 58773 not replaced again: one replacement per 900s window (last 1793026865).
+--- launches ---
+1
