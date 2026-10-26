@@ -122,18 +122,18 @@ test_live_stale_watch_lock_is_actionable() {
 # classification is what runs. Sets HOLDER_DIR / HOLDER_PID.
 make_live_holder() {  # <case> <beat-age-seconds>
   local state now
-  HOLDER_DIR=$(make_case "$1")
+  HOLDER_DIR=$(make_case "$1") || fail "could not create holder case"
   state="$HOLDER_DIR/state"
   sleep 300 &
   HOLDER_PID=$!
-  mkdir "$state/.watch.lock"
-  printf '%s\n' "$HOLDER_PID" > "$state/.watch.lock/pid"
-  printf '%s\n' "$HOLDER_DIR" > "$state/.watch.lock/fm-home"
-  printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
-  ( . "$LIB"; fm_pid_identity "$HOLDER_PID" ) > "$state/.watch.lock/pid-identity"
-  now=$(date +%s)
-  printf '%s\t%s\t%s\n' "$now" "$HOLDER_PID" 1 > "$state/.watcher-replace.log"
-  touch -t "$(date -r $((now - $2)) +%Y%m%d%H%M.%S)" "$state/.last-watcher-beat"
+  mkdir "$state/.watch.lock" || fail "could not create holder lock"
+  printf '%s\n' "$HOLDER_PID" > "$state/.watch.lock/pid" || fail "could not record holder pid"
+  printf '%s\n' "$HOLDER_DIR" > "$state/.watch.lock/fm-home" || fail "could not record holder home"
+  printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path" || fail "could not record watcher path"
+  ( . "$LIB"; fm_pid_identity "$HOLDER_PID" ) > "$state/.watch.lock/pid-identity" || fail "could not identify holder"
+  now=$(date +%s) || fail "could not read fixture time"
+  printf '%s\t%s\t%s\n' "$now" "$HOLDER_PID" 1 > "$state/.watcher-replace.log" || fail "could not record replacement ledger"
+  fm_touch_epoch "$((now - $2))" "$state/.last-watcher-beat"
 }
 
 run_holder_watch() {  # <dir> <out> <err>; GRACE 60 so hard limit is 180
@@ -153,23 +153,83 @@ test_live_late_holder_is_running_not_failed() {
 }
 
 test_vanished_holder_is_recovered_not_reported_live() {
-  local out err status=0
-  make_live_holder vanished-holder 120
-  out="$HOLDER_DIR/watch.out"; err="$HOLDER_DIR/watch.err"
-  kill "$HOLDER_PID" 2>/dev/null || true; wait "$HOLDER_PID" 2>/dev/null || true
-  FM_HOME="$HOLDER_DIR" FM_STATE_OVERRIDE="$HOLDER_DIR/state" FM_GUARD_GRACE=60 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 timeout_bg_watch "$out" "$err"
-  ! grep -E 'FAILED|lock held by live pid' "$out" "$err" >/dev/null || fail "vanished holder reported as live/failed: $(cat "$out" "$err")"
-  grep -F 'FM_WATCH_REVALIDATED' "$WATCH" >/dev/null || fail "revalidation guard missing from fm-watch.sh"
-  pass "vanished holder pid is recovered, never reported as live"
+  local row guard out err pid status i launches
+  for row in stale fresh no-beat-old no-beat-young; do
+    for guard in 0 1; do
+      make_live_holder "vanished-$row-$guard" 120
+      case "$row" in
+        fresh) touch "$HOLDER_DIR/state/.last-watcher-beat" || fail "could not refresh beacon" ;;
+        no-beat-*)
+          rm "$HOLDER_DIR/state/.last-watcher-beat" || fail "could not remove beacon"
+          if [ "$row" = no-beat-old ]; then
+            fm_touch_epoch "$(($(date +%s) - 120))" "$HOLDER_DIR/state/.watch.lock"
+          fi
+          ;;
+      esac
+      out="$HOLDER_DIR/watch.out"; err="$HOLDER_DIR/watch.err"
+      cat > "$HOLDER_DIR/clock-hook.sh" <<'SH'
+if [ "$0" = "$RACE_WATCH" ]; then
+  printf '%s\n' "${FM_WATCH_REVALIDATED:-0}" >> "$RACE_DIR/launches"
+fi
+date() {
+  local stamp i=0
+  stamp=$("$RACE_DATE" "$@") || return 1
+  if [ "${FUNCNAME[1]:-}" = fm_path_age ] \
+    && [ "${path:-}" = "$RACE_PATH" ] \
+    && [ ! -e "$RACE_DIR/state/.watcher-replace.lock" ] \
+    && [ ! -e "$RACE_DIR/kill-request" ]; then
+    : > "$RACE_DIR/kill-request"
+    while [ ! -e "$RACE_DIR/killed" ] && [ "$i" -lt 200 ]; do
+      sleep 0.05
+      i=$((i + 1))
+    done
+    [ -e "$RACE_DIR/killed" ] || return 1
+  fi
+  printf '%s\n' "$stamp"
 }
-
-timeout_bg_watch() {  # <out> <err>: start a watcher, give it 2s, stop it
-  local pid
-  "$WATCH" > "$1" 2> "$2" &
-  pid=$!
-  sleep 2
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+SH
+      RACE_PATH="$HOLDER_DIR/state/.last-watcher-beat"
+      case "$row" in no-beat-*) RACE_PATH="$HOLDER_DIR/state/.watch.lock" ;; esac
+      PATH="$HOLDER_DIR/fakebin:$PATH" BASH_ENV="$HOLDER_DIR/clock-hook.sh" \
+        RACE_WATCH="$WATCH" RACE_DIR="$HOLDER_DIR" RACE_DATE="$(command -v date)" RACE_PATH="$RACE_PATH" \
+        FM_WATCH_REVALIDATED="$guard" FM_HOME="$HOLDER_DIR" FM_STATE_OVERRIDE="$HOLDER_DIR/state" \
+        FM_GUARD_GRACE=60 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+        "$WATCH" > "$out" 2> "$err" &
+      pid=$!
+      i=0
+      while [ ! -e "$HOLDER_DIR/kill-request" ] && [ "$i" -lt 200 ] && is_live_non_zombie "$pid"; do
+        sleep 0.05; i=$((i + 1))
+      done
+      kill "$HOLDER_PID" 2>/dev/null || true
+      wait "$HOLDER_PID" 2>/dev/null || true
+      : > "$HOLDER_DIR/killed"
+      if [ ! -e "$HOLDER_DIR/kill-request" ]; then
+        kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+        fail "holder death was not synchronized for $row/$guard: $(cat "$out" "$err")"
+      fi
+      wait_for_exit "$pid" 200
+      status=$?
+      if [ "$status" -eq 124 ]; then
+        kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+        fail "vanished holder recovery was not bounded for $row/$guard"
+      fi
+      ! grep -E 'already running|lock held by live pid' "$out" "$err" >/dev/null \
+        || fail "vanished holder reported as live for $row/$guard: $(cat "$out" "$err")"
+      launches=$(wc -l < "$HOLDER_DIR/launches" | tr -d '[:space:]')
+      if [ "$guard" -eq 0 ]; then
+        [ "$launches" -eq 2 ] || fail "recovery did not relaunch exactly once ($launches)"
+        [ "$status" -eq 0 ] || fail "recovery failed: $(cat "$out" "$err")"
+        grep -F 'check: rearm-resurface' "$out" >/dev/null || fail "normal recovery did not surface its wake"
+        ! grep -F 'FAILED' "$out" "$err" >/dev/null || fail "recovery reported failure"
+      else
+        [ "$launches" -eq 1 ] || fail "exhausted recovery relaunched ($launches)"
+        [ "$status" -eq 1 ] || fail "exhausted recovery did not fail honestly"
+        grep -E "^watcher: FAILED - reason=lock-unverifiable pid=$HOLDER_PID .*next=.*holder vanished" "$out" >/dev/null \
+          || fail "exhausted recovery omitted typed vanished-holder failure: $(cat "$out")"
+      fi
+    done
+  done
+  pass "holder death during classification recovers once or fails honestly across beacon states"
 }
 
 test_hung_holder_past_hard_limit_is_typed_failure() {
