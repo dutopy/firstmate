@@ -130,8 +130,7 @@ make_live_holder() {  # <case> <beat-age-seconds>
   printf '%s\n' "$HOLDER_PID" > "$state/.watch.lock/pid" || fail "could not record holder pid"
   printf '%s\n' "$HOLDER_DIR" > "$state/.watch.lock/fm-home" || fail "could not record holder home"
   printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path" || fail "could not record watcher path"
-  # shellcheck source=bin/fm-wake-lib.sh
-  ( . "$LIB"; fm_pid_identity "$HOLDER_PID" ) > "$state/.watch.lock/pid-identity" || fail "could not identify holder"
+  fm_test_pid_identity "$HOLDER_PID" > "$state/.watch.lock/pid-identity" || fail "could not identify holder"
   now=$(date +%s) || fail "could not read fixture time"
   printf '%s\t%s\t%s\n' "$now" "$HOLDER_PID" 1 > "$state/.watcher-replace.log" || fail "could not record replacement ledger"
   fm_touch_epoch "$((now - $2))" "$state/.last-watcher-beat"
