@@ -33,17 +33,29 @@ watch_env() {  # <state> <fakebin> -- cmd...
 
 start_frozen_watcher() {  # <state> <fakebin> ; sets FROZEN_PID
   local state=$1 fakebin=$2 i=0
-  watch_env "$state" "$fakebin" "$WATCH" > "$state/../frozen.out" 2>&1 &
+  (
+    # Stop only after the beacon write finishes: stopping the shell while its
+    # touch child is running lets that child overwrite our aged fixture later.
+    # shellcheck disable=SC2329 # Exported into the real watcher below.
+    touch() {
+      command touch "$@" || return 1
+      if [ "$#" -eq 1 ] && [ "$1" = "$FM_STATE_OVERRIDE/.last-watcher-beat" ]; then
+        kill -STOP "$$"
+      fi
+    }
+    export -f touch
+    watch_env "$state" "$fakebin" "$WATCH"
+  ) > "$state/../frozen.out" 2>&1 &
   FROZEN_PID=$!
-  while [ "$i" -lt 100 ] && [ ! -s "$state/.watch.lock/pid-identity" ]; do
+  while [ "$i" -lt 100 ]; do
+    case "$(ps -p "$FROZEN_PID" -o stat= 2>/dev/null)" in *T*) break ;; esac
     sleep 0.1
     i=$((i + 1))
   done
+  [ "$i" -lt 100 ] || fail "first watcher never stopped after writing its beacon"
   [ -s "$state/.watch.lock/pid-identity" ] || fail "first watcher never published its lock identity"
   [ "$(cat "$state/.watch.lock/pid")" = "$FROZEN_PID" ] || fail "background pid is not the watcher"
-  FROZEN_PID=$(cat "$state/.watch.lock/pid")
-  kill -STOP "$FROZEN_PID"
-  touch -t 200001010000 "$state/.last-watcher-beat"
+  touch -t 200001010000 "$state/.last-watcher-beat" || fail "could not age frozen watcher's beacon"
 }
 
 test_status_scans_touch_beacon_while_running() {

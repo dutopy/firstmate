@@ -148,7 +148,18 @@ Claude depends on the Stop `asyncRewake` rewake, Cursor depends on its awaited s
 
 The watcher advances `state/.last-watcher-beat` inside long phases (status-journal fold and span scan, signal scan, check sweep) through `fm_beat_progress`, rate-limited to one touch per 5 seconds in each shell, so continued scan progress refreshes liveness during a slow cycle.
 When a new watcher finds the lock held by a live pid whose existing beacon is at least as old as the stale grace, it replaces that holder only if the lock metadata names this home and this `fm-watch.sh` and the pid identity still matches.
-A holder that does not match is never signalled, and the refusal message is unchanged.
+A holder that does not match is never signalled.
+If lock acquisition and bounded replacement both fail, `bin/fm-watch.sh` classifies the remaining holder after measuring the beacon age (or the lock age when no beacon exists) and rechecking PID liveness.
+A holder that vanished triggers normal lock recovery once; if it vanishes again with `FM_WATCH_REVALIDATED=1`, the watcher exits 1 with `reason=lock-unverifiable` and `holder vanished` in the next action instead of reporting a live holder.
+For a still-live holder with a beacon at least as old as the stale grace, verified identity for this home and a beacon younger than the hard limit (three times the stale grace) produce exit 0 and `watcher: already running pid P (heartbeat late Ns, identity verified; hard limit Hs)`.
+At or beyond that hard limit, verified identity produces exit 1 with `reason=stale-hung`; an unverifiable identity with a stale beacon produces exit 1 with `reason=identity-mismatch`.
+A still-live holder with no beacon produces exit 1 with `reason=lock-unverifiable` only once the lock age reaches the stale grace.
+The existing startup exceptions remain: a fresh beacon or a younger lock without a beacon reports ordinary `already running` without requiring identity verification.
+These exit-1 outcomes print `watcher: FAILED - reason=<reason> pid=<pid> beat_age=<age>s grace=<grace>s hard_limit=<limit>s next=<action>` on stdout; an unavailable beacon age is printed as `nones`.
+The stale-beacon explanation, including `heartbeat is stale`, remains on stderr.
+The arm wrapper relays a typed failure without adding its generic missing-actionable-reason failure.
+The late-holder exit-0 classification belongs only to `fm-watch.sh`: the arm wrapper and Claude auto-arm still require the fresh-beacon health predicate, so this result alone does not establish automatic-arm success.
+`tests/fm-watcher-lock.test.sh` covers late-holder success, typed hung-holder failure and arm relay, plus holder death during classification with one recovery retry or an exhausted-retry failure across fresh, stale, and missing-beacon states.
 Replacement attempts are serialized, with at most one budget reservation per 900 seconds recorded in the append-only `state/.watcher-replace.log` before signalling the holder.
 A replacement whose latest previous reservation is less than 21600 seconds (6 hours) old must also write `state/.watcher-replace-loud` before signalling; a failed write refuses replacement and retains the reserved budget.
 The new watcher queues a durable `stale:` wake for the captain before removing the loud marker.
