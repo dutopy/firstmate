@@ -27,7 +27,7 @@
 #   The key lives in one shell variable and reaches curl as a header read from
 #   a file descriptor, never on argv; nothing logs or writes it.
 #
-# What it does when on with at least one rule: one POST to
+# What it does when on with at least one rule and spend-gate permission: one POST to
 #   https://api.typesafe.ai/v1/systemone with the project name and the whole brief as
 #   state and ONE Choice question whose
 #   options are every rule's `when` from config/crew-dispatch.json plus one
@@ -52,7 +52,8 @@
 #   ambiguous -> confidence below the floor; decide as today from the probabilities
 #                (a class path has no model confidence and never returns this)
 #   escalate  -> the rule requires captain approval, no candidate is rankable, or a genuine tie
-#   error     -> API, network, response, or quota-axi failure; decide as today
+#   error     -> reservation, ledger, API, network, response, or quota-axi failure;
+#                decide as today
 #   Every outcome exits 0 so an intake is never blocked by this tool.
 #   Exit 2 only for a usage or configuration error (unreadable brief, an
 #   existing unreadable rules file, malformed rules or a malformed `classes`
@@ -60,7 +61,8 @@
 #   missing jq), which is actionable, never selected around.
 #
 # Environment:
-#   TYPESAFE_API_KEY is the only resolver-specific environment setting.
+#   See docs/configuration.md "Typed dispatch resolution" for the opt-in key
+#   and spend-reservation settings.
 #
 # Authority: this tool never replaces firstmate's judgment, quota-array-dispatch,
 #   the captain-approval gate, or fm-spawn.sh validation; it publishes one
@@ -292,19 +294,14 @@ if [ "$CLASS_DECLARED" -eq 1 ]; then
 else
   command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   # ---- spend gate: no model request without a dated reservation ---------------
-  # Standing captain rule: zero Jev calls without a written reservation (goal,
-  # dollar cap, task id, date). The check is code, here, immediately before the
-  # only model request this tool can make. A missing, unreadable, malformed,
-  # capless or stale reservation is an error outcome (exit 0, no request): the
-  # caller decides as today, so an intake is never blocked. Every decision is
-  # one TSV row in data/jev-calls.tsv (epoch, allowed|blocked, task, reason) so
-  # the count of requests made without a reservation is a measurable zero.
+  # Keep this check before the only model request: no unreserved spend.
+  # docs/configuration.md "Typed dispatch resolution" owns the reservation
+  # and audit-ledger contract.
   JEV_RESERVATION=${FM_JEV_RESERVATION:-$FM_HOME/data/jev-reservation.json}
   JEV_LEDGER=${FM_JEV_LEDGER:-$FM_HOME/data/jev-calls.tsv}
   JEV_MAX_AGE_MIN=${FM_JEV_RESERVATION_MAX_AGE_MIN:-120}
   case "$JEV_MAX_AGE_MIN" in ''|*[!0-9]*) JEV_MAX_AGE_MIN=120 ;; esac
-  # A row that cannot be written is never silent: it is reported on stderr, and an
-  # allowed decision whose row cannot be written is refused (no unledgered request).
+  # Never permit a request without first recording its allowed decision.
   jev_ledger() {
     mkdir -p "$(dirname "$JEV_LEDGER")" 2>/dev/null \
       && printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "${2:--}" "$3" >> "$JEV_LEDGER" 2>/dev/null && return 0
