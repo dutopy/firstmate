@@ -290,7 +290,40 @@ if [ "$CLASS_DECLARED" -eq 1 ]; then
   # quota. No curl, no request body, and no response to validate.
   printf 'null\n' > "$RESP_FILE" || emit_error "could not stage the class result"
 else
-command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
+  # ---- spend gate: no model request without a dated reservation ---------------
+  # Standing captain rule: zero Jev calls without a written reservation (goal,
+  # dollar cap, task id, date). The check is code, here, immediately before the
+  # only model request this tool can make. A missing, unreadable, malformed,
+  # capless or stale reservation is an error outcome (exit 0, no request): the
+  # caller decides as today, so an intake is never blocked. Every decision is
+  # one TSV row in data/jev-calls.tsv (epoch, allowed|blocked, task, reason) so
+  # the count of requests made without a reservation is a measurable zero.
+  JEV_RESERVATION=${FM_JEV_RESERVATION:-$FM_HOME/data/jev-reservation.json}
+  JEV_LEDGER=${FM_JEV_LEDGER:-$FM_HOME/data/jev-calls.tsv}
+  JEV_MAX_AGE_MIN=${FM_JEV_RESERVATION_MAX_AGE_MIN:-120}
+  case "$JEV_MAX_AGE_MIN" in ''|*[!0-9]*) JEV_MAX_AGE_MIN=120 ;; esac
+  jev_ledger() {
+    mkdir -p "$(dirname "$JEV_LEDGER")" 2>/dev/null || return 0
+    printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "${2:--}" "$3" >> "$JEV_LEDGER" 2>/dev/null || true
+  }
+  jev_blocked() {
+    jev_ledger blocked "${2:--}" "$1"
+    emit_error "no Jev request without a dated reservation: $1 (write $JEV_RESERVATION with task, reserved_at epoch seconds and cap_usd; max age ${JEV_MAX_AGE_MIN} min)"
+  }
+  [ -r "$JEV_RESERVATION" ] || jev_blocked "reservation file missing or unreadable"
+  JEV_TASK=$(jq -r 'if (.task|type)=="string" then .task else "" end' "$JEV_RESERVATION" 2>/dev/null) \
+    || jev_blocked "reservation is not valid JSON"
+  [ -n "$JEV_TASK" ] || jev_blocked "reservation has no task id"
+  jq -e '(.cap_usd|type)=="number" and .cap_usd > 0' "$JEV_RESERVATION" >/dev/null 2>&1 \
+    || jev_blocked "reservation has no positive cap_usd" "$JEV_TASK"
+  JEV_AT=$(jq -r 'if (.reserved_at|type)=="number" then (.reserved_at|floor) else "" end' "$JEV_RESERVATION" 2>/dev/null)
+  case "$JEV_AT" in ''|*[!0-9]*) jev_blocked "reservation has no reserved_at epoch" "$JEV_TASK" ;; esac
+  JEV_NOW=$(date +%s)
+  if [ "$JEV_AT" -gt "$JEV_NOW" ] || [ $(( (JEV_NOW - JEV_AT) / 60 )) -ge "$JEV_MAX_AGE_MIN" ]; then
+    jev_blocked "reservation is stale or dated in the future" "$JEV_TASK"
+  fi
+  jev_ledger allowed "$JEV_TASK" "reservation valid"
+  command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   REQUEST=$(jq -n --rawfile brief "$BRIEF" --arg project "$PROJECT" --arg model "$TS_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
     ($rules[0]) as $cfg |
