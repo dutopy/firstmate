@@ -1,0 +1,342 @@
+Real resolver CLI; real curl routed only to disposable localhost HTTP server; synthetic quota command; no paid service or operator data.
+
+=== missing-curl-before-reservation ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: curl not installed
+
+stderr:
+dispatch-resolve: error (curl not installed)
+
+persisted TSV:
+
+HTTP requests: []
+
+=== missing-reservation ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation file missing or unreadable (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-reservation/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation file missing or unreadable (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-reservation/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099741	blocked	-	reservation file missing or unreadable
+
+HTTP requests: []
+
+=== missing-task ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation has no task id (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-task/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation has no task id (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-task/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099742	blocked	-	reservation has no task id
+
+HTTP requests: []
+
+=== missing-cap ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation has no positive cap_usd (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-cap/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation has no positive cap_usd (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-cap/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099742	blocked	T-live	reservation has no positive cap_usd
+
+HTTP requests: []
+
+=== zero-cap ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation has no positive cap_usd (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/zero-cap/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation has no positive cap_usd (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/zero-cap/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099743	blocked	T-live	reservation has no positive cap_usd
+
+HTTP requests: []
+
+=== negative-cap ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation has no positive cap_usd (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/negative-cap/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation has no positive cap_usd (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/negative-cap/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099744	blocked	T-live	reservation has no positive cap_usd
+
+HTTP requests: []
+
+=== missing-timestamp ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation has no reserved_at epoch (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-timestamp/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation has no reserved_at epoch (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/missing-timestamp/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099744	blocked	T-live	reservation has no reserved_at epoch
+
+HTTP requests: []
+
+=== stale-default ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation is stale or dated in the future (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/stale-default/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation is stale or dated in the future (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/stale-default/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099745	blocked	T-live	reservation is stale or dated in the future
+
+HTTP requests: []
+
+=== future ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation is stale or dated in the future (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/future/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation is stale or dated in the future (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/future/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099745	blocked	T-live	reservation is stale or dated in the future
+
+HTTP requests: []
+
+=== twelve-digit-timestamp ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation has malformed reserved_at epoch (expected 1 to 11 digits) (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/twelve-digit-timestamp/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation has malformed reserved_at epoch (expected 1 to 11 digits) (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/twelve-digit-timestamp/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099746	blocked	T-live	reservation has malformed reserved_at epoch (expected 1 to 11 digits)
+
+HTTP requests: []
+
+=== overflow-timestamp ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation has malformed reserved_at epoch (expected 1 to 11 digits) (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/overflow-timestamp/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation has malformed reserved_at epoch (expected 1 to 11 digits) (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/overflow-timestamp/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099746	blocked	T-live	reservation has malformed reserved_at epoch (expected 1 to 11 digits)
+
+HTTP requests: []
+
+=== invalid-json ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/invalid-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/invalid-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099746	blocked	-	reservation must be valid JSON containing exactly one object
+
+HTTP requests: []
+
+=== empty-json ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/empty-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/empty-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099747	blocked	-	reservation must be valid JSON containing exactly one object
+
+HTTP requests: []
+
+=== array-json ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/array-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/array-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099747	blocked	-	reservation must be valid JSON containing exactly one object
+
+HTTP requests: []
+
+=== null-json ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/null-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/null-json/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099748	blocked	-	reservation must be valid JSON containing exactly one object
+
+HTTP requests: []
+
+=== concatenated-invalid ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/concatenated-invalid/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/concatenated-invalid/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099748	blocked	-	reservation must be valid JSON containing exactly one object
+
+HTTP requests: []
+
+=== concatenated-valid ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/concatenated-valid/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation must be valid JSON containing exactly one object (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/concatenated-valid/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 120 min))
+
+persisted TSV:
+1793099748	blocked	-	reservation must be valid JSON containing exactly one object
+
+HTTP requests: []
+
+=== custom-expiry ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: no Jev request without a dated reservation: reservation is stale or dated in the future (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/custom-expiry/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 2 min)
+
+stderr:
+dispatch-resolve: error (no Jev request without a dated reservation: reservation is stale or dated in the future (write /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/custom-expiry/data/jev-reservation.json with task, reserved_at epoch seconds and cap_usd; max age 2 min))
+
+persisted TSV:
+1793099749	blocked	T-live	reservation is stale or dated in the future
+
+HTTP requests: []
+
+=== unwritable-ledger ===
+
+exit: 0
+
+dispatch-resolve:
+  status: error
+  reason: Jev ledger not writable: no request without a ledger row (set FM_JEV_LEDGER)
+
+stderr:
+dispatch-resolve: cannot write the Jev ledger /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5YGMKBJR7A39JAP6SB4F46F/.local-test/unwritable-ledger/regular-file/calls.tsv
+dispatch-resolve: error (Jev ledger not writable: no request without a ledger row (set FM_JEV_LEDGER))
+
+persisted TSV:
+
+HTTP requests: []
+
+=== valid-request ===
+
+exit: 0
+
+dispatch-resolve:
+  status: clear
+  model: disposable-jev   latency_ms: 107   tokens: 1/1
+  rule: rule_1 (Fix a bug)   confidence: 0.99
+  probabilities: rule_1=0.99 default=0.01
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=90%  spendPriority=1  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet'
+
+stderr:
+
+persisted TSV:
+1793099750	allowed	T-live	reservation valid
+
+HTTP requests: [{"path": "/v1/systemone", "body": {"model": "jev-latest", "state": {"task": {"project": "isolated-pager", "brief": "Fix the pager off-by-one bug.\n"}}, "questions": {"rule": {"type": "choice", "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.", "criteria": {"rule_1": "Fix a bug", "default": "No listed rule applies to this task."}}}}}]
+
+=== declared-class-no-reservation ===
+
+exit: 0
+
+dispatch-resolve:
+  status: clear
+  class: volume_cheap
+  model: -   latency_ms: -   tokens: -/-
+  note: the Jev class selected its declared profile set
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=90%  spendPriority=1  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet'
+
+stderr:
+
+persisted TSV:
+
+HTTP requests: []
