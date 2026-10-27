@@ -32,6 +32,115 @@ FAKEBIN=$(fm_fakebin "$TMP_ROOT/harness-bin")
 ln -s /bin/bash "$FAKEBIN/claude"
 NAMED_CLAUDE="$FAKEBIN/claude"
 
+# Exercise admission through the real lock entry point, without launching an
+# agent. The named shells reuse this suite's existing process-identity fixture.
+ln -s /bin/bash "$FAKEBIN/omp"
+NAMED_OMP="$FAKEBIN/omp"
+
+acquire_fixture_lock() {  # <home> [self|peer]
+  local home=$1 mode=${2:-normal}
+  mkdir -p "$home/state" "$home/config"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" "$NAMED_CLAUDE" -c '
+      printf "%s\n" "$$" > "$2/expected-pid"
+      if [ "$3" = self ]; then printf "%s\n" "$$" > "$2/state/.lock"; fi
+      bash "$1/bin/fm-lock.sh" > "$2/acquire.out" 2>&1
+      printf "%s\n" "$?" > "$2/acquire.rc"
+      if [ "$3" = peer ]; then
+        "$4" -c '"'"'
+          bash "$1/bin/fm-lock.sh" > "$2/peer.out" 2>&1
+          printf "%s\n" "$?" > "$2/peer.rc"
+        '"'"' _ "$1" "$2"
+      fi
+    ' _ "$ROOT" "$home" "$mode" "$NAMED_OMP"
+}
+
+promote_fixture_home() {  # <home> [confirmation]
+  local home=$1
+  shift
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" bash "$ROOT/bin/fm-primary-promote.sh" "$@"
+}
+
+test_manual_standby_requires_explicit_promotion() {
+  local home ordinary before
+  home="$TMP_ROOT/manual-standby"
+  ordinary="$TMP_ROOT/ordinary-admission"
+  acquire_fixture_lock "$ordinary"
+  expect_code 0 "$(cat "$ordinary/acquire.rc")" "ordinary home acquisition must remain available"
+  [ "$(cat "$ordinary/state/.lock")" = "$(cat "$ordinary/expected-pid")" ] \
+    || fail "ordinary home lock did not name the actual fixture session"
+
+  mkdir -p "$home/config"
+  : > "$home/config/manual-promotion-required"
+  acquire_fixture_lock "$home"
+  [ "$(cat "$home/acquire.rc")" != 0 ] \
+    || fail "standby home acquired supervision lock before explicit promotion"
+  [ ! -e "$home/state/.lock" ] || fail "standby refusal published a session lock"
+
+  touch -t 200001010000 "$home/config/manual-promotion-required"
+  acquire_fixture_lock "$home"
+  [ "$(cat "$home/acquire.rc")" != 0 ] \
+    || fail "an old standby marker automatically promoted the home"
+  [ ! -e "$home/state/.lock" ] || fail "old standby marker allowed lock publication"
+
+  acquire_fixture_lock "$home" self
+  [ "$(cat "$home/acquire.rc")" != 0 ] \
+    || fail "same-owner shortcut bypassed manual standby"
+  [ "$(cat "$home/state/.lock")" = "$(cat "$home/expected-pid")" ] \
+    || fail "standby check changed an existing session lock"
+  before=$(cat "$home/state/.lock")
+
+  promote_fixture_home "$home" --help > "$home/promote-help.out" 2>&1 \
+    || fail "promotion help failed"
+  [ -f "$home/config/manual-promotion-required" ] \
+    || fail "promotion help removed the standby marker"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    bash "$ROOT/bin/fm-lock.sh" status > "$home/lock-status.out" 2>&1 \
+    || fail "standby lock status failed"
+  [ -f "$home/config/manual-promotion-required" ] \
+    || fail "lock inspection promoted the standby home"
+
+  if promote_fixture_home "$home" > "$home/promote.out" 2>&1; then
+    fail "promotion proceeded without explicit other-primary-stopped confirmation"
+  fi
+  [ -f "$home/config/manual-promotion-required" ] \
+    || fail "unconfirmed promotion removed the standby marker"
+  promote_fixture_home "$home" --confirm-other-primary-stopped > "$home/promote.out" 2>&1 \
+    || fail "explicit manual promotion failed"
+  [ ! -e "$home/config/manual-promotion-required" ] \
+    || fail "explicit promotion did not clear standby admission"
+  [ "$(cat "$home/state/.lock")" = "$before" ] \
+    || fail "promotion altered the session lock instead of only opening admission"
+
+  acquire_fixture_lock "$home" peer
+  expect_code 0 "$(cat "$home/acquire.rc")" "explicitly promoted home must acquire its lock"
+  [ "$(cat "$home/state/.lock")" = "$(cat "$home/expected-pid")" ] \
+    || fail "promoted home lock did not name its actual session"
+  [ "$(cat "$home/peer.rc")" != 0 ] \
+    || fail "promotion allowed a competing live session to steal the lock"
+  [ "$(cat "$home/state/.lock")" = "$(cat "$home/expected-pid")" ] \
+    || fail "competing live session changed the promoted home's lock"
+  pass "session-lock: standby refuses acquisition until explicit promotion and preserves live ownership"
+}
+
+test_manual_standby_rejects_symlink_marker() {
+  local home
+  home="$TMP_ROOT/symlink-standby"
+  mkdir -p "$home/config"
+  ln -s "$home/missing-marker-target" "$home/config/manual-promotion-required"
+  acquire_fixture_lock "$home"
+  [ "$(cat "$home/acquire.rc")" != 0 ] \
+    || fail "dangling standby marker allowed supervision-lock acquisition"
+  [ ! -e "$home/state/.lock" ] || fail "dangling standby marker allowed lock publication"
+  if promote_fixture_home "$home" --confirm-other-primary-stopped > "$home/promote.out" 2>&1; then
+    fail "promotion accepted a symlink standby marker"
+  fi
+  [ -L "$home/config/manual-promotion-required" ] \
+    || fail "refused promotion removed the symlink marker"
+  pass "session-lock: dangling standby marker remains non-admissible"
+}
+
 # --- unit layer: identity behind a deterministic process table ---------------
 
 # Run one library expression with <fakebin> shadowing ps. kill is stubbed so
@@ -404,6 +513,8 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
   pass "session-lock e2e: a version-named session under a harness-named daemon keeps its own lock"
 }
 
+test_manual_standby_requires_explicit_promotion
+test_manual_standby_rejects_symlink_marker
 test_version_named_session_is_identified_on_both_platforms
 test_harness_at_namespace_pid1_is_examined
 test_ordinary_paths_are_never_harness_processes

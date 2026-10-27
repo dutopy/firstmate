@@ -333,6 +333,12 @@ The full zellij home label also includes a short hash of the resolved `FM_ROOT` 
 For the cmux backend, `FM_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read from, while `FM_HOME` determines the default config path and readable home prefix embedded in workspace titles.
 The full cmux home label also includes a short hash of the resolved `FM_ROOT` path, and there is no per-home container split.
 
+### Inactive standby homes and manual promotion
+
+[`fm-primary-promote.sh --help`](../bin/fm-primary-promote.sh) owns the standby admission contract, marker setup, path resolution, manual promotion command, and iPhone SSH usage.
+Install the standby marker only on an inactive home; it does not revoke an existing session's authority.
+[`tests/fm-session-lock-ancestry.test.sh`](../tests/fm-session-lock-ancestry.test.sh) exercises standby refusal, explicit promotion, unchanged ordinary homes and competing live-owner protection.
+
 ## Harness support
 
 claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, and omp are empirically verified for crewmate and secondmate launches; gemini is verified for crewmate and scout launches only, and [README requirements](../README.md#requirements) own the set supported for the primary session.
