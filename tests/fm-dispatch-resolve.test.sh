@@ -71,6 +71,15 @@ cat > "$BASE_RULES" <<'JSON'
 JSON
 cp "$BASE_RULES" "$RULES"
 
+# Spend gate: every case below that reaches the model runs under a fresh dated
+# reservation; the gate cases at the end remove or age it on purpose.
+RESERVATION="$HOME_DIR/data/jev-reservation.json"
+write_reservation() {  # <age-seconds> [<task>] [<cap>]
+  mkdir -p "$HOME_DIR/data"
+  printf '{"task":"%s","reserved_at":%s,"cap_usd":%s}\n' "${2-T-test-1}" "$(( $(date +%s) - $1 ))" "${3-0.5}" > "$RESERVATION"
+}
+write_reservation 0
+
 write_quota() {  # <path> <cursor spendPriority> [<claude all_models spendPriority>]
   local path=$1 cursor=$2 claude=${3:--0.4627}
   cat > "$path" <<JSON
@@ -752,5 +761,63 @@ for bad in \
 done
 cp "$BASE_RULES" "$RULES"
 pass "the class path, its fall-through, and its configuration errors"
+
+# --- spend gate: no model request without a valid dated reservation -------------
+LEDGER="$HOME_DIR/data/jev-calls.tsv"
+gate_case() {  # <label> <expected reason fragment>
+  reset_log; rm -f "$LEDGER"
+  write_response "$RESPONSE" rule_4 0.9
+  TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+  expect_code 0 "$code" "$1 exits 0 so an intake is never blocked"
+  assert_contains "$out" 'status: error' "$1 is an error outcome"
+  assert_contains "$out" "$2" "$1 names the reason"
+  assert_absent "$LOG/argv" "$1 makes no model request"
+  assert_grep "blocked" "$LEDGER" "$1 is recorded as blocked"
+}
+rm -f "$RESERVATION"
+gate_case "missing reservation" "reservation file missing or unreadable"
+write_reservation 0 ""
+gate_case "reservation without a task id" "no task id"
+write_reservation 0 "T-1" 0
+gate_case "reservation without a positive cap" "no positive cap_usd"
+write_reservation 7200 "T-1"
+gate_case "stale reservation" "stale or dated in the future"
+write_reservation -600 "T-1"
+gate_case "future-dated reservation" "stale or dated in the future"
+printf 'not json\n' > "$RESERVATION"
+gate_case "malformed reservation" "reservation"
+printf '{"task":"T-1","cap_usd":0,"reserved_at":%s}\n{"task":"T-2","cap_usd":1}\n' "$(date +%s)" > "$RESERVATION"
+gate_case "concatenated invalid reservations" "exactly one object"
+write_reservation 0
+cat "$RESERVATION" "$RESERVATION" > "$TMP_ROOT/reservations.json"
+cp "$TMP_ROOT/reservations.json" "$RESERVATION"
+gate_case "concatenated valid reservations" "exactly one object"
+for malformed in '' '[]' 'null' '42'; do
+  printf '%s\n' "$malformed" > "$RESERVATION"
+  gate_case "non-object reservation: $malformed" "exactly one object"
+done
+for timestamp in 100000000000 9223372036854775808; do
+  printf '{"task":"T-1","reserved_at":%s,"cap_usd":0.5}\n' "$timestamp" > "$RESERVATION"
+  gate_case "out-of-range reserved_at: $timestamp" "malformed reserved_at"
+done
+write_reservation 60 "T-gate-ok"
+reset_log; rm -f "$LEDGER"; printf 'not a directory\n' > "$TMP_ROOT/ledger-parent"
+FM_JEV_LEDGER="$TMP_ROOT/ledger-parent/calls.tsv" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "an unwritable ledger exits 0"
+assert_contains "$out" 'ledger not writable' "the unwritable ledger reason is named"
+assert_contains "$out" 'status: error' "an unwritable ledger refuses the request"
+assert_contains "$err" 'cannot write the Jev ledger' "the unwritable ledger is reported on stderr"
+assert_absent "$LOG/argv" "no request is made when the decision cannot be ledgered"
+reset_log; rm -f "$LEDGER"; write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "a valid reservation exits 0"
+assert_contains "$out" 'status: clear' "a valid reservation reaches the model and resolves"
+assert_grep "allowed" "$LEDGER" "a valid reservation is recorded as allowed"
+assert_grep "T-gate-ok" "$LEDGER" "the ledger carries the task id"
+reset_log; rm -f "$LEDGER"; rm -f "$RESERVATION"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --class volume_cheap
+assert_absent "$LOG/argv" "the class path makes no model request and needs no reservation"
+write_reservation 0
+pass "spend gate: no model request without a valid dated reservation, every decision ledgered"
 
 printf '# all fm-dispatch-resolve tests passed\n'

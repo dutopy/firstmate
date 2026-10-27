@@ -27,7 +27,7 @@
 #   The key lives in one shell variable and reaches curl as a header read from
 #   a file descriptor, never on argv; nothing logs or writes it.
 #
-# What it does when on with at least one rule: one POST to
+# What it does when on with at least one rule and spend-gate permission: one POST to
 #   https://api.typesafe.ai/v1/systemone with the project name and the whole brief as
 #   state and ONE Choice question whose
 #   options are every rule's `when` from config/crew-dispatch.json plus one
@@ -52,7 +52,8 @@
 #   ambiguous -> confidence below the floor; decide as today from the probabilities
 #                (a class path has no model confidence and never returns this)
 #   escalate  -> the rule requires captain approval, no candidate is rankable, or a genuine tie
-#   error     -> API, network, response, or quota-axi failure; decide as today
+#   error     -> reservation, ledger, API, network, response, or quota-axi failure;
+#                decide as today
 #   Every outcome exits 0 so an intake is never blocked by this tool.
 #   Exit 2 only for a usage or configuration error (unreadable brief, an
 #   existing unreadable rules file, malformed rules or a malformed `classes`
@@ -60,7 +61,8 @@
 #   missing jq), which is actionable, never selected around.
 #
 # Environment:
-#   TYPESAFE_API_KEY is the only resolver-specific environment setting.
+#   See docs/configuration.md "Typed dispatch resolution" for the opt-in key
+#   and spend-reservation settings.
 #
 # Authority: this tool never replaces firstmate's judgment, quota-array-dispatch,
 #   the captain-approval gate, or fm-spawn.sh validation; it publishes one
@@ -290,7 +292,44 @@ if [ "$CLASS_DECLARED" -eq 1 ]; then
   # quota. No curl, no request body, and no response to validate.
   printf 'null\n' > "$RESP_FILE" || emit_error "could not stage the class result"
 else
-command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
+  command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
+  # ---- spend gate: no model request without a dated reservation ---------------
+  # Keep this check before the only model request: no unreserved spend.
+  # docs/configuration.md "Typed dispatch resolution" owns the reservation
+  # and audit-ledger contract.
+  JEV_RESERVATION=${FM_JEV_RESERVATION:-$FM_HOME/data/jev-reservation.json}
+  JEV_LEDGER=${FM_JEV_LEDGER:-$FM_HOME/data/jev-calls.tsv}
+  JEV_MAX_AGE_MIN=${FM_JEV_RESERVATION_MAX_AGE_MIN:-120}
+  case "$JEV_MAX_AGE_MIN" in ''|*[!0-9]*) JEV_MAX_AGE_MIN=120 ;; esac
+  # Never permit a request without first recording its allowed decision.
+  jev_ledger() {
+    mkdir -p "$(dirname "$JEV_LEDGER")" 2>/dev/null \
+      && printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "${2:--}" "$3" >> "$JEV_LEDGER" 2>/dev/null && return 0
+    echo "dispatch-resolve: cannot write the Jev ledger $JEV_LEDGER" >&2
+    return 1
+  }
+  jev_blocked() {
+    jev_ledger blocked "${2:--}" "$1"
+    emit_error "no Jev request without a dated reservation: $1 (write $JEV_RESERVATION with task, reserved_at epoch seconds and cap_usd; max age ${JEV_MAX_AGE_MIN} min)"
+  }
+  [ -r "$JEV_RESERVATION" ] || jev_blocked "reservation file missing or unreadable"
+  JEV_RECORD=$(jq -cs 'if length == 1 and (.[0] | type) == "object" then .[0] else error("expected one object") end' "$JEV_RESERVATION" 2>/dev/null) \
+    || jev_blocked "reservation must be valid JSON containing exactly one object"
+  JEV_DEFECT=$(jq -r '
+    if (.task | type) != "string" or (.task | length) == 0 then "reservation has no task id"
+    elif (.cap_usd | type) != "number" or .cap_usd <= 0 then "reservation has no positive cap_usd"
+    elif (.reserved_at | type) != "number" then "reservation has no reserved_at epoch"
+    elif (.reserved_at | floor | tostring | test("^[0-9]{1,11}\\z") | not) then "reservation has malformed reserved_at epoch (expected 1 to 11 digits)"
+    else empty end
+  ' <<< "$JEV_RECORD") || jev_blocked "reservation is malformed"
+  JEV_TASK=$(jq -r 'if (.task | type) == "string" then .task else "" end' <<< "$JEV_RECORD")
+  [ -z "$JEV_DEFECT" ] || jev_blocked "$JEV_DEFECT" "$JEV_TASK"
+  JEV_AT=$(jq -r '.reserved_at | floor' <<< "$JEV_RECORD")
+  JEV_NOW=$(date +%s)
+  if [ "$JEV_AT" -gt "$JEV_NOW" ] || [ $(( (JEV_NOW - JEV_AT) / 60 )) -ge "$JEV_MAX_AGE_MIN" ]; then
+    jev_blocked "reservation is stale or dated in the future" "$JEV_TASK"
+  fi
+  jev_ledger allowed "$JEV_TASK" "reservation valid" || emit_error "Jev ledger not writable: no request without a ledger row (set FM_JEV_LEDGER)"
   REQUEST=$(jq -n --rawfile brief "$BRIEF" --arg project "$PROJECT" --arg model "$TS_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
     ($rules[0]) as $cfg |
