@@ -333,6 +333,22 @@ The full zellij home label also includes a short hash of the resolved `FM_ROOT` 
 For the cmux backend, `FM_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read from, while `FM_HOME` determines the default config path and readable home prefix embedded in workspace titles.
 The full cmux home label also includes a short hash of the resolved `FM_ROOT` path, and there is no per-home container split.
 
+### Inactive standby homes and manual promotion
+
+An operator can prepare an inactive standby home using the marker defined by [`fm-primary-promote.sh --help`](../bin/fm-primary-promote.sh), whose header owns marker setup, path resolution and the manual promotion command.
+While that marker exists, session-lock acquisition is refused; ordinary homes without it retain their existing behavior.
+Before promotion, verify that the other primary is stopped or fenced and cannot restart.
+From an iPhone's existing authenticated SSH connection, invoke the same local command, replacing the example host and paths with the intended standby machine and home:
+
+```sh
+ssh your-imac 'FM_HOME=/path/to/home /path/to/firstmate/bin/fm-primary-promote.sh --confirm-other-primary-stopped'
+```
+
+Promotion opens local admission only: it starts no parent and provides no proof of remote fencing.
+Neither elapsed time nor lease expiry promotes a home.
+Install the standby marker only on an inactive home; it does not revoke an existing session's authority.
+[`tests/fm-session-lock-ancestry.test.sh`](../tests/fm-session-lock-ancestry.test.sh) exercises standby refusal, explicit promotion, unchanged ordinary homes and competing live-owner protection.
+
 ## Harness support
 
 claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, and omp are empirically verified for crewmate and secondmate launches; gemini is verified for crewmate and scout launches only, and [README requirements](../README.md#requirements) own the set supported for the primary session.
