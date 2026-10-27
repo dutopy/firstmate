@@ -290,6 +290,7 @@ if [ "$CLASS_DECLARED" -eq 1 ]; then
   # quota. No curl, no request body, and no response to validate.
   printf 'null\n' > "$RESP_FILE" || emit_error "could not stage the class result"
 else
+  command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   # ---- spend gate: no model request without a dated reservation ---------------
   # Standing captain rule: zero Jev calls without a written reservation (goal,
   # dollar cap, task id, date). The check is code, here, immediately before the
@@ -302,9 +303,13 @@ else
   JEV_LEDGER=${FM_JEV_LEDGER:-$FM_HOME/data/jev-calls.tsv}
   JEV_MAX_AGE_MIN=${FM_JEV_RESERVATION_MAX_AGE_MIN:-120}
   case "$JEV_MAX_AGE_MIN" in ''|*[!0-9]*) JEV_MAX_AGE_MIN=120 ;; esac
+  # A row that cannot be written is never silent: it is reported on stderr, and an
+  # allowed decision whose row cannot be written is refused (no unledgered request).
   jev_ledger() {
-    mkdir -p "$(dirname "$JEV_LEDGER")" 2>/dev/null || return 0
-    printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "${2:--}" "$3" >> "$JEV_LEDGER" 2>/dev/null || true
+    mkdir -p "$(dirname "$JEV_LEDGER")" 2>/dev/null \
+      && printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "${2:--}" "$3" >> "$JEV_LEDGER" 2>/dev/null && return 0
+    echo "dispatch-resolve: cannot write the Jev ledger $JEV_LEDGER" >&2
+    return 1
   }
   jev_blocked() {
     jev_ledger blocked "${2:--}" "$1"
@@ -318,12 +323,13 @@ else
     || jev_blocked "reservation has no positive cap_usd" "$JEV_TASK"
   JEV_AT=$(jq -r 'if (.reserved_at|type)=="number" then (.reserved_at|floor) else "" end' "$JEV_RESERVATION" 2>/dev/null)
   case "$JEV_AT" in ''|*[!0-9]*) jev_blocked "reservation has no reserved_at epoch" "$JEV_TASK" ;; esac
+  # bound the digits: a value past Bash's integer range would wrap in the arithmetic below
+  [ "${#JEV_AT}" -le 12 ] || jev_blocked "reservation is stale or dated in the future" "$JEV_TASK"
   JEV_NOW=$(date +%s)
   if [ "$JEV_AT" -gt "$JEV_NOW" ] || [ $(( (JEV_NOW - JEV_AT) / 60 )) -ge "$JEV_MAX_AGE_MIN" ]; then
     jev_blocked "reservation is stale or dated in the future" "$JEV_TASK"
   fi
-  jev_ledger allowed "$JEV_TASK" "reservation valid"
-  command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
+  jev_ledger allowed "$JEV_TASK" "reservation valid" || emit_error "Jev ledger not writable: no request without a ledger row (set FM_JEV_LEDGER)"
   REQUEST=$(jq -n --rawfile brief "$BRIEF" --arg project "$PROJECT" --arg model "$TS_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
     ($rules[0]) as $cfg |

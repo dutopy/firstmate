@@ -786,7 +786,15 @@ write_reservation -600 "T-1"
 gate_case "future-dated reservation" "stale or dated in the future"
 printf 'not json\n' > "$RESERVATION"
 gate_case "malformed reservation" "reservation"
+printf '{"task":"T-1","reserved_at":9223372036854775808,"cap_usd":0.5}\n' > "$RESERVATION"
+gate_case "out-of-range reserved_at" "stale or dated in the future"
 write_reservation 60 "T-gate-ok"
+reset_log; rm -f "$LEDGER"; mkdir -p "$TMP_ROOT/ro" && chmod 500 "$TMP_ROOT/ro"
+FM_JEV_LEDGER="$TMP_ROOT/ro/none/calls.tsv" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+chmod 700 "$TMP_ROOT/ro"
+assert_contains "$out" 'status: error' "an unwritable ledger refuses the request"
+assert_contains "$err" 'cannot write the Jev ledger' "the unwritable ledger is reported on stderr"
+assert_absent "$LOG/argv" "no request is made when the decision cannot be ledgered"
 reset_log; rm -f "$LEDGER"; write_response "$RESPONSE" rule_4 0.9
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 expect_code 0 "$code" "a valid reservation exits 0"
