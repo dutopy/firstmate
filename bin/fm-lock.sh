@@ -5,6 +5,9 @@
 # PID of any one tool call, which is dead moments after it is written.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
+# Acquisition refuses while config/manual-promotion-required exists under this
+# home (FM_CONFIG_OVERRIDE selects another config directory). Marker age never
+# grants admission. See fm-primary-promote.sh --help for manual promotion.
 
 # Inert help: fm_cli_help prints this script's own usage and exits 0 before any
 # state change, so --help can never take a lock, write state, or reach the network.
@@ -22,6 +25,20 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 LOCK="$STATE/.lock"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+PROMOTION_MARKER="$CONFIG/manual-promotion-required"
+
+require_primary_admission() {
+  if [ -e "$PROMOTION_MARKER" ] || [ -L "$PROMOTION_MARKER" ]; then
+    printf 'error: manual promotion required (%s); operate read-only; see fm-primary-promote.sh --help\n' "$PROMOTION_MARKER" >&2
+    return 1
+  fi
+  return 0
+}
+
+if [ "${1:-}" != status ]; then
+  require_primary_admission || exit 1
+fi
 mkdir -p "$STATE" 2>/dev/null || {
   echo "error: cannot create session-lock state directory $STATE; operate read-only until resolved" >&2
   exit 1
@@ -86,6 +103,8 @@ if ! fm_lock_try_acquire "$CLAIM_LOCK"; then
   fm_lock_acquire_wait "$CLAIM_LOCK"
 fi
 CLAIM_LOCK_HELD=1
+# A contender may have waited while the operator placed the home in standby.
+require_primary_admission || exit 1
 
 if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   if [ ! -f "$LOCK" ] || [ -L "$LOCK" ]; then

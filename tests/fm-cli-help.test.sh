@@ -58,6 +58,7 @@ MUTATING_COMMANDS=(
   fm-procevent-when.sh
   fm-project-mode.sh
   fm-promote.sh
+  fm-primary-promote.sh
   fm-pr-poll.sh
   fm-quota-choose.sh
   fm-remote-delta-read.sh
