@@ -1,0 +1,113 @@
+SCENARIO: Ordinary home acquires its actual session PID
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh
+lock acquired: harness pid 31462
+exit=0 (expected 0)
+observed marker=absent session_lock=31462 actual_session_pid=31462
+
+SCENARIO: Standby blocks acquisition without publishing a lock, regardless of age
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh
+error: manual promotion required (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/home/config/manual-promotion-required); operate read-only; see fm-primary-promote.sh --help
+exit=1 (expected 1)
+observed marker=present session_lock=absent actual_session_pid=31462
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh
+error: manual promotion required (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/home/config/manual-promotion-required); operate read-only; see fm-primary-promote.sh --help
+exit=1 (expected 1)
+observed marker=present session_lock=absent actual_session_pid=31462
+
+SCENARIO: Standby blocks the same-owner shortcut without changing its existing lock
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh
+error: manual promotion required (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/home/config/manual-promotion-required); operate read-only; see fm-primary-promote.sh --help
+exit=1 (expected 1)
+observed marker=present session_lock=31462 actual_session_pid=31462
+
+SCENARIO: Help, status, missing confirmation and extra arguments never promote
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-primary-promote.sh --help
+Usage: FM_HOME=/path/to/home bin/fm-primary-promote.sh --confirm-other-primary-stopped
+       bin/fm-primary-promote.sh --help
+
+Before promotion, the operator must stop or fence the other primary and verify
+that it cannot restart. The confirmation flag records that operator assertion;
+this command does not inspect, stop, fence or contact the other machine.
+From an iPhone, run the same command through the existing authenticated SSH
+connection to the standby machine. No new listener or credential is needed.
+
+Standby is an operator-installed config/manual-promotion-required marker under
+FM_HOME (FM_CONFIG_OVERRIDE selects another config directory). To prepare an
+INACTIVE home, create its config directory and an empty regular marker file.
+Installing standby is a separate operator action, not a live authority change
+performed by this command. Without the marker, ordinary homes are unchanged.
+
+Explicit promotion removes only that regular marker; repeating it when absent
+succeeds without writing anything. Symlinks and other non-regular markers are
+refused. A failed removal leaves acquisition forbidden while the marker exists.
+Promotion never writes state/.lock, steals a live local lock, starts a parent,
+schedules a retry or reacts to lease expiry. Existing running sessions are not
+revoked by installing a marker; use it only on an inactive home.
+
+Home resolution follows FM_HOME, then FM_ROOT_OVERRIDE, then this code root.
+The marker's age and contents do not authorize promotion. Exit 0 means admission
+is open locally, not that another primary is fenced or a new parent is running.
+Exit 1 reports an unsafe marker or removal failure; exit 2 reports missing or
+unexpected confirmation arguments. --help is inert and exits 0.
+exit=0 (expected 0)
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh status
+lock: held by live harness pid 31462
+exit=0 (expected 0)
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-primary-promote.sh
+error: require exactly --confirm-other-primary-stopped after verifying the other primary cannot run; see --help
+exit=2 (expected 2)
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-primary-promote.sh --confirm-other-primary-stopped extra
+error: require exactly --confirm-other-primary-stopped after verifying the other primary cannot run; see --help
+exit=2 (expected 2)
+observed marker=present session_lock=31462 actual_session_pid=31462
+
+SCENARIO: Explicit promotion only clears the marker; repetition is inert
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-primary-promote.sh --confirm-other-primary-stopped
+local manual promotion complete; no parent started or remote fencing verified
+exit=0 (expected 0)
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-primary-promote.sh --confirm-other-primary-stopped
+local admission already open; no parent started or remote fencing verified
+exit=0 (expected 0)
+observed marker=absent session_lock=31462 actual_session_pid=31462
+
+SCENARIO: Promoted home acquires its own PID and rejects a competing live session
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh
+lock acquired: harness pid 31462
+exit=0 (expected 0)
+
+$ /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/harness/omp -c bash\ \"\$ROOT/bin/fm-lock.sh\"\;\ rc=\$\?\;\ printf\ \"competing_session_pid=%s\ exit=%s\\n\"\ \"\$\$\"\ \"\$rc\"\;\ exit\ \"\$rc\"
+error: another live firstmate session holds the lock (pid 31462); operate read-only until resolved
+competing_session_pid=32562 exit=1
+exit=1 (expected 1)
+observed marker=absent session_lock=31462 actual_session_pid=31462
+
+SCENARIO: Dangling symlink and directory markers refuse both admission and promotion
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh
+error: manual promotion required (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/home/config/manual-promotion-required); operate read-only; see fm-primary-promote.sh --help
+exit=1 (expected 1)
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-primary-promote.sh --confirm-other-primary-stopped
+error: standby marker is not a regular file: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/home/config/manual-promotion-required; keep this home inactive
+exit=1 (expected 1)
+observed marker=symlink session_lock=absent actual_session_pid=31462
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-lock.sh
+error: manual promotion required (/Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/home/config/manual-promotion-required); operate read-only; see fm-primary-promote.sh --help
+exit=1 (expected 1)
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/bin/fm-primary-promote.sh --confirm-other-primary-stopped
+error: standby marker is not a regular file: /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/manual/home/config/manual-promotion-required; keep this home inactive
+exit=1 (expected 1)
+observed marker=present session_lock=absent actual_session_pid=31462

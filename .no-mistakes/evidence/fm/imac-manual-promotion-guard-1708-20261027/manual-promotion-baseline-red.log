@@ -1,0 +1,12 @@
+SCENARIO: Ordinary home acquires its actual session PID
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/baseline/bin/fm-lock.sh
+lock acquired: harness pid 47686
+exit=0 (expected 0)
+observed marker=absent session_lock=47686 actual_session_pid=47686
+
+SCENARIO: Standby blocks acquisition without publishing a lock, regardless of age
+
+$ bash /Users/pierre/.no-mistakes/worktrees/152fa2a6a341/01M5Z8P8MRY3RSGSFDZ8JBBE1E/.local-promotion-test/baseline/bin/fm-lock.sh
+lock acquired: harness pid 47686
+exit=0 (expected 1)
