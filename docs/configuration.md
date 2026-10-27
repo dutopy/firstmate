@@ -335,17 +335,7 @@ The full cmux home label also includes a short hash of the resolved `FM_ROOT` pa
 
 ### Inactive standby homes and manual promotion
 
-An operator can prepare an inactive standby home using the marker defined by [`fm-primary-promote.sh --help`](../bin/fm-primary-promote.sh), whose header owns marker setup, path resolution and the manual promotion command.
-While that marker exists, session-lock acquisition is refused; ordinary homes without it retain their existing behavior.
-Before promotion, verify that the other primary is stopped or fenced and cannot restart.
-From an iPhone's existing authenticated SSH connection, invoke the same local command, replacing the example host and paths with the intended standby machine and home:
-
-```sh
-ssh your-imac 'FM_HOME=/path/to/home /path/to/firstmate/bin/fm-primary-promote.sh --confirm-other-primary-stopped'
-```
-
-Promotion opens local admission only: it starts no parent and provides no proof of remote fencing.
-Neither elapsed time nor lease expiry promotes a home.
+[`fm-primary-promote.sh --help`](../bin/fm-primary-promote.sh) owns the standby admission contract, marker setup, path resolution, manual promotion command, and iPhone SSH usage.
 Install the standby marker only on an inactive home; it does not revoke an existing session's authority.
 [`tests/fm-session-lock-ancestry.test.sh`](../tests/fm-session-lock-ancestry.test.sh) exercises standby refusal, explicit promotion, unchanged ordinary homes and competing live-owner protection.
 
