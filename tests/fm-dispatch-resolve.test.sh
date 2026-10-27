@@ -786,12 +786,25 @@ write_reservation -600 "T-1"
 gate_case "future-dated reservation" "stale or dated in the future"
 printf 'not json\n' > "$RESERVATION"
 gate_case "malformed reservation" "reservation"
-printf '{"task":"T-1","reserved_at":9223372036854775808,"cap_usd":0.5}\n' > "$RESERVATION"
-gate_case "out-of-range reserved_at" "stale or dated in the future"
+printf '{"task":"T-1","cap_usd":0,"reserved_at":%s}\n{"task":"T-2","cap_usd":1}\n' "$(date +%s)" > "$RESERVATION"
+gate_case "concatenated invalid reservations" "exactly one object"
+write_reservation 0
+cat "$RESERVATION" "$RESERVATION" > "$TMP_ROOT/reservations.json"
+cp "$TMP_ROOT/reservations.json" "$RESERVATION"
+gate_case "concatenated valid reservations" "exactly one object"
+for malformed in '' '[]' 'null' '42'; do
+  printf '%s\n' "$malformed" > "$RESERVATION"
+  gate_case "non-object reservation: $malformed" "exactly one object"
+done
+for timestamp in 100000000000 9223372036854775808; do
+  printf '{"task":"T-1","reserved_at":%s,"cap_usd":0.5}\n' "$timestamp" > "$RESERVATION"
+  gate_case "out-of-range reserved_at: $timestamp" "malformed reserved_at"
+done
 write_reservation 60 "T-gate-ok"
-reset_log; rm -f "$LEDGER"; mkdir -p "$TMP_ROOT/ro" && chmod 500 "$TMP_ROOT/ro"
-FM_JEV_LEDGER="$TMP_ROOT/ro/none/calls.tsv" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
-chmod 700 "$TMP_ROOT/ro"
+reset_log; rm -f "$LEDGER"; printf 'not a directory\n' > "$TMP_ROOT/ledger-parent"
+FM_JEV_LEDGER="$TMP_ROOT/ledger-parent/calls.tsv" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "an unwritable ledger exits 0"
+assert_contains "$out" 'ledger not writable' "the unwritable ledger reason is named"
 assert_contains "$out" 'status: error' "an unwritable ledger refuses the request"
 assert_contains "$err" 'cannot write the Jev ledger' "the unwritable ledger is reported on stderr"
 assert_absent "$LOG/argv" "no request is made when the decision cannot be ledgered"

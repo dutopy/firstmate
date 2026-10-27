@@ -316,15 +316,18 @@ else
     emit_error "no Jev request without a dated reservation: $1 (write $JEV_RESERVATION with task, reserved_at epoch seconds and cap_usd; max age ${JEV_MAX_AGE_MIN} min)"
   }
   [ -r "$JEV_RESERVATION" ] || jev_blocked "reservation file missing or unreadable"
-  JEV_TASK=$(jq -r 'if (.task|type)=="string" then .task else "" end' "$JEV_RESERVATION" 2>/dev/null) \
-    || jev_blocked "reservation is not valid JSON"
-  [ -n "$JEV_TASK" ] || jev_blocked "reservation has no task id"
-  jq -e '(.cap_usd|type)=="number" and .cap_usd > 0' "$JEV_RESERVATION" >/dev/null 2>&1 \
-    || jev_blocked "reservation has no positive cap_usd" "$JEV_TASK"
-  JEV_AT=$(jq -r 'if (.reserved_at|type)=="number" then (.reserved_at|floor) else "" end' "$JEV_RESERVATION" 2>/dev/null)
-  case "$JEV_AT" in ''|*[!0-9]*) jev_blocked "reservation has no reserved_at epoch" "$JEV_TASK" ;; esac
-  # bound the digits: a value past Bash's integer range would wrap in the arithmetic below
-  [ "${#JEV_AT}" -le 12 ] || jev_blocked "reservation is stale or dated in the future" "$JEV_TASK"
+  JEV_RECORD=$(jq -cs 'if length == 1 and (.[0] | type) == "object" then .[0] else error("expected one object") end' "$JEV_RESERVATION" 2>/dev/null) \
+    || jev_blocked "reservation must be valid JSON containing exactly one object"
+  JEV_DEFECT=$(jq -r '
+    if (.task | type) != "string" or (.task | length) == 0 then "reservation has no task id"
+    elif (.cap_usd | type) != "number" or .cap_usd <= 0 then "reservation has no positive cap_usd"
+    elif (.reserved_at | type) != "number" then "reservation has no reserved_at epoch"
+    elif (.reserved_at | floor | tostring | test("^[0-9]{1,11}\\z") | not) then "reservation has malformed reserved_at epoch (expected 1 to 11 digits)"
+    else empty end
+  ' <<< "$JEV_RECORD") || jev_blocked "reservation is malformed"
+  JEV_TASK=$(jq -r 'if (.task | type) == "string" then .task else "" end' <<< "$JEV_RECORD")
+  [ -z "$JEV_DEFECT" ] || jev_blocked "$JEV_DEFECT" "$JEV_TASK"
+  JEV_AT=$(jq -r '.reserved_at | floor' <<< "$JEV_RECORD")
   JEV_NOW=$(date +%s)
   if [ "$JEV_AT" -gt "$JEV_NOW" ] || [ $(( (JEV_NOW - JEV_AT) / 60 )) -ge "$JEV_MAX_AGE_MIN" ]; then
     jev_blocked "reservation is stale or dated in the future" "$JEV_TASK"
