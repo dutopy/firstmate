@@ -33,6 +33,12 @@
 #   `treehouse get` to move the pane into an isolated worktree. If the allocator
 #   itself fails (for example a full pool) the spawn stops at once, reporting its
 #   exit status and the last pane lines, rather than reporting a timeout.
+#   Before allocation, a fresh Treehouse-backed ship/scout spawn reports a
+#   read-only saturation warning without refusing allocation; an unknown read
+#   stays silent at this point. Allocator failures and isolation timeouts include
+#   a fresh capacity report, even when capacity is unknown. bin/fm-pool-lib.sh's
+#   header owns the shared capacity classification; bin/fm-pool-status.sh exposes
+#   it for standalone inspection. These snapshots do not reserve copies.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is
@@ -533,6 +539,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-pool-lib.sh
+. "$SCRIPT_DIR/fm-pool-lib.sh"
 # shellcheck source=bin/fm-env-lib.sh
 . "$SCRIPT_DIR/fm-env-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
@@ -2695,6 +2703,18 @@ else
   BRIEF="$DATA/$ID/brief.md"
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  # Early actionable saturation notice at the dispatch boundary. This is a
+  # read-only snapshot before the project lock, so it holds no allocation lock
+  # while waiting for status. An unreadable snapshot stays silent here (the
+  # allocator's own failure path below reports the explicit unknown state).
+  if fm_treehouse_pool_capacity "$PROJ_ABS"; then
+    case "$FM_POOL_STATE" in
+      saturated|full)
+        printf 'warning: %s\n' "$(fm_pool_capacity_line)" >&2
+        printf 'warning: %s\n' "$(fm_pool_capacity_action)" >&2
+        ;;
+    esac
+  fi
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
     echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
     exit 1
@@ -3731,10 +3751,33 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     # message (for example a full pool) reaches the operator instead of a bare timeout.
     get_tail=$(fm_backend_capture "$BACKEND" "$T" 12 "$W" 2>/dev/null | grep -v -F -- "$get_result_quoted" | grep -v '^[[:space:]]*$' | tail -n 5 | cut -c1-200 || true)
     echo "error: treehouse get failed (exit $get_failed) without entering an isolated worktree; spawning project '$PROJ_ABS'; last pane lines: ${get_tail:-none}; inspect window $T" >&2
+    # Report the effective ceiling and every bucket at the exact point the
+    # operator loses an allocation. A refused status read keeps available
+    # unknown instead of implying zero available copies.
+    fm_treehouse_pool_capacity "$PROJ_ABS" || true
+    printf 'treehouse-pool: %s\n' "$(fm_pool_capacity_line)" >&2
+    case "$FM_POOL_STATE" in
+      saturated|full|unknown)
+        printf 'treehouse-pool: %s\n' "$(fm_pool_capacity_action)" >&2
+        ;;
+    esac
     exit 1
   fi
   if [ -z "$WT" ]; then
     echo "error: treehouse get did not enter an isolated worktree within ${FM_SPAWN_ISOLATION_WAIT_SECS}s (set FM_SPAWN_ISOLATION_WAIT_SECS to change this wait) (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); inspect window $T" >&2
+    # A 60s isolation timeout can happen with copies available. Report the
+    # effective pool state so the operator can tell a real capacity refusal
+    # from an isolation failure instead of inferring one.
+    fm_treehouse_pool_capacity "$PROJ_ABS" || true
+    printf 'treehouse-pool: %s\n' "$(fm_pool_capacity_line)" >&2
+    case "$FM_POOL_STATE" in
+      saturated|full|unknown)
+        printf 'treehouse-pool: %s\n' "$(fm_pool_capacity_action)" >&2
+        ;;
+      *)
+        printf '%s\n' 'treehouse-pool: this is an isolation timeout in bin/fm-spawn.sh, not a capacity refusal; capacity is reported above.' >&2
+        ;;
+    esac
     exit 1
   fi
 
