@@ -76,10 +76,12 @@
 # local-only projects additionally accept work merged into the local default
 # branch (firstmate performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.
-# Scout tasks (kind=scout in meta) carve out of that check: their worktree is
-# declared scratch and the report at data/<task-id>/report.md is the work
-# product. Teardown proceeds only once the report exists and the shared
-# unresolved-decision completion gate verifies its captain-held inventory.
+# Manual teardown exempts scout tasks (kind=scout in meta) from the dirty and
+# landed-work checks: their worktree is declared scratch and the report at
+# data/<task-id>/report.md is the work product. Automatic --after-close cleanup
+# does not use that exemption: scouts must pass the same dirty and landed-work
+# checks as ships. Both paths require the report and the shared unresolved-
+# decision completion gate's verification of its captain-held inventory.
 # Before destructive cleanup, teardown validates task check artifacts as
 # ordinary single-link files on the state device. It refuses and preserves
 # task state when that proof fails; otherwise it removes the task's check,
@@ -189,10 +191,23 @@
 # leased home releases its durable treehouse lease so the pool slot is freed,
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
-# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
+# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record] [--after-close]
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
 #   when the captain has explicitly said to discard the work.
+#   --after-close finishes cleanup for a close its caller already landed, as
+#   bin/fm-tasks-axi.sh's `done`/`close` hook does. It requires this task's
+#   backlog row to be Done when the automatic transition applies, refuses that
+#   mode for a secondmate record, and preserves completion links through
+#   bin/fm-backlog-transition-lib.sh's fm_backlog_done before cleanup without
+#   reopening the row or changing its close date. It creates no pending-close
+#   marker and leaves any existing recovery marker for session-start replay.
+#   A missing task record is a converged no-op; task locks serialize cleanup.
+#   The scout scratch exemption above does not apply, and combining this mode
+#   with --force is refused. Incarnation, ownership, lease, completion-proof,
+#   endpoint-close, and record-removal guards remain in force. The already-Done
+#   row proof replaces the ordinary open-row captain-held deferral.
+#   Regression coverage: tests/fm-task-close-copy-return.test.sh.
 #   --legacy-record accepts a task record that predates the spawn_gen field:
 #   teardown then proceeds only when the recorded endpoint is confirmed dead or
 #   agent-less (bin/fm-backend.sh's recovery-grade classifier), and without
@@ -342,11 +357,13 @@ fi
 ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
+AFTER_CLOSE=0
 shift
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) FORCE=--force ;;
     --legacy-record) LEGACY_RECORD_GIVEN=1 ;;
+    --after-close) AFTER_CLOSE=1 ;;
     *)
       echo "error: invalid teardown request" >&2
       exit 2
@@ -354,6 +371,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+if [ "$AFTER_CLOSE" = 1 ] && [ "$FORCE" = --force ]; then
+  echo "error: --after-close never discards work; use ordinary teardown with explicit discard authority instead" >&2
+  exit 2
+fi
 fm_backlog_directory_present "$STATE" "state directory" || {
   echo "error: teardown refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
@@ -376,6 +397,14 @@ fi
 fm_lease_guard "$ID" "teardown (fm-teardown)"
 
 META="$STATE/$ID.meta"
+# The close hook can race another close or a plain teardown that already
+# removed this record. With the close itself already landed, a missing record
+# is the converged state this mode is for, not a refusal: there is no endpoint
+# or copy record left to clean up.
+if [ "$AFTER_CLOSE" = 1 ] && [ ! -e "$META" ] && [ ! -L "$META" ]; then
+  echo "teardown $ID complete (its close already landed and no task record remains)" >&2
+  exit 0
+fi
 TREEHOUSE_PROJECT_LOCK=
 TREEHOUSE_PROJECT_LOCK_HELD=0
 TREEHOUSE_SLOT_LOCK_REQUIRED=0
@@ -479,6 +508,10 @@ fm_backlog_record_present "$META" "task record" "$STATE" || {
 }
 TEARDOWN_META_KIND=$(fm_meta_get "$META" kind)
 [ -n "$TEARDOWN_META_KIND" ] || TEARDOWN_META_KIND=ship
+if [ "$AFTER_CLOSE" = 1 ] && [ "$TEARDOWN_META_KIND" = secondmate ]; then
+  echo "error: --after-close cleans up a launched work task, never a secondmate home; nothing was changed" >&2
+  exit 1
+fi
 TEARDOWN_CLEANUP_RECOVERY=$(fm_meta_get "$META" cleanup_recovery)
 TEARDOWN_META_SPAWN_GEN=
 TEARDOWN_LEGACY_PENDING=0
@@ -540,19 +573,40 @@ fi
 # destructive step, so "cannot tell" can refuse while everything is intact.
 TEARDOWN_BACKLOG_TRANSITION=close
 if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
-  TEARDOWN_CAPTAIN_OPEN_STATUS=0
-  TEARDOWN_CAPTAIN_OPEN_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-    FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
-    "$SCRIPT_DIR/fm-captain-hold.sh" open "$ID" 2>&1) || TEARDOWN_CAPTAIN_OPEN_STATUS=$?
-  case "$TEARDOWN_CAPTAIN_OPEN_STATUS" in
-    0) TEARDOWN_BACKLOG_TRANSITION=retain ;;
-    1) ;;
-    *)
-      echo "error: task $ID cannot be torn down because whether its backlog item is still held for the captain could not be read; fix that read and retry rather than risk closing a captain call with no recorded answer" >&2
-      [ -z "$TEARDOWN_CAPTAIN_OPEN_OUT" ] || printf '%s\n' "$TEARDOWN_CAPTAIN_OPEN_OUT" >&2
+  if [ "$AFTER_CLOSE" = 1 ]; then
+    # The close command already landed this row. Require that proof before any
+    # destructive step, so --after-close can never be used to skip the close
+    # and reset a live task's copy.
+    if ! fm_backlog_row_probe "$DATA" "$ID"; then
+      if [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
+        echo "error: --after-close found no backlog item for task $ID in $DATA; the close it claims to finish is not recorded there, so nothing was changed" >&2
+      else
+        echo "error: --after-close cannot read task $ID's backlog item ($FM_BACKLOG_ROW_ERROR); nothing was changed" >&2
+      fi
       exit 1
-      ;;
-  esac
+    fi
+    case "$FM_BACKLOG_ROW_STATE" in
+      done\ *) ;;
+      *)
+        echo "error: --after-close requires task $ID's backlog item to be already closed; it reads as '${FM_BACKLOG_ROW_STATE}' in $DATA, so nothing was changed - close it through bin/fm-tasks-axi.sh done|close, or run ordinary teardown" >&2
+        exit 1
+        ;;
+    esac
+  else
+    TEARDOWN_CAPTAIN_OPEN_STATUS=0
+    TEARDOWN_CAPTAIN_OPEN_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-captain-hold.sh" open "$ID" 2>&1) || TEARDOWN_CAPTAIN_OPEN_STATUS=$?
+    case "$TEARDOWN_CAPTAIN_OPEN_STATUS" in
+      0) TEARDOWN_BACKLOG_TRANSITION=retain ;;
+      1) ;;
+      *)
+        echo "error: task $ID cannot be torn down because whether its backlog item is still held for the captain could not be read; fix that read and retry rather than risk closing a captain call with no recorded answer" >&2
+        [ -z "$TEARDOWN_CAPTAIN_OPEN_OUT" ] || printf '%s\n' "$TEARDOWN_CAPTAIN_OPEN_OUT" >&2
+        exit 1
+        ;;
+    esac
+  fi
 fi
 
 REMOTE_HANDOFF_DIR_PRESENT=0
@@ -1540,7 +1594,9 @@ backlog_refresh_reminder() {
   else
     backlog_display="${DATA%/}/backlog.md"
   fi
-  if [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = retain ]; then
+  if [ "$AFTER_CLOSE" = 1 ]; then
+    printf '%s\n' "Backlog: $ID is closed in $backlog_display by its close command. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due."
+  elif [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = retain ]; then
     printf '%s\n' "Backlog: $ID stays open in $backlog_display, still held for the captain with its deliverable recorded. Relay the question and close it only with bin/fm-captain-hold.sh answer."
   elif [ "$BACKLOG_CLOSED" = 1 ]; then
     printf '%s\n' "Backlog: $ID is closed in $backlog_display. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due."
@@ -1768,7 +1824,8 @@ validate_worktree_teardown_safety() {
   [ -d "$WT" ] || return 0
   [ "$FORCE" != "--force" ] || return 0
   case "$KIND" in
-    secondmate|scout) return 0 ;;
+    secondmate) return 0 ;;
+    scout) [ "$AFTER_CLOSE" = 1 ] || return 0 ;;
   esac
 
   if ! dirty_raw=$(git -C "$WT" status --porcelain 2>/dev/null); then
@@ -3552,6 +3609,14 @@ if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
     echo "error: the pending backlog $BACKLOG_TRANSITION for $ID is not replayable; refusing destructive teardown" >&2
     exit 1
   }
+  if [ "$AFTER_CLOSE" = 1 ]; then
+    fm_backlog_done "$DATA" "$ID" "${BACKLOG_DONE_ARGS[@]+"${BACKLOG_DONE_ARGS[@]}"}" || {
+      echo "error: cannot preserve completion links for $ID; refusing destructive teardown" >&2
+      exit 1
+    }
+  fi
+fi
+if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ] && [ "$AFTER_CLOSE" = 0 ]; then
 # Roll the accepted legacy incarnation's stamp back to the record's exact
 # pre-stamp bytes. Uses perl - already in the teardown lifecycle's curated PATH
 # (truncate is not, and is absent on stock macOS) - and verifies the restored
@@ -3613,7 +3678,9 @@ teardown_legacy_stamp_rollback() {
     exit 1
   fi
 else
-  if [ "$CLEANUP_RECOVERY" = orca ]; then
+  if [ "$AFTER_CLOSE" = 1 ]; then
+    BACKLOG_SKIP_REASON="its close command already landed the backlog row"
+  elif [ "$CLEANUP_RECOVERY" = orca ]; then
     BACKLOG_SKIP_REASON="Orca cleanup recovery is not a launched backlog worker"
   else
     BACKLOG_SKIP_REASON=$TEARDOWN_BACKLOG_SKIP_REASON
@@ -3677,7 +3744,7 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   # the project. teardown_treehouse_return tolerates transient and stale git locks
   # left by a killed crew process; see the script header for retry and stale-lock proof.
   post_lock_cleanup_check=
-  if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
+  if [ "$FORCE" != "--force" ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
   # A settled shared-slot reconciliation records WHY this slot went back with
