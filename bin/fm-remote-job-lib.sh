@@ -23,6 +23,15 @@
 # FIFO is defined over completed stagings: a stage that returns before another
 # begins executes first; concurrently overlapping stagings have no relative
 # ordering contract.
+#
+# A publish rings the state root's worker.wake FIFO after the record is durably
+# in place, so the idle worker wakes at once instead of polling. The ring is
+# best effort and costs no process: a missing or unusable channel, or a ring
+# lost to a worker that is not running yet, only delays the claim by the
+# worker's FM_REMOTE_JOB_IDLE_POLL_SECONDS fallback, never loses the job.
+# FM_REMOTE_JOB_POLL_SECONDS stays the short poll of the caller wait loop and
+# the running-job monitor.
+#
 # The worker atomically claims a job with .claim, establishes its execution
 # deadline, changes state to running, writes bounded stdout/stderr and exit,
 # then publishes state=done last. Callers wait for done, relay stdout and
@@ -88,7 +97,12 @@ FM_REMOTE_JOB_MAX_BYTES=${FM_REMOTE_JOB_MAX_BYTES:-1048576}
 FM_REMOTE_JOB_QUEUE_TIMEOUT=${FM_REMOTE_JOB_QUEUE_TIMEOUT:-360}
 FM_REMOTE_JOB_TIMEOUT=${FM_REMOTE_JOB_TIMEOUT:-360}
 FM_REMOTE_JOB_WAIT_GRACE=${FM_REMOTE_JOB_WAIT_GRACE:-30}
+# The caller wait loop and the running-job monitor keep a short poll. The idle
+# serve loop instead waits on the wake FIFO and uses this whole-second fallback
+# only when a wake is lost, so its default never costs a fork per iteration.
 FM_REMOTE_JOB_POLL_SECONDS=${FM_REMOTE_JOB_POLL_SECONDS:-0.05}
+FM_REMOTE_JOB_IDLE_POLL_SECONDS=${FM_REMOTE_JOB_IDLE_POLL_SECONDS:-1}
+FM_REMOTE_JOB_SWEEP_SECONDS=${FM_REMOTE_JOB_SWEEP_SECONDS:-60}
 FM_REMOTE_JOB_REAP_SECONDS=${FM_REMOTE_JOB_REAP_SECONDS:-3600}
 FM_REMOTE_JOB_STAGE_REAP_SECONDS=${FM_REMOTE_JOB_STAGE_REAP_SECONDS:-600}
 FM_REMOTE_JOB_SEQ_CLAIM_REAP_SECONDS=86400
@@ -129,6 +143,8 @@ fm_remote_job_validate_settings() {
   [ "$FM_REMOTE_JOB_TIMEOUT" -le 3600 ] || return 1
   case "$FM_REMOTE_JOB_WAIT_GRACE" in ''|*[!0-9]*) return 1 ;; esac
   [ "$FM_REMOTE_JOB_WAIT_GRACE" -le 300 ] || return 1
+  case "$FM_REMOTE_JOB_IDLE_POLL_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
+  case "$FM_REMOTE_JOB_SWEEP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
   case "$FM_REMOTE_JOB_REAP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
   case "$FM_REMOTE_JOB_STAGE_REAP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
   return 0
@@ -437,10 +453,29 @@ fm_remote_job_prepare_state() { # <account-home>
     FM_REMOTE_JOB_ERROR="remote job sequence claims are unsafe"
     return 1
   }
+  # Best effort: the worker's idle wait blocks on this FIFO, and a missing or
+  # unusable channel only falls back to the worker's slow poll.
+  if [ ! -e "$FM_REMOTE_JOB_STATE/worker.wake" ] && [ ! -L "$FM_REMOTE_JOB_STATE/worker.wake" ]; then
+    (umask 077; mkfifo "$FM_REMOTE_JOB_STATE/worker.wake") 2>/dev/null || true
+  fi
   fm_remote_job_safe_child_dir "$FM_REMOTE_JOB_STATE" logs >/dev/null || {
     FM_REMOTE_JOB_ERROR="remote job log directory is unsafe"
     return 1
   }
+}
+
+# Ring the idle worker's wake FIFO after a job is durably published. Builtins
+# only, so staging pays no extra process, and opening read-write never blocks on
+# a missing reader. A skipped or lost ring costs at most one idle poll.
+fm_remote_job_wake_worker() {
+  local fifo
+  [ -n "$FM_REMOTE_JOB_STATE" ] || return 0
+  fifo="$FM_REMOTE_JOB_STATE/worker.wake"
+  if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
+  exec 8<>"$fifo" 2>/dev/null || return 0
+  printf x >&8 2>/dev/null || true
+  exec 8>&-
+  return 0
 }
 
 fm_remote_job_job_dir() { # <id>
@@ -670,6 +705,9 @@ fm_remote_job_stage() { # <account-home> <root> <home> <command> [args...]; stdi
     FM_REMOTE_JOB_ERROR="cannot allocate and publish a remote job staging sequence"
     return 1
   fi
+  # Only after the record is durably published, so the worker can never wake to
+  # a record it cannot claim; the slow poll covers a skipped ring.
+  fm_remote_job_wake_worker
   # shellcheck disable=SC2034 # Sourceable API consumed by callers that do not use command substitution.
   FM_REMOTE_JOB_ID=$id
   printf '%s\n' "$id"
@@ -899,6 +937,7 @@ fm_remote_job_launchagent_loaded() { # <remote-root> <account-home> <uid>
 
 fm_remote_job_worker_pid_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.pid"; }
 fm_remote_job_worker_ready_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.ready"; }
+fm_remote_job_worker_wake_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.wake"; }
 fm_remote_job_worker_identity_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.identity"; }
 fm_remote_job_worker_lock_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.lock"; }
 

@@ -22,6 +22,13 @@
 # its recorded command group, leaving interrupted records for the replacement
 # worker's orphan recovery.
 #
+# An idle serving loop is event driven. Staging a job rings the state root's
+# worker.wake FIFO, which this loop holds open read-write and waits on with the
+# read builtin, so an idle tick creates no process and picks a job up at once.
+# FM_REMOTE_JOB_IDLE_POLL_SECONDS whole seconds bounds only the lost-ring
+# fallback, and the readiness heartbeat is rewritten in place each tick so its
+# readers keep seeing a fresh worker without a fork.
+#
 # The worker is abandoned when its configured FM_ROOT stops being a genuine
 # Firstmate checkout - the state a pruned no-mistakes gate worktree, a returned
 # pooled worktree, or a removed test fixture root leaves behind. It can never
@@ -78,6 +85,9 @@ WORKER_LANE_HOMES=()
 WORKER_LANE_PIDS=()
 WORKER_LANE_STARTS=()
 WORKER_LANE_JOBS=()
+WORKER_READY_PATH=
+WORKER_WAKE_FD=
+WORKER_NEXT_SWEEP=0
 
 worker_error() { printf 'remote-job-worker: %s\n' "$1" >&2; }
 
@@ -90,13 +100,13 @@ worker_account_home() {
   CDPATH='' cd ~ 2>/dev/null && pwd -P
 }
 
+# The readiness heartbeat only has to keep its mtime inside the 10-second probe
+# window, so the serving loop rewrites it in place with builtins alone. Every
+# reader stats the file and none parses a partial line, so the atomic rename is
+# not needed and an idle iteration creates no process.
 worker_write_heartbeat() {
-  local ready tmp
-  ready=$(fm_remote_job_worker_ready_path)
-  tmp=$(umask 077; mktemp "$FM_REMOTE_JOB_STATE/.ready.XXXXXX") || return 1
-  printf '%s\n' "${BASHPID:-$$}" > "$tmp" || { rm -f -- "$tmp"; return 1; }
-  chmod 600 "$tmp" || { rm -f -- "$tmp"; return 1; }
-  mv -f -- "$tmp" "$ready"
+  [ -n "$WORKER_READY_PATH" ] || return 1
+  printf '%s\n' "${BASHPID:-$$}" > "$WORKER_READY_PATH"
 }
 
 worker_publish_pid() {
@@ -815,6 +825,28 @@ worker_lane_owns_job() { # <job-dir>
   return 1
 }
 
+# Keep the wake FIFO open read-write for the worker's whole life: opening that
+# way never blocks, the reader never sees EOF, and a publisher can open it
+# without waiting for a reader. A missing or unusable channel is skipped.
+worker_open_wake_fifo() {
+  local fifo
+  fifo=$(fm_remote_job_worker_wake_path)
+  if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
+  exec 9<>"$fifo" 2>/dev/null || return 0
+  WORKER_WAKE_FD=9
+}
+
+# One idle wait: the wake FIFO first, with a whole-second poll as the lost-ring
+# fallback. Both are shell builtins, so an idle iteration creates no process.
+# A signal interrupts the read, so the serving loop's trap still runs promptly.
+worker_wait_for_work() {
+  if [ -n "$WORKER_WAKE_FD" ]; then
+    IFS= read -r -n 1 -t "$FM_REMOTE_JOB_IDLE_POLL_SECONDS" -u "$WORKER_WAKE_FD" _ || true
+  else
+    sleep "$FM_REMOTE_JOB_IDLE_POLL_SECONDS"
+  fi
+}
+
 worker_reap_finished_lanes() {
   local i=0 count=${#WORKER_LANE_PIDS[@]} pid start
   local live_homes=() live_pids=() live_starts=() live_jobs=()
@@ -1009,10 +1041,12 @@ worker_process_once() { # <account-home>
 
 main() {
   local account_home lock_status
+  umask 077
   account_home=$(worker_account_home) || { worker_error "cannot resolve account home"; exit 1; }
   FM_ROOT=$(fm_remote_job_canonical_existing_dir "$FM_ROOT") || { worker_error "configured FM_ROOT is unsafe"; exit 1; }
   [ -f "$FM_ROOT/AGENTS.md" ] && [ ! -L "$FM_ROOT/AGENTS.md" ] || { worker_error "FM_ROOT is not a Firstmate checkout"; exit 1; }
   fm_remote_job_prepare_state "$account_home" || { worker_error "$FM_REMOTE_JOB_ERROR"; exit 1; }
+  WORKER_READY_PATH=$(fm_remote_job_worker_ready_path)
   WORKER_LOCK=$(fm_remote_job_worker_lock_path)
   trap worker_exit_cleanup EXIT
   worker_acquire_lock "$account_home"
@@ -1026,6 +1060,7 @@ main() {
   trap worker_shutdown HUP INT TERM
   worker_publish_identity "$account_home" || { worker_error "cannot publish worker code identity"; exit 1; }
   worker_publish_pid || { worker_error "cannot publish worker pid"; exit 1; }
+  worker_open_wake_fifo
   while :; do
     worker_write_heartbeat || { worker_error "cannot update worker heartbeat"; exit 1; }
     # Checked right after a fresh heartbeat, so the grace window cannot make a
@@ -1034,13 +1069,14 @@ main() {
       worker_error "configured FM_ROOT $FM_ROOT no longer exists; stopping the abandoned worker"
       exit 0
     fi
-    worker_reap=0
-    if [ "$worker_reap" -eq 0 ]; then
+    # Stale-record and staging-litter sweeps are rate-limited internally; a
+    # bounded cadence keeps their uncached stat calls off every idle tick.
+    if [ "$SECONDS" -ge "$WORKER_NEXT_SWEEP" ]; then
       fm_remote_job_reap_stale "$account_home" || true
-      worker_reap=1
+      WORKER_NEXT_SWEEP=$((SECONDS + FM_REMOTE_JOB_SWEEP_SECONDS))
     fi
     worker_process_once "$account_home"
-    sleep "$FM_REMOTE_JOB_POLL_SECONDS"
+    worker_wait_for_work
   done
 }
 
