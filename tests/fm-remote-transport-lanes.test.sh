@@ -15,8 +15,8 @@
 #   T6: a non-payload fm-on call with an OPEN stdin pipe completes instead of
 #       wedging staging, and a payload caller with --stdin still delivers its
 #       bytes through the worker.
-#   Stage litter older than the reap age does not survive a worker pass while
-#   fresh staging does.
+#   Stage litter older than the reap age does not survive a maintenance sweep
+#   while live-owned staging does.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -409,8 +409,8 @@ assert_grep 'stdin=payload byte two' "$TMP_ROOT/payload-out" "--stdin lost part 
 pass "--stdin still delivers a payload caller's bytes"
 
 # Stage litter: an abandoned .stage.* older than the reap age does not survive
-# a worker pass, while staging owned by this live process is left alone even if
-# CI scheduling pauses long enough for it to cross the age bound.
+# the next fixed 60-second maintenance sweep, while staging owned by this live
+# process is left alone. Allow a full cadence plus scheduling slack.
 OLD_STAGE="$STATE_ROOT/jobs/.stage.abandoned"
 LIVE_STAGE="$STATE_ROOT/jobs/.stage.live"
 LIVE_STAGE_BUILD="$STATE_ROOT/jobs/.stage-live-build"
@@ -420,11 +420,12 @@ fm_remote_job_process_start "$$" > "$LIVE_STAGE_BUILD/.owner-start" \
   || fail "the live staging fixture could not record its owner identity"
 mv -- "$LIVE_STAGE_BUILD" "$LIVE_STAGE"
 touch -t 200001010000 "$OLD_STAGE" "$LIVE_STAGE"
-for _ in $(seq 1 100); do
+SWEEP_DEADLINE=$((SECONDS + 65))
+while [ "$SECONDS" -lt "$SWEEP_DEADLINE" ]; do
   [ ! -d "$OLD_STAGE" ] && break
-  sleep 0.05
+  sleep 0.1
 done
-[ ! -d "$OLD_STAGE" ] || fail "stage litter older than the reap age survived the worker pass"
+[ ! -d "$OLD_STAGE" ] || fail "stage litter older than the reap age survived the maintenance cadence"
 assert_present "$LIVE_STAGE" "the worker reaped staging owned by a live process"
 rm -rf -- "$LIVE_STAGE"
 pass "abandoned stage litter is reaped by age while live staging survives"

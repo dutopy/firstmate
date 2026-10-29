@@ -23,6 +23,16 @@
 # FIFO is defined over completed stagings: a stage that returns before another
 # begins executes first; concurrently overlapping stagings have no relative
 # ordering contract.
+#
+# After durable publication, staging attempts a nonblocking byte write to
+# worker.wake only when worker.waiting contains 1. The worker sets that marker
+# before its idle FIFO read and clears it afterwards and on shutdown. Missing,
+# full, or unusable channels and skipped or lost rings never lose queued work:
+# the idle wait has a fixed one-second fallback. An unavailable FIFO uses sleep.
+# While lanes are active, the serving loop uses FM_REMOTE_JOB_POLL_SECONDS
+# (default 0.05), as do the caller wait loop and running-job monitor.
+# These wake and fallback semantics apply on both macOS and Linux.
+#
 # The worker atomically claims a job with .claim, establishes its execution
 # deadline, changes state to running, writes bounded stdout/stderr and exit,
 # then publishes state=done last. Callers wait for done, relay stdout and
@@ -437,10 +447,45 @@ fm_remote_job_prepare_state() { # <account-home>
     FM_REMOTE_JOB_ERROR="remote job sequence claims are unsafe"
     return 1
   }
+  # Best effort: the worker's idle wait blocks on this FIFO, and a missing or
+  # unusable channel only falls back to the worker's slow poll.
+  if [ ! -e "$FM_REMOTE_JOB_STATE/worker.wake" ] && [ ! -L "$FM_REMOTE_JOB_STATE/worker.wake" ]; then
+    (umask 077; mkfifo "$FM_REMOTE_JOB_STATE/worker.wake") 2>/dev/null || true
+  fi
   fm_remote_job_safe_child_dir "$FM_REMOTE_JOB_STATE" logs >/dev/null || {
     FM_REMOTE_JOB_ERROR="remote job log directory is unsafe"
     return 1
   }
+}
+
+# A waiting marker avoids accumulating notifications while lanes are active.
+# It is only a hint: a stopped reader can leave it stale, so both open and write
+# must be nonblocking. The library header owns the wake and fallback contract.
+fm_remote_job_wake_worker() {
+  local fifo waiting marker
+  [ -n "$FM_REMOTE_JOB_STATE" ] || return 0
+  marker="$FM_REMOTE_JOB_STATE/worker.waiting"
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 0
+  IFS= read -r waiting < "$marker" 2>/dev/null || return 0
+  [ "$waiting" = 1 ] || return 0
+  fifo="$FM_REMOTE_JOB_STATE/worker.wake"
+  if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
+  python3 - "$fifo" 2>/dev/null <<'PY' || true
+import os
+import stat
+import sys
+
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR | os.O_NONBLOCK | os.O_NOFOLLOW)
+    try:
+        if stat.S_ISFIFO(os.fstat(fd).st_mode):
+            os.write(fd, b'x')
+    finally:
+        os.close(fd)
+except OSError:
+    pass
+PY
+  return 0
 }
 
 fm_remote_job_job_dir() { # <id>
@@ -670,6 +715,9 @@ fm_remote_job_stage() { # <account-home> <root> <home> <command> [args...]; stdi
     FM_REMOTE_JOB_ERROR="cannot allocate and publish a remote job staging sequence"
     return 1
   fi
+  # Only after the record is durably published, so the worker can never wake to
+  # a record it cannot claim; the slow poll covers a skipped ring.
+  fm_remote_job_wake_worker
   # shellcheck disable=SC2034 # Sourceable API consumed by callers that do not use command substitution.
   FM_REMOTE_JOB_ID=$id
   printf '%s\n' "$id"
@@ -899,6 +947,7 @@ fm_remote_job_launchagent_loaded() { # <remote-root> <account-home> <uid>
 
 fm_remote_job_worker_pid_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.pid"; }
 fm_remote_job_worker_ready_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.ready"; }
+fm_remote_job_worker_wake_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.wake"; }
 fm_remote_job_worker_identity_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.identity"; }
 fm_remote_job_worker_lock_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.lock"; }
 

@@ -20,6 +20,8 @@ OTHER_PID=
 RECOVERY_WORKER_PID=
 REPEAT_WORKER_PID=
 RESTART_SUPERVISOR_PID=
+WAKE_WORKER_PID=
+WAKE_FALLBACK_WORKER_PID=
 mkdir -p "$REMOTE_ROOT/bin" "$REMOTE_HOME" "$ACCOUNT_HOME" "$RUNTIME_BIN"
 # worker.pid records the serving child, not its restart supervisor, so stopping
 # that pid alone leaves the supervisor to respawn - the leak
@@ -29,6 +31,8 @@ cleanup_remote_job_fixture() {
   [ -z "$RECOVERY_WORKER_PID" ] || kill "$RECOVERY_WORKER_PID" 2>/dev/null || true
   [ -z "$REPEAT_WORKER_PID" ] || kill "$REPEAT_WORKER_PID" 2>/dev/null || true
   [ -z "$RESTART_SUPERVISOR_PID" ] || kill -KILL "$RESTART_SUPERVISOR_PID" 2>/dev/null || true
+  [ -z "$WAKE_WORKER_PID" ] || kill "$WAKE_WORKER_PID" 2>/dev/null || true
+  [ -z "$WAKE_FALLBACK_WORKER_PID" ] || kill "$WAKE_FALLBACK_WORKER_PID" 2>/dev/null || true
   if [ -f "$STATE_ROOT/worker.pid" ]; then
     fm_remote_job_stop_worker_tree "$(cat "$STATE_ROOT/worker.pid")" || true
   fi
@@ -539,6 +543,85 @@ ERROR_BYTES=$(LC_ALL=C wc -c < "$FM_REMOTE_JOB_STDERR" | tr -d ' ')
 [ "$ERROR_BYTES" -le "$FM_REMOTE_JOB_MAX_BYTES" ] || fail "the worker retained stderr beyond its byte bound"
 fm_remote_job_reap "$ACCOUNT_HOME" "$JOB_ID" || fail "the bounded-output job could not be reaped"
 pass "the worker drains bounded output without changing command results"
+
+WAKE_HOME="$TMP_ROOT/wake-account"
+WAKE_STATE="$TMP_ROOT/wake-jobs"
+mkdir -p "$WAKE_HOME"
+chmod 700 "$WAKE_HOME"
+HOME="$WAKE_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$WAKE_STATE" \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
+  "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
+  > "$TMP_ROOT/wake.out" 2> "$TMP_ROOT/wake.err" &
+WAKE_WORKER_PID=$!
+for _ in $(seq 1 300); do
+  [ -f "$WAKE_STATE/worker.ready" ] && break
+  sleep 0.05
+done
+assert_present "$WAKE_STATE/worker.ready" "the event-wake worker did not become ready"
+assert_present "$WAKE_STATE/worker.wake" "the worker state root has no wake channel"
+[ -p "$WAKE_STATE/worker.wake" ] || fail "the wake channel is not a FIFO"
+sleep 0.3
+WAKE_SIDE_EFFECT="$TMP_ROOT/wake-side-effect"
+WAKE_STARTED=$SECONDS
+FM_REMOTE_JOB_STATE_ROOT="$WAKE_STATE" fm_remote_job_stage \
+  "$WAKE_HOME" "$REMOTE_ROOT" "$WAKE_HOME" fm-touch-job.sh "$WAKE_SIDE_EFFECT" \
+  < /dev/null > /dev/null
+for _ in $(seq 1 120); do
+  [ -f "$WAKE_SIDE_EFFECT" ] && break
+  sleep 0.05
+done
+assert_present "$WAKE_SIDE_EFFECT" "the idle worker missed the published job"
+[ $((SECONDS - WAKE_STARTED)) -le 5 ] \
+  || fail "the idle worker did not pick up the published job promptly"
+kill -TERM "$WAKE_WORKER_PID" 2>/dev/null
+wait "$WAKE_WORKER_PID" 2>/dev/null || true
+WAKE_WORKER_PID=
+pass "an idle worker promptly picks up a published job"
+
+# The wake channel is best effort: a broken channel must never block staging,
+# and the slow poll must still deliver the job.
+FALLBACK_HOME="$TMP_ROOT/wake-fallback-account"
+FALLBACK_STATE="$TMP_ROOT/wake-fallback-jobs"
+mkdir -p "$FALLBACK_HOME"
+chmod 700 "$FALLBACK_HOME"
+HOME="$FALLBACK_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$FALLBACK_STATE" \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
+  "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
+  > "$TMP_ROOT/wake-fallback.out" 2> "$TMP_ROOT/wake-fallback.err" &
+WAKE_FALLBACK_WORKER_PID=$!
+for _ in $(seq 1 300); do
+  [ -f "$FALLBACK_STATE/worker.ready" ] && break
+  sleep 0.05
+done
+assert_present "$FALLBACK_STATE/worker.ready" "the fallback-poll worker did not become ready"
+rm -f -- "$FALLBACK_STATE/worker.wake"
+: > "$FALLBACK_STATE/worker.wake"
+FALLBACK_SIDE_EFFECT="$TMP_ROOT/wake-fallback-side-effect"
+FALLBACK_STARTED=$SECONDS
+FM_REMOTE_JOB_STATE_ROOT="$FALLBACK_STATE" fm_remote_job_stage \
+  "$FALLBACK_HOME" "$REMOTE_ROOT" "$FALLBACK_HOME" fm-touch-job.sh "$FALLBACK_SIDE_EFFECT" \
+  < /dev/null > /dev/null
+for _ in $(seq 1 200); do
+  [ -f "$FALLBACK_SIDE_EFFECT" ] && break
+  sleep 0.05
+done
+assert_present "$FALLBACK_SIDE_EFFECT" "a broken wake channel lost the published job"
+[ $((SECONDS - FALLBACK_STARTED)) -le 5 ] \
+  || fail "the fallback poll did not deliver the job within its idle window"
+
+# The heartbeat readers require a fresh mtime within ten seconds; the idle loop
+# must keep refreshing it while it waits.
+FALLBACK_HEARTBEAT_BEFORE=$(fm_remote_job_path_mtime "$FALLBACK_STATE/worker.ready")
+sleep 2
+FM_REMOTE_JOB_STATE_ROOT="$FALLBACK_STATE" fm_remote_job_probe "$FALLBACK_HOME" \
+  || fail "the idle worker stopped refreshing its readiness heartbeat"
+FALLBACK_HEARTBEAT_AFTER=$(fm_remote_job_path_mtime "$FALLBACK_STATE/worker.ready")
+[ "$FALLBACK_HEARTBEAT_AFTER" -gt "$FALLBACK_HEARTBEAT_BEFORE" ] \
+  || fail "the idle worker heartbeat did not advance"
+kill -TERM "$WAKE_FALLBACK_WORKER_PID" 2>/dev/null
+wait "$WAKE_FALLBACK_WORKER_PID" 2>/dev/null || true
+WAKE_FALLBACK_WORKER_PID=
+pass "a broken wake channel still delivers on the idle poll and keeps the heartbeat fresh"
 
 SIDE_EFFECT="$TMP_ROOT/side-effect"
 WORKER_PID=$(cat "$STATE_ROOT/worker.pid")

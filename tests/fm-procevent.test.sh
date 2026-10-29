@@ -2608,11 +2608,20 @@ pe_register "$HPACE_RACE" lavish pace-race-src -- "$FAST_SOURCE" "$PACE_RACE_LOG
 # A 3 s floor let a slow runner expire the wait first, so the superseded runner
 # launched its stale command (main run 40029484321).
 FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=30 pe "$HPACE_RACE" start pace-race-src >/dev/null
+# Exit cleanup is nonblocking and may leave the first generation's claim.
+# File presence alone does not prove the second runner has started.
+PACE_PREVIOUS_TOKEN=$(sed -n '3p' "$FM_PROCEVENT_CLAIM_ROOT/pace-race-src.claim" 2>/dev/null || true)
 FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=30 \
   pe "$HPACE_RACE" start pace-race-src > "$TMP_ROOT/registration-pacing-race.out" 2>&1 &
 PACE_RACE_PID=$!
-wait_for "$FM_PROCEVENT_CLAIM_ROOT/pace-race-src.claim" \
-  || fail "the superseded pacing fixture did not claim its registration"
+pace_claim_deadline=$((SECONDS + 10))
+while :; do
+  PACE_CURRENT_TOKEN=$(sed -n '3p' "$FM_PROCEVENT_CLAIM_ROOT/pace-race-src.claim" 2>/dev/null || true)
+  [ -n "$PACE_CURRENT_TOKEN" ] && [ "$PACE_CURRENT_TOKEN" != "$PACE_PREVIOUS_TOKEN" ] && break
+  [ "$SECONDS" -lt "$pace_claim_deadline" ] \
+    || fail "the superseded pacing fixture did not claim a new generation"
+  sleep 0.1
+done
 [ "$(wc -l < "$PACE_RACE_LOG" | tr -d ' ')" = 1 ] \
   || fail "the superseded pacing fixture was not waiting on its launch floor"
 pe_register "$HPACE_RACE" lavish pace-race-src -- "$FAST_SOURCE" "$PACE_RACE_LOG" >/dev/null
