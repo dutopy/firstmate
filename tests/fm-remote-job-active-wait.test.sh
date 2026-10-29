@@ -18,7 +18,6 @@ trap cleanup EXIT
 . "$ROOT/bin/fm-remote-job-lib.sh"
 export FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux
 export FM_REMOTE_JOB_QUEUE_TIMEOUT=30 FM_REMOTE_JOB_TIMEOUT=30
-export FM_REMOTE_JOB_IDLE_POLL_SECONDS=10
 
 for mode in fifo fallback; do
   fixture="$TMP_ROOT/$mode"
@@ -42,8 +41,19 @@ SH
   git -C "$code" init -q -b main
   git -C "$code" -c user.name=Test -c user.email=test@example.com add .
   git -C "$code" -c user.name=Test -c user.email=test@example.com commit -qm fixture
+  fm_remote_job_prepare_state "$account"
+  if [ "$mode" = fifo ]; then
+    exec 7<>"$FM_REMOTE_JOB_STATE_ROOT/worker.wake"
+  fi
   fm_remote_job_stage "$account" "$code" "$account" fm-gated-job.sh \
     "$fixture/first" "$fixture/release" </dev/null >/dev/null
+  if [ "$mode" = fifo ]; then
+    notification=
+    IFS= read -r -n 1 -t 1 -u 7 notification || fail "publishing did not ring the FIFO"
+    [ "$notification" = x ] || fail "publishing emitted an invalid FIFO notification"
+    exec 7>&-
+    pass "publishing delivers a FIFO notification"
+  fi
   if [ "$mode" = fallback ]; then
     rm "$FM_REMOTE_JOB_STATE_ROOT/worker.wake"
     : > "$FM_REMOTE_JOB_STATE_ROOT/worker.wake"
@@ -71,6 +81,7 @@ SH
     sleep 0.05
   done
   assert_present "$fixture/second" "the $mode worker used its idle wait while a lane was active"
+  [ ! -s "$fixture/err" ] || fail "the $mode worker emitted diagnostics during ordinary execution"
   pass "$mode scheduling remains prompt after a same-home publish while busy"
 
   if [ "$mode" = fifo ]; then

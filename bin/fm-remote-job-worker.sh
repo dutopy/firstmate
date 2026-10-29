@@ -25,7 +25,7 @@
 # An idle serving loop is event driven. Staging a job rings the state root's
 # worker.wake FIFO, which this loop holds open read-write and waits on with the
 # read builtin, so an idle tick creates no process and picks a job up at once.
-# FM_REMOTE_JOB_IDLE_POLL_SECONDS whole seconds bounds only the lost-ring
+# A one-second wait bounds only the lost-ring
 # fallback, and the readiness heartbeat is rewritten in place each tick so its
 # readers keep seeing a fresh worker without a fork.
 #
@@ -840,14 +840,12 @@ worker_open_wake_fifo() {
 # fallback. Both are shell builtins, so an idle iteration creates no process.
 # A signal interrupts the read, so the serving loop's trap still runs promptly.
 worker_wait_for_work() {
-  local interval=$FM_REMOTE_JOB_IDLE_POLL_SECONDS
   if [ "${#WORKER_LANE_PIDS[@]}" -gt 0 ]; then
-    interval=$FM_REMOTE_JOB_POLL_SECONDS
-  fi
-  if [ -n "$WORKER_WAKE_FD" ]; then
-    IFS= read -r -n 1 -t "$interval" -u "$WORKER_WAKE_FD" _ || true
+    sleep "$FM_REMOTE_JOB_POLL_SECONDS"
+  elif [ -n "$WORKER_WAKE_FD" ]; then
+    IFS= read -r -n 1 -t 1 -u "$WORKER_WAKE_FD" _ || true
   else
-    sleep "$interval"
+    sleep 1
   fi
 }
 
@@ -1077,7 +1075,7 @@ main() {
     # bounded cadence keeps their uncached stat calls off every idle tick.
     if [ "$SECONDS" -ge "$WORKER_NEXT_SWEEP" ]; then
       fm_remote_job_reap_stale "$account_home" || true
-      WORKER_NEXT_SWEEP=$((SECONDS + FM_REMOTE_JOB_SWEEP_SECONDS))
+      WORKER_NEXT_SWEEP=$((SECONDS + 60))
     fi
     worker_process_once "$account_home"
     worker_wait_for_work

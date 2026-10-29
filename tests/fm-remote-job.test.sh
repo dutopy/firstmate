@@ -544,16 +544,12 @@ ERROR_BYTES=$(LC_ALL=C wc -c < "$FM_REMOTE_JOB_STDERR" | tr -d ' ')
 fm_remote_job_reap "$ACCOUNT_HOME" "$JOB_ID" || fail "the bounded-output job could not be reaped"
 pass "the worker drains bounded output without changing command results"
 
-# An idle serving loop must be woken by the publish event itself. With the
-# fallback poll set far longer than the assertion window, a job that still runs
-# proves the wake channel carried it.
 WAKE_HOME="$TMP_ROOT/wake-account"
 WAKE_STATE="$TMP_ROOT/wake-jobs"
-WAKE_IDLE_SECONDS=10
 mkdir -p "$WAKE_HOME"
 chmod 700 "$WAKE_HOME"
 HOME="$WAKE_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$WAKE_STATE" \
-  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux FM_REMOTE_JOB_IDLE_POLL_SECONDS="$WAKE_IDLE_SECONDS" \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/wake.out" 2> "$TMP_ROOT/wake.err" &
 WAKE_WORKER_PID=$!
@@ -576,11 +572,11 @@ for _ in $(seq 1 120); do
 done
 assert_present "$WAKE_SIDE_EFFECT" "the idle worker missed the published job"
 [ $((SECONDS - WAKE_STARTED)) -le 5 ] \
-  || fail "the idle worker waited for its fallback poll instead of the publish event"
+  || fail "the idle worker did not pick up the published job promptly"
 kill -TERM "$WAKE_WORKER_PID" 2>/dev/null
 wait "$WAKE_WORKER_PID" 2>/dev/null || true
 WAKE_WORKER_PID=
-pass "a published job wakes an idle worker well inside its fallback poll"
+pass "an idle worker promptly picks up a published job"
 
 # The wake channel is best effort: a broken channel must never block staging,
 # and the slow poll must still deliver the job.
@@ -589,7 +585,7 @@ FALLBACK_STATE="$TMP_ROOT/wake-fallback-jobs"
 mkdir -p "$FALLBACK_HOME"
 chmod 700 "$FALLBACK_HOME"
 HOME="$FALLBACK_HOME" FM_ROOT_OVERRIDE="$REMOTE_ROOT" FM_REMOTE_JOB_STATE_ROOT="$FALLBACK_STATE" \
-  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux FM_REMOTE_JOB_IDLE_POLL_SECONDS=1 \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
   "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
   > "$TMP_ROOT/wake-fallback.out" 2> "$TMP_ROOT/wake-fallback.err" &
 WAKE_FALLBACK_WORKER_PID=$!

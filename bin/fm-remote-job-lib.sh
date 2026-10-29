@@ -28,7 +28,7 @@
 # in place, so the idle worker wakes at once instead of polling. The ring is
 # best effort and costs no process: a missing or unusable channel, or a ring
 # lost to a worker that is not running yet, only delays the claim by the
-# worker's FM_REMOTE_JOB_IDLE_POLL_SECONDS fallback, never loses the job.
+# worker's one-second fallback, never loses the job.
 # FM_REMOTE_JOB_POLL_SECONDS stays the short poll of the caller wait loop and
 # the running-job monitor.
 #
@@ -97,12 +97,7 @@ FM_REMOTE_JOB_MAX_BYTES=${FM_REMOTE_JOB_MAX_BYTES:-1048576}
 FM_REMOTE_JOB_QUEUE_TIMEOUT=${FM_REMOTE_JOB_QUEUE_TIMEOUT:-360}
 FM_REMOTE_JOB_TIMEOUT=${FM_REMOTE_JOB_TIMEOUT:-360}
 FM_REMOTE_JOB_WAIT_GRACE=${FM_REMOTE_JOB_WAIT_GRACE:-30}
-# The caller wait loop and the running-job monitor keep a short poll. The idle
-# serve loop instead waits on the wake FIFO and uses this whole-second fallback
-# only when a wake is lost, so its default never costs a fork per iteration.
 FM_REMOTE_JOB_POLL_SECONDS=${FM_REMOTE_JOB_POLL_SECONDS:-0.05}
-FM_REMOTE_JOB_IDLE_POLL_SECONDS=${FM_REMOTE_JOB_IDLE_POLL_SECONDS:-1}
-FM_REMOTE_JOB_SWEEP_SECONDS=${FM_REMOTE_JOB_SWEEP_SECONDS:-60}
 FM_REMOTE_JOB_REAP_SECONDS=${FM_REMOTE_JOB_REAP_SECONDS:-3600}
 FM_REMOTE_JOB_STAGE_REAP_SECONDS=${FM_REMOTE_JOB_STAGE_REAP_SECONDS:-600}
 FM_REMOTE_JOB_SEQ_CLAIM_REAP_SECONDS=86400
@@ -143,8 +138,6 @@ fm_remote_job_validate_settings() {
   [ "$FM_REMOTE_JOB_TIMEOUT" -le 3600 ] || return 1
   case "$FM_REMOTE_JOB_WAIT_GRACE" in ''|*[!0-9]*) return 1 ;; esac
   [ "$FM_REMOTE_JOB_WAIT_GRACE" -le 300 ] || return 1
-  case "$FM_REMOTE_JOB_IDLE_POLL_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
-  case "$FM_REMOTE_JOB_SWEEP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
   case "$FM_REMOTE_JOB_REAP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
   case "$FM_REMOTE_JOB_STAGE_REAP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
   return 0
