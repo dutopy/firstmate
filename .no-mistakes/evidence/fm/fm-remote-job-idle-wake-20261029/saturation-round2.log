@@ -1,0 +1,14 @@
+{
+  "worker_shell": "/bin/bash 3.2.57",
+  "suspended_real_worker": true,
+  "stale_waiting_marker": "1",
+  "saturated_fifo_bytes": 0,
+  "notification_bytes_written": 8193,
+  "stage_elapsed_seconds": 0.2561467490158975,
+  "stage_exit": 0,
+  "stage_stdout": "job-loYkrv",
+  "persisted_job_state_before_resume": "queued",
+  "job_ran_while_suspended": false,
+  "side_effect_after_resume": "ran",
+  "job_state_after_resume": "done"
+}

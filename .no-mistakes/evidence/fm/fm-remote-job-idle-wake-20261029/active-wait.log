@@ -1,0 +1,5 @@
+ok - publishing rings a waiting worker without accumulating inactive notifications
+ok - fifo scheduling remains prompt after a same-home publish while busy
+ok - staging stays bounded with a suspended reader and saturated notifications
+ok - worker FIFO opening preserves operational stderr
+ok - fallback scheduling remains prompt after a same-home publish while busy

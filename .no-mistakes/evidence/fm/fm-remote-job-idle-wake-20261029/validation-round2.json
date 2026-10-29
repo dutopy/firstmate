@@ -1,0 +1,35 @@
+{
+  "product": "Real fm-remote-job --serve plus sourceable staging/probe API; isolated git-init roots and account/state directories; native macOS /bin/bash 3.2.57",
+  "baseline_commit": "81df10a03ed78be9118e86a2bc9d0497ef3d7b3e",
+  "target_commit": "1032db89b7ca3e103cfb67e92a01e466e2339213",
+  "benchmark_method": "12-second idle window per instance; kqueue NOTE_FORK tracks direct child fork events (coalescing makes nonzero counts lower bounds); libproc proc_pid_rusage measures worker plus reaped-child system CPU. Not host-wide hub measurements. One-core and 16-logical-core machine percentages both reported.",
+  "before_direct_fork_events_per_second_lower_bound": 67.99713520125937,
+  "after_direct_fork_events_per_second": 0.0,
+  "before_system_cpu_percent_one_core": 13.13745484534679,
+  "after_system_cpu_percent_one_core": 0.07974584479316711,
+  "fifo_stage_to_side_effect_range_seconds": [
+    0.942304192984011,
+    1.2261399769922718
+  ],
+  "fallback_stage_to_side_effect_range_seconds": [
+    1.5424456959881354,
+    1.936058413994033
+  ],
+  "saturation_regression": {
+    "worker_shell": "/bin/bash 3.2.57",
+    "suspended_real_worker": true,
+    "stale_waiting_marker": "1",
+    "saturated_fifo_bytes": 0,
+    "notification_bytes_written": 8193,
+    "stage_elapsed_seconds": 0.2561467490158975,
+    "stage_exit": 0,
+    "stage_stdout": "job-loYkrv",
+    "persisted_job_state_before_resume": "queued",
+    "job_ran_while_suspended": false,
+    "side_effect_after_resume": "ran",
+    "job_state_after_resume": "done"
+  },
+  "targeted_existing_e2e": "/bin/bash tests/fm-remote-job-active-wait.test.sh exited 0: notification suppression, same-home serialization/prompt scheduling with FIFO and fallback, full-pipe staging, publisher stderr preservation, live worker heartbeat-failure diagnostics and waiting-marker cleanup",
+  "other_attempts": "dtrace -l -n syscall::*fork*:entry refused: DTrace requires additional privileges. Used unprivileged kqueue/libproc instead.",
+  "ui": "No UI surface changed; CLI/API state and benchmark JSON are the reviewer-visible evidence."
+}

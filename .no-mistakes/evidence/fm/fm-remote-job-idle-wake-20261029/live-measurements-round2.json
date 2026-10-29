@@ -1,0 +1,139 @@
+[
+  {
+    "name": "before",
+    "measurement_seconds": 12.000505574018462,
+    "worker_direct_fork_events": 816,
+    "direct_processes_per_second_lower_bound": 67.99713520125937,
+    "system_cpu_seconds_worker_and_reaped_children": 1.576561001,
+    "system_cpu_percent_one_core": 13.13745484534679,
+    "system_cpu_percent_machine": 0.8210909278341744,
+    "logical_cpus": 16,
+    "heartbeat_advanced": true,
+    "heartbeat_age_seconds": 0.07281255722045898,
+    "public_liveness_probe_exit": 0,
+    "total_lifetime_system_cpu_seconds": 3.112966,
+    "total_lifetime_user_cpu_seconds": 1.3045309999999999,
+    "pickups": [],
+    "worker_exit": 0
+  },
+  {
+    "name": "after",
+    "measurement_seconds": 12.00050488501438,
+    "worker_direct_fork_events": 0,
+    "direct_processes_per_second_lower_bound": 0.0,
+    "system_cpu_seconds_worker_and_reaped_children": 0.009569904000000004,
+    "system_cpu_percent_one_core": 0.07974584479316711,
+    "system_cpu_percent_machine": 0.0049841152995729445,
+    "logical_cpus": 16,
+    "heartbeat_advanced": true,
+    "heartbeat_age_seconds": 0.2509651184082031,
+    "public_liveness_probe_exit": 0,
+    "total_lifetime_system_cpu_seconds": 4.6321449999999995,
+    "total_lifetime_user_cpu_seconds": 1.952516,
+    "pickups": [
+      {
+        "stage_to_side_effect_seconds": 1.0492448880104348,
+        "publish_return_to_side_effect_seconds": 0.7291820870013908,
+        "stage_to_idle_read_return_seconds": 0.3041096730157733,
+        "job_id": "job-Ye7ii0",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 0.942304192984011,
+        "publish_return_to_side_effect_seconds": 0.7189020809892099,
+        "stage_to_idle_read_return_seconds": 0.2135416169767268,
+        "job_id": "job-DPz7cL",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.0490340669930447,
+        "publish_return_to_side_effect_seconds": 0.7683101459988393,
+        "stage_to_idle_read_return_seconds": 0.2807239209942054,
+        "job_id": "job-K1MA6L",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 0.9540395200019702,
+        "publish_return_to_side_effect_seconds": 0.7167272609949578,
+        "stage_to_idle_read_return_seconds": 0.23731225900701247,
+        "job_id": "job-8nDfcb",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.0471039660042152,
+        "publish_return_to_side_effect_seconds": 0.8079023759928532,
+        "stage_to_idle_read_return_seconds": 0.239201590011362,
+        "job_id": "job-x2Ggac",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.2261399769922718,
+        "publish_return_to_side_effect_seconds": 0.9134561289974954,
+        "stage_to_idle_read_return_seconds": 0.2993992310075555,
+        "job_id": "job-ddqicL",
+        "side_effect": "ran"
+      }
+    ],
+    "worker_exit": 0
+  },
+  {
+    "name": "fallback",
+    "measurement_seconds": 12.000079174002167,
+    "worker_direct_fork_events": 11,
+    "direct_processes_per_second_lower_bound": 0.9166606186925158,
+    "system_cpu_seconds_worker_and_reaped_children": 0.020858696999999995,
+    "system_cpu_percent_one_core": 0.1738213281558156,
+    "system_cpu_percent_machine": 0.010863833009738475,
+    "logical_cpus": 16,
+    "heartbeat_advanced": true,
+    "heartbeat_age_seconds": 0.1814408302307129,
+    "public_liveness_probe_exit": 0,
+    "total_lifetime_system_cpu_seconds": 3.793417,
+    "total_lifetime_user_cpu_seconds": 1.732321,
+    "pickups": [
+      {
+        "stage_to_side_effect_seconds": 1.5424456959881354,
+        "publish_return_to_side_effect_seconds": 1.3343399209843483,
+        "stage_to_idle_read_return_seconds": null,
+        "job_id": "job-Bv0Qa4",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.7580130439891946,
+        "publish_return_to_side_effect_seconds": 1.5412604549783282,
+        "stage_to_idle_read_return_seconds": null,
+        "job_id": "job-Dn7fW8",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.8447163269738667,
+        "publish_return_to_side_effect_seconds": 1.6641699069878086,
+        "stage_to_idle_read_return_seconds": null,
+        "job_id": "job-uZrIVo",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.936058413994033,
+        "publish_return_to_side_effect_seconds": 1.737930053990567,
+        "stage_to_idle_read_return_seconds": null,
+        "job_id": "job-5ltKOj",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.7625709359999746,
+        "publish_return_to_side_effect_seconds": 1.5780907630105503,
+        "stage_to_idle_read_return_seconds": null,
+        "job_id": "job-wR5J67",
+        "side_effect": "ran"
+      },
+      {
+        "stage_to_side_effect_seconds": 1.931058401009068,
+        "publish_return_to_side_effect_seconds": 1.7644393279915676,
+        "stage_to_idle_read_return_seconds": null,
+        "job_id": "job-doLyC2",
+        "side_effect": "ran"
+      }
+    ],
+    "worker_exit": 0
+  }
+]
