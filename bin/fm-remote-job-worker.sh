@@ -832,7 +832,7 @@ worker_open_wake_fifo() {
   local fifo
   fifo=$(fm_remote_job_worker_wake_path)
   if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
-  exec 9<>"$fifo" 2>/dev/null || return 0
+  { exec 9<>"$fifo"; } 2>/dev/null || return 0
   WORKER_WAKE_FD=9
 }
 
@@ -840,10 +840,14 @@ worker_open_wake_fifo() {
 # fallback. Both are shell builtins, so an idle iteration creates no process.
 # A signal interrupts the read, so the serving loop's trap still runs promptly.
 worker_wait_for_work() {
+  local interval=$FM_REMOTE_JOB_IDLE_POLL_SECONDS
+  if [ "${#WORKER_LANE_PIDS[@]}" -gt 0 ]; then
+    interval=$FM_REMOTE_JOB_POLL_SECONDS
+  fi
   if [ -n "$WORKER_WAKE_FD" ]; then
-    IFS= read -r -n 1 -t "$FM_REMOTE_JOB_IDLE_POLL_SECONDS" -u "$WORKER_WAKE_FD" _ || true
+    IFS= read -r -n 1 -t "$interval" -u "$WORKER_WAKE_FD" _ || true
   else
-    sleep "$FM_REMOTE_JOB_IDLE_POLL_SECONDS"
+    sleep "$interval"
   fi
 }
 

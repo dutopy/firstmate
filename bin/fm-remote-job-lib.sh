@@ -472,7 +472,7 @@ fm_remote_job_wake_worker() {
   [ -n "$FM_REMOTE_JOB_STATE" ] || return 0
   fifo="$FM_REMOTE_JOB_STATE/worker.wake"
   if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
-  exec 8<>"$fifo" 2>/dev/null || return 0
+  { exec 8<>"$fifo"; } 2>/dev/null || return 0
   printf x >&8 2>/dev/null || true
   exec 8>&-
   return 0
