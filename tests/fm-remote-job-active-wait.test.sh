@@ -12,6 +12,7 @@ cleanup() {
     wait "$BURST_PID" 2>/dev/null || true
   fi
   if [ -n "$WORKER_PID" ]; then
+    kill -CONT "$WORKER_PID" 2>/dev/null || true
     kill -TERM "$WORKER_PID" 2>/dev/null || true
     wait "$WORKER_PID" 2>/dev/null || true
   fi
@@ -118,8 +119,71 @@ SH
       sleep 0.05
     done
     [ "$waiting" = 1 ] || fail "the idle worker did not advertise its FIFO wait"
+    # A stopped reader leaves a stale waiting marker and can have a full pipe.
+    # Staging must still return after publishing its durable queue record.
+    python3 - "$WORKER_PID" "$ROOT/bin/fm-remote-job-lib.sh" "$account" "$code" "$fixture/third" <<'PY'
+import os
+import pathlib
+import signal
+import subprocess
+import sys
+
+pid = int(sys.argv[1])
+fifo = pathlib.Path(os.environ['FM_REMOTE_JOB_STATE_ROOT']) / 'worker.wake'
+os.kill(pid, signal.SIGSTOP)
+# Pin the stale advertised state even if the read returned just before STOP.
+fifo.with_name('worker.waiting').write_text('1\n')
+fd = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
+try:
+    while True:
+        try:
+            os.write(fd, b'x' * 4096)
+        except BlockingIOError:
+            break
+    while True:
+        try:
+            os.write(fd, b'x')
+        except BlockingIOError:
+            break
+    stage = subprocess.Popen([
+        '/bin/bash', '-c',
+        '. "$1"; fm_remote_job_stage "$2" "$3" "$2" fm-next-job.sh "$4" </dev/null',
+        'stage', *sys.argv[2:]
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        out, err = stage.communicate(timeout=4)
+    except subprocess.TimeoutExpired:
+        stage.kill()
+        stage.communicate()
+        raise AssertionError('staging blocked on a saturated notification FIFO') from None
+    assert stage.returncode == 0, err.decode()
+    assert out.startswith(b'job-'), out
+finally:
+    # Discard test saturation bytes before resuming normal worker operation.
+    try:
+        while os.read(fd, 65536):
+            pass
+    except BlockingIOError:
+        pass
+    os.close(fd)
+    os.kill(pid, signal.SIGCONT)
+PY
+    for ((i=0; i<200; i++)); do
+      [ ! -f "$fixture/third" ] || break
+      sleep 0.05
+    done
+    assert_present "$fixture/third" "the job queued during notification saturation did not execute"
+    pass "staging stays bounded with a suspended reader and saturated notifications"
+    for ((i=0; i<200; i++)); do
+      IFS= read -r waiting < "$FM_REMOTE_JOB_STATE_ROOT/worker.waiting" || true
+      [ "$waiting" != 1 ] || break
+      sleep 0.05
+    done
+    [ "$waiting" = 1 ] || fail "the worker did not return to its idle wait"
+    kill -STOP "$WORKER_PID"
     rm -f "$FM_REMOTE_JOB_STATE_ROOT/worker.ready"
     mkdir "$FM_REMOTE_JOB_STATE_ROOT/worker.ready"
+    kill -CONT "$WORKER_PID"
     fm_remote_job_wake_worker
     for ((i=0; i<100; i++)); do
       if grep -q 'cannot update worker heartbeat' "$fixture/err"; then break; fi

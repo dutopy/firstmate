@@ -26,7 +26,7 @@
 #
 # A publish rings the state root's worker.wake FIFO after the record is durably
 # in place, so the idle worker wakes at once instead of polling. The ring is
-# best effort and costs no process: a missing or unusable channel, or a ring
+# best effort: a missing, full, or unusable channel, or a ring
 # lost to a worker that is not running yet, only delays the claim by the
 # worker's one-second fallback, never loses the job.
 # FM_REMOTE_JOB_POLL_SECONDS stays the short poll of the caller wait loop and
@@ -457,9 +457,9 @@ fm_remote_job_prepare_state() { # <account-home>
   }
 }
 
-# Ring the idle worker's wake FIFO after a job is durably published. Builtins
-# only, so staging pays no extra process, and opening read-write never blocks on
-# a missing reader. A skipped or lost ring costs at most one idle poll.
+# Ring the idle worker's wake FIFO after a job is durably published. Nonblocking
+# open and write also tolerate a stopped reader with a stale waiting marker.
+# A skipped or lost ring costs at most one idle poll; idle workers still fork nothing.
 fm_remote_job_wake_worker() {
   local fifo waiting marker
   [ -n "$FM_REMOTE_JOB_STATE" ] || return 0
@@ -469,9 +469,21 @@ fm_remote_job_wake_worker() {
   [ "$waiting" = 1 ] || return 0
   fifo="$FM_REMOTE_JOB_STATE/worker.wake"
   if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
-  { exec 8<>"$fifo"; } 2>/dev/null || return 0
-  printf x >&8 2>/dev/null || true
-  exec 8>&-
+  python3 - "$fifo" 2>/dev/null <<'PY' || true
+import os
+import stat
+import sys
+
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR | os.O_NONBLOCK | os.O_NOFOLLOW)
+    try:
+        if stat.S_ISFIFO(os.fstat(fd).st_mode):
+            os.write(fd, b'x')
+    finally:
+        os.close(fd)
+except OSError:
+    pass
+PY
   return 0
 }
 
