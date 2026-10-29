@@ -87,6 +87,7 @@ WORKER_LANE_STARTS=()
 WORKER_LANE_JOBS=()
 WORKER_READY_PATH=
 WORKER_WAKE_FD=
+WORKER_WAITING_PATH=
 WORKER_NEXT_SWEEP=0
 
 worker_error() { printf 'remote-job-worker: %s\n' "$1" >&2; }
@@ -419,6 +420,9 @@ worker_stop_active_execution() {
 # KILL, which no disposition can block.
 worker_shutdown() {
   trap '' HUP INT TERM
+  if [ -n "$WORKER_WAITING_PATH" ]; then
+    printf '0\n' > "$WORKER_WAITING_PATH" || true
+  fi
   worker_publish_quarantine || {
     worker_error "cannot guard worker ownership for shutdown"
     trap worker_shutdown HUP INT TERM
@@ -438,6 +442,9 @@ worker_shutdown() {
 }
 
 worker_exit_cleanup() {
+  if [ -n "$WORKER_WAITING_PATH" ]; then
+    printf '0\n' > "$WORKER_WAITING_PATH" || true
+  fi
   if [ "$WORKER_RELEASE_OWNERSHIP" -eq 1 ] && ! worker_stop_active_execution; then
     worker_error "could not stop the active command tree during exit"
     worker_publish_quarantine || worker_error "could not quarantine failed exit ownership"
@@ -832,6 +839,10 @@ worker_open_wake_fifo() {
   local fifo
   fifo=$(fm_remote_job_worker_wake_path)
   if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
+  [ ! -L "$FM_REMOTE_JOB_STATE/worker.waiting" ] || return 0
+  if [ -e "$FM_REMOTE_JOB_STATE/worker.waiting" ] && [ ! -f "$FM_REMOTE_JOB_STATE/worker.waiting" ]; then return 0; fi
+  printf '0\n' > "$FM_REMOTE_JOB_STATE/worker.waiting" || return 0
+  WORKER_WAITING_PATH="$FM_REMOTE_JOB_STATE/worker.waiting"
   { exec 9<>"$fifo"; } 2>/dev/null || return 0
   WORKER_WAKE_FD=9
 }
@@ -843,7 +854,12 @@ worker_wait_for_work() {
   if [ "${#WORKER_LANE_PIDS[@]}" -gt 0 ]; then
     sleep "$FM_REMOTE_JOB_POLL_SECONDS"
   elif [ -n "$WORKER_WAKE_FD" ]; then
-    IFS= read -r -n 1 -t 1 -u "$WORKER_WAKE_FD" _ || true
+    if printf '1\n' > "$WORKER_WAITING_PATH"; then
+      IFS= read -r -n 1 -t 1 -u "$WORKER_WAKE_FD" _ || true
+      printf '0\n' > "$WORKER_WAITING_PATH" || true
+    else
+      sleep 1
+    fi
   else
     sleep 1
   fi

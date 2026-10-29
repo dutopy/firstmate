@@ -461,8 +461,12 @@ fm_remote_job_prepare_state() { # <account-home>
 # only, so staging pays no extra process, and opening read-write never blocks on
 # a missing reader. A skipped or lost ring costs at most one idle poll.
 fm_remote_job_wake_worker() {
-  local fifo
+  local fifo waiting marker
   [ -n "$FM_REMOTE_JOB_STATE" ] || return 0
+  marker="$FM_REMOTE_JOB_STATE/worker.waiting"
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 0
+  IFS= read -r waiting < "$marker" 2>/dev/null || return 0
+  [ "$waiting" = 1 ] || return 0
   fifo="$FM_REMOTE_JOB_STATE/worker.wake"
   if [ ! -p "$fifo" ] || [ -L "$fifo" ]; then return 0; fi
   { exec 8<>"$fifo"; } 2>/dev/null || return 0
