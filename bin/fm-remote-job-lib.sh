@@ -24,13 +24,14 @@
 # begins executes first; concurrently overlapping stagings have no relative
 # ordering contract.
 #
-# A publish rings the state root's worker.wake FIFO after the record is durably
-# in place, so the idle worker wakes at once instead of polling. The ring is
-# best effort: a missing, full, or unusable channel, or a ring
-# lost to a worker that is not running yet, only delays the claim by the
-# worker's one-second fallback, never loses the job.
-# FM_REMOTE_JOB_POLL_SECONDS stays the short poll of the caller wait loop and
-# the running-job monitor.
+# After durable publication, staging attempts a nonblocking byte write to
+# worker.wake only when worker.waiting contains 1. The worker sets that marker
+# before its idle FIFO read and clears it afterwards and on shutdown. Missing,
+# full, or unusable channels and skipped or lost rings never lose queued work:
+# the idle wait has a fixed one-second fallback. An unavailable FIFO uses sleep.
+# While lanes are active, the serving loop uses FM_REMOTE_JOB_POLL_SECONDS
+# (default 0.05), as do the caller wait loop and running-job monitor.
+# These wake and fallback semantics apply on both macOS and Linux.
 #
 # The worker atomically claims a job with .claim, establishes its execution
 # deadline, changes state to running, writes bounded stdout/stderr and exit,
@@ -457,9 +458,9 @@ fm_remote_job_prepare_state() { # <account-home>
   }
 }
 
-# Ring the idle worker's wake FIFO after a job is durably published. Nonblocking
-# open and write also tolerate a stopped reader with a stale waiting marker.
-# A skipped or lost ring costs at most one idle poll; idle workers still fork nothing.
+# A waiting marker avoids accumulating notifications while lanes are active.
+# It is only a hint: a stopped reader can leave it stale, so both open and write
+# must be nonblocking. The library header owns the wake and fallback contract.
 fm_remote_job_wake_worker() {
   local fifo waiting marker
   [ -n "$FM_REMOTE_JOB_STATE" ] || return 0

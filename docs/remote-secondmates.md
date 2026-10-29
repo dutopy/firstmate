@@ -32,6 +32,7 @@ The entrypoint authorizes that bootstrap with normal git tracking when git resol
 After setup, every other command verifies Firstmate's account-owned remote job worker, stages the encoded argv and stdin bytes, waits for its result, and relays stdout, stderr, and the exit status separately.
 On macOS the worker is `dev.firstmate.remote-job`, an Aqua-scoped LaunchAgent at `~/Library/LaunchAgents/dev.firstmate.remote-job.plist` with logs under `~/Library/Logs/`.
 After that bootstrap every non-doctor `fm-on.sh` target runs through that worker in the remote account's GUI session, never in the SSH process or a Herdr pane.
+For idle notification, polling fallback, and active-lane scheduling, see the [remote job protocol header](../bin/fm-remote-job-lib.sh).
 The worker serves one lane per staged home: jobs for the same home follow the staging-order contract owned by [`bin/fm-remote-job-lib.sh`](../bin/fm-remote-job-lib.sh), while different homes' lanes run concurrently so one home's long job never delays another home's commands.
 Within a home's lane the worker preempts a running reply long-poll as soon as any command other than another reply long-poll is queued for that home, so interactive commands and startup checks are never serialized behind a poll window.
 `bin/fm-remote-job-lib.sh` owns that preemption contract and distinguishes preemption from a wait window that closes with no data, so only a genuinely quiet window proves channel freshness while either outcome can re-arm without losing data.
@@ -271,6 +272,7 @@ bin/fm-test-run.sh tests/fm-secondmate-reconcile.test.sh
 bin/fm-test-run.sh tests/fm-peek-remote.test.sh
 bin/fm-test-run.sh tests/fm-crew-state.test.sh
 bin/fm-test-run.sh tests/fm-remote-job.test.sh
+bin/fm-test-run.sh tests/fm-remote-job-active-wait.test.sh
 bin/fm-test-run.sh tests/fm-remote-transport-lanes.test.sh
 bin/fm-test-run.sh tests/fm-remote-doctor.test.sh
 bin/fm-test-run.sh tests/fm-remote-herdr-guard.test.sh

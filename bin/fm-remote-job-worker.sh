@@ -22,12 +22,10 @@
 # its recorded command group, leaving interrupted records for the replacement
 # worker's orphan recovery.
 #
-# An idle serving loop is event driven. Staging a job rings the state root's
-# worker.wake FIFO, which this loop holds open read-write and waits on with the
-# read builtin, so an idle tick creates no process and picks a job up at once.
-# A one-second wait bounds only the lost-ring
-# fallback, and the readiness heartbeat is rewritten in place each tick so its
-# readers keep seeing a fresh worker without a fork.
+# The library header owns the wake and fallback contract. With a usable FIFO
+# and an empty queue, idle iterations between maintenance sweeps use builtins
+# only. The readiness heartbeat is rewritten in place without a fork; stale
+# record and staging-litter maintenance runs at a fixed 60-second cadence.
 #
 # The worker is abandoned when its configured FM_ROOT stops being a genuine
 # Firstmate checkout - the state a pruned no-mistakes gate worktree, a returned
@@ -104,7 +102,7 @@ worker_account_home() {
 # The readiness heartbeat only has to keep its mtime inside the 10-second probe
 # window, so the serving loop rewrites it in place with builtins alone. Every
 # reader stats the file and none parses a partial line, so the atomic rename is
-# not needed and an idle iteration creates no process.
+# not needed and refreshing the heartbeat creates no process.
 worker_write_heartbeat() {
   [ -n "$WORKER_READY_PATH" ] || return 1
   printf '%s\n' "${BASHPID:-$$}" > "$WORKER_READY_PATH"
@@ -847,8 +845,8 @@ worker_open_wake_fifo() {
   WORKER_WAKE_FD=9
 }
 
-# One idle wait: the wake FIFO first, with a whole-second poll as the lost-ring
-# fallback. Both are shell builtins, so an idle iteration creates no process.
+# Bash 3.2 accepts only whole-second read timeouts. Keep the active-lane wait
+# on sleep, which accepts fractional intervals, and the idle FIFO wait on read.
 # A signal interrupts the read, so the serving loop's trap still runs promptly.
 worker_wait_for_work() {
   if [ "${#WORKER_LANE_PIDS[@]}" -gt 0 ]; then
