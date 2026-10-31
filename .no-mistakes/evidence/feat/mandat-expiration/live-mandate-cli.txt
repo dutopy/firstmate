@@ -1,0 +1,31 @@
+$ bin/fm-mandate.sh grant --id live --granted-by captain --expires-at 2026-10-31T22:50:47Z --action merge --repo example/* --branch main --deny-path ui/*
+granted: mandate live until 2026-10-31T22:50:47Z (2026-10-31T22:50:47Z)
+exit=0
+
+$ bin/fm-mandate.sh check live --action merge --repo example/repo --branch main --file src/safe.txt
+mandate live in force until 2026-10-31T22:50:47Z (2026-10-31T22:50:47Z)
+exit=0
+
+$ bin/fm-mandate.sh check live --action merge --repo example/repo --branch main --file ui/écran.png
+refused: changed path ui/écran.png is excluded by mandate live (deny: ui/*)
+exit=1
+
+$ bin/fm-mandate.sh relay live
+Standing mandate live, granted by captain.
+expires_at: 2026-10-31T22:50:47Z (2026-10-31T22:50:47Z). At and after that instant it grants nothing, even if every condition still holds.
+actions: merge
+repositories: example/*
+base branches: main
+never these paths: ui/*
+Record it in your own home before relying on it:
+  bin/fm-mandate.sh grant --id live --granted-by captain --expires-at 2026-10-31T22:50:47Z --action merge --repo example/\* --branch main --deny-path ui/\* --relayed-via live-home
+Cite it on every merge that relies on it: bin/fm-pr-merge.sh <task-id> <pr-url> --mandate live
+exit=0
+
+$ bin/fm-mandate.sh revoke live --by captain
+revoked: mandate live
+exit=0
+
+$ bin/fm-mandate.sh check live --action merge --repo example/repo --branch main --file src/safe.txt
+refused: mandate live was revoked at 2026-10-31T21:50:48Z by captain
+exit=1

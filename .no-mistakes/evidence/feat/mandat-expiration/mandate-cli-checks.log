@@ -1,0 +1,4 @@
+ok - grant records only a future expiry with an explicit timezone and never overwrites
+ok - check refuses any action, repository, branch, or path the mandate does not cover
+ok - expired and revoked mandates refuse every check and are never relayed
+ok - a relayed mandate always carries its expiry and reproduces the same scope

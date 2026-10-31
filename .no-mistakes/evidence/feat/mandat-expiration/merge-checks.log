@@ -1,0 +1,14 @@
+ok - an expired mandate refuses a merge whose checks are green and whose patch is in scope
+ok - an expired mandate refuses the automatic yolo merge too
+ok - an in-force mandate covering the merge lets it proceed
+ok - a mandate that does not cover the repository or a changed path refuses the merge
+ok - a binary path the unified diff quotes is read from the forge file list and refuses
+ok - an unreadable changed-path list refuses instead of checking a partial list
+ok - a changed-path list at the forge cap refuses instead of checking a prefix
+ok - a GitHub rename is checked on both filename and previous_filename
+ok - a GitLab rename is checked on both old_path and new_path
+ok - GitLab mandates require a proven complete changed-file list before merging
+ok - tabs and newlines in all forge path fields refuse before mandate authorization
+ok - mandate revocation is serialized through attended, automatic, and GitLab forge calls
+ok - the automatic merge rechecks mandate expiry after eligibility work
+ok - cited mandates refuse forge queues and requested or configured auto-merges
