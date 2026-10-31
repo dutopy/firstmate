@@ -167,13 +167,13 @@ mandate_path() {
 }
 
 # Load one record into M_* variables. Returns 1 when absent, 3 when malformed.
-M_ID='' M_GRANTED_BY='' M_CREATED_AT='' M_EXPIRES_AT='' M_RELAYED_VIA='' M_REVOKED_AT='' M_REVOKED_BY=''
+M_ID='' M_GRANTED_BY='' M_EXPIRES_AT='' M_REVOKED_AT='' M_REVOKED_BY=''
 M_ACTIONS=() M_REPOS=() M_BRANCHES=() M_ALLOW=() M_DENY=() M_CONDITIONS=()
 load_mandate() {  # <id>
   local file line key value
   file=$(mandate_path "$1")
   [ -f "$file" ] || return 1
-  M_ID='' M_GRANTED_BY='' M_CREATED_AT='' M_EXPIRES_AT='' M_RELAYED_VIA='' M_REVOKED_AT='' M_REVOKED_BY=''
+  M_ID='' M_GRANTED_BY='' M_EXPIRES_AT='' M_REVOKED_AT='' M_REVOKED_BY=''
   M_ACTIONS=() M_REPOS=() M_BRANCHES=() M_ALLOW=() M_DENY=() M_CONDITIONS=()
   while IFS= read -r line || [ -n "$line" ]; do
     [ -n "$line" ] || continue
@@ -186,9 +186,8 @@ load_mandate() {  # <id>
     case "$key" in
       id) M_ID=$value ;;
       granted_by) M_GRANTED_BY=$value ;;
-      created_at) M_CREATED_AT=$value ;;
+      created_at | relayed_via) ;;  # recorded for show; no check reads them
       expires_at) M_EXPIRES_AT=$value ;;
-      relayed_via) M_RELAYED_VIA=$value ;;
       revoked_at) M_REVOKED_AT=$value ;;
       revoked_by) M_REVOKED_BY=$value ;;
       action) M_ACTIONS+=("$value") ;;
