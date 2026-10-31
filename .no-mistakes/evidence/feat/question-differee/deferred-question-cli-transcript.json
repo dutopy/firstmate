@@ -1,0 +1,455 @@
+[
+  {
+    "step": "Default-off does not intercept",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-1",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          },
+          {
+            "question": "Deploy tonight?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "step": "Enabled mode returns answers for every question",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-1",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          },
+          {
+            "question": "Deploy tonight?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "{\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"PreToolUse\",\n    \"permissionDecision\": \"allow\",\n    \"permissionDecisionReason\": \"deferred question 20261031T210912Z-tool-1\",\n    \"updatedInput\": {\n      \"questions\": [\n        {\n          \"question\": \"Merge release?\",\n          \"header\": \"Decision\",\n          \"options\": [\n            {\n              \"label\": \"Yes\",\n              \"description\": \"Proceed\"\n            },\n            {\n              \"label\": \"No\",\n              \"description\": \"Wait\"\n            }\n          ],\n          \"multiSelect\": false\n        },\n        {\n          \"question\": \"Deploy tonight?\",\n          \"header\": \"Decision\",\n          \"options\": [\n            {\n              \"label\": \"Yes\",\n              \"description\": \"Proceed\"\n            },\n            {\n              \"label\": \"No\",\n              \"description\": \"Wait\"\n            }\n          ],\n          \"multiSelect\": false\n        }\n      ],\n      \"answers\": {\n        \"Merge release?\": \"DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.\",\n        \"Deploy tonight?\": \"DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.\"\n      }\n    },\n    \"additionalContext\": \"[deferred-question] Deferred answer mode is on for this home, so the captain did not see a blocking prompt and has NOT answered. Record 20261031T210912Z-tool-1 holds:\\n- Merge release?\\n- Deploy tonight?\\nDo not act on any option as if chosen. Keep supervising, restate the question in plain chat, and when the captain answers in plain chat, run bin/fm-deferred-question.sh resolve 20261031T210912Z-tool-1.\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "step": "Identical question texts reuse one pending record",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-2",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          },
+          {
+            "question": "Deploy tonight?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "{\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"PreToolUse\",\n    \"permissionDecision\": \"allow\",\n    \"permissionDecisionReason\": \"deferred question 20261031T210912Z-tool-1\",\n    \"updatedInput\": {\n      \"questions\": [\n        {\n          \"question\": \"Merge release?\",\n          \"header\": \"Decision\",\n          \"options\": [\n            {\n              \"label\": \"Yes\",\n              \"description\": \"Proceed\"\n            },\n            {\n              \"label\": \"No\",\n              \"description\": \"Wait\"\n            }\n          ],\n          \"multiSelect\": false\n        },\n        {\n          \"question\": \"Deploy tonight?\",\n          \"header\": \"Decision\",\n          \"options\": [\n            {\n              \"label\": \"Yes\",\n              \"description\": \"Proceed\"\n            },\n            {\n              \"label\": \"No\",\n              \"description\": \"Wait\"\n            }\n          ],\n          \"multiSelect\": false\n        }\n      ],\n      \"answers\": {\n        \"Merge release?\": \"DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.\",\n        \"Deploy tonight?\": \"DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.\"\n      }\n    },\n    \"additionalContext\": \"[deferred-question] Deferred answer mode is on for this home, so the captain did not see a blocking prompt and has NOT answered. Record 20261031T210912Z-tool-1 holds:\\n- Merge release?\\n- Deploy tonight?\\nDo not act on any option as if chosen. Keep supervising, restate the question in plain chat, and when the captain answers in plain chat, run bin/fm-deferred-question.sh resolve 20261031T210912Z-tool-1.\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "step": "Operational prompt does not resurface",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh prompt --claude",
+    "input": {
+      "prompt": "\u2063FIRSTMATE_OP: v1 watcher: wake"
+    },
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "step": "Unprefixed scheduled prompt emits recovery context",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh prompt --claude",
+    "input": {
+      "prompt": "scheduled task: nightly report"
+    },
+    "exit": 0,
+    "stdout": "{\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"UserPromptSubmit\",\n    \"additionalContext\": \"[deferred-question] 1 question(s) were deferred while the captain was away and are still unanswered:\\n- 20261031T210912Z-tool-1 (asked 2026-10-31T21:09:12Z): Merge release? | Deploy tonight?\\nThis prompt is not proof the captain has returned. Restate each question in plain chat. Run bin/fm-deferred-question.sh resolve <id> only after the captain answers in plain chat. Do not call AskUserQuestion for a deferred question.\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "step": "Following pretool still returns allow and DEFERRED",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-1",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          },
+          {
+            "question": "Deploy tonight?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "{\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"PreToolUse\",\n    \"permissionDecision\": \"allow\",\n    \"permissionDecisionReason\": \"deferred question 20261031T210912Z-tool-1\",\n    \"updatedInput\": {\n      \"questions\": [\n        {\n          \"question\": \"Merge release?\",\n          \"header\": \"Decision\",\n          \"options\": [\n            {\n              \"label\": \"Yes\",\n              \"description\": \"Proceed\"\n            },\n            {\n              \"label\": \"No\",\n              \"description\": \"Wait\"\n            }\n          ],\n          \"multiSelect\": false\n        },\n        {\n          \"question\": \"Deploy tonight?\",\n          \"header\": \"Decision\",\n          \"options\": [\n            {\n              \"label\": \"Yes\",\n              \"description\": \"Proceed\"\n            },\n            {\n              \"label\": \"No\",\n              \"description\": \"Wait\"\n            }\n          ],\n          \"multiSelect\": false\n        }\n      ],\n      \"answers\": {\n        \"Merge release?\": \"DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.\",\n        \"Deploy tonight?\": \"DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.\"\n      }\n    },\n    \"additionalContext\": \"[deferred-question] Deferred answer mode is on for this home, so the captain did not see a blocking prompt and has NOT answered. Record 20261031T210912Z-tool-1 holds:\\n- Merge release?\\n- Deploy tonight?\\nDo not act on any option as if chosen. Keep supervising, restate the question in plain chat, and when the captain answers in plain chat, run bin/fm-deferred-question.sh resolve 20261031T210912Z-tool-1.\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "step": "Reasking a subquestion leaves both original questions pending",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-3",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "{\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"PreToolUse\",\n    \"permissionDecision\": \"allow\",\n    \"permissionDecisionReason\": \"deferred question 20261031T210914Z-tool-3\",\n    \"updatedInput\": {\n      \"questions\": [\n        {\n          \"question\": \"Merge release?\",\n          \"header\": \"Decision\",\n          \"options\": [\n            {\n              \"label\": \"Yes\",\n              \"description\": \"Proceed\"\n            },\n            {\n              \"label\": \"No\",\n              \"description\": \"Wait\"\n            }\n          ],\n          \"multiSelect\": false\n        }\n      ],\n      \"answers\": {\n        \"Merge release?\": \"DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.\"\n      }\n    },\n    \"additionalContext\": \"[deferred-question] Deferred answer mode is on for this home, so the captain did not see a blocking prompt and has NOT answered. Record 20261031T210914Z-tool-3 holds:\\n- Merge release?\\nDo not act on any option as if chosen. Keep supervising, restate the question in plain chat, and when the captain answers in plain chat, run bin/fm-deferred-question.sh resolve 20261031T210914Z-tool-3.\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "step": "List shows all unanswered questions",
+    "command": "\"/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh\" list",
+    "input": "",
+    "exit": 0,
+    "stdout": "20261031T210912Z-tool-1\tasked 2026-10-31T21:09:12Z\tresurfaced 1x\n  - Merge release?\n  - Deploy tonight?\n20261031T210914Z-tool-3\tasked 2026-10-31T21:09:14Z\tresurfaced 0x\n  - Merge release?\n",
+    "stderr": ""
+  },
+  {
+    "step": "Pending questions recover even after mode disabled",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh prompt --claude",
+    "input": {
+      "prompt": "What is pending?"
+    },
+    "exit": 0,
+    "stdout": "{\n  \"hookSpecificOutput\": {\n    \"hookEventName\": \"UserPromptSubmit\",\n    \"additionalContext\": \"[deferred-question] 2 question(s) were deferred while the captain was away and are still unanswered:\\n- 20261031T210912Z-tool-1 (asked 2026-10-31T21:09:12Z): Merge release? | Deploy tonight?\\n- 20261031T210914Z-tool-3 (asked 2026-10-31T21:09:14Z): Merge release?\\nThis prompt is not proof the captain has returned. Restate each question in plain chat. Run bin/fm-deferred-question.sh resolve <id> only after the captain answers in plain chat. Do not call AskUserQuestion for a deferred question.\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "step": "Resolve all reports durable-store failure",
+    "command": "\"/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh\" resolve --all",
+    "input": "",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error: could not resolve 20261031T210912Z-tool-1\nerror: could not resolve 20261031T210914Z-tool-3\n"
+  },
+  {
+    "step": "Explicit resolve closes only the named record",
+    "command": "\"/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh\" resolve 20261031T210912Z-tool-1",
+    "input": "",
+    "exit": 0,
+    "stdout": "resolved 20261031T210912Z-tool-1\n",
+    "stderr": ""
+  },
+  {
+    "step": "Broken stdout preserves reused pending record",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-4",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "[stdout pipe had no reader]",
+    "stderr": "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh: line 209: printf: Broken pipe\n/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh: line 209: printf: write error: Broken pipe\n"
+  },
+  {
+    "step": "Broken stdout rolls back newly created record",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-5",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Publish docs?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "[stdout pipe had no reader]",
+    "stderr": "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh: line 209: printf: Broken pipe\n/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh: line 209: printf: write error: Broken pipe\n"
+  },
+  {
+    "step": "Grok registered command stays inert",
+    "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-deferred-question.sh pretool --claude",
+    "input": {
+      "tool_name": "AskUserQuestion",
+      "tool_use_id": "tool-1",
+      "session_id": "isolated-validation",
+      "tool_input": {
+        "questions": [
+          {
+            "question": "Publish docs?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      }
+    },
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "step": "Resolve all finishes remaining records",
+    "command": "\"/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh\" resolve --all",
+    "input": "",
+    "exit": 0,
+    "stdout": "resolved 20261031T210914Z-tool-3\n",
+    "stderr": ""
+  },
+  {
+    "step": "Empty list confirms completion",
+    "command": "\"/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WJHR5QNA2D0S8M6C949TD/bin/fm-deferred-question.sh\" list",
+    "input": "",
+    "exit": 0,
+    "stdout": "no pending deferred questions\n",
+    "stderr": ""
+  },
+  {
+    "persisted_resolved_records": [
+      {
+        "id": "20261031T210912Z-tool-1",
+        "recorded_at": "2026-10-31T21:09:12Z",
+        "recorded_epoch": 1793480952,
+        "session_id": "isolated-validation",
+        "tool_use_id": "tool-1",
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          },
+          {
+            "question": "Deploy tonight?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ],
+        "surfaced_at": "2026-10-31T21:09:15Z",
+        "surfaced_count": 2,
+        "resolved_at": "2026-10-31T21:09:16Z",
+        "resolved_by": "manual"
+      },
+      {
+        "id": "20261031T210914Z-tool-3",
+        "recorded_at": "2026-10-31T21:09:14Z",
+        "recorded_epoch": 1793480954,
+        "session_id": "isolated-validation",
+        "tool_use_id": "tool-3",
+        "questions": [
+          {
+            "question": "Merge release?",
+            "header": "Decision",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Proceed"
+              },
+              {
+                "label": "No",
+                "description": "Wait"
+              }
+            ],
+            "multiSelect": false
+          }
+        ],
+        "surfaced_at": "2026-10-31T21:09:15Z",
+        "surfaced_count": 1,
+        "resolved_at": "2026-10-31T21:09:18Z",
+        "resolved_by": "manual"
+      }
+    ]
+  }
+]
