@@ -456,7 +456,7 @@ test_fire_and_forget_records_never_enter_the_ladder() {
 }
 
 test_ring_ladder_policy() {
-  local state rec action
+  local state rec next action
   state="$TMP_ROOT/ladder/state"; mkdir -p "$state"
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "do the thing")
   # Within grace: quiet.
@@ -482,8 +482,12 @@ test_ring_ladder_policy() {
   inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$rec"
   action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 FM_TASK_INBOX_URGENT_SECS=0 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
   [ "$action" = quiet ] || fail "an escalated message should stay quiet for recovery, got: $action"
-  # The acknowledgement resets the ladder: the next message starts fresh.
+  next=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "queued successor")
+  age_path "$next"
   mv "$rec" "$state/t1.inbox/handled/"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 FM_TASK_INBOX_URGENT_SECS=0 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "ring $next" ] || fail "a queued successor should start a fresh ladder, got: $action"
+  mv "$next" "$state/t1.inbox/handled/"
   action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=0 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
   [ "$action" = quiet ] || fail "a handled inbox should be quiet, got: $action"
   [ ! -e "$state/t1.inbox/.escalated" ] || fail "the ack should clear the escalation marker"
@@ -657,10 +661,16 @@ test_watcher_escalates_once_after_budget() {
 }
 
 test_watcher_dead_pane_escalates_once_without_ringing() {
-  local dir state out log pid rec
-  dir=$(setup_watch_case dead-pane)
+  local dir state out log pid rec previous='' ladder=''
+  dir=$(setup_watch_case "${1:-dead-pane}")
   state="$dir/state"; out="$dir/watch.out"; log="$dir/send.log"; : > "$log"
+  if [ "${1:-}" = dead-pane-stale-ladder ]; then
+    previous=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "previous instruction")
+    inbox_lib "$state" fm_task_inbox_record_ring "$state" t1 "$previous"
+    ladder=$(cat "$state/t1.inbox/.ring-state")
+  fi
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  [ -z "$previous" ] || mv "$previous" "$state/t1.inbox/handled/"
   # Aged far past the production unread-urgent delay, so the urgent tier is
   # what the first poll asks for before the dead endpoint overrides it.
   age_path "$rec"
@@ -681,7 +691,8 @@ test_watcher_dead_pane_escalates_once_without_ringing() {
     || fail "the escalation marker should suppress further surfacing of this record"
   [ "$(cat "$state/t1.inbox/.urgent-escalated")" = "${rec##*/}" ] \
     || fail "the dead-pane escalation should also close the unread-urgent tier"
-  [ ! -e "$state/t1.inbox/.ring-state" ] || fail "a dead pane must not enter the re-ring ladder"
+  [ "$(cat "$state/t1.inbox/.ring-state" 2>/dev/null || true)" = "$ladder" ] \
+    || fail "a dead pane must not advance the re-ring ladder"
   # The ladder is capped: nothing further is due for this record, so no later
   # poll rings the dead pane or queues a second wake.
   [ "$(inbox_lib "$state" fm_task_inbox_due_action "$state" t1)" = quiet ] \
@@ -964,13 +975,14 @@ test_urgent_tier_policy() {
   action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=99999999999 \
     inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
   [ "$action" = "ring $rec" ] || fail "inside the urgent delay only the idle ladder applies, got: $action"
+  inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$rec"
   action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 \
     inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
   [ "$action" = "urgent-ring $rec" ] || fail "past the urgent delay an urgent re-ring is due, got: $action"
   inbox_lib "$state" fm_task_inbox_record_urgent_ring "$state" t1 "$rec"
   action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 \
     inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
-  [ "$action" = "ring $rec" ] || fail "urgent spacing should hold and fall back to the idle ladder, got: $action"
+  [ "$action" = quiet ] || fail "urgent spacing and the idle escalation should both hold, got: $action"
   printf '001.msg\t1\t100\n' > "$state/t1.inbox/.urgent-state"
   action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 FM_TASK_INBOX_URGENT_MAX=2 \
     inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
@@ -1069,6 +1081,7 @@ test_watcher_ack_silences_unwritable_ladder
 test_watcher_surfaces_unwritable_ladder
 test_watcher_escalates_once_after_budget
 test_watcher_dead_pane_escalates_once_without_ringing
+test_watcher_dead_pane_escalates_once_without_ringing dead-pane-stale-ladder
 test_watcher_dead_pane_ignores_stale_busy_state
 test_ring_double_enter_then_verifies
 test_ring_resubmits_stuck_composer_without_retyping

@@ -521,14 +521,9 @@ fm_task_inbox_due_action() {  # <state-dir> <task-id>
   IFS=$(printf '\t') read -r rec_base count last <<EOF
 $ladder
 EOF
-  if [ -n "$rec_base" ] && [ "$rec_base" != "$base" ]; then
-    # A different oldest message: the previous ladder is stale. An absent
-    # ladder is left alone so a dead-pane escalation, which never rings and so
-    # never writes one, keeps its marker (the marker check below still ignores
-    # a marker naming some other message).
+  if [ "$rec_base" != "$base" ]; then
     count=0
     last=0
-    rm -f "$dir/.escalated" 2>/dev/null || true
   fi
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
