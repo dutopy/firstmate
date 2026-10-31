@@ -2139,8 +2139,14 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { appendFileSync } from "node:fs";
 
 export default function (pi: ExtensionAPI): void {
+  // Durable lifecycle probe: each loaded instance records the session_start reason it saw,
+  // so the shell side can prove a /reload really re-ran extension startup without sampling a frame.
+  pi.on("session_start", (event) => {
+    appendFileSync("session-start-reasons.log", `${event.reason}\n`);
+  });
   const faux = createFauxCore({
     api: "calm-geometry-e2e-api",
     provider: "calm-geometry-e2e",
@@ -2211,14 +2217,22 @@ TS
     return 1
   }
 
-  wait_for_geometry_transition() {
-    local file=$1 transient_text=$2 final_text=$3 attempt=0 saw_transient=0
+  # Waits for the settled post-/reload viewport rather than sampling the transient reload
+  # overlay, which Pi can paint and remove between two captures.
+  # Pi paints its persistent "Reloaded ..." status in the same render that removes the overlay,
+  # after rebuilding the transcript, so that status is proof the captured frame is post-reload.
+  # The frame must also show the final response, no overlay, and match the next capture.
+  wait_for_geometry_reload_settled() {
+    local file=$1 overlay_text=$2 done_text=$3 final_text=$4 attempt=0 previous=""
     while [ "$attempt" -lt 600 ]; do
       capture_geometry_viewport "$file" || true
-      if grep -Fq "$transient_text" "$file" 2>/dev/null; then
-        saw_transient=1
-      elif [ "$saw_transient" -eq 1 ] && grep -Fq "$final_text" "$file" 2>/dev/null; then
-        return 0
+      if grep -Fq "$done_text" "$file" 2>/dev/null \
+        && grep -Fq "$final_text" "$file" 2>/dev/null \
+        && ! grep -Fq "$overlay_text" "$file" 2>/dev/null; then
+        [ "$(cat "$file")" = "$previous" ] && return 0
+        previous=$(cat "$file")
+      else
+        previous=""
       fi
       sleep 0.01
       attempt=$((attempt + 1))
@@ -2270,13 +2284,20 @@ TS
   grep -Fq 'tool result one' "$session_file" \
     || fail "Calm removed hidden tool results from persisted history"
 
+  grep -qx 'startup' "$project/session-start-reasons.log" 2>/dev/null \
+    || fail "Pi Calm hidden-block geometry E2E session_start probe did not record the startup reason"
+  ! grep -qx 'reload' "$project/session-start-reasons.log" \
+    || fail "Pi Calm hidden-block geometry E2E saw a reload session_start before /reload was sent"
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" -l '/reload'
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" Enter
-  wait_for_geometry_transition \
+  wait_for_geometry_reload_settled \
     "$snapshot" \
     "Reloading keybindings, extensions, skills, prompts, themes, and context files..." \
+    "Reloaded keybindings, extensions" \
     "CALM_GEOMETRY_FINAL" \
-    || fail "Pi Calm hidden-block geometry E2E did not complete the /reload viewport transition"
+    || fail "Pi Calm hidden-block geometry E2E did not reach a settled post-/reload viewport (Pi $version)"
+  grep -qx 'reload' "$project/session-start-reasons.log" \
+    || fail "Pi Calm hidden-block geometry E2E /reload did not re-run extension session_start with reason reload"
   assert_geometry_gap "$snapshot" "reloaded native Calm transcript"
 
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" C-t
