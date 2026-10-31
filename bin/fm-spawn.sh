@@ -50,8 +50,8 @@
 #   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
 #   positional, and batch pairs are all refused alongside it; only harness,
 #   model, and effort may change, which is what makes a harness switch one
-#   ordinary relaunch. --override-reason is accepted here and is required when
-#   that replacement matches no declared profile. It refuses unless the recorded endpoint is positively
+#   ordinary relaunch. --override-reason follows the dispatch-profile membership
+#   contract below. It refuses unless the recorded endpoint is positively
 #   agent-free on a backend with a recovery-grade agent-state classifier (tmux
 #   or herdr), and clears the previous harness's per-task wiring before arming
 #   the new incarnation. The replacement still never starts outside the copy
@@ -172,9 +172,11 @@
 #   spawn, fresh or relaunched, and ignored with a notice when the profile is
 #   already declared or no dispatch file is active. A relaunch keeps a recorded
 #   reason only while the replacement repeats the same harness/model/effort and
-#   no new reason is given; a new reason replaces it, and any harness, model, or
-#   effort change drops the old line rather than leaving it attached to a choice
-#   it never described. The check proves membership in the declared set only;
+#   no new reason is recorded; a newly recorded reason replaces it, and any
+#   harness, model, or effort change drops the old line rather than leaving it
+#   attached to a choice it never described. An ignored reason does not replace
+#   the recorded one. A recorded reason never substitutes for --override-reason
+#   on an out-of-profile relaunch. The check proves membership in the declared set only;
 #   choosing the best-fit rule within it stays firstmate's intake (AGENTS.md
 #   section 4). A --secondmate spawn is exempt from all of this and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
