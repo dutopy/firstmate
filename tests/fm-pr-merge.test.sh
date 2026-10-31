@@ -233,6 +233,12 @@ SH
   cat > "$case_dir/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+jq_expr=''
+prev=''
+for arg in "$@"; do
+  [ "$prev" != --jq ] || jq_expr=$arg
+  prev=$arg
+done
 case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
@@ -289,6 +295,13 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   api\ *)
+    case " $* " in
+      *"/files"*)
+        [ ! -e "${FM_TEST_GH_FILES_FAIL:-}" ] || { echo 'error: could not read the pull request files' >&2; exit 1; }
+        jq -r "$jq_expr" "$FM_TEST_GH_FILES" || exit 1
+        exit 0
+        ;;
+    esac
     if [ -f "${FM_TEST_GH_RULES_FAIL_BODY:-}" ]; then
       cat "$FM_TEST_GH_RULES_FAIL_BODY" >&2
       exit 1
@@ -374,6 +387,11 @@ case "${1:-} ${2:-}" in
     : > "$case_dir/glab-merge-called"
     exit 0
     ;;
+  api*)
+    [ ! -e "$case_dir/glab-diffs-fails" ] || { echo "error: could not read the merge request diffs" >&2 ; exit 1 ; }
+    cat "$case_dir/glab-diffs.json" || exit 1
+    exit 0
+    ;;
 esac
 exit 0
 SH
@@ -413,7 +431,7 @@ write_mr_json() {
   fi
   printf '{"iid":7,"state":"%s","detailed_merge_status":"%s","has_conflicts":%s,' \
     "$state" "$detail" "$conflicts" > "$file"
-  printf '"blocking_discussions_resolved":%s,"sha":"%s","head_pipeline":%s,' \
+  printf '"target_branch":"main","blocking_discussions_resolved":%s,"sha":"%s","head_pipeline":%s,' \
     "$discussions" "$head" "$pipeline" >> "$file"
   printf '"merge_when_pipeline_succeeds":%s,"merge_after":%s}\n' \
     "$merge_when_pipeline_succeeds" "$merge_after" >> "$file"
@@ -483,6 +501,8 @@ run_case_script() {
   FM_TEST_GH_HEAD="$case_dir/github-head" \
   FM_TEST_GH_DIFF="$case_dir/forge-diff.patch" \
   FM_TEST_GH_DIFF_FAIL="$case_dir/github-diff-fails" \
+  FM_TEST_GH_FILES="$case_dir/github-files.json" \
+  FM_TEST_GH_FILES_FAIL="$case_dir/github-files-fail" \
   FM_TEST_GH_MERGE_RC_FILE="$case_dir/github-merge-rc" \
   FM_TEST_GH_MERGE_OUTPUT="$(cat "$case_dir/github-merge-output" 2>/dev/null || true)" \
   FM_TEST_GH_GRAPHQL_FAIL="$case_dir/github-graphql-fail" \
@@ -2503,17 +2523,19 @@ test_github_queue_aware_read_supplies_the_merge_state() {
 # --- standing mandates -------------------------------------------------------
 # A merge that relies on a standing mandate cites it with --mandate, and the
 # mandate must be in force and cover the merge at the moment the merge runs.
-# The forge diff in these cases comes from a real throwaway repository, so the
-# changed paths the mandate is judged against are the ones git actually wrote.
+# The forge's changed-file list comes from a real throwaway repository, so the
+# paths the mandate is judged against are the ones git actually wrote.
 
 epoch_to_iso_utc() {
   date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
 }
 
 # Commit a change touching the given paths in a fresh throwaway repository and
-# write its diff as the forge diff. Args: case_dir path...
+# write its diff as the forge diff. The same paths are written as the forge's
+# own changed-file list, which is what the mandate check reads. Args: case_dir
+# path...
 write_throwaway_repo_diff() {
-  local case_dir=$1 repo path
+  local case_dir=$1 repo path json sep=''
   shift
   repo="$case_dir/throwaway-repo"
   git init -q "$repo"
@@ -2528,6 +2550,19 @@ write_throwaway_repo_diff() {
   done
   git -C "$repo" commit -qam change
   git -C "$repo" diff HEAD~1 HEAD > "$case_dir/forge-diff.patch"
+  json=''
+  for path in "$@"; do
+    json="$json$sep$(jq -Rn --arg p "$path" '{filename:$p,previous_filename:null}')"
+    sep=','
+  done
+  printf '[%s]\n' "$json" > "$case_dir/github-files.json"
+  json=''
+  sep=''
+  for path in "$@"; do
+    json="$json$sep$(jq -Rn --arg p "$path" '{old_path:$p,new_path:$p}')"
+    sep=','
+  done
+  printf '[%s]\n' "$json" > "$case_dir/glab-diffs.json"
 }
 
 grant_mandate() {  # case_dir id expires_at extra-grant-args...
@@ -2655,6 +2690,156 @@ test_mandate_out_of_scope_refuses_the_merge() {
   assert_no_grep 'pr merge' "$case_dir/gh.log" \
     "mandate-out-of-scope: gh pr merge ran on a mandate that does not cover it"
   pass "a mandate that does not cover the repository or a changed path refuses the merge"
+}
+
+# The report's regression: a binary file with a non-ASCII name appears in the
+# unified diff only as a quoted `diff --git` header and a `Binary files` line,
+# so a diff parser never sees its `---`/`+++` pair and misses the path entirely.
+# The forge's file list still names it, and the deny rule must catch it.
+test_mandate_reads_the_forge_path_list_for_a_binary() {
+  local case_dir rc repo
+  case_dir=$(make_case mandate-quoted-binary)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e
+  repo="$case_dir/throwaway-repo"
+  git init -q "$repo"
+  git -C "$repo" config core.quotepath true
+  mkdir -p "$repo/src" "$repo/ui"
+  printf 'ok\n' > "$repo/src/ok.txt"
+  printf 'a\000b\n' > "$repo/ui/écran.png"
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm base
+  printf 'changed\n' > "$repo/src/ok.txt"
+  printf 'c\000d\n' > "$repo/ui/écran.png"
+  git -C "$repo" commit -qam change
+  git -C "$repo" diff HEAD~1 HEAD > "$case_dir/forge-diff.patch"
+  jq -cn '[
+    {filename:"src/ok.txt",previous_filename:null},
+    {filename:"ui/écran.png",previous_filename:null}]' > "$case_dir/github-files.json"
+  grant_mandate "$case_dir" no-ui-binary "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate no-ui-binary \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-quoted-binary: a denied binary path must refuse"
+  assert_grep 'diff --git "a/ui/' "$case_dir/forge-diff.patch" \
+    "mandate-quoted-binary: the fixture no longer carries the quoted diff header this case covers"
+  assert_grep 'changed path ui/écran.png is excluded by mandate no-ui-binary' "$case_dir/stderr" \
+    "mandate-quoted-binary: the refusal did not name the denied binary path"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-quoted-binary: gh pr merge ran despite the denied binary path"
+  pass "a binary path the unified diff quotes is read from the forge file list and refuses"
+}
+
+# A changed-path read that fails must refuse rather than check a partial list.
+test_mandate_unreadable_path_list_refuses_the_merge() {
+  local case_dir rc
+  case_dir=$(make_case mandate-unreadable-paths)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f
+  write_throwaway_repo_diff "$case_dir" src/lot5.txt
+  : > "$case_dir/github-files-fail"
+  grant_mandate "$case_dir" day-paths "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate day-paths \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-unreadable-paths: an unreadable path list must refuse"
+  assert_grep 'the changed paths could not be read to check mandate day-paths' "$case_dir/stderr" \
+    "mandate-unreadable-paths: the refusal did not name the unreadable path list"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-unreadable-paths: gh pr merge ran without the changed-path list"
+  pass "an unreadable changed-path list refuses instead of checking a partial list"
+}
+
+# GitHub's file list caps at 3000 entries and does not say whether that page
+# set is the whole pull request. A list that long is not proven complete, so
+# the merge refuses instead of checking a prefix a later denied path could
+# sit past.
+test_mandate_refuses_a_file_list_at_the_forge_cap() {
+  local case_dir rc
+  case_dir=$(make_case mandate-file-cap)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6060606060606060606060606060606060606060
+  write_throwaway_repo_diff "$case_dir" src/lot6.txt
+  jq -cn '[range(3000) | {filename:("src/f" + tostring + ".txt"), previous_filename:null}]' \
+    > "$case_dir/github-files.json"
+  grant_mandate "$case_dir" day-cap "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate day-cap \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-file-cap: a file list at the forge cap must refuse"
+  assert_grep 'the changed paths could not be read to check mandate day-cap' "$case_dir/stderr" \
+    "mandate-file-cap: the refusal did not treat the capped list as unreadable"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-file-cap: gh pr merge ran on a file list that was not proven complete"
+  pass "a changed-path list at the forge cap refuses instead of checking a prefix"
+}
+
+# A rename keeps the denied name in previous_filename after the new name has
+# left the deny glob. The file list has to carry both, or the rename walks
+# the denied path out of the check.
+test_mandate_reads_the_github_previous_filename_of_a_rename() {
+  local case_dir rc
+  case_dir=$(make_case mandate-github-rename)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6161616161616161616161616161616161616161
+  write_throwaway_repo_diff "$case_dir" src/lot7.txt
+  jq -cn '[{filename:"src/new.css",previous_filename:"ui/old.css"}]' \
+    > "$case_dir/github-files.json"
+  grant_mandate "$case_dir" no-ui-rename "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate no-ui-rename \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-github-rename: a denied previous_filename must refuse"
+  assert_grep 'changed path ui/old.css is excluded by mandate no-ui-rename' "$case_dir/stderr" \
+    "mandate-github-rename: the refusal did not name the renamed-away path"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-github-rename: gh pr merge ran despite the denied previous name"
+  pass "a GitHub rename is checked on both filename and previous_filename"
+}
+
+# A rename names its source only in old_path, so a deny rule must see it.
+test_mandate_reads_the_gitlab_old_path_of_a_rename() {
+  local case_dir rc
+  case_dir=$(make_gitlab_case mandate-gitlab-rename)
+  jq -cn '[{old_path:"ui/old.css",new_path:"src/old.css",new_file:false,renamed_file:true}]' \
+    > "$case_dir/glab-diffs.json"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-mandate.sh" grant --id no-ui-gitlab --granted-by captain \
+    --expires-at "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --action merge --repo 'group/*' --branch main --deny-path 'ui/*' >/dev/null
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --mandate no-ui-gitlab \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-gitlab-rename: a denied old_path must refuse"
+  assert_grep 'changed path ui/old.css is excluded by mandate no-ui-gitlab' "$case_dir/stderr" \
+    "mandate-gitlab-rename: the refusal did not name the renamed-away path"
+  assert_no_grep 'mr merge' "$case_dir/glab.log" \
+    "mandate-gitlab-rename: glab mr merge ran despite the denied old_path"
+  pass "a GitLab rename is checked on both old_path and new_path"
 }
 
 test_github_zero_exit_queue_required_refuses_with_exact_retry
@@ -3716,3 +3901,8 @@ test_expired_mandate_refuses_the_merge
 test_expired_mandate_refuses_the_automatic_merge
 test_in_force_mandate_in_scope_merges
 test_mandate_out_of_scope_refuses_the_merge
+test_mandate_reads_the_forge_path_list_for_a_binary
+test_mandate_unreadable_path_list_refuses_the_merge
+test_mandate_refuses_a_file_list_at_the_forge_cap
+test_mandate_reads_the_github_previous_filename_of_a_rename
+test_mandate_reads_the_gitlab_old_path_of_a_rename

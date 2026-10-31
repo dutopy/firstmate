@@ -1126,28 +1126,38 @@ require_recorded_pr_identity() {
 # Refuse a merge that relies on a standing mandate unless that mandate is in
 # force and covers this merge right now. bin/fm-mandate.sh owns the record and
 # every rule; this function supplies the live facts: the repository, the base
-# branch, and the changed paths read from the forge's current diff.
+# branch, and the changed paths read from the forge's own file list.
+#
+# The file list, never the unified diff, is the source. A binary or non-ASCII
+# path is quoted in the diff's `diff --git` header, and a copy names its source
+# only in `copy from`, so a diff parser can miss a changed path that a deny rule
+# covers. GitHub pages the pull request's files and gives `filename` plus
+# `previous_filename`; GitLab's diffs endpoint gives `old_path` and `new_path`.
+# Both names are returned for a rename, so a rename cannot move a denied path
+# out of the check. A list that cannot be read in full refuses; GitHub caps its
+# list at 3000 files, so a full page set is treated as possibly truncated.
 mandate_changed_paths() {
-  local diff
+  local listing raw files
   case "$PROVIDER" in
-    github) diff=$(gh pr diff "$PR_NUMBER" --repo "$PR_PATH" 2>/dev/null) || return 1 ;;
-    gitlab) diff=$(GITLAB_HOST="$PR_HOST" glab mr diff "$PR_NUMBER" -R "$PROJECT_URL" --raw 2>/dev/null) || return 1 ;;
+    github)
+      listing=$(gh api --paginate "repos/$PR_PATH/pulls/$PR_NUMBER/files?per_page=100" \
+        --jq '.[] | "f\t" + .filename, ((.previous_filename // empty) | "p\t" + .)' \
+        2>/dev/null) || return 1
+      ;;
+    gitlab)
+      raw=$(GITLAB_HOST="$PR_HOST" glab api --paginate \
+        "projects/$(github_urlencode_path_segment "$PR_PATH")/merge_requests/$PR_NUMBER/diffs?per_page=100" \
+        2>/dev/null) || return 1
+      listing=$(printf '%s\n' "$raw" \
+        | jq -r '.[]? | "f\t" + .new_path, ((.old_path // empty) | "p\t" + .)' \
+        2>/dev/null) || return 1
+      ;;
     *) return 1 ;;
   esac
-  printf '%s\n' "$diff" | awk '
-    function unq(p) { if (p ~ /^".*"$/) { p = substr(p, 2, length(p) - 2) } return p }
-    # Paths that git quotes (spaces, non-ASCII) keep their escaped spelling.
-    /^--- a\// { print unq(substr($0, 7)); next }
-    /^\+\+\+ b\// { print unq(substr($0, 7)); next }
-    /^--- "a\// { p = substr($0, 8); print substr(p, 1, length(p) - 1); next }
-    /^\+\+\+ "b\// { p = substr($0, 8); print substr(p, 1, length(p) - 1); next }
-    /^rename from / { print unq(substr($0, 13)); next }
-    /^rename to / { print unq(substr($0, 11)); next }
-    /^diff --git a\// {
-      rest = substr($0, 14); n = length(rest)
-      if (n % 2 == 1) { half = (n - 3) / 2; a = substr(rest, 1, half); b = substr(rest, half + 4)
-        if (substr(rest, half + 1, 3) == " b/" && a == b) print a }
-    }' | awk 'NF && !seen[$0]++'
+  files=$(printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" { n++ } END { print n + 0 }')
+  [ "$files" -lt 3000 ] || return 1
+  printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" || $1 == "p" { print $2 }' \
+    | awk 'NF && !seen[$0]++'
 }
 
 mandate_base_branch() {
