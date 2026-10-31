@@ -39,7 +39,7 @@
 #   a fresh capacity report, even when capacity is unknown. bin/fm-pool-lib.sh's
 #   header owns the shared capacity classification; bin/fm-pool-status.sh exposes
 #   it for standalone inspection. These snapshots do not reserve copies.
-#        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
+#        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>] [--override-reason <why>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is
 #   the launch half of the control plane (bin/fm-control.sh relaunch), which
@@ -50,7 +50,8 @@
 #   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
 #   positional, and batch pairs are all refused alongside it; only harness,
 #   model, and effort may change, which is what makes a harness switch one
-#   ordinary relaunch. It refuses unless the recorded endpoint is positively
+#   ordinary relaunch. --override-reason is accepted here and is required when
+#   that replacement matches no declared profile. It refuses unless the recorded endpoint is positively
 #   agent-free on a backend with a recovery-grade agent-state classifier (tmux
 #   or herdr), and clears the previous harness's per-task wiring before arming
 #   the new incarnation. The replacement still never starts outside the copy
@@ -155,21 +156,27 @@
 #   or when no concrete profile comes back, the pre-existing backstop below stays in
 #   force: the spawn refuses instead of silently skipping the configured dispatch
 #   rules.
-#   Whatever path chose them, a fresh crewmate or scout spawn under an active
-#   config/crew-dispatch.json then checks the final harness/model/effort against
-#   every profile the file declares (class sets, rule `use`, and `default`). A
-#   declared model or effort must match exactly; an omitted model admits only the
-#   harness default, and an omitted effort admits any effort. A combination that
-#   matches no declared profile, or a raw launch command, REFUSES before any
-#   endpoint, worktree, or record exists unless --override-reason '<why>' is
-#   passed - an explicit captain override needs one too. With a reason the spawn
-#   proceeds, records dispatch_override_reason=<why> in state/<id>.meta, and
-#   appends one `note:` line naming the profile and reason to state/<id>.status.
-#   The reason must be one printable line of at most 500 characters; it is
-#   refused on --secondmate and --relaunch spawns and ignored with a notice when
-#   the profile is already declared or no dispatch file is active. The check
-#   proves membership in the declared set only; choosing the best-fit rule within
-#   it stays firstmate's intake (AGENTS.md section 4). A --secondmate spawn is exempt from all of this and resolves the SECONDMATE
+#   Whatever path chose them, a crewmate or scout spawn under an active
+#   config/crew-dispatch.json, including a --relaunch, checks the final
+#   harness/model/effort against every profile the file declares (class sets,
+#   rule `use`, and `default`). A declared model or effort must match exactly;
+#   an omitted model admits only the harness default, and an omitted effort
+#   admits any effort. A combination that matches no declared profile, or a raw
+#   launch command, REFUSES unless --override-reason '<why>' is passed - an
+#   explicit captain override needs one too. A fresh spawn refuses before any
+#   endpoint, worktree, or record exists. A relaunch refuses before it publishes
+#   the replacement record. With a reason the spawn proceeds, records
+#   dispatch_override_reason=<why> in state/<id>.meta, and appends one `note:`
+#   line naming the profile and reason to state/<id>.status. The reason must be
+#   one printable line of at most 500 characters. It is refused on a secondmate
+#   spawn, fresh or relaunched, and ignored with a notice when the profile is
+#   already declared or no dispatch file is active. A relaunch keeps a recorded
+#   reason only while the replacement repeats the same harness/model/effort and
+#   no new reason is given; a new reason replaces it, and any harness, model, or
+#   effort change drops the old line rather than leaving it attached to a choice
+#   it never described. The check proves membership in the declared set only;
+#   choosing the best-fit rule within it stays firstmate's intake (AGENTS.md
+#   section 4). A --secondmate spawn is exempt from all of this and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
 #   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy)
@@ -832,10 +839,6 @@ if [ "$OVERRIDE_REASON_SET" -eq 1 ]; then
   }
   [ "$KIND" != secondmate ] || {
     echo "error: --override-reason applies only to crewmate and scout spawns; a secondmate spawn is exempt from the dispatch profiles" >&2
-    exit 1
-  }
-  [ "$RELAUNCH" -eq 0 ] || {
-    echo "error: --override-reason applies only to fresh crewmate and scout spawns, not --relaunch" >&2
     exit 1
   }
 fi
@@ -1681,6 +1684,12 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
+  # Kind is still the fresh-spawn default when --override-reason is first
+  # checked, so a secondmate relaunch is refused again once the record is known.
+  if [ "$OVERRIDE_REASON_SET" -eq 1 ] && [ "$KIND" = secondmate ]; then
+    echo "error: --override-reason applies only to crewmate and scout spawns; a secondmate spawn is exempt from the dispatch profiles" >&2
+    exit 1
+  fi
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)
   RELAUNCH_WT=$(fm_meta_get "$RELAUNCH_META" worktree)
@@ -2186,11 +2195,12 @@ if [ "$KIND" = secondmate ] && [ "$HARNESS" = rovo ]; then
   exit 1
 fi
 
-# Dispatch-profile membership: with config/crew-dispatch.json present, a fresh
-# crewmate or scout spawn whose final harness/model/effort matches no declared
-# profile refuses unless --override-reason states why (see the header).
+# Dispatch-profile membership: with config/crew-dispatch.json present, a
+# crewmate or scout spawn, including --relaunch, whose final harness/model/effort
+# matches no declared profile refuses unless --override-reason states why
+# (see the header). A secondmate stays exempt.
 DISPATCH_OVERRIDE_REASON=
-if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
+if [ "$KIND" != secondmate ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
   if [ "$RAW_LAUNCH" -eq 1 ]; then
     dispatch_membership=raw
   else
@@ -4436,12 +4446,28 @@ else
 fi
 SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
-  awk -F= '
+  # A dispatch override reason explains one exact harness/model/effort choice.
+  # Carry it forward only while the replacement repeats that choice and no new
+  # reason is being recorded. A changed triplet must not inherit a reason that
+  # described the old one, and a new reason replaces the old line.
+  awk -F= -v harness="$HARNESS" -v model="${MODEL:-default}" -v effort="${EFFORT:-default}" -v rewrite="${DISPATCH_OVERRIDE_REASON:+1}" '
     BEGIN {
       split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx guard_base", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
-    !($1 in owned)
+    {
+      if ($1 == "harness" && $2 == harness) same_harness = 1
+      if ($1 == "model" && $2 == model) same_model = 1
+      if ($1 == "effort" && $2 == effort) same_effort = 1
+      line[NR] = $0
+      field[NR] = $1
+    }
+    END {
+      for (n = 1; n <= NR; n++) {
+        if (field[n] == "dispatch_override_reason" && (rewrite || !(same_harness && same_model && same_effort))) continue
+        if (!(field[n] in owned)) print line[n]
+      }
+    }
   ' "$RELAUNCH_META"
 }
 {

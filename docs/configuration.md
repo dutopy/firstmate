@@ -452,6 +452,7 @@ When the file exists, `fm-spawn.sh` enforces that contract by refusing crewmate 
 Batch spawns satisfy the same requirement with a shared `--harness`.
 The explicit or resolved harness, model, and effort must also match a profile the file declares in `classes`, a rule's `use`, or `default`; a declared model or effort must match exactly, an omitted model admits only the harness default, and an omitted effort admits any effort.
 A combination outside every declared profile, or a raw launch command, is refused unless `--override-reason '<why>'` records the deliberate choice, and an explicit captain override needs that reason too.
+A control-plane relaunch of a crewmate or scout is held to the same rule.
 The reason is recorded as `dispatch_override_reason=` in the task meta and as one `note:` status line; `bin/fm-spawn.sh --help` owns the exact rules.
 This proves membership in the declared set only, not that the best-fit rule was chosen.
 Secondmate spawns are exempt and still resolve through `config/secondmate-harness` and its optional model and effort tokens.

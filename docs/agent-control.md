@@ -72,6 +72,8 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
 5. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
+   A ship or scout replacement outside every declared dispatch profile is refused unless `--override-reason` is passed on this relaunch.
+   `bin/fm-spawn.sh --help` owns when that reason is required, recorded, kept, or dropped.
 
 Switching harness is therefore one ordinary relaunch rather than a separate mechanism.
 

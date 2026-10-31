@@ -461,6 +461,162 @@ test_relaunch_preserves_durable_task_metadata() {
   pass "fm-control relaunch: durable task metadata survives replacement launch publication"
 }
 
+test_relaunch_keeps_an_override_reason_only_for_an_unchanged_profile() {
+  local dir out rc reason
+  reason="captain chose the default claude profile for this task"
+
+  # An unchanged harness/model/effort repeats the choice the reason explains,
+  # so the recorded reason still applies and must survive.
+  dir=$(new_case override-reason-same rl50)
+  add_ship_task "$dir" rl50 claude
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl50.meta"
+  out=$(run_control "$dir" rl50 relaunch --note "same runtime, new agent"); rc=$?
+  expect_code 0 "$rc" "a same-profile relaunch should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl50 dispatch_override_reason)" = "$reason" ] \
+    || fail "an unchanged profile must keep the reason that explains it"
+
+  # A changed model is a different choice, so the old reason must not follow it.
+  dir=$(new_case override-reason-changed rl51)
+  add_ship_task "$dir" rl51 claude
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl51.meta"
+  out=$(run_control "$dir" rl51 relaunch --note "move to a different model" --model sonnet); rc=$?
+  expect_code 0 "$rc" "a profile-changing relaunch should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl51 model)" = sonnet ] \
+    || fail "the explicit replacement model should be recorded"
+  [ -z "$(meta_field "$dir" rl51 dispatch_override_reason)" ] \
+    || fail "a changed harness/model/effort must not inherit the previous override reason"
+
+  # A harness switch changes the whole triplet, including both reset axes.
+  dir=$(new_case override-reason-harness rl52)
+  add_ship_task "$dir" rl52 claude
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl52.meta"
+  out=$(run_control "$dir" rl52 relaunch --note "switch runtime" --harness codex); rc=$?
+  expect_code 0 "$rc" "a harness-switching relaunch should succeed"$'\n'"$out"
+  [ -z "$(meta_field "$dir" rl52 dispatch_override_reason)" ] \
+    || fail "a harness switch must not inherit the previous override reason"
+  pass "fm-control relaunch: an override reason survives only an unchanged harness/model/effort"
+}
+
+# Declares claude at the harness default (any effort) and one codex profile.
+write_relaunch_dispatch() {
+  mkdir -p "$1/home/config"
+  printf '%s\n' '{"rules":[{"when":"a declared codex task","use":{"harness":"codex","model":"gpt-5","effort":"high"}}],"default":{"harness":"claude"}}' \
+    > "$1/home/config/crew-dispatch.json"
+}
+
+replace_meta_field() { # <case-dir> <id> <key> <value>
+  local file="$1/home/state/$2.meta"
+  grep -v "^$3=" "$file" > "$file.tmp"
+  printf '%s=%s\n' "$3" "$4" >> "$file.tmp"
+  mv "$file.tmp" "$file"
+}
+
+test_relaunch_applies_the_dispatch_profile_refusal() {
+  local dir out rc reason meta
+  reason="captain chose haiku for this rote pass"
+
+  # An out-of-profile replacement with no reason refuses before the record changes.
+  dir=$(new_case dispatch-refuse rl60)
+  add_ship_task "$dir" rl60 claude
+  write_relaunch_dispatch "$dir"
+  replace_meta_field "$dir" rl60 model haiku
+  replace_meta_field "$dir" rl60 effort low
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl60.meta"
+  printf 'zsh' > "$dir/fake/command"
+  cp "$dir/home/state/rl60.meta" "$dir/meta.before"
+  out=$(run_spawn "$dir" rl60 --relaunch --harness claude --model haiku --effort low); rc=$?
+  expect_code 1 "$rc" "an out-of-profile relaunch without a reason should refuse"$'\n'"$out"
+  assert_contains "$out" "harness=claude model=haiku effort=low matches no profile" \
+    "the refusal should name the out-of-profile replacement"
+  cmp -s "$dir/meta.before" "$dir/home/state/rl60.meta" \
+    || fail "a refused relaunch must leave the recorded reason and profile untouched"
+
+  # A scout is held to the same refusal.
+  dir=$(new_case dispatch-scout rl63)
+  add_ship_task "$dir" rl63 claude
+  write_relaunch_dispatch "$dir"
+  replace_meta_field "$dir" rl63 kind scout
+  replace_meta_field "$dir" rl63 model haiku
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl63 --relaunch --harness claude --model haiku); rc=$?
+  expect_code 1 "$rc" "an out-of-profile scout relaunch without a reason should refuse"$'\n'"$out"
+  assert_contains "$out" "matches no profile" "the scout refusal should name the profile check"
+
+  # The same in-profile triplet keeps the recorded reason, and a new reason is ignored.
+  dir=$(new_case dispatch-same rl64)
+  add_ship_task "$dir" rl64 claude
+  write_relaunch_dispatch "$dir"
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl64.meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl64 --relaunch --harness claude --override-reason "already declared"); rc=$?
+  expect_code 0 "$rc" "an in-profile relaunch should succeed"$'\n'"$out"
+  assert_contains "$out" "override-reason ignored" "an in-profile reason should be ignored"
+  [ "$(meta_field "$dir" rl64 dispatch_override_reason)" = "$reason" ] \
+    || fail "an unchanged in-profile relaunch must keep the recorded reason"
+  meta="$dir/home/state/rl64.meta"
+  [ "$(grep -c '^dispatch_override_reason=' "$meta")" -eq 1 ] \
+    || fail "an ignored reason must not add a second dispatch_override_reason line"
+
+  # A still-declared effort change is a new choice, so the old reason is dropped.
+  dir=$(new_case dispatch-effort rl65)
+  add_ship_task "$dir" rl65 claude
+  write_relaunch_dispatch "$dir"
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl65.meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl65 --relaunch --harness claude --effort high); rc=$?
+  expect_code 0 "$rc" "a declared effort change should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl65 effort)" = high ] \
+    || fail "the replacement effort should be recorded"
+  [ -z "$(meta_field "$dir" rl65 dispatch_override_reason)" ] \
+    || fail "a changed effort must drop the reason that described the old triplet"
+
+  # Moving onto another declared profile drops the old reason without asking for a new one.
+  dir=$(new_case dispatch-codex rl66)
+  add_ship_task "$dir" rl66 claude
+  write_relaunch_dispatch "$dir"
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl66.meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl66 --relaunch --harness codex --model gpt-5 --effort high); rc=$?
+  expect_code 0 "$rc" "a declared profile switch should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl66 harness)" = codex ] \
+    || fail "the replacement harness should be recorded"
+  [ -z "$(meta_field "$dir" rl66 dispatch_override_reason)" ] \
+    || fail "a profile switch must drop the previous override reason"
+
+  # The control plane forwards --override-reason, and that reason replaces the old line.
+  dir=$(new_case dispatch-forward rl67)
+  add_ship_task "$dir" rl67 claude
+  write_relaunch_dispatch "$dir"
+  replace_meta_field "$dir" rl67 model haiku
+  replace_meta_field "$dir" rl67 effort low
+  printf 'dispatch_override_reason=%s\n' "$reason" >> "$dir/home/state/rl67.meta"
+  reason="captain confirmed haiku again on relaunch"
+  out=$(run_control "$dir" rl67 relaunch --note "keep the out-of-profile model" --override-reason "$reason"); rc=$?
+  expect_code 0 "$rc" "an out-of-profile relaunch with a forwarded reason should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl67 model)" = haiku ] \
+    || fail "the out-of-profile model should stay recorded"
+  [ "$(meta_field "$dir" rl67 dispatch_override_reason)" = "$reason" ] \
+    || fail "the forwarded reason should replace the previous one"
+  meta="$dir/home/state/rl67.meta"
+  [ "$(grep -c '^dispatch_override_reason=' "$meta")" -eq 1 ] \
+    || fail "the replacement record should carry one override reason"
+  assert_grep "override reason: $reason" "$dir/home/state/rl67.status" \
+    "the forwarded reason should be noted on the task status"
+
+  # A secondmate relaunch still refuses the flag. The endpoint is already stopped
+  # so the refusal is the profile exemption, not the agent-free check.
+  dir=$(new_case dispatch-secondmate rl68)
+  add_ship_task "$dir" rl68 claude
+  write_relaunch_dispatch "$dir"
+  replace_meta_field "$dir" rl68 kind secondmate
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl68 --relaunch --override-reason "not for a secondmate"); rc=$?
+  expect_code 1 "$rc" "a secondmate relaunch should refuse --override-reason"$'\n'"$out"
+  assert_contains "$out" "--override-reason applies only to crewmate and scout spawns" \
+    "the secondmate refusal should name the exemption"
+  pass "fm-control relaunch: an out-of-profile replacement needs a reason, and a changed triplet drops the old one"
+}
+
 test_relaunch_serializes_concurrent_durable_metadata_publication() {
   local dir control_pid link_pid rc i=0 traceparent prepare launch_release waiting ready release
   dir=$(new_case metadata-race rl28)
@@ -1716,6 +1872,8 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
+test_relaunch_keeps_an_override_reason_only_for_an_unchanged_profile
+test_relaunch_applies_the_dispatch_profile_refusal
 test_relaunch_serializes_concurrent_durable_metadata_publication
 test_disabled_relaunch_clears_prior_trace_context
 test_relaunch_appends_the_progress_note_to_the_instructions
