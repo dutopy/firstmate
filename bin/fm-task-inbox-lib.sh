@@ -330,13 +330,17 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 #   2. advisory composer pre-check (proven pending text: skip, see below);
 #   3. type the constant line once and submit it through the backend's
 #      verifying submit machinery (one Enter);
-#   4. pause FM_TASK_INBOX_ENTER_PAUSE seconds, then send one confirming Enter,
+#   4. respect that submit verdict: `empty` is the backend's proof that the
+#      line left the composer (including its queued-busy conversion), so it is
+#      a success with no further Enter; any other verdict pauses
+#      FM_TASK_INBOX_ENTER_PAUSE seconds and sends one confirming Enter,
 #      because TUI agents (Claude Code, Codex) measurably leave a single-Enter
 #      submission in the composer, while an Enter on an empty composer is a
 #      no-op;
-#   5. verify: an empty composer, or a native or rendered busy pane, is proof
-#      the line left the composer; a still-pending composer gets another Enter
-#      on the next attempt, never a retyped line.
+#   5. a re-read `pending` or `pending-unproven` composer is retried on the next
+#      attempt - never with a retyped line, and never abandoned just because
+#      the pane reports busy - while any other composer verdict ends the
+#      doorbell as delivered.
 # Steps 3-5 repeat up to FM_TASK_INBOX_RING_ATTEMPTS times. A backend send
 # failure before the line provably landed retypes on the next attempt after a
 # pause and a fresh liveness check, because a transient Herdr socket error was
@@ -396,6 +400,9 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
         continue
       fi
       typed=1
+      # `empty` is the backend's proof that the line left the composer, so the
+      # confirming Enter is unnecessary; anything else still needs one.
+      [ "$verdict" != empty ] || return 0
     elif ! fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1; then
       last=send-failed
       continue
@@ -406,9 +413,6 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
     cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
     case "$cstate" in
       empty) return 0 ;;
-    esac
-    [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null || true)" != busy ] || return 0
-    case "$cstate" in
       pending|pending-unproven) last=pending ;;
       *) return 0 ;;
     esac

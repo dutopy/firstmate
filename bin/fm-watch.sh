@@ -439,8 +439,12 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
     return 0
   fi
   fm_wake_append stale "$w" "$reason" || exit 1
-  if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
-    echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
+  # A dead endpoint is never typed into, so the unread-urgent tier has nothing
+  # to re-ring for this message either. Marking both tiers here is what makes
+  # the next poll quiet instead of re-escalating the same dead pane every cycle.
+  if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec" \
+    || ! fm_task_inbox_record_urgent_escalated "$STATE" "$task" "$rec"; then
+    echo "error: stale wake was queued for $task but its inbox escalation markers could not be written" >&2
     exit 1
   fi
   wake "$reason"
@@ -449,21 +453,23 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
 # Steering-inbox loss detection, one cheap check per recorded window per poll.
 # Quiet when healthy: an absent, empty, or handled inbox costs one directory
 # glob and produces nothing. When the ladder (fm_task_inbox_due_action, the
-# policy owner) reports a due action, a busy pane just waits - the record is
-# durable and the worker will reach a turn boundary - an idle pane gets one
-# delivery attempt, and a spent attempt budget surfaces as an ordinary stale
-# wake for stuck-crewmate-recovery, and a pane whose agent is positively dead
-# or missing skips the ladder altogether: it is never typed into and surfaces
-# as that same stale wake exactly once. If the attempt's ladder write fails while
-# its record remains unhandled, that unwritable state surfaces through the same
-# stale path instead of silently re-ringing forever; acknowledgement or teardown
-# still makes the race quiet. The attempt is data-plane typing or a
-# composer-protected skip, never a wake, so normal retries keep the watcher
-# blocking. The ladder's unread-urgent verbs bypass the busy wait: an urgent
-# re-ring types into a busy-looking pane, and its spent budget surfaces as one
-# distinct unread-urgent stale wake. Runs for secondmates
-# too: their pane-staleness exemption is about quiet panes being healthy,
-# while an unacknowledged instruction past the ladder is a stuck steer.
+# policy owner) reports a due action, a busy pane just waits on an idle-ladder
+# attempt - the record is durable and the worker will reach a turn boundary - an
+# idle pane gets one delivery attempt, a spent attempt budget surfaces as an
+# ordinary stale wake for stuck-crewmate-recovery, and a pane whose agent is
+# positively dead or missing skips the ladder altogether: it is never typed
+# into and surfaces as that same stale wake exactly once, marking both the idle
+# and urgent tiers so later polls stay quiet. If the attempt's ladder write
+# fails while its record remains unhandled, that unwritable state surfaces
+# through the same stale path instead of silently re-ringing forever;
+# acknowledgement or teardown still makes the race quiet. The attempt is
+# data-plane typing or a composer-protected skip, never a wake, so normal
+# retries keep the watcher blocking. The ladder's unread-urgent verbs bypass
+# the busy wait: an urgent re-ring types into a busy-looking pane, and its
+# spent budget surfaces as one distinct unread-urgent stale wake. Runs for
+# secondmates too: their pane-staleness exemption is about quiet panes being
+# healthy, while an unacknowledged instruction past the ladder is a stuck
+# steer.
 inbox_steer_check() {  # <window> <task>
   local w=$1 task=$2 action verb rec count age tail40 reason ring_rc backend agent_state ladder_file marker_rc
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
