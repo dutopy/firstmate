@@ -1,0 +1,58 @@
+$ . bin/fm-task-inbox-lib.sh; fm_backend_composer_state tmux lab:worker
+unknownexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_backend_composer_state tmux lab:worker
+unknownexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_backend_composer_state tmux lab:worker
+emptyexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_write "$FM_STATE_OVERRIDE" t1 "disposable validation message"
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msgexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_backend_composer_state tmux lab:worker
+pendingexit=0
+$ /bin/bash bin/fm-send.sh t1 "new steer while user is drafting"
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/002.msg and the watcher will re-ring
+exit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_ring tmux lab:worker '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msg'
+exit=0
+$ . bin/fm-task-inbox-lib.sh; fm_backend_busy_state tmux lab:worker
+unknownexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_ring tmux lab:worker '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msg'
+exit=0
+$ . bin/fm-task-inbox-lib.sh; . bin/fm-tmux-lib.sh; fm_pane_busy_state lab:worker
+busyexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_backend_composer_state tmux lab:worker
+unknownexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_backend_composer_state tmux lab:worker
+emptyexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_ring tmux lab:worker '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msg'
+exit=0
+$ . bin/fm-task-inbox-lib.sh; . bin/fm-tmux-lib.sh; fm_pane_busy_state lab:worker
+busyexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_ring tmux lab:worker '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msg'
+exit=4
+$ . bin/fm-task-inbox-lib.sh; fm_backend_composer_state tmux lab:worker
+pendingexit=0
+$ . bin/fm-task-inbox-lib.sh; . bin/fm-tmux-lib.sh; fm_pane_busy_state lab:worker
+idleexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_record_escalated "$FM_STATE_OVERRIDE" t1 '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msg'
+exit=0
+$ wc -c "$FM_STATE_OVERRIDE"/*.status 2>/dev/null | cksum > "$FM_STATE_OVERRIDE/.antidrift-sig"; printf "%s\n" "$(( $(date +%s) + 10000 ))" > "$FM_STATE_OVERRIDE/.antidrift-next"; touch "$FM_STATE_OVERRIDE/home-summary.json"
+exit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_record_ring "$FM_STATE_OVERRIDE" t1 '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msg'
+exit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_write "$FM_STATE_OVERRIDE" t1 "worker exited before reading this instruction"
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/003.msgexit=0
+$ wc -c "$FM_STATE_OVERRIDE"/*.status 2>/dev/null | cksum > "$FM_STATE_OVERRIDE/.antidrift-sig"; printf "%s\n" "$(( $(date +%s) + 10000 ))" > "$FM_STATE_OVERRIDE/.antidrift-next"; touch "$FM_STATE_OVERRIDE/home-summary.json"
+exit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_due_action "$FM_STATE_OVERRIDE" t1
+quietexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_write "$FM_STATE_OVERRIDE" t1 "worker endpoint was removed"
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/004.msgexit=0
+$ . bin/fm-task-inbox-lib.sh; fm_task_inbox_due_action "$FM_STATE_OVERRIDE" t1
+quietexit=0

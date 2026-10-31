@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Existing pending draft is not submitted",
+    "result": "pass",
+    "enters": 0
+  },
+  {
+    "name": "Empty submit verdict needs no confirming Enter",
+    "result": "pass",
+    "enters": 1,
+    "busy": "unknown",
+    "requests": 1
+  },
+  {
+    "name": "Busy worker accepts a doorbell into its queue",
+    "result": "pass",
+    "enters": 2,
+    "busy": "busy"
+  },
+  {
+    "name": "Busy-queued empty submit verdict stops after one Enter",
+    "result": "pass",
+    "returncode": 0,
+    "enters": 1,
+    "busy": "busy"
+  },
+  {
+    "name": "Pending composer retains one doorbell until bounded confirmation retries finish",
+    "result": "pass",
+    "returncode": 4,
+    "enters": 6,
+    "composer": "pending",
+    "busy": "idle"
+  },
+  {
+    "name": "Busy live worker gets urgent delivery and notification after idle-tier escalation",
+    "result": "pass",
+    "queue": "1793482025\t1\tstale\tlab:worker\tstale: lab:worker (unread-urgent firstmate instruction: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/001.msg still unhandled 215645225s after delivery despite 1 urgent doorbell re-rings; inspect the worker)\n",
+    "enters": 2
+  },
+  {
+    "name": "Dead shell produces one notification despite stale previous-message attempts",
+    "result": "pass",
+    "queue": "1793482031\t1\tstale\tlab:worker\tstale: lab:worker (unread firstmate instruction: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/003.msg is unhandled and the worker's agent has exited or its endpoint is missing, so the doorbell was not typed; recover the worker)\n",
+    "successor_alive": true,
+    "enters": 0,
+    "markers": {
+      ".ring-state": "001.msg\t1\t1793482027\n",
+      ".escalated": "003.msg\n",
+      ".urgent-escalated": "003.msg\n"
+    }
+  },
+  {
+    "name": "Removed endpoint escalates new message once",
+    "result": "pass",
+    "queue": "1793482031\t1\tstale\tlab:worker\tstale: lab:worker (unread firstmate instruction: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/003.msg is unhandled and the worker's agent has exited or its endpoint is missing, so the doorbell was not typed; recover the worker)\n1793482047\t2\tstale\tlab:worker\tstale: lab:worker (unread firstmate instruction: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/004.msg is unhandled and the worker's agent has exited or its endpoint is missing, so the doorbell was not typed; recover the worker)\n"
+  }
+]

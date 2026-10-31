@@ -1,0 +1,63 @@
+[
+  {
+    "model": "local-check",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n(none)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /Users/pierre/.local/lib/node_modules/@earendil-works/pi-coding-agent/README.md\n- Additional docs: /Users/pierre/.local/lib/node_modules/@earendil-works/pi-coding-agent/docs\n- Examples: /Users/pierre/.local/lib/node_modules/@earendil-works/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>\n\n<cwd>\n/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab\n</cwd>"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": ": Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox'/handled/."
+          }
+        ]
+      }
+    ],
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "store": false,
+    "max_completion_tokens": 1000
+  },
+  {
+    "model": "local-check",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n<tools>\n(none)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n<rules>\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>\n\n<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /Users/pierre/.local/lib/node_modules/@earendil-works/pi-coding-agent/README.md\n- Additional docs: /Users/pierre/.local/lib/node_modules/@earendil-works/pi-coding-agent/docs\n- Examples: /Users/pierre/.local/lib/node_modules/@earendil-works/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n</docs>\n\n<cwd>\n/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab\n</cwd>"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": ": Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox'/handled/."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Local validation response in progress. Complete."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hold this disposable turn open"
+          }
+        ]
+      }
+    ],
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "store": false,
+    "max_completion_tokens": 1000
+  }
+]

@@ -1,0 +1,1 @@
+stale: lab:worker (unread firstmate instruction: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/home/state/t1.inbox/004.msg is unhandled and the worker's agent has exited or its endpoint is missing, so the doorbell was not typed; recover the worker)

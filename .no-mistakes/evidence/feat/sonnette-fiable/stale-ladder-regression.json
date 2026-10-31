@@ -1,0 +1,6 @@
+{
+  "previous_commit": "23a288e",
+  "previous_due_action": "ring /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69W5BQMS7DGVNE9SPTB6270/.test-lab/regression-state/t1.inbox/002.msg",
+  "target_due_action": "quiet",
+  "contract": "A marker for the current oldest instruction survives a previous instruction\u2019s attempt state."
+}
