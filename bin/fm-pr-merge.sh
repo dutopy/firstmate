@@ -131,8 +131,15 @@
 # as the forge command, against the live UTC clock, the action merge, the
 # repository, the live base branch, and the live changed paths; a missing,
 # revoked, expired, or out-of-scope mandate refuses before anything reaches the
-# forge, even when every other condition is green. A mandate never adds
-# authority: without --mandate this script behaves exactly as before.
+# forge, even when every other condition is green. Automatic eligibility work
+# is followed by another mandate check before the forge call. Revocation uses
+# the same authority lock, so it cannot complete during that critical section.
+# A cited mandate requires an immediate merge: requested or configured
+# auto-merge refuses, GitHub must prove the absence of a merge queue, and GitLab
+# receives a final --auto-merge=false. The queue/base-change and orphaned-child
+# limitations described above also apply to cited mandates.
+# A mandate never adds authority: without --mandate this script behaves exactly
+# as before.
 #
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [--automatic] [--attended-override] [--allow-red <check-name>] [--mandate <id>] [-- <extra forge merge args>]
 #
@@ -1137,8 +1144,13 @@ require_recorded_pr_identity() {
 # covers. GitHub pages the pull request's files and gives `filename` plus
 # `previous_filename`; GitLab's diffs endpoint gives `old_path` and `new_path`.
 # Both names are returned for a rename, so a rename cannot move a denied path
-# out of the check. A list that cannot be read in full refuses; GitHub caps its
-# list at 3000 files, so a full page set is treated as possibly truncated.
+# out of the check. A list that cannot be proven complete refuses: GitHub lists
+# at or above its 3000-file cap refuse; GitLab requires changes_count from the
+# live MR read to be a base-10 integer string equal to the returned diff-entry
+# count. Missing, empty, overflow-marked (1000+), or mismatched counts refuse
+# before any path is checked. Tabs and newlines in either forge's path fields
+# also refuse before the line-based transport can alter a name.
+# tests/fm-pr-merge.test.sh covers these boundaries through this entrypoint.
 mandate_changed_paths() {
   local listing raw files
   local path_filter='def checked: if test("[\t\n]") then error("unrepresentable changed path") else . end;'

@@ -47,6 +47,10 @@
 #                       [--file <path>]... [--files-from <file|->]
 #   fm-mandate.sh relay <id> [--send <target>]
 #
+# revoke shares bin/fm-afk-contract.sh's cross-subsystem authority lock with
+# bin/fm-pr-merge.sh; a lock refusal leaves the mandate unchanged, so retry
+# revocation after the current merge operation releases the lock.
+#
 # grant refuses an existing id, a missing timezone, an unparseable instant, and
 # an instant that is not in the future. list prints active mandates (--all adds
 # expired and revoked ones) as `<id> <status> expires_at=<iso> actions=<a,b>`.
