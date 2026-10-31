@@ -3003,6 +3003,7 @@ test_mandate_expiring_during_automatic_eligibility_refuses() {
   : > "$case_dir/expire-during-eligibility"
   printf '%s\n' "$exp" > "$case_dir/expired-epoch"
   real_date=$(command -v date)
+  # shellcheck disable=SC2016 # Dollar expressions belong to the generated wrapper.
   printf '#!/usr/bin/env bash\nif [ "$*" = "-u +%%s" ] && [ -e "${FM_TEST_GH_LOG%%/*}/clock-expired" ]; then\n  cat "${FM_TEST_GH_LOG%%/*}/expired-epoch"\nelse\n  exec "%s" "$@"\nfi\n' \
     "$real_date" > "$case_dir/fakebin/date"
   chmod +x "$case_dir/fakebin/date"
