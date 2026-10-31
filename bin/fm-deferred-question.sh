@@ -10,7 +10,9 @@
 # optionally runs a notification command, and answers the tool call itself with
 # a DEFERRED answer so the turn continues and ends normally. The
 # UserPromptSubmit hook then re-surfaces every pending question at the next
-# captain message. docs/deferred-questions.md owns the contract and its limits.
+# non-operational prompt, which need not come from the captain.
+# docs/deferred-questions.md owns operator guidance and supported limits;
+# this header owns exact hook, command, enablement, and state contracts.
 #
 # Usage:
 #   <PreToolUse JSON on stdin>       | bin/fm-deferred-question.sh pretool --claude
@@ -40,8 +42,10 @@
 #           with a DEFERRED answer for each, plus additionalContext.
 #           A call whose question texts match an existing pending record
 #           reuses that record instead of writing a second one.
-#           The call is never left to the ordinary blocking prompt while the
-#           mode is on: that reopens the gap this mode exists to close.
+#           Valid calls with a writable store always take this path while the
+#           mode is on, even after a non-operational prompt re-surfaces them.
+#           If allow construction or stdout delivery fails, exit 0 and remove
+#           only the record created by this call; preserve a reused record.
 #
 # prompt contract (Claude UserPromptSubmit):
 #   Runs whether or not the mode is enabled, so records left from an enabled
@@ -52,6 +56,13 @@
 #   tells the primary to restate the question in plain chat and to run resolve
 #   only after the captain answers there. Otherwise exit 0 with no output.
 #   Every failure is silent.
+#
+# resolve contract:
+#   Only resolve closes records; re-asking even a subset of their questions
+#   never closes them. Each record moves to resolved only after its resolved
+#   copy is written successfully. A failed resolved-store write leaves that
+#   record pending and returns non-zero, including with --all; --all still
+#   attempts the remaining records.
 #
 # Bash 3.2 compatible.
 set -u
