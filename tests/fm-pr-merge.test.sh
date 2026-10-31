@@ -383,6 +383,11 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   "mr merge")
+    if [ -x "${FM_TEST_AWAY_MUTATE_AT_MERGE:-}" ]; then
+      mutate_rc=0
+      "$FM_TEST_AWAY_MUTATE_AT_MERGE" > "$FM_TEST_AWAY_MUTATE_OUT" 2>&1 || mutate_rc=$?
+      printf '%s\n' "$mutate_rc" > "$FM_TEST_AWAY_MUTATE_RC"
+    fi
     [ ! -e "$case_dir/glab-merge-fails" ] || { echo "error: mr merge failed" >&2 ; exit 1 ; }
     : > "$case_dir/glab-merge-called"
     exit 0
@@ -2883,6 +2888,177 @@ test_mandate_refuses_an_incomplete_gitlab_file_list() {
   pass "GitLab mandates require a proven complete changed-file list before merging"
 }
 
+test_mandate_refuses_unrepresentable_forge_paths() {
+  local case_dir rc field separator url index=0
+  for field in filename previous_filename new_path old_path; do
+    for separator in $'\t' $'\n'; do
+      index=$((index + 1))
+      case "$field" in
+        filename|previous_filename)
+          case_dir=$(make_case "mandate-path-separator-$index")
+          mkdir -p "$case_dir/wt"
+          add_gh_mocks "$case_dir" "$MR_HEAD"
+          url=https://github.com/example/repo/pull/9
+          jq -cn --arg field "$field" --arg path "src/name${separator}key.pem" \
+            '[{filename:"src/safe.txt"} | .[$field]=$path]' > "$case_dir/github-files.json"
+          ;;
+        *)
+          case_dir=$(make_gitlab_case "mandate-path-separator-$index" 'changes_count="1"')
+          url=$MR_URL
+          jq -cn --arg field "$field" --arg path "src/name${separator}key.pem" \
+            '[{old_path:"src/safe.txt",new_path:"src/safe.txt"} | .[$field]=$path]' > "$case_dir/glab-diffs.json"
+          ;;
+      esac
+      grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+        --repo '*' --deny-path '*.pem'
+      set +e
+      run_pr_merge "$case_dir" task-x1 "$url" --mandate scoped > "$case_dir/stdout" 2> "$case_dir/stderr"
+      rc=$?
+      set -e
+      expect_code 1 "$rc" "mandate-path-separator: $field must refuse an unrepresentable path"
+      assert_grep 'the changed paths could not be read' "$case_dir/stderr" \
+        "mandate-path-separator: $field was not refused before checking altered paths"
+      assert_no_grep 'pr merge' "$case_dir/gh.log" "an unrepresentable path reached gh pr merge"
+      [ ! -e "$case_dir/glab-merge-called" ] || fail "an unrepresentable path reached glab mr merge"
+    done
+  done
+  pass "tabs and newlines in all forge path fields refuse before mandate authorization"
+}
+
+prepare_automatic_mandate_case() {
+  local case_dir=$1
+  printf 'yolo=on\n' >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tool"
+  cp -R "$ROOT/bin" "$case_dir/tool/"
+  cat > "$case_dir/tool/bin/fm-auto-merge-check.sh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+case_dir=${FM_TEST_GH_LOG%/*}
+: > "$case_dir/eligibility-called"
+if [ -e "$case_dir/expire-during-eligibility" ]; then
+  : > "$case_dir/clock-expired"
+fi
+jq -cn --arg url "$2" --arg head "$(cat "$FM_TEST_GH_HEAD")" \
+  '{url:$url,head:$head,lines:2,files:1}'
+SH
+  PR_MERGE="$case_dir/tool/bin/fm-pr-merge.sh"
+}
+
+test_mandate_serializes_revocation_through_each_merge() {
+  local case_dir rc mode url mutate original=$PR_MERGE PR_MERGE=$PR_MERGE
+  local extra=()
+  for mode in attended automatic gitlab; do
+    PR_MERGE=$original
+    extra=()
+    if [ "$mode" = gitlab ]; then
+      case_dir=$(make_gitlab_case mandate-lock-gitlab 'changes_count="1"')
+      printf '[{"new_path":"src/safe.txt","old_path":"src/safe.txt"}]\n' > "$case_dir/glab-diffs.json"
+      url=$MR_URL
+    else
+      case_dir=$(make_case "mandate-lock-$mode")
+      mkdir -p "$case_dir/wt"
+      add_gh_mocks "$case_dir" "$MR_HEAD"
+      printf '[{"filename":"src/safe.txt"}]\n' > "$case_dir/github-files.json"
+      url=https://github.com/example/repo/pull/9
+      if [ "$mode" = automatic ]; then
+        prepare_automatic_mandate_case "$case_dir"
+        extra=(--automatic)
+      fi
+    fi
+    grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --repo '*'
+    mutate=$(away_change_script "$case_dir" revoke-mandate <<'SH'
+"$FM_TEST_ROOT/bin/fm-mandate.sh" revoke scoped --by reviewer
+SH
+    )
+    export FM_TEST_AWAY_MUTATE_AT_MERGE="$mutate"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" --mandate scoped "${extra[@]+"${extra[@]}"}" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    unset FM_TEST_AWAY_MUTATE_AT_MERGE
+    expect_code 0 "$rc" "mandate-lock: $mode should merge with live authority"
+    expect_code 1 "$(cat "$case_dir/away-mutate-rc")" "mandate-lock: revocation must not complete inside $mode forge call"
+    assert_grep 'locked by live process' "$case_dir/away-mutate-output" "mandate-lock: the revoker did not contend on the authority lock"
+    FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+      "$ROOT/bin/fm-mandate.sh" revoke scoped --by reviewer > "$case_dir/revoke-output" \
+      || fail "mandate-lock: $mode leaked the authority lock"
+    assert_grep 'revoked: mandate scoped' "$case_dir/revoke-output" "mandate-lock: revocation did not complete after $mode merge"
+    if [ "$mode" = gitlab ]; then
+      assert_grep '--auto-merge=false' "$case_dir/glab.log" "a cited GitLab mandate did not force immediate merge"
+    fi
+  done
+  pass "mandate revocation is serialized through attended, automatic, and GitLab forge calls"
+}
+
+test_mandate_expiring_during_automatic_eligibility_refuses() {
+  local case_dir rc exp real_date PR_MERGE=$PR_MERGE
+  case_dir=$(make_case mandate-expiry-during-eligibility)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$MR_HEAD"
+  printf '[{"filename":"src/safe.txt"}]\n' > "$case_dir/github-files.json"
+  exp=$(($(date -u +%s) + 3600))
+  grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc "$exp")"
+  prepare_automatic_mandate_case "$case_dir"
+  : > "$case_dir/expire-during-eligibility"
+  printf '%s\n' "$exp" > "$case_dir/expired-epoch"
+  real_date=$(command -v date)
+  printf '#!/usr/bin/env bash\nif [ "$*" = "-u +%%s" ] && [ -e "${FM_TEST_GH_LOG%%/*}/clock-expired" ]; then\n  cat "${FM_TEST_GH_LOG%%/*}/expired-epoch"\nelse\n  exec "%s" "$@"\nfi\n' \
+    "$real_date" > "$case_dir/fakebin/date"
+  chmod +x "$case_dir/fakebin/date"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --automatic --mandate scoped \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-expiry: expiry during eligibility must refuse"
+  [ -e "$case_dir/eligibility-called" ] || fail "mandate-expiry: automatic eligibility was never reached"
+  assert_grep 'mandate scoped expired at' "$case_dir/stderr" "mandate-expiry: the final clock check did not reject expiry"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "mandate-expiry: the forge was called after expiry"
+  pass "the automatic merge rechecks mandate expiry after eligibility work"
+}
+
+test_mandate_refuses_deferred_merges() {
+  local case_dir rc mode url
+  local extra=()
+  for mode in github-auto github-queue gitlab-auto gitlab-configured; do
+    extra=()
+    case "$mode" in
+      github-*)
+        case_dir=$(make_case "mandate-deferred-$mode")
+        mkdir -p "$case_dir/wt"
+        add_gh_mocks "$case_dir" "$MR_HEAD"
+        url=https://github.com/example/repo/pull/9
+        if [ "$mode" = github-auto ]; then
+          extra=(--attended-override -- --auto)
+        else
+          printf 'merge_method=SQUASH\n' > "$case_dir/github-rules"
+        fi
+        ;;
+      *)
+        case_dir=$(make_gitlab_case "mandate-deferred-$mode" 'changes_count="1"')
+        url=$MR_URL
+        if [ "$mode" = gitlab-auto ]; then
+          extra=(--attended-override -- --auto-merge)
+        else
+          write_mr_json "$case_dir/mr.json" 'changes_count="1"' merge_when_pipeline_succeeds=true
+        fi
+        ;;
+    esac
+    grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --repo '*'
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" --mandate scoped "${extra[@]+"${extra[@]}"}" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "mandate-deferred: $mode was authorized"
+    assert_grep 'immediate merge' "$case_dir/stderr" "mandate-deferred: $mode did not explain the immediate merge requirement"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "mandate-deferred: $mode reached gh pr merge"
+    [ ! -e "$case_dir/glab-merge-called" ] || fail "mandate-deferred: $mode reached glab mr merge"
+  done
+  pass "cited mandates refuse forge queues and requested or configured auto-merges"
+}
+
 test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
@@ -3948,3 +4124,7 @@ test_mandate_refuses_a_file_list_at_the_forge_cap
 test_mandate_reads_the_github_previous_filename_of_a_rename
 test_mandate_reads_the_gitlab_old_path_of_a_rename
 test_mandate_refuses_an_incomplete_gitlab_file_list
+test_mandate_refuses_unrepresentable_forge_paths
+test_mandate_serializes_revocation_through_each_merge
+test_mandate_expiring_during_automatic_eligibility_refuses
+test_mandate_refuses_deferred_merges

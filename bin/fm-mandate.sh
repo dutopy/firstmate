@@ -342,6 +342,9 @@ cmd_revoke() {
   [ "${1:-}" = --by ] && [ -n "${2:-}" ] && [ "$#" -eq 2 ] || usage_error "revoke requires --by <who>"
   by=$2
   single_line "$by" || usage_error "--by value must be a single line"
+  . "$SCRIPT_DIR/fm-afk-contract.sh"
+  fm_afk_contract_lock_hold "$STATE" || return 1
+  trap 'fm_afk_contract_lock_release || true' EXIT
   load_or_refuse "$id"
   if [ -n "$M_REVOKED_AT" ]; then
     printf 'revoked: mandate %s was already revoked at %s\n' "$id" "$M_REVOKED_AT"
@@ -371,7 +374,7 @@ any_glob_matches() {  # <value> <glob>...
 
 cmd_check() {
   local id=${1:-} action='' repo='' host='' branch='' files_from='' path line
-  local files=() refusals=() status exp now
+  local files=() refusals=() exp now
   mandate_id_valid "$id" || usage_error "check requires a mandate id"
   shift
   while [ "$#" -gt 0 ]; do
@@ -396,17 +399,6 @@ cmd_check() {
     done < <(if [ "$files_from" = - ]; then cat; else cat "$files_from"; fi)
   fi
   load_or_refuse "$id"
-  status=$(mandate_status)
-  now=$(now_epoch)
-  exp=$(iso_to_epoch "$M_EXPIRES_AT")
-  case "$status" in
-    revoked)
-      refusals+=("mandate $id was revoked at $M_REVOKED_AT by $M_REVOKED_BY")
-      ;;
-    expired)
-      refusals+=("mandate $id expired at $M_EXPIRES_AT ($(epoch_to_utc "$exp")); it is now $(epoch_to_utc "$now"), so its authority has lapsed even if its conditions still hold")
-      ;;
-  esac
   any_glob_matches "$action" "${M_ACTIONS[@]}" \
     || refusals+=("action $action is not allowed by mandate $id (allowed: $(join_csv "${M_ACTIONS[@]}"))")
   if ! any_glob_matches "$repo" "${M_REPOS[@]}" \
@@ -431,6 +423,13 @@ cmd_check() {
         refusals+=("changed path $path is outside mandate $id (allow: $(join_csv "${M_ALLOW[@]}"))")
       fi
     done
+  fi
+  exp=$(iso_to_epoch "$M_EXPIRES_AT")
+  now=$(now_epoch)
+  if [ -n "$M_REVOKED_AT" ]; then
+    refusals+=("mandate $id was revoked at $M_REVOKED_AT by $M_REVOKED_BY")
+  elif [ "$now" -ge "$exp" ]; then
+    refusals+=("mandate $id expired at $M_EXPIRES_AT ($(epoch_to_utc "$exp")); it is now $(epoch_to_utc "$now"), so its authority has lapsed even if its conditions still hold")
   fi
   if [ "${#refusals[@]}" -gt 0 ]; then
     for line in "${refusals[@]}"; do

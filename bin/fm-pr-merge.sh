@@ -1078,14 +1078,14 @@ persist_accepted_merge_authority() {
 # 404, or an unrelated 403) stays unreadable and refuses the merge. The merge
 # stays synchronous (--auto is refused earlier) and every other gate still
 # applies.
-refuse_github_queue_while_away() {
-  [ "$FM_PR_AWAY_POSTURE" = true ] || return 0
+require_github_immediate_merge() {
+  [ "$FM_PR_AWAY_POSTURE" = true ] || [ -n "$MANDATE_ID" ] || return 0
   # Accepted confused-agent-grade limitation, as in bin/fm-lease-lib.sh, not an
   # oversight: a queue rule or PR base change after this preflight can still
   # enqueue the merge, which can land after its away grant lapses.
   github_read_queue_method
   [ "$FM_PR_GITHUB_QUEUE_STATUS" = none ] && return 0
-  echo "error: GitHub merge refused while away because the base branch's merge-queue state does not prove an immediate merge; nothing was handed to the forge" >&2
+  echo "error: GitHub merge refused under time-bounded authority because the base branch's merge-queue state does not prove an immediate merge; nothing was handed to the forge" >&2
   return 2
 }
 
@@ -1141,10 +1141,11 @@ require_recorded_pr_identity() {
 # list at 3000 files, so a full page set is treated as possibly truncated.
 mandate_changed_paths() {
   local listing raw files
+  local path_filter='def checked: if test("[\t\n]") then error("unrepresentable changed path") else . end;'
   case "$PROVIDER" in
     github)
       listing=$(gh api --paginate "repos/$PR_PATH/pulls/$PR_NUMBER/files?per_page=100" \
-        --jq '.[] | "f\t" + .filename, ((.previous_filename // empty) | "p\t" + .)' \
+        --jq "$path_filter"' .[] | "f\t" + (.filename | checked), ((.previous_filename // empty) | "p\t" + checked)' \
         2>/dev/null) || return 1
       files=$(printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" { n++ } END { print n + 0 }')
       [ "$files" -lt 3000 ] || return 1
@@ -1159,7 +1160,7 @@ mandate_changed_paths() {
         and (($count | tonumber) == (map(length) | add // 0))
       ' >/dev/null 2>&1 || return 1
       listing=$(printf '%s\n' "$raw" \
-        | jq -r '.[]? | "f\t" + .new_path, ((.old_path // empty) | "p\t" + .)' \
+        | jq -r "$path_filter"' .[]? | "f\t" + (.new_path | checked), ((.old_path // empty) | "p\t" + checked)' \
         2>/dev/null) || return 1
       ;;
     *) return 1 ;;
@@ -1181,6 +1182,11 @@ mandate_base_branch() {
 require_cited_mandate() {
   local paths base
   [ -n "$MANDATE_ID" ] || return 0
+  if { [ "$PROVIDER" = github ] && [ "$FM_PR_GITHUB_AUTO_REQUESTED" = true ]; } \
+    || { [ "$PROVIDER" = gitlab ] && { [ "$FM_PR_GITLAB_ASYNC_REQUESTED" = true ] || [ "$FM_PR_GITLAB_ASYNC_CONFIGURED" = true ]; }; }; then
+    echo "error: a cited mandate requires an immediate merge; auto-merge is not authorized" >&2
+    return 1
+  fi
   if ! paths=$(mandate_changed_paths) || [ -z "$paths" ]; then
     printf 'error: refusing to merge %s: the changed paths could not be read to check mandate %s; nothing was merged\n' \
       "$URL" "$MANDATE_ID" >&2
@@ -1354,7 +1360,7 @@ case "$PROVIDER" in
     away_status=0
     require_current_away_authority || away_status=$?
     [ "$away_status" -eq 0 ] || exit "$away_status"
-    refuse_github_queue_while_away || exit 2
+    require_github_immediate_merge || exit 2
     require_cited_mandate || exit 1
     if [ "$AUTOMATIC" = true ]; then
       [ "$(grep '^yolo=' "$META")" = yolo=on ] || {
@@ -1366,6 +1372,7 @@ case "$PROVIDER" in
       fm_merge_authority_automatic_snapshot_valid "$AUTOMATIC_PROOF" "$URL" \
         "$FM_PR_MERGE_HEAD" || exit 1
       FM_PR_MERGE_AUTHORITY=yolo
+      require_cited_mandate || exit 1
     fi
     merge_status=0
     # Raw gh remainder: gh-axi's `pr merge` offers --method/--auto/--delete-branch
@@ -1431,7 +1438,7 @@ case "$PROVIDER" in
     require_cited_mandate || exit 1
     merge_status=0
     gitlab_merge_args=()
-    if [ "$FM_PR_AWAY_POSTURE" = true ]; then
+    if [ "$FM_PR_AWAY_POSTURE" = true ] || [ -n "$MANDATE_ID" ]; then
       gitlab_merge_args=(--auto-merge=false)
     fi
     GITLAB_HOST="$FM_PR_HOST" glab mr merge "$PR_NUMBER" -R "$PROJECT_URL" \
