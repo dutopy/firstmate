@@ -26,6 +26,13 @@
 #   6. Dead panes: the doorbell line is a shell no-op when executed by a bare
 #      shell, the ring skips an agent the backend classifies dead, and the
 #      watcher surfaces such a record exactly once instead of re-ringing.
+#   7. The one doorbell: types the line once, Enter, pause, confirming Enter,
+#      verifies the composer emptied, re-submits a stuck composer without
+#      retyping, retypes only after a send that never landed, and stops after
+#      its bounded attempts with a distinct status.
+#   8. The unread-urgent tier: past its delay an unacknowledged message is
+#      re-rung even on a busy pane, bounded, then surfaces exactly one
+#      unread-urgent stale wake; an acknowledgement silences it.
 set -u
 
 # shellcheck source=tests/wake-helpers.sh
@@ -36,6 +43,11 @@ TMP_ROOT=$(fm_test_tmproot fm-task-inbox)
 # The doorbell line canonicalizes its paths, so keep the fixture root
 # canonical too (a trailing-slash TMPDIR otherwise yields a double slash).
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
+# The idle-ladder cases age records far past every delay, so they keep the
+# unread-urgent tier off and the doorbell's confirming-Enter pause at zero;
+# the urgent and doorbell cases below set both explicitly.
+export FM_TASK_INBOX_URGENT_SECS=0
+export FM_TASK_INBOX_ENTER_PAUSE=0
 
 # Run one library function against a state dir through a subshell that sources
 # the production library, so the tests exercise the executable surface rather
@@ -692,6 +704,240 @@ test_watcher_dead_pane_ignores_stale_busy_state() {
   pass "watcher: dead-pane recovery overrides stale busy state"
 }
 
+
+# A stateful fake tmux for the doorbell cases. The composer reads empty until
+# a literal send lands, then pending until FM_FAKE_CLEAR_AFTER Enters have
+# arrived since that send. Every landed literal and named key is logged in
+# order to <dir>/keys.log; the first FM_FAKE_LITERAL_FAILS literal sends fail
+# without landing, like a transient Herdr or tmux socket error.
+make_ring_stub() {  # <dir> -> echoes fakebin dir
+  local dir=$1 fb="$1/ringbin"
+  mkdir -p "$fb"
+  cat > "$fb/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+d=$FM_FAKE_DIR
+case "${1:-}" in
+  send-keys)
+    shift
+    literal=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) literal=1; shift ;;
+        *) break ;;
+      esac
+    done
+    if [ "$literal" = 1 ]; then
+      n=$(( $(cat "$d/literal-calls" 2>/dev/null || echo 0) + 1 ))
+      echo "$n" > "$d/literal-calls"
+      [ "$n" -gt "${FM_FAKE_LITERAL_FAILS:-0}" ] || exit 1
+      printf 'TEXT %s\n' "${1:-}" >> "$d/keys.log"
+      : > "$d/typed"
+      echo 0 > "$d/enters"
+    else
+      printf 'KEY %s\n' "${1:-}" >> "$d/keys.log"
+      if [ "${1:-}" = Enter ] && [ -e "$d/typed" ]; then
+        e=$(( $(cat "$d/enters") + 1 ))
+        echo "$e" > "$d/enters"
+        [ "$e" -lt "${FM_FAKE_CLEAR_AFTER:-1}" ] || rm -f "$d/typed"
+      fi
+    fi
+    exit 0 ;;
+  display-message)
+    for a in "$@"; do
+      case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac
+    done
+    printf 'fakepane\n'; exit 0 ;;
+  capture-pane)
+    if [ -e "$d/typed" ] || [ "${FM_FAKE_PREFILLED:-0}" = 1 ]; then
+      printf '╭────────────╮\n│ > hello    │\n╰────────────╯\n'
+    else
+      printf '╭────────────╮\n│ >          │\n╰────────────╯\n'
+    fi
+    exit 0 ;;
+  list-windows) printf 'fm-t1\n'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/tmux"
+  printf '%s\n' "$fb"
+}
+
+ring_case() {  # <name> -> echoes case dir with state/ and a fresh record in rec
+  local dir="$TMP_ROOT/$1"
+  mkdir -p "$dir/state"
+  make_ring_stub "$dir" >/dev/null
+  inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "please continue" > "$dir/rec"
+  : > "$dir/keys.log"
+  printf '%s\n' "$dir"
+}
+
+run_ring() {  # <dir> [env assignments...] -> prints the ring status
+  local dir=$1 rc=0
+  shift
+  # shellcheck disable=SC2016 # expanded by the inner shell
+  env PATH="$dir/ringbin:$PATH" FM_FAKE_DIR="$dir" "$@" \
+    bash -c '. "$1"; fm_task_inbox_ring tmux sess:fm-t1 "$2" fm-t1' _ \
+    "$ROOT/bin/fm-task-inbox-lib.sh" "$(cat "$dir/rec")" || rc=$?
+  printf '%s' "$rc"
+}
+
+texts() { grep -c '^TEXT ' "$1/keys.log" || true; }
+enters() { grep -c '^KEY Enter$' "$1/keys.log" || true; }
+
+test_ring_double_enter_then_verifies() {
+  local dir rc
+  dir=$(ring_case ring-double-enter)
+  rc=$(run_ring "$dir" FM_FAKE_CLEAR_AFTER=99 FM_TASK_INBOX_RING_ATTEMPTS=1 FM_TASK_INBOX_ENTER_PAUSE=0.2)
+  [ "$rc" = 4 ] || fail "a composer that never clears should end in status 4, got $rc"
+  sed -n 1p "$dir/keys.log" | grep -qF 'TEXT : Firstmate instruction waiting' \
+    || fail "the doorbell should start by typing the line:"$'\n'"$(cat "$dir/keys.log")"
+  [ "$(sed -n 2,3p "$dir/keys.log")" = "KEY Enter"$'\n'"KEY Enter" ] \
+    || fail "one attempt should be text, Enter, then a confirming Enter:"$'\n'"$(cat "$dir/keys.log")"
+  # A composer that clears only on the SECOND Enter is the measured TUI
+  # behaviour: the confirming Enter delivers it in a single attempt.
+  dir=$(ring_case ring-second-enter)
+  rc=$(run_ring "$dir" FM_FAKE_CLEAR_AFTER=2 FM_TASK_INBOX_RING_ATTEMPTS=1)
+  [ "$rc" = 0 ] || fail "a composer cleared by the confirming Enter should verify as rung, got $rc"
+  [ "$(texts "$dir")" = 1 ] || fail "the line must be typed exactly once:"$'\n'"$(cat "$dir/keys.log")"
+  [ "$(enters "$dir")" = 2 ] || fail "expected exactly two Enters:"$'\n'"$(cat "$dir/keys.log")"
+  pass "doorbell: types once, Enter, pause, confirming Enter, then verifies the composer"
+}
+
+test_ring_resubmits_stuck_composer_without_retyping() {
+  local dir rc
+  dir=$(ring_case ring-stuck)
+  rc=$(run_ring "$dir" FM_FAKE_CLEAR_AFTER=3 FM_TASK_INBOX_RING_ATTEMPTS=3)
+  [ "$rc" = 0 ] || fail "a composer cleared on a later attempt should verify as rung, got $rc"
+  [ "$(texts "$dir")" = 1 ] || fail "a stuck composer must be re-submitted, never retyped:"$'\n'"$(cat "$dir/keys.log")"
+  [ "$(enters "$dir")" = 4 ] || fail "expected two Enters per attempt over two attempts:"$'\n'"$(cat "$dir/keys.log")"
+  dir=$(ring_case ring-never-clears)
+  rc=$(run_ring "$dir" FM_FAKE_CLEAR_AFTER=99 FM_TASK_INBOX_RING_ATTEMPTS=3)
+  [ "$rc" = 4 ] || fail "a composer that never clears should end in status 4, got $rc"
+  [ "$(texts "$dir")" = 1 ] || fail "bounded retries must never retype:"$'\n'"$(cat "$dir/keys.log")"
+  [ "$(enters "$dir")" = 6 ] || fail "three bounded attempts should send exactly six Enters:"$'\n'"$(cat "$dir/keys.log")"
+  pass "doorbell: a stuck composer is re-submitted, bounded, never retyped"
+}
+
+test_ring_retypes_only_after_unlanded_send() {
+  local dir rc
+  dir=$(ring_case ring-transient)
+  rc=$(run_ring "$dir" FM_FAKE_LITERAL_FAILS=1 FM_TASK_INBOX_RING_ATTEMPTS=3)
+  [ "$rc" = 0 ] || fail "a transient send failure should be retried to a verified ring, got $rc"
+  [ "$(cat "$dir/literal-calls")" = 2 ] || fail "expected one failed and one landed literal send"
+  [ "$(texts "$dir")" = 1 ] || fail "exactly one line should have landed:"$'\n'"$(cat "$dir/keys.log")"
+  dir=$(ring_case ring-unreachable)
+  rc=$(run_ring "$dir" FM_FAKE_LITERAL_FAILS=99 FM_TASK_INBOX_RING_ATTEMPTS=3)
+  [ "$rc" = 2 ] || fail "a send that never lands should end in status 2, got $rc"
+  [ "$(cat "$dir/literal-calls")" = 3 ] || fail "the unreachable case should try exactly the bounded attempts"
+  [ ! -s "$dir/keys.log" ] || fail "nothing should be submitted when no line landed:"$'\n'"$(cat "$dir/keys.log")"
+  pass "doorbell: an unlanded send is retried within the bound, then reported unreachable"
+}
+
+test_ring_still_protects_pending_text() {
+  local dir rc
+  dir=$(ring_case ring-protect)
+  rc=$(run_ring "$dir" FM_FAKE_PREFILLED=1)
+  [ "$rc" = 1 ] || fail "proven pending text before typing should skip with status 1, got $rc"
+  [ ! -s "$dir/keys.log" ] || fail "a protected composer received keys:"$'\n'"$(cat "$dir/keys.log")"
+  pass "doorbell: proven pending composer text is still never submitted"
+}
+
+test_urgent_tier_policy() {
+  local state rec action
+  state="$TMP_ROOT/urgent-ladder/state"; mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "do the thing")
+  age_path "$rec"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=99999999999 \
+    inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "ring $rec" ] || fail "inside the urgent delay only the idle ladder applies, got: $action"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 \
+    inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "urgent-ring $rec" ] || fail "past the urgent delay an urgent re-ring is due, got: $action"
+  inbox_lib "$state" fm_task_inbox_record_urgent_ring "$state" t1 "$rec"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 \
+    inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "ring $rec" ] || fail "urgent spacing should hold and fall back to the idle ladder, got: $action"
+  printf '001.msg\t1\t100\n' > "$state/t1.inbox/.urgent-state"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 FM_TASK_INBOX_URGENT_MAX=2 \
+    inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "urgent-ring $rec" ] || fail "a spaced urgent tier should re-ring again, got: $action"
+  printf '001.msg\t2\t100\n' > "$state/t1.inbox/.urgent-state"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 FM_TASK_INBOX_URGENT_MAX=2 \
+    inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  case "$action" in
+    "urgent-escalate $rec 2 "[0-9]*) ;;
+    *) fail "a spent urgent budget should escalate with its age, got: $action" ;;
+  esac
+  inbox_lib "$state" fm_task_inbox_record_urgent_escalated "$state" t1 "$rec"
+  inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$rec"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=360 FM_TASK_INBOX_URGENT_MAX=2 \
+    inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = quiet ] || fail "a message surfaced by both tiers should stay quiet, got: $action"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_URGENT_SECS=0 \
+    inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = quiet ] || fail "a zero urgent delay disables the tier, got: $action"
+  mv "$rec" "$state/t1.inbox/handled/"
+  inbox_lib "$state" fm_task_inbox_due_action "$state" t1 >/dev/null
+  [ ! -e "$state/t1.inbox/.urgent-state" ] && [ ! -e "$state/t1.inbox/.urgent-escalated" ] \
+    || fail "the ack should reset the urgent tier bookkeeping"
+  pass "inbox: the unread-urgent tier waits for its delay, spaces re-rings, escalates once, and resets on ack"
+}
+
+test_watcher_urgent_rerings_busy_pane_then_surfaces_once() {
+  local dir state out log pid rec rings
+  dir=$(setup_watch_case urgent-busy)
+  state="$dir/state"; out="$dir/watch.out"; log="$dir/send.log"; : > "$log"
+  printf 'some output\nBUSYTOKEN active\n' > "$dir/busy.capture"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  age_path "$rec"
+  watch_bg "$state" "$dir/fakebin" "$out" \
+    FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$dir/busy.capture" \
+    FM_BUSY_REGEX=BUSYTOKEN FM_TASK_INBOX_RING_MAX=99 \
+    FM_TASK_INBOX_URGENT_SECS=1 FM_TASK_INBOX_URGENT_MAX=2 FM_TASK_INBOX_RING_ATTEMPTS=1
+  pid=$!
+  wait_watcher_gone "$pid" 200 \
+    || { kill "$pid" 2>/dev/null; fail "the watcher never surfaced the unread-urgent instruction"; }
+  rings=$(grep -cF 'Firstmate instruction waiting' "$log" || true)
+  [ "$rings" = 2 ] || fail "expected exactly two urgent re-rings into the busy pane, got $rings:"$'\n'"$(cat "$log")"
+  [ "$(grep -cF 'unread-urgent firstmate instruction' "$state/.wake-queue" 2>/dev/null || true)" = 1 ] \
+    || fail "expected exactly one unread-urgent stale wake:"$'\n'"$(cat "$state/.wake-queue" 2>/dev/null)"
+  grep -qF "$rec" "$state/.wake-queue" || fail "the unread-urgent wake should name the record"
+  [ "$(cat "$state/t1.inbox/.urgent-escalated")" = "${rec##*/}" ] \
+    || fail "the unread-urgent marker should suppress a second surfacing"
+  [ -f "$rec" ] || fail "the durable record must survive the escalation"
+  pass "watcher: an unread-urgent message is re-rung on a busy pane, bounded, then surfaced once"
+}
+
+test_watcher_urgent_ack_silences() {
+  local dir state out log pid rec i=0
+  dir=$(setup_watch_case urgent-ack)
+  state="$dir/state"; out="$dir/watch.out"; log="$dir/send.log"; : > "$log"
+  printf 'some output\nBUSYTOKEN active\n' > "$dir/busy.capture"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  age_path "$rec"
+  watch_bg "$state" "$dir/fakebin" "$out" \
+    FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$dir/busy.capture" FM_ACK_RECORD="$rec" \
+    FM_BUSY_REGEX=BUSYTOKEN FM_TASK_INBOX_RING_MAX=99 \
+    FM_TASK_INBOX_URGENT_SECS=1 FM_TASK_INBOX_URGENT_MAX=1 FM_TASK_INBOX_RING_ATTEMPTS=1
+  pid=$!
+  while [ "$i" -lt 100 ]; do
+    [ -f "$state/t1.inbox/handled/001.msg" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  sleep 3
+  kill -0 "$pid" 2>/dev/null \
+    || fail "an acknowledged urgent message still woke firstmate:"$'\n'"$(cat "$state/.wake-queue" 2>/dev/null)"
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  [ -f "$state/t1.inbox/handled/001.msg" ] || fail "the urgent re-ring never reached the busy pane"
+  [ "$(grep -cF 'Firstmate instruction waiting' "$log" || true)" = 1 ] \
+    || fail "the ack should stop further urgent re-rings:"$'\n'"$(cat "$log")"
+  [ ! -s "$state/.wake-queue" ] || fail "an acknowledged message queued a wake:"$'\n'"$(cat "$state/.wake-queue")"
+  pass "watcher: acknowledging an urgent re-rung message silences the tier"
+}
+
 test_write_is_durable_and_exact
 test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
@@ -712,3 +958,10 @@ test_watcher_surfaces_unwritable_ladder
 test_watcher_escalates_once_after_budget
 test_watcher_dead_pane_escalates_once_without_ringing
 test_watcher_dead_pane_ignores_stale_busy_state
+test_ring_double_enter_then_verifies
+test_ring_resubmits_stuck_composer_without_retyping
+test_ring_retypes_only_after_unlanded_send
+test_ring_still_protects_pending_text
+test_urgent_tier_policy
+test_watcher_urgent_rerings_busy_pane_then_surfaces_once
+test_watcher_urgent_ack_silences

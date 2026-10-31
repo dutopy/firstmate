@@ -76,6 +76,10 @@
 #   stale: <window> (unread firstmate instruction: ...)
 #                          the steering-inbox ladder spent its delivery-attempt
 #                          budget on an idle pane without an acknowledgement
+#   stale: <window> (unread-urgent firstmate instruction: ...)
+#                          an instruction stayed unacknowledged past the
+#                          unread-urgent delay and its bounded urgent re-rings,
+#                          busy-looking pane or not
 #   stale: <window> (steering-inbox ladder bookkeeping unwritable: ...)
 #                          an unhandled record's ladder cannot advance; quiet
 #                          successful attempts never wake firstmate
@@ -455,18 +459,27 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
 # stale path instead of silently re-ringing forever; acknowledgement or teardown
 # still makes the race quiet. The attempt is data-plane typing or a
 # composer-protected skip, never a wake, so normal retries keep the watcher
-# blocking. Runs for secondmates
+# blocking. The ladder's unread-urgent verbs bypass the busy wait: an urgent
+# re-ring types into a busy-looking pane, and its spent budget surfaces as one
+# distinct unread-urgent stale wake. Runs for secondmates
 # too: their pane-staleness exemption is about quiet panes being healthy,
 # while an unacknowledged instruction past the ladder is a stuck steer.
 inbox_steer_check() {  # <window> <task>
-  local w=$1 task=$2 action verb rec count tail40 reason ring_rc backend agent_state
+  local w=$1 task=$2 action verb rec count age tail40 reason ring_rc backend agent_state ladder_file marker_rc
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
   rec=${action#* }
   count=
+  age=
   case "$verb" in
     escalate)
+      count=${rec##* }
+      rec=${rec% *}
+      ;;
+    urgent-escalate)
+      age=${rec##* }
+      rec=${rec% *}
       count=${rec##* }
       rec=${rec% *}
       ;;
@@ -479,39 +492,63 @@ inbox_steer_check() {  # <window> <task>
       return 0
       ;;
   esac
-  tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || tail40=
-  if window_is_busy "$w" "$tail40"; then
-    return 0
-  fi
   case "$verb" in
-    ring)
+    ring|escalate)
+      # Only the idle ladder waits on a busy pane; the unread-urgent tier
+      # exists precisely for a message a busy-looking pane has held too long.
+      tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || tail40=
+      if window_is_busy "$w" "$tail40"; then
+        return 0
+      fi
+      ;;
+  esac
+  case "$verb" in
+    ring|urgent-ring)
       ring_rc=0
+      marker_rc=0
       fm_task_inbox_ring "$backend" "$w" "$rec" "$(window_label "$w")" || ring_rc=$?
       if [ "$ring_rc" -eq 3 ]; then
         inbox_steer_escalate_unavailable "$w" "$task" "$rec"
         return 0
       fi
-      if ! fm_task_inbox_record_ring "$STATE" "$task" "$rec"; then
+      if [ "$verb" = ring ]; then
+        ladder_file=.ring-state
+        fm_task_inbox_record_ring "$STATE" "$task" "$rec" || marker_rc=1
+      else
+        ladder_file=.urgent-state
+        fm_task_inbox_record_urgent_ring "$STATE" "$task" "$rec" || marker_rc=1
+      fi
+      if [ "$marker_rc" -ne 0 ]; then
         if [ ! -f "$rec" ]; then
           fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
           return 0
         fi
         if [ -d "${rec%/*}" ]; then
-          reason="stale: $w (steering-inbox ladder bookkeeping unwritable: ${rec%/*}/.ring-state cannot be written while $rec stays unhandled; the doorbell cannot advance toward escalation - inspect the inbox directory)"
+          reason="stale: $w (steering-inbox ladder bookkeeping unwritable: ${rec%/*}/$ladder_file cannot be written while $rec stays unhandled; the doorbell cannot advance toward escalation - inspect the inbox directory)"
           fm_wake_append stale "$w" "$reason" || exit 1
           wake "$reason"
         fi
       fi
-      triage_log "steer-inbox delivery attempt: $task ${rec##*/} result=$ring_rc"
+      triage_log "steer-inbox delivery attempt: $task ${rec##*/} verb=$verb result=$ring_rc"
       ;;
-    escalate)
-      reason="stale: $w (unread firstmate instruction: $rec still unhandled after $count doorbell delivery attempts with an idle pane; inspect the worker)"
+    escalate|urgent-escalate)
+      if [ "$verb" = escalate ]; then
+        reason="stale: $w (unread firstmate instruction: $rec still unhandled after $count doorbell delivery attempts with an idle pane; inspect the worker)"
+      else
+        reason="stale: $w (unread-urgent firstmate instruction: $rec still unhandled ${age}s after delivery despite $count urgent doorbell re-rings; inspect the worker)"
+      fi
       if [ ! -d "${rec%/*}" ] || [ ! -f "$rec" ]; then
         fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
         return 0
       fi
       fm_wake_append stale "$w" "$reason" || exit 1
-      if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
+      marker_rc=0
+      if [ "$verb" = escalate ]; then
+        fm_task_inbox_record_escalated "$STATE" "$task" "$rec" || marker_rc=1
+      else
+        fm_task_inbox_record_urgent_escalated "$STATE" "$task" "$rec" || marker_rc=1
+      fi
+      if [ "$marker_rc" -ne 0 ]; then
         echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
         exit 1
       fi
