@@ -2500,6 +2500,163 @@ test_github_queue_aware_read_supplies_the_merge_state() {
   pass "the queue-aware read alone supplies the merge state"
 }
 
+# --- standing mandates -------------------------------------------------------
+# A merge that relies on a standing mandate cites it with --mandate, and the
+# mandate must be in force and cover the merge at the moment the merge runs.
+# The forge diff in these cases comes from a real throwaway repository, so the
+# changed paths the mandate is judged against are the ones git actually wrote.
+
+epoch_to_iso_utc() {
+  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# Commit a change touching the given paths in a fresh throwaway repository and
+# write its diff as the forge diff. Args: case_dir path...
+write_throwaway_repo_diff() {
+  local case_dir=$1 repo path
+  shift
+  repo="$case_dir/throwaway-repo"
+  git init -q "$repo"
+  for path in "$@"; do
+    mkdir -p "$repo/$(dirname "$path")"
+    printf 'before\n' > "$repo/$path"
+  done
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm base
+  for path in "$@"; do
+    printf 'after\n' > "$repo/$path"
+  done
+  git -C "$repo" commit -qam change
+  git -C "$repo" diff HEAD~1 HEAD > "$case_dir/forge-diff.patch"
+}
+
+grant_mandate() {  # case_dir id expires_at extra-grant-args...
+  local case_dir=$1 id=$2 exp=$3
+  shift 3
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-mandate.sh" grant --id "$id" --granted-by captain \
+    --expires-at "$exp" --action merge --repo 'example/*' --branch main "$@" >/dev/null \
+    || fail "could not grant mandate $id"
+}
+
+# The incident shape: a night mandate whose conditions still hold after it
+# expired. Green checks and an in-scope patch do not revive lapsed authority.
+test_expired_mandate_refuses_the_merge() {
+  local case_dir rc exp
+  case_dir=$(make_case mandate-expired)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a
+  write_throwaway_repo_diff "$case_dir" src/lot1.txt
+  exp=$(epoch_to_iso_utc $(($(date -u +%s) + 2)))
+  grant_mandate "$case_dir" night-lots "$exp" --deny-path 'ui/*'
+  sleep 3
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate night-lots \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-expired: an expired mandate must refuse the merge"
+  assert_grep "mandate night-lots expired at $exp" "$case_dir/stderr" \
+    "mandate-expired: refusal did not name the expiry"
+  assert_grep 'relies on mandate night-lots, which does not authorize this merge now' "$case_dir/stderr" \
+    "mandate-expired: refusal did not say the merge relied on the mandate"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-expired: gh pr merge ran on an expired mandate"
+  pass "an expired mandate refuses a merge whose checks are green and whose patch is in scope"
+}
+
+# The yolo path is bound by the same gate: --automatic on a yolo=on task that
+# cites an expired mandate refuses before any eligibility work or forge call.
+test_expired_mandate_refuses_the_automatic_merge() {
+  local case_dir rc exp
+  case_dir=$(make_case mandate-expired-automatic)
+  mkdir -p "$case_dir/wt"
+  printf 'yolo=on\n' >> "$case_dir/state/task-x1.meta"
+  add_gh_mocks "$case_dir" 5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b
+  write_throwaway_repo_diff "$case_dir" src/lot2.txt
+  exp=$(epoch_to_iso_utc $(($(date -u +%s) + 2)))
+  grant_mandate "$case_dir" night-auto "$exp"
+  sleep 3
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --automatic --mandate night-auto \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-expired-automatic: an expired mandate must refuse the yolo merge"
+  assert_grep 'mandate night-auto expired at' "$case_dir/stderr" \
+    "mandate-expired-automatic: refusal did not name the expiry"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-expired-automatic: gh pr merge ran on an expired mandate"
+  pass "an expired mandate refuses the automatic yolo merge too"
+}
+
+test_in_force_mandate_in_scope_merges() {
+  local case_dir rc
+  case_dir=$(make_case mandate-in-force)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c
+  write_throwaway_repo_diff "$case_dir" src/lot3.txt
+  grant_mandate "$case_dir" day-lots "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate day-lots \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "mandate-in-force: an in-force in-scope mandate must not block the merge"
+  assert_grep 'mandate day-lots in force until' "$case_dir/stderr" \
+    "mandate-in-force: the mandate check did not report its verdict"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+  pass "an in-force mandate covering the merge lets it proceed"
+}
+
+test_mandate_out_of_scope_refuses_the_merge() {
+  local case_dir rc
+  case_dir=$(make_case mandate-out-of-scope)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d
+  write_throwaway_repo_diff "$case_dir" src/lot4.txt ui/button.css
+  grant_mandate "$case_dir" no-ui "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --deny-path 'ui/*'
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-mandate.sh" grant --id other-repo --granted-by captain \
+    --expires-at "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --action merge --repo 'elsewhere/*' >/dev/null
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate no-ui \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-out-of-scope: a UI path must refuse"
+  assert_grep 'changed path ui/button.css is excluded by mandate no-ui' "$case_dir/stderr" \
+    "mandate-out-of-scope: refusal did not name the excluded path"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate other-repo \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-out-of-scope: another repository's mandate must refuse"
+  assert_grep 'repository example/repo is outside mandate other-repo' "$case_dir/stderr" \
+    "mandate-out-of-scope: refusal did not name the repository"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate never-granted \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-out-of-scope: an absent mandate must refuse"
+  assert_grep 'mandate never-granted does not exist' "$case_dir/stderr" \
+    "mandate-out-of-scope: refusal did not name the absent mandate"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-out-of-scope: gh pr merge ran on a mandate that does not cover it"
+  pass "a mandate that does not cover the repository or a changed path refuses the merge"
+}
+
 test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
@@ -3555,3 +3712,7 @@ test_github_changed_patch_refuses_the_merge
 test_github_unreadable_live_patch_refuses_a_recorded_verdict
 test_github_patch_guard_is_dormant_without_a_recorded_verdict
 test_gitlab_changed_patch_refuses_the_merge
+test_expired_mandate_refuses_the_merge
+test_expired_mandate_refuses_the_automatic_merge
+test_in_force_mandate_in_scope_merges
+test_mandate_out_of_scope_refuses_the_merge
