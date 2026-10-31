@@ -465,6 +465,7 @@ RECORDED_PATCH_ID=$(grep '^pr_patch_id=' "$META" | tail -1 | cut -d= -f2- || tru
 # returns non-zero after reporting every condition that failed.
 FM_PR_MERGE_HEAD=
 FM_PR_GITLAB_ASYNC_CONFIGURED=false
+FM_PR_GITLAB_CHANGES_COUNT=null
 gitlab_verify_mergeable() {
   local json fields line
   local total=0 named=0 refusals=''
@@ -523,6 +524,8 @@ FIELDS
     echo "error: could not read the GitLab merge request state before merging" >&2
     return 1
   fi
+
+  FM_PR_GITLAB_CHANGES_COUNT=$(printf '%s' "$json" | jq -c '.changes_count') || return 1
 
   if ! fm_pr_head_valid "$live_head"; then
     echo "error: could not read the GitLab merge request head commit before merging" >&2
@@ -1143,19 +1146,24 @@ mandate_changed_paths() {
       listing=$(gh api --paginate "repos/$PR_PATH/pulls/$PR_NUMBER/files?per_page=100" \
         --jq '.[] | "f\t" + .filename, ((.previous_filename // empty) | "p\t" + .)' \
         2>/dev/null) || return 1
+      files=$(printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" { n++ } END { print n + 0 }')
+      [ "$files" -lt 3000 ] || return 1
       ;;
     gitlab)
       raw=$(GITLAB_HOST="$PR_HOST" glab api --paginate \
         "projects/$(github_urlencode_path_segment "$PR_PATH")/merge_requests/$PR_NUMBER/diffs?per_page=100" \
         2>/dev/null) || return 1
+      printf '%s\n' "$raw" | jq -se --argjson count "$FM_PR_GITLAB_CHANGES_COUNT" '
+        all(.[]; type == "array")
+        and ($count | type == "string" and test("^[0-9]+$"))
+        and (($count | tonumber) == (map(length) | add // 0))
+      ' >/dev/null 2>&1 || return 1
       listing=$(printf '%s\n' "$raw" \
         | jq -r '.[]? | "f\t" + .new_path, ((.old_path // empty) | "p\t" + .)' \
         2>/dev/null) || return 1
       ;;
     *) return 1 ;;
   esac
-  files=$(printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" { n++ } END { print n + 0 }')
-  [ "$files" -lt 3000 ] || return 1
   printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" || $1 == "p" { print $2 }' \
     | awk 'NF && !seen[$0]++'
 }

@@ -407,7 +407,7 @@ write_mr_json() {
   local file=$1 kv key value
   local state=opened detail=mergeable conflicts=false discussions=true
   local head=$MR_HEAD pipeline_sha=$MR_HEAD pipeline_status=success pipeline=present
-  local merge_when_pipeline_succeeds=false merge_after=null
+  local merge_when_pipeline_succeeds=false merge_after=null changes_count=null
   shift
   for kv in "$@"; do
     key=${kv%%=*}
@@ -423,6 +423,7 @@ write_mr_json() {
       pipeline) pipeline=$value ;;
       merge_when_pipeline_succeeds) merge_when_pipeline_succeeds=$value ;;
       merge_after) merge_after=$value ;;
+      changes_count) changes_count=$value ;;
       *) fail "write_mr_json: unknown field '$key'" ;;
     esac
   done
@@ -433,8 +434,8 @@ write_mr_json() {
     "$state" "$detail" "$conflicts" > "$file"
   printf '"target_branch":"main","blocking_discussions_resolved":%s,"sha":"%s","head_pipeline":%s,' \
     "$discussions" "$head" "$pipeline" >> "$file"
-  printf '"merge_when_pipeline_succeeds":%s,"merge_after":%s}\n' \
-    "$merge_when_pipeline_succeeds" "$merge_after" >> "$file"
+  printf '"merge_when_pipeline_succeeds":%s,"merge_after":%s,"changes_count":%s}\n' \
+    "$merge_when_pipeline_succeeds" "$merge_after" "$changes_count" >> "$file"
 }
 
 # make_gitlab_case <name> [<field>=<value> ...]: a case dir with both forge
@@ -2820,7 +2821,7 @@ test_mandate_reads_the_github_previous_filename_of_a_rename() {
 # A rename names its source only in old_path, so a deny rule must see it.
 test_mandate_reads_the_gitlab_old_path_of_a_rename() {
   local case_dir rc
-  case_dir=$(make_gitlab_case mandate-gitlab-rename)
+  case_dir=$(make_gitlab_case mandate-gitlab-rename 'changes_count="1"')
   jq -cn '[{old_path:"ui/old.css",new_path:"src/old.css",new_file:false,renamed_file:true}]' \
     > "$case_dir/glab-diffs.json"
   FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
@@ -2840,6 +2841,46 @@ test_mandate_reads_the_gitlab_old_path_of_a_rename() {
   assert_no_grep 'mr merge' "$case_dir/glab.log" \
     "mandate-gitlab-rename: glab mr merge ran despite the denied old_path"
   pass "a GitLab rename is checked on both old_path and new_path"
+}
+
+test_mandate_refuses_an_incomplete_gitlab_file_list() {
+  local case_dir rc count index=0
+  for count in '"1000+"' '"2"' null '""' '"0"' '"1.0"' '"invalid"' 'missing' '"1"'; do
+    index=$((index + 1))
+    case_dir=$(make_gitlab_case "mandate-gitlab-completeness-$index")
+    if [ "$count" != missing ]; then
+      write_mr_json "$case_dir/mr.json" "changes_count=$count"
+    else
+      jq 'del(.changes_count)' "$case_dir/mr.json" > "$case_dir/mr-missing.json"
+      mv "$case_dir/mr-missing.json" "$case_dir/mr.json"
+    fi
+    if [ "$count" != '"1"' ]; then
+      write_throwaway_repo_diff "$case_dir" src/safe.txt ui/secret.txt
+    fi
+    jq -cn '[{old_path:"src/safe.txt",new_path:"src/safe.txt"}]' \
+      > "$case_dir/glab-diffs.json"
+    FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+      "$ROOT/bin/fm-mandate.sh" grant --id no-ui-gitlab --granted-by captain \
+      --expires-at "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+      --action merge --repo 'group/*' --branch main --deny-path 'ui/*' >/dev/null
+
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$MR_URL" --mandate no-ui-gitlab \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+
+    if [ "$count" = '"1"' ]; then
+      expect_code 0 "$rc" "mandate-gitlab-completeness: a complete allowed list should merge"
+      [ -e "$case_dir/glab-merge-called" ] || fail "the complete list did not reach glab mr merge"
+    else
+      expect_code 1 "$rc" "mandate-gitlab-completeness: unproven count $count must refuse"
+      assert_grep 'the changed paths could not be read to check mandate' "$case_dir/stderr" \
+        "mandate-gitlab-completeness: count $count did not refuse the unreadable list"
+      [ ! -e "$case_dir/glab-merge-called" ] || fail "an incomplete list reached glab mr merge"
+    fi
+  done
+  pass "GitLab mandates require a proven complete changed-file list before merging"
 }
 
 test_github_zero_exit_queue_required_refuses_with_exact_retry
@@ -3906,3 +3947,4 @@ test_mandate_unreadable_path_list_refuses_the_merge
 test_mandate_refuses_a_file_list_at_the_forge_cap
 test_mandate_reads_the_github_previous_filename_of_a_rename
 test_mandate_reads_the_gitlab_old_path_of_a_rename
+test_mandate_refuses_an_incomplete_gitlab_file_list
