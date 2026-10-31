@@ -666,6 +666,26 @@ Two findings from the run shaped the shipped behavior: an OpenCode vendor update
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
+On 2026-10-31, after the submit-verdict change in `fm_task_inbox_ring` ([doorbell contract](../../bin/fm-task-inbox-lib.sh)), the same guard was refreshed on macOS arm64 with tmux 3.8, restricted to Claude Code and Codex:
+
+```sh
+FM_SEND_INBOX_LIVE_E2E=1 FM_SEND_INBOX_LIVE_HARNESSES="claude codex" tests/fm-send-inbox-doorbell-live-e2e.test.sh
+```
+
+Observed output:
+
+```text
+not ok - claude (2.1.316 (Claude Code)): composer stayed visibly pending; the pane is not steerable
+ok - codex (codex-cli 0.163.0): the doorbell reached a real worker, which acted and acked with the mv
+not ok - live steering-inbox doorbell guard found failures above
+```
+
+Codex 0.163.0 listed the inbox named by the doorbell, ran the instruction, and acknowledged with the `mv`.
+Claude Code 2.1.316 stopped on this disposable worktree's folder-trust dialog before a doorbell was typed, which the guard reports as a pane that is not steerable.
+The guard launches an isolated tmux server, so this refresh does not exercise Herdr's busy primitive.
+`tests/fm-task-inbox.test.sh` separates that busy reading from a still-pending composer.
+The 2026-08-23 receipt above remains the earlier multi-harness result on tmux 3.6a, from before the submit-verdict change.
+
 ## Gemini
 
 The Gemini crewmate adapter was verified on 2026-09-04 with gemini-cli 0.58.0 on Linux, Node v24.20.0, tmux 3.4.

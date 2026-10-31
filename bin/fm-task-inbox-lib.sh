@@ -30,6 +30,9 @@
 #   <task>.inbox/.ring-state   watcher re-ring ladder: "<msg>\t<count>\t<epoch>"
 #   <task>.inbox/.escalated    oldest-message name already surfaced as stale,
 #                              so later polls suppress another escalation
+#   <task>.inbox/.urgent-state unread-urgent tier: "<msg>\t<count>\t<epoch>"
+#   <task>.inbox/.urgent-escalated  oldest-message name already surfaced as
+#                              unread-urgent
 #
 # Record format (fm_task_inbox_write / fm_task_inbox_body):
 #   schema=fm-task-inbox.v1
@@ -51,6 +54,23 @@
 # caller owns the busy and recovery-grade endpoint checks: a busy pane waits,
 # while a positively dead or missing endpoint skips delivery and the ladder and
 # escalates directly. This library owns only the schedule and escalation marker.
+# Unread-urgent tier (same function): once the oldest unhandled message is
+# older than FM_TASK_INBOX_URGENT_SECS it is due an urgent re-ring every
+# FM_TASK_INBOX_URGENT_SECS, up to FM_TASK_INBOX_URGENT_MAX of them, and then
+# one unread-urgent escalation. Unlike the idle ladder above, the caller does
+# not hold an urgent re-ring for a busy pane: a pane that has looked busy for
+# that long is either genuinely mid-turn, where a TUI queues the typed line for
+# its next turn, or misread as busy, which is exactly how a message used to
+# sit unread for hours. The composer pre-check in the doorbell still protects
+# proven pending text. The tier is independent of the idle ladder's escalation,
+# so a message that the idle ladder already surfaced still gets its urgent
+# re-rings and a distinct unread-urgent event. FM_TASK_INBOX_URGENT_SECS=0
+# disables the tier; it is evaluated only once a message is past
+# FM_TASK_INBOX_GRACE_SECS. A dead or missing endpoint closes both tiers for
+# the current message after queuing its recovery wake. Escalation markers are
+# message-bound independently of attempt counts: stale attempt bookkeeping
+# must not erase a marker naming the current oldest message (regression:
+# tests/fm-task-inbox.test.sh, dead-pane-stale-ladder).
 # If attempt bookkeeping cannot be persisted while the record remains unhandled,
 # the caller surfaces that failure instead of retrying silently; a concurrently
 # removed inbox is a quiet no-op. Escalation deliberately queues the wake before
@@ -68,6 +88,14 @@
 # Tunables (env):
 #   FM_TASK_INBOX_GRACE_SECS   default 90; delivery-attempt grace and spacing
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
+#   FM_TASK_INBOX_URGENT_SECS  default 360; unacknowledged age before an
+#                              urgent re-ring, and their spacing (0 disables)
+#   FM_TASK_INBOX_URGENT_MAX   default 2; urgent re-rings before the
+#                              unread-urgent escalation
+#   FM_TASK_INBOX_RING_ATTEMPTS default 3; bounded submit attempts inside one
+#                              doorbell (fm_task_inbox_ring)
+#   FM_TASK_INBOX_ENTER_PAUSE  default 1; seconds between the doorbell's
+#                              submitting Enter and its confirming Enter
 
 _FM_TASK_INBOX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Both dependencies are canonical lint roots in their own right. Keep them as
@@ -82,6 +110,10 @@ FM_TASK_INBOX_SCHEMA='fm-task-inbox.v1'
 FM_TASK_INBOX_GRACE_DEFAULT=90
 FM_TASK_INBOX_RING_MAX_DEFAULT=3
 FM_TASK_INBOX_LOCK_WAIT_DEFAULT=5
+FM_TASK_INBOX_URGENT_SECS_DEFAULT=360
+FM_TASK_INBOX_URGENT_MAX_DEFAULT=2
+FM_TASK_INBOX_RING_ATTEMPTS_DEFAULT=3
+FM_TASK_INBOX_ENTER_PAUSE_DEFAULT=1
 
 fm_task_inbox_grace_secs() {
   local g=${FM_TASK_INBOX_GRACE_SECS:-$FM_TASK_INBOX_GRACE_DEFAULT}
@@ -93,6 +125,33 @@ fm_task_inbox_ring_max() {
   local m=${FM_TASK_INBOX_RING_MAX:-$FM_TASK_INBOX_RING_MAX_DEFAULT}
   case "$m" in ''|*[!0-9]*) m=$FM_TASK_INBOX_RING_MAX_DEFAULT ;; esac
   printf '%s' "$m"
+}
+
+fm_task_inbox_urgent_secs() {
+  local u=${FM_TASK_INBOX_URGENT_SECS:-$FM_TASK_INBOX_URGENT_SECS_DEFAULT}
+  case "$u" in ''|*[!0-9]*) u=$FM_TASK_INBOX_URGENT_SECS_DEFAULT ;; esac
+  printf '%s' "$u"
+}
+
+fm_task_inbox_urgent_max() {
+  local m=${FM_TASK_INBOX_URGENT_MAX:-$FM_TASK_INBOX_URGENT_MAX_DEFAULT}
+  case "$m" in ''|*[!0-9]*) m=$FM_TASK_INBOX_URGENT_MAX_DEFAULT ;; esac
+  printf '%s' "$m"
+}
+
+fm_task_inbox_ring_attempts() {
+  local a=${FM_TASK_INBOX_RING_ATTEMPTS:-$FM_TASK_INBOX_RING_ATTEMPTS_DEFAULT}
+  case "$a" in ''|0|*[!0-9]*) a=$FM_TASK_INBOX_RING_ATTEMPTS_DEFAULT ;; esac
+  printf '%s' "$a"
+}
+
+# Seconds as accepted by sleep: digits with at most one decimal point.
+fm_task_inbox_enter_pause() {
+  local p=${FM_TASK_INBOX_ENTER_PAUSE:-$FM_TASK_INBOX_ENTER_PAUSE_DEFAULT}
+  case "$p" in
+    ''|.|*.*.*|*[!0-9.]*) p=$FM_TASK_INBOX_ENTER_PAUSE_DEFAULT ;;
+  esac
+  printf '%s' "$p"
 }
 
 fm_task_inbox_dir() {  # <state-dir> <task-id>
@@ -268,22 +327,48 @@ fm_task_inbox_doorbell_line() {  # <record-path>
     "$quoted" "$quoted"
 }
 
-# Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
-# composer pre-check, then the backend's submit machinery with a minimal retry
-# budget, verdict discarded.
-# Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# (the watcher re-rings later), 2 the backend send failed, 3 skipped because
-# the endpoint is positively dead or missing (nothing typed; recovery owns the
-# record). No return value is delivery proof; the acknowledgement move is the
-# only delivery signal.
-# The skip is deliberately narrow: only an exact `pending` verdict defers,
-# because there our Enter could submit someone's real half-typed content.
-# `pending-unproven` and `unknown` still ring - the worst outcome is a garbled
-# CONSTANT line the worker recovers semantically, while skipping on ambiguous
-# verdicts would starve a harness whose idle screen the classifier cannot
-# positively identify (that classifier is advisory here by design).
+# The ONE doorbell, used by every delivery path: fm-send's local ring, the
+# remote host-local steer leg, and the watcher's re-rings all call this, so a
+# delivery fix lands everywhere at once. Sequence per call:
+#   1. endpoint-liveness pre-check (dead or missing: nothing is typed);
+#   2. advisory composer pre-check (proven pending text: skip, see below);
+#   3. type the constant line once and submit it through the backend's
+#      verifying submit machinery (one Enter);
+#   4. respect that submit verdict: `empty` is the backend's proof that the
+#      line left the composer (including its queued-busy conversion), so it is
+#      a success with no further Enter; any other verdict pauses
+#      FM_TASK_INBOX_ENTER_PAUSE seconds and sends one confirming Enter,
+#      because TUI agents (Claude Code, Codex) measurably leave a single-Enter
+#      submission in the composer, while an Enter on an empty composer is a
+#      no-op;
+#   5. a re-read `pending` or `pending-unproven` composer is retried on the next
+#      attempt - never with a retyped line, and never abandoned just because
+#      the pane reports busy - while any other composer verdict ends the
+#      doorbell as delivered.
+# Steps 3-5 repeat up to FM_TASK_INBOX_RING_ATTEMPTS times. A backend send
+# failure before the line provably landed retypes on the next attempt after a
+# pause and a fresh liveness check, because a transient Herdr socket error was
+# the measured cause of "doorbell did not reach" on remote panes; the worst
+# outcome of that retype is a duplicated CONSTANT line the worker recovers
+# semantically.
+# Returns 0 rang (verified, or unverifiable because the classifier cannot read
+# the composer), 1 skipped because the composer PROVENLY holds pending text
+# before anything was typed (the watcher re-rings later), 2 the backend send
+# failed on every attempt, 3 skipped because the endpoint is positively dead
+# or missing (nothing typed; recovery owns the record), 4 typed but the
+# composer still holds pending text after every attempt. No return value is
+# delivery proof; the acknowledgement move is the only delivery signal.
+# The pre-check skip is deliberately narrow: only an exact `pending` verdict
+# defers, because there our Enter could submit someone's real half-typed
+# content. `pending-unproven` and `unknown` still ring - the worst outcome is a
+# garbled CONSTANT line the worker recovers semantically, while skipping on
+# ambiguous verdicts would starve a harness whose idle screen the classifier
+# cannot positively identify (that classifier is advisory here by design).
+# Once this call has typed the line, a pending composer is presumed to hold
+# that line, exactly as every backend submit core presumes for its own text.
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
+  local attempt=0 attempts pause typed=0 last=send-failed
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
     dead|missing) return 3 ;;
   esac
@@ -294,17 +379,50 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   case "$cstate" in
     pending) return 1 ;;
   esac
-  # Accepted residual race: terminal input and Enter are separate delivery
-  # steps, so an agent exiting after the liveness check could leave a bare
-  # shell only a suffix; the `: ` prefix protects complete lines only. Do not
-  # add process-bound atomic delivery here unless an incident reopens this.
-  if ! verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 1 0.4 0.3 "$label" 2>/dev/null); then
-    return 2
-  fi
-  # The verdict is read only to report a failed keystroke; every other value
-  # (empty, pending, unknown, ...) is deliberately ignored, never proof.
-  [ "$verdict" != send-failed ] || return 2
-  return 0
+  attempts=$(fm_task_inbox_ring_attempts)
+  pause=$(fm_task_inbox_enter_pause)
+  while [ "$attempt" -lt "$attempts" ]; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -gt 1 ]; then
+      sleep "$pause"
+      case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
+        dead|missing) return 3 ;;
+      esac
+    fi
+    if [ "$typed" -eq 0 ]; then
+      # Accepted residual race: terminal input and Enter are separate delivery
+      # steps, so an agent exiting after the liveness check could leave a bare
+      # shell only a suffix; the `: ` prefix protects complete lines only.
+      verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 1 "$pause" 0.3 "$label" 2>/dev/null) \
+        || verdict=send-failed
+      if [ "$verdict" = send-failed ]; then
+        # The line may sit unsubmitted if only the Enter failed; a proven
+        # pending composer means it landed, so the next attempt only submits.
+        cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
+        [ "$cstate" != pending ] || typed=1
+        last=send-failed
+        continue
+      fi
+      typed=1
+      # `empty` is the backend's proof that the line left the composer, so the
+      # confirming Enter is unnecessary; anything else still needs one.
+      [ "$verdict" != empty ] || return 0
+    elif ! fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1; then
+      last=send-failed
+      continue
+    fi
+    sleep "$pause"
+    fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || true
+    sleep 0.3
+    cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
+    case "$cstate" in
+      empty) return 0 ;;
+      pending|pending-unproven) last=pending ;;
+      *) return 0 ;;
+    esac
+  done
+  [ "$last" != pending ] || return 4
+  return 2
 }
 
 fm_task_inbox_is_fire_and_forget() {  # <record-path>
@@ -337,25 +455,68 @@ fm_task_inbox_oldest_unhandled() {  # <state-dir> <task-id>
   printf '%s' "$best"
 }
 
+# The unread-urgent tier decision for the current oldest record, or nothing
+# when no urgent action is due. See the header for the policy.
+_fm_task_inbox_urgent_due() {  # <inbox-dir> <record-path> <age>
+  local dir=$1 oldest=$2 age=$3 base urgent max state rec_base count last now
+  urgent=$(fm_task_inbox_urgent_secs)
+  [ "$urgent" -gt 0 ] || return 0
+  [ "$age" -ge "$urgent" ] || return 0
+  base=${oldest##*/}
+  count=0
+  last=0
+  state=$(cat "$dir/.urgent-state" 2>/dev/null || true)
+  IFS=$(printf '\t') read -r rec_base count last <<EOF
+$state
+EOF
+  if [ "$rec_base" != "$base" ]; then
+    count=0
+    last=0
+  fi
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  [ "$(cat "$dir/.urgent-escalated" 2>/dev/null || true)" != "$base" ] || return 0
+  max=$(fm_task_inbox_urgent_max)
+  if [ "$count" -ge "$max" ]; then
+    printf 'urgent-escalate %s %s %s' "$oldest" "$count" "$age"
+    return 0
+  fi
+  now=$(date +%s)
+  [ "$((now - last))" -ge "$urgent" ] || return 0
+  printf 'urgent-ring %s' "$oldest"
+}
+
 # The re-ring ladder decision for one task. Prints exactly one of:
 #   quiet                     nothing due (healthy, within grace or spacing,
 #                             or already escalated for the current oldest)
 #   ring <record-path>        one doorbell re-ring is due
 #   escalate <record-path> <count>   attempt budget spent; surface as stale
+#   urgent-ring <record-path> one unread-urgent re-ring is due, even on a
+#                             busy pane
+#   urgent-escalate <record-path> <count> <age-secs>
+#                             urgent budget spent; surface as unread-urgent
+# The urgent verbs take precedence while due, so a pane the idle ladder keeps
+# waiting on as busy cannot hold a message past the urgent schedule.
 # An empty inbox also resets the ladder bookkeeping so the next message starts
 # a fresh ladder.
 fm_task_inbox_due_action() {  # <state-dir> <task-id>
-  local dir oldest base now grace max ladder rec_base count last
+  local dir oldest base now grace max ladder rec_base count last age urgent_action
   dir=$(fm_task_inbox_dir "$1" "$2")
   if ! oldest=$(fm_task_inbox_oldest_unhandled "$1" "$2"); then
-    rm -f "$dir/.ring-state" "$dir/.escalated" 2>/dev/null || true
+    rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.urgent-state" "$dir/.urgent-escalated" 2>/dev/null || true
     printf 'quiet'
     return 0
   fi
   base=${oldest##*/}
   grace=$(fm_task_inbox_grace_secs)
-  if [ "$(fm_path_age "$oldest")" -lt "$grace" ]; then
+  age=$(fm_path_age "$oldest")
+  if [ "$age" -lt "$grace" ]; then
     printf 'quiet'
+    return 0
+  fi
+  urgent_action=$(_fm_task_inbox_urgent_due "$dir" "$oldest" "$age")
+  if [ -n "$urgent_action" ]; then
+    printf '%s' "$urgent_action"
     return 0
   fi
   count=0
@@ -364,14 +525,9 @@ fm_task_inbox_due_action() {  # <state-dir> <task-id>
   IFS=$(printf '\t') read -r rec_base count last <<EOF
 $ladder
 EOF
-  if [ -n "$rec_base" ] && [ "$rec_base" != "$base" ]; then
-    # A different oldest message: the previous ladder is stale. An absent
-    # ladder is left alone so a dead-pane escalation, which never rings and so
-    # never writes one, keeps its marker (the marker check below still ignores
-    # a marker naming some other message).
+  if [ "$rec_base" != "$base" ]; then
     count=0
     last=0
-    rm -f "$dir/.escalated" 2>/dev/null || true
   fi
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
@@ -400,18 +556,26 @@ EOF
 # the caller must surface the unwritable ladder while the record remains
 # unhandled.
 fm_task_inbox_record_ring() {  # <state-dir> <task-id> <record-path>
-  local dir base ladder rec_base count last
-  dir=$(fm_task_inbox_dir "$1" "$2")
-  base=${3##*/}
+  _fm_task_inbox_bump "$(fm_task_inbox_dir "$1" "$2")" .ring-state "${3##*/}"
+}
+
+# Advance the unread-urgent tier after an urgent re-ring attempt, with the
+# same budget and failure contract as fm_task_inbox_record_ring.
+fm_task_inbox_record_urgent_ring() {  # <state-dir> <task-id> <record-path>
+  _fm_task_inbox_bump "$(fm_task_inbox_dir "$1" "$2")" .urgent-state "${3##*/}"
+}
+
+_fm_task_inbox_bump() {  # <inbox-dir> <state-file-name> <record-basename>
+  local dir=$1 file=$2 base=$3 ladder rec_base count last
   count=0
-  ladder=$(cat "$dir/.ring-state" 2>/dev/null || true)
+  ladder=$(cat "$dir/$file" 2>/dev/null || true)
   IFS=$(printf '\t') read -r rec_base count last <<EOF
 $ladder
 EOF
   [ "$rec_base" = "$base" ] || count=0
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   [ -d "$dir" ] || return 0
-  if ! { printf '%s\t%s\t%s\n' "$base" "$((count + 1))" "$(date +%s)" > "$dir/.ring-state"; } 2>/dev/null; then
+  if ! { printf '%s\t%s\t%s\n' "$base" "$((count + 1))" "$(date +%s)" > "$dir/$file"; } 2>/dev/null; then
     [ -d "$dir" ] || return 0
     return 1
   fi
@@ -422,10 +586,19 @@ EOF
 # at-least-once recovery: a crash or marker failure can cause a rare duplicate;
 # stuck-crewmate-recovery owns the message from here.
 fm_task_inbox_record_escalated() {  # <state-dir> <task-id> <record-path>
-  local dir
-  dir=$(fm_task_inbox_dir "$1" "$2")
+  _fm_task_inbox_mark "$(fm_task_inbox_dir "$1" "$2")" .escalated "${3##*/}"
+}
+
+# Mark the current oldest as surfaced unread-urgent, with the same
+# wake-before-marker ordering as fm_task_inbox_record_escalated.
+fm_task_inbox_record_urgent_escalated() {  # <state-dir> <task-id> <record-path>
+  _fm_task_inbox_mark "$(fm_task_inbox_dir "$1" "$2")" .urgent-escalated "${3##*/}"
+}
+
+_fm_task_inbox_mark() {  # <inbox-dir> <marker-name> <record-basename>
+  local dir=$1
   [ -d "$dir" ] || return 0
-  if ! { printf '%s\n' "${3##*/}" > "$dir/.escalated"; } 2>/dev/null; then
+  if ! { printf '%s\n' "$3" > "$dir/$2"; } 2>/dev/null; then
     [ -d "$dir" ] || return 0
     return 1
   fi
