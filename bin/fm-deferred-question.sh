@@ -35,20 +35,23 @@
 #   INERT - mode off, not AskUserQuestion, not a genuine primary home, missing
 #           jq, malformed stdin, or a store write failure: exit 0, no output,
 #           so Claude Code shows its ordinary blocking question.
-#   LIVE  - every question in the call matches a pending record already
-#           re-surfaced at a captain message: the captain demonstrably came
-#           back, so those records are resolved and the call is left to the
-#           ordinary blocking question (exit 0, no output).
-#   DEFER - otherwise: write the record, start notifications, and print an
-#           allow decision whose updatedInput echoes the questions with a
-#           DEFERRED answer for each, plus additionalContext.
+#   DEFER - otherwise: write or reuse the record, start notifications, and
+#           print an allow decision whose updatedInput echoes the questions
+#           with a DEFERRED answer for each, plus additionalContext.
+#           A call whose question texts match an existing pending record
+#           reuses that record instead of writing a second one.
+#           The call is never left to the ordinary blocking prompt while the
+#           mode is on: that reopens the gap this mode exists to close.
 #
 # prompt contract (Claude UserPromptSubmit):
 #   Runs whether or not the mode is enabled, so records left from an enabled
 #   period are never stranded. Firstmate operational inputs (prompts starting
-#   with U+2063) are not captain messages and are skipped. With pending records
-#   and a captain prompt, prints additionalContext listing them and marks them
-#   re-surfaced; otherwise exit 0 with no output. Every failure is silent.
+#   with U+2063) are not captain messages and are skipped. Any other prompt
+#   with pending records prints additionalContext listing them and marks them
+#   re-surfaced. That prompt is not proof the captain has returned. The context
+#   tells the primary to restate the question in plain chat and to run resolve
+#   only after the captain answers there. Otherwise exit 0 with no output.
+#   Every failure is silent.
 #
 # Bash 3.2 compatible.
 set -u
@@ -61,7 +64,7 @@ CONFIG_FILE=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/deferred-questions
 STORE="$STATE/deferred-questions"
 RESOLVED="$STORE/resolved"
 
-DEFERRED_ANSWER='DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and re-ask when the captain writes.'
+DEFERRED_ANSWER='DEFERRED: the captain has not answered yet. Do not treat this as a choice. Continue supervision, restate the question in plain chat, and run bin/fm-deferred-question.sh resolve once the captain answers.'
 
 usage() {
   sed -n '2,/^# Bash 3.2 compatible\./{s/^# \{0,1\}//;p;}' "${BASH_SOURCE[0]}"
@@ -94,6 +97,24 @@ pending_files() {
     [ -f "$f" ] && printf '%s\n' "$f"
   done
   return 0
+}
+
+# Print the pending record whose question texts match <questions-json>, if any.
+# Identical calls before any captain message must share one record.
+find_duplicate_record() {  # <questions-json>
+  local sig cand
+  sig=$(printf '%s' "$1" | jq -c 'map(.question // "") | sort' 2>/dev/null) || return 1
+  [ -n "$sig" ] || return 1
+  while IFS= read -r cand; do
+    [ -n "$cand" ] && [ -f "$cand" ] || continue
+    if jq -e --argjson sig "$sig" '([.questions[]?.question // ""] | sort) == $sig' "$cand" >/dev/null 2>&1; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done <<EOF
+$(pending_files)
+EOF
+  return 1
 }
 
 # Atomically replace <file> with stdin; empty input never replaces a record.
@@ -131,7 +152,7 @@ run_notifications() {  # <record-file> <summary>
 }
 
 cmd_pretool() {
-  local payload tool qjson id tuid sid epoch record summary pending f texts all_surfaced matched answers ctx
+  local payload tool qjson id tuid sid epoch record summary dup answers texts ctx out
   payload=$(cat 2>/dev/null || true)
   [ -n "$payload" ] || exit 0
   command -v jq >/dev/null 2>&1 || exit 0
@@ -142,66 +163,51 @@ cmd_pretool() {
   qjson=$(printf '%s' "$payload" | jq -c '.tool_input.questions | select(type == "array" and length > 0)' 2>/dev/null) || exit 0
   [ -n "$qjson" ] || exit 0
 
-  # LIVE: a re-ask of questions already re-surfaced at a captain message.
-  pending=$(pending_files)
-  if [ -n "$pending" ]; then
-    all_surfaced=1
-    matched=""
-    while IFS= read -r text; do
-      f=""
-      while IFS= read -r cand; do
-        [ -n "$cand" ] || continue
-        if jq -e --arg q "$text" '(.surfaced_at // null) != null and any(.questions[]?; .question == $q)' "$cand" >/dev/null 2>&1; then
-          f=$cand
-          break
-        fi
-      done <<EOF
-$pending
-EOF
-      if [ -z "$f" ]; then
-        all_surfaced=0
-        break
-      fi
-      matched="$matched$f
-"
-    done < <(printf '%s' "$qjson" | jq -r '.[].question // ""' 2>/dev/null)
-    if [ "$all_surfaced" -eq 1 ] && [ -n "$matched" ]; then
-      printf '%s' "$matched" | sort -u | while IFS= read -r f; do
-        [ -n "$f" ] && [ -f "$f" ] && resolve_file "$f" reasked-live
-      done
-      exit 0
-    fi
+  mkdir -p "$STORE" 2>/dev/null || exit 0
+
+  record=""
+  trap 'if [ -n "$record" ]; then rm -f "$record"; fi' EXIT
+  trap 'exit 0' HUP INT TERM PIPE
+  dup=$(find_duplicate_record "$qjson") || dup=""
+  if [ -n "$dup" ]; then
+    id=$(basename "$dup" .json)
+  else
+    epoch=$(now_epoch)
+    tuid=$(printf '%s' "$payload" | jq -r '.tool_use_id // empty' 2>/dev/null | LC_ALL=C tr -cd 'A-Za-z0-9_-' | cut -c1-40)
+    [ -n "$tuid" ] || tuid="pid$$"
+    sid=$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)
+    id="$(date -u +%Y%m%dT%H%M%SZ)-$tuid"
+    # A repeated tool_use_id in the same second must never overwrite a record.
+    [ ! -e "$STORE/$id.json" ] || id="$id-$$"
+    record="$STORE/$id.json"
+    jq -n --arg id "$id" --arg at "$(now_iso)" --argjson epoch "$epoch" \
+      --arg sid "$sid" --arg tuid "$tuid" --argjson q "$qjson" \
+      '{id: $id, recorded_at: $at, recorded_epoch: $epoch, session_id: $sid,
+        tool_use_id: $tuid, questions: $q, surfaced_at: null, surfaced_count: 0}' 2>/dev/null \
+      | write_atomic "$record" || exit 0
+    [ -s "$record" ] || exit 0
+
+    summary=$(printf '%s' "$qjson" | jq -r '.[0].question // "question"' 2>/dev/null | tr '\n' ' ' | sed 's/ *$//' | cut -c1-180)
+    run_notifications "$record" "Firstmate deferred a question for the captain: $summary"
   fi
 
-  mkdir -p "$STORE" 2>/dev/null || exit 0
-  epoch=$(now_epoch)
-  tuid=$(printf '%s' "$payload" | jq -r '.tool_use_id // empty' 2>/dev/null | LC_ALL=C tr -cd 'A-Za-z0-9_-' | cut -c1-40)
-  [ -n "$tuid" ] || tuid="pid$$"
-  sid=$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)
-  id="$(date -u +%Y%m%dT%H%M%SZ)-$tuid"
-  # A repeated tool_use_id in the same second must never overwrite a record.
-  [ ! -e "$STORE/$id.json" ] || id="$id-$$"
-  record="$STORE/$id.json"
-  jq -n --arg id "$id" --arg at "$(now_iso)" --argjson epoch "$epoch" \
-    --arg sid "$sid" --arg tuid "$tuid" --argjson q "$qjson" \
-    '{id: $id, recorded_at: $at, recorded_epoch: $epoch, session_id: $sid,
-      tool_use_id: $tuid, questions: $q, surfaced_at: null, surfaced_count: 0}' 2>/dev/null \
-    | write_atomic "$record" || exit 0
-  [ -s "$record" ] || exit 0
-
-  summary=$(printf '%s' "$qjson" | jq -r '.[0].question // "question"' 2>/dev/null | tr '\n' ' ' | sed 's/ *$//' | cut -c1-180)
-  run_notifications "$record" "Firstmate deferred a question for the captain: $summary"
-
-  answers=$(printf '%s' "$qjson" | jq -c --arg a "$DEFERRED_ANSWER" 'map({key: (.question // ""), value: $a}) | from_entries' 2>/dev/null) || exit 0
-  texts=$(printf '%s' "$qjson" | jq -r '.[] | "- " + (.question // "")' 2>/dev/null)
+  # If the allow decision cannot be emitted, the record must not outlive the
+  # call: a pending record plus a blocking prompt would double-report it.
+  answers=$(printf '%s' "$qjson" | jq -c --arg a "$DEFERRED_ANSWER" 'map({key: (.question // ""), value: $a}) | from_entries' 2>/dev/null) \
+    || exit 0
+  texts=$(printf '%s' "$qjson" | jq -r '.[] | "- " + (.question // "")' 2>/dev/null) \
+    || exit 0
   ctx="[deferred-question] Deferred answer mode is on for this home, so the captain did not see a blocking prompt and has NOT answered. Record $id holds:
 $texts
-Do not act on any option as if chosen. Keep supervising, restate the question in plain chat, and when the captain next writes, re-ask it with the exact same question text (the re-ask will then show a live prompt) or, if the captain answers in plain chat, run bin/fm-deferred-question.sh resolve $id."
-  jq -n --argjson payload "$payload" --argjson answers "$answers" --arg reason "deferred question $id" --arg ctx "$ctx" \
+Do not act on any option as if chosen. Keep supervising, restate the question in plain chat, and when the captain answers in plain chat, run bin/fm-deferred-question.sh resolve $id."
+  out=$(jq -n --argjson payload "$payload" --argjson answers "$answers" --arg reason "deferred question $id" --arg ctx "$ctx" \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow",
       permissionDecisionReason: $reason,
       updatedInput: ($payload.tool_input + {answers: $answers}),
-      additionalContext: $ctx}}' 2>/dev/null || exit 0
+      additionalContext: $ctx}}' 2>/dev/null) \
+    || exit 0
+  printf '%s\n' "$out" || exit 0
+  record=""
   exit 0
 }
 
@@ -233,7 +239,7 @@ $pending
 EOF
   [ "$count" -gt 0 ] || exit 0
   ctx="[deferred-question] $count question(s) were deferred while the captain was away and are still unanswered:
-${lines}Before other work, check whether this captain message answers them. If it does, act on that answer and run bin/fm-deferred-question.sh resolve <id>. Otherwise re-ask now: AskUserQuestion with the exact same question text shows a live prompt, or ask in plain chat and resolve once answered."
+${lines}This prompt is not proof the captain has returned. Restate each question in plain chat. Run bin/fm-deferred-question.sh resolve <id> only after the captain answers in plain chat. Do not call AskUserQuestion for a deferred question."
   jq -n --arg ctx "$ctx" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $ctx}}' 2>/dev/null
   exit 0
 }
@@ -258,10 +264,18 @@ cmd_resolve() {
   command -v jq >/dev/null 2>&1 || { echo "error: jq is required" >&2; exit 2; }
   [ "$#" -gt 0 ] || { echo "error: resolve needs <id>... or --all" >&2; exit 2; }
   if [ "$1" = --all ]; then
-    pending_files | while IFS= read -r f; do
-      resolve_file "$f" manual && echo "resolved $(basename "$f" .json)"
-    done
-    exit 0
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if resolve_file "$f" manual; then
+        echo "resolved $(basename "$f" .json)"
+      else
+        echo "error: could not resolve $(basename "$f" .json)" >&2
+        rc=1
+      fi
+    done <<EOF
+$(pending_files)
+EOF
+    exit "$rc"
   fi
   for id in "$@"; do
     case "$id" in

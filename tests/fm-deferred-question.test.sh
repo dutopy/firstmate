@@ -2,7 +2,7 @@
 # Behavior tests for the opt-in deferred-answer mode for Claude primary
 # AskUserQuestion calls (bin/fm-deferred-question.sh): default-off inertness,
 # the PreToolUse deferred allow shape, durable records, notification commands,
-# UserPromptSubmit re-surfacing, the live re-ask path, list/resolve, scope, and
+# UserPromptSubmit re-surfacing, identical-call reuse, list/resolve, scope, and
 # the tracked .claude/settings.json registration.
 set -u
 
@@ -18,6 +18,7 @@ command -v jq >/dev/null 2>&1 || fail "test host must provide jq"
 
 ASK='{"session_id":"s1","tool_name":"AskUserQuestion","tool_use_id":"toolu_01AB/../x","tool_input":{"questions":[{"question":"Merge PR 12?","header":"Merge","options":[{"label":"Yes","description":"y"},{"label":"No","description":"n"}],"multiSelect":false}]}}'
 ASK2='{"session_id":"s1","tool_name":"AskUserQuestion","tool_use_id":"toolu_02CD","tool_input":{"questions":[{"question":"Release now?","header":"Release","options":[{"label":"Yes","description":"y"},{"label":"Later","description":"l"}],"multiSelect":false}]}}'
+ASK_BOTH='{"session_id":"s1","tool_name":"AskUserQuestion","tool_use_id":"toolu_03EF/../y","tool_input":{"questions":[{"question":"Merge PR 12?","header":"Merge","options":[{"label":"Yes","description":"y"},{"label":"No","description":"n"}],"multiSelect":false},{"question":"Release now?","header":"Release","options":[{"label":"Yes","description":"y"},{"label":"Later","description":"l"}],"multiSelect":false}]}}'
 
 new_home() {  # <name> -> prints home path
   local h="$TMP_ROOT/$1"
@@ -89,6 +90,42 @@ test_defer_shape_and_record() {
   pass "deferral allows with echoed questions plus DEFERRED answers, adds context, and writes one sanitized record"
 }
 
+test_failed_delivery_rolls_back_only_new_records() {
+  local h mode rc
+  for mode in closed pipe; do
+    h=$(new_home "delivery-$mode")
+    touch "$h/config/deferred-questions"
+    rc=0
+    if [ "$mode" = closed ]; then
+      printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
+        "$DQ" pretool --claude >&- 2> "$ERR"
+      rc=${PIPESTATUS[1]}
+    else
+      printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
+        "$DQ" pretool --claude 2> "$ERR" | :
+      rc=${PIPESTATUS[1]}
+    fi
+    [ "$rc" -eq 0 ] || fail "$mode stdout failure must exit 0, got $rc"
+    [ "$(pending_count "$h")" -eq 0 ] || fail "$mode stdout failure left a new pending record"
+    run_dq "$h" "$ASK" pretool --claude || fail "seed deferral failed"
+    cp "$h"/state/deferred-questions/*.json "$TMP_ROOT/saved-record.json"
+    if [ "$mode" = closed ]; then
+      printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
+        "$DQ" pretool --claude >&- 2> "$ERR"
+      rc=${PIPESTATUS[1]}
+    else
+      printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
+        "$DQ" pretool --claude 2> "$ERR" | :
+      rc=${PIPESTATUS[1]}
+    fi
+    [ "$rc" -eq 0 ] || fail "$mode stdout failure on reuse must exit 0, got $rc"
+    [ "$(pending_count "$h")" -eq 1 ] || fail "$mode stdout failure removed a reused record"
+    cmp -s "$TMP_ROOT/saved-record.json" "$h"/state/deferred-questions/*.json \
+      || fail "$mode stdout failure changed a reused record"
+  done
+  pass "failed delivery exits 0, rolls back new records, and preserves reused records"
+}
+
 test_other_tools_and_bad_input_are_inert() {
   local h
   h=$(new_home inert)
@@ -150,6 +187,8 @@ test_prompt_resurfaces_and_skips_operational_input() {
   run_dq "$h" '{"prompt":"back now"}' prompt --claude || fail "captain prompt must exit 0"
   jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit" and (.hookSpecificOutput.additionalContext | contains("Merge PR 12?"))' "$OUT" >/dev/null \
     || fail "a captain prompt must re-surface the pending question: $(cat "$OUT")"
+  jq -e '.hookSpecificOutput.additionalContext | contains("not proof the captain has returned") and contains("plain chat") and contains("fm-deferred-question.sh resolve") and (contains("live prompt") | not)' "$OUT" >/dev/null \
+    || fail "re-surface context must restate in plain chat and must not send the question live: $(cat "$OUT")"
   jq -e '.surfaced_at != null and .surfaced_count == 1' "$h"/state/deferred-questions/*.json >/dev/null || fail "re-surfacing must mark the record"
   rm -f "$h/config/deferred-questions"
   run_dq "$h" '{"prompt":"again"}' prompt --claude || fail "second captain prompt must exit 0"
@@ -159,24 +198,51 @@ test_prompt_resurfaces_and_skips_operational_input() {
   pass "captain prompts re-surface pending questions (even after opt-out) while operational inputs never do"
 }
 
-test_live_reask_only_after_resurfacing() {
+test_plain_prompt_never_reopens_blocking_prompt() {
   local h
-  h=$(new_home live)
+  h=$(new_home plain)
   touch "$h/config/deferred-questions"
   run_dq "$h" "$ASK" pretool --claude || fail "seed deferral failed"
-  run_dq "$h" "$ASK" pretool --claude || fail "un-surfaced re-ask must exit 0"
+  run_dq "$h" "$ASK" pretool --claude || fail "identical call before any prompt must exit 0"
   jq -e '.hookSpecificOutput.permissionDecision == "allow"' "$OUT" >/dev/null \
-    || fail "a re-ask before any captain message must defer again"
-  [ "$(pending_count "$h")" -eq 2 ] || fail "the second deferral must be recorded"
+    || fail "an identical call before any prompt must still defer: $(cat "$OUT")"
+  [ "$(pending_count "$h")" -eq 1 ] || fail "an identical call before any prompt must reuse the pending record"
+  run_dq "$h" '{"prompt":"scheduled task: nightly report"}' prompt --claude || fail "unprefixed prompt failed"
+  run_dq "$h" "$ASK" pretool --claude || fail "pretool after an unprefixed prompt must exit 0"
+  jq -e '.hookSpecificOutput.permissionDecision == "allow"' "$OUT" >/dev/null \
+    || fail "an unprefixed prompt must not hand the next call to the blocking prompt: $(cat "$OUT")"
+  [ -s "$OUT" ] || fail "an unprefixed prompt must not empty the next pretool stdout"
+  [ "$(pending_count "$h")" -eq 1 ] || fail "an identical call must reuse the pending record"
+  [ "$(resolved_count "$h")" -eq 0 ] || fail "a repeated call must never resolve a record"
+  pass "a plain captain prompt never reopens the blocking prompt and an identical call reuses its record"
+}
+
+test_partial_reask_leaves_other_questions_pending() {
+  local h
+  h=$(new_home partial)
+  touch "$h/config/deferred-questions"
+  run_dq "$h" "$ASK_BOTH" pretool --claude || fail "seed multi-question deferral failed"
   run_dq "$h" '{"prompt":"here"}' prompt --claude || fail "captain prompt failed"
-  run_dq "$h" "$ASK2" pretool --claude || fail "new question must exit 0"
+  run_dq "$h" "$ASK" pretool --claude || fail "partial re-ask must exit 0"
   jq -e '.hookSpecificOutput.permissionDecision == "allow"' "$OUT" >/dev/null \
-    || fail "a different question must still defer after re-surfacing"
-  run_dq "$h" "$ASK" pretool --claude || fail "live re-ask must exit 0"
-  [ ! -s "$OUT" ] || fail "a re-ask of a re-surfaced question must leave the live prompt: $(cat "$OUT")"
-  [ "$(resolved_count "$h")" -ge 1 ] || fail "the live re-ask must resolve its matched record"
-  jq -e '.resolved_by == "reasked-live"' "$h"/state/deferred-questions/resolved/*.json >/dev/null || fail "resolved_by must name the live re-ask"
-  pass "only an exact re-ask of a question already re-surfaced at a captain message goes live"
+    || fail "a partial re-ask must still defer: $(cat "$OUT")"
+  [ "$(resolved_count "$h")" -eq 0 ] || fail "a partial re-ask must not resolve any record"
+  grep -l 'Release now?' "$h"/state/deferred-questions/*.json >/dev/null \
+    || fail "the question that was not re-asked must stay pending"
+  pass "a re-ask of one question never resolves the record holding another"
+}
+
+test_resolve_all_propagates_failure() {
+  local h rc=0
+  h=$(new_home resolvefail)
+  touch "$h/config/deferred-questions"
+  run_dq "$h" "$ASK" pretool --claude || fail "seed deferral failed"
+  : > "$h/state/deferred-questions/resolved"
+  run_dq "$h" '' resolve --all || rc=$?
+  [ "$rc" -ne 0 ] || fail "resolve --all must exit non-zero when the write fails"
+  grep -q 'error:' "$ERR" || fail "resolve --all must report the write failure: $(cat "$ERR")"
+  [ "$(pending_count "$h")" -eq 1 ] || fail "a failed resolve --all must leave the record pending"
+  pass "resolve --all reports a failed write instead of exiting 0"
 }
 
 test_list_and_resolve() {
@@ -215,10 +281,13 @@ test_tracked_settings_registration() {
 test_default_off_is_inert
 test_env_override_enables_without_flag
 test_defer_shape_and_record
+test_failed_delivery_rolls_back_only_new_records
 test_other_tools_and_bad_input_are_inert
 test_task_worktree_is_inert
 test_notification_command_runs_detached
 test_prompt_resurfaces_and_skips_operational_input
-test_live_reask_only_after_resurfacing
+test_plain_prompt_never_reopens_blocking_prompt
+test_partial_reask_leaves_other_questions_pending
+test_resolve_all_propagates_failure
 test_list_and_resolve
 test_tracked_settings_registration

@@ -35,14 +35,18 @@ When the mode is on and the primary calls `AskUserQuestion`, the `PreToolUse` ho
 
 The turn then continues and ends normally, so the `Stop` hook re-arms supervision as it does after any other turn.
 
-At every later captain message, the `UserPromptSubmit` hook lists each pending record as added context, asks the primary to check whether the message answers it, and marks it as re-surfaced.
+At every later prompt that is not an operational input, the `UserPromptSubmit` hook lists each pending record as added context and marks it as re-surfaced.
+That prompt is not proof the captain has returned.
+The primary restates the question in plain chat and runs `resolve` only after the captain answers there.
+It never calls `AskUserQuestion` again for a deferred question.
 It runs even after the mode is turned off, so records from an enabled period are never stranded.
 Firstmate's own operational inputs, which all begin with U+2063, are never treated as captain messages.
 
-A re-ask whose every question exactly matches a record already re-surfaced at a captain message is the one case the hook leaves alone: the captain demonstrably came back, so Claude Code shows its ordinary live prompt and the matched records are resolved.
-Any other question, including a re-ask before the captain has written, is deferred again.
+While the mode is on, the hook never hands a call back to Claude Code's blocking prompt: that reopens the gap this mode exists to close.
+A call whose question texts match a pending record reuses that record instead of writing a second one.
+Only `resolve` closes a record.
 
-When the captain answers in plain chat instead, the primary closes the record itself:
+When the captain answers in plain chat, the primary closes the record itself:
 
 ```sh
 bin/fm-deferred-question.sh list
@@ -68,14 +72,14 @@ These are what Claude Code itself documents and what this mode can and cannot pr
 - The `defer` permission decision, which would pause the tool call for real, is honored only in non-interactive `claude -p` runs; interactive sessions ignore it, which is why this mode answers the call instead.
 - A deferred question is never actually put to the captain inside Claude Code.
   The record, the notification command, and the primary restating it in plain chat are the only ways the captain learns of it.
-- `UserPromptSubmit` also fires for scheduled tasks, background subagent reports, and cross-session messages, which Claude Code does not mark as distinct from a typed captain prompt; those can re-surface a question early, and a re-surfaced question is then eligible for the live re-ask path.
-- The live re-ask path reopens the original gap: if the captain writes and walks away before answering the re-asked prompt, that prompt blocks the turn again.
+- `UserPromptSubmit` also fires for scheduled tasks, background subagent reports, and cross-session messages, which Claude Code does not mark as distinct from a typed captain prompt; those can re-surface a question early.
+- A deferred question is answered only through plain chat plus `resolve`, so the captain must read chat for it; the mode never reopens the blocking prompt.
 - The hook's own timeout is 30 seconds for `PreToolUse` and 15 for `UserPromptSubmit`; a timed-out hook falls back to Claude Code's ordinary behavior, a blocking prompt or a prompt without added context.
 - Questions asked while the mode is off, and `ExitPlanMode` approvals, still block as before.
 
 ## Verification
 
-`tests/fm-deferred-question.test.sh` owns the behavior matrix: default-off inertness, the env override, the deferred `allow` shape and record, scope, notification commands, re-surfacing, the live re-ask path, `list` and `resolve`, and the tracked settings registration.
+`tests/fm-deferred-question.test.sh` owns the behavior matrix: default-off inertness, the env override, the deferred `allow` shape and record, scope, notification commands, re-surfacing, record reuse for an identical call, `list` and `resolve`, and the tracked settings registration.
 `tests/fm-turnend-guard.test.sh` proves both tracked entries stay inert under Grok and live under Claude.
 
-A live interactive check on Claude Code 2.1.316 in a fixture home showed the deferred answer reaching the model, the turn completing with the `Stop` hook firing, the next captain message re-surfacing the question, and an exact re-ask showing the ordinary live prompt.
+A live interactive check on Claude Code 2.1.316 in a fixture home showed the deferred answer reaching the model, the turn completing with the `Stop` hook firing, and the next captain message re-surfacing the question.
