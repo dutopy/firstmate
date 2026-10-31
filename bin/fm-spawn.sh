@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--override-reason <why>]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--override-reason <why>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -154,7 +154,22 @@
 #   explicit harness or raw launch command always wins outright. Without that opt-in,
 #   or when no concrete profile comes back, the pre-existing backstop below stays in
 #   force: the spawn refuses instead of silently skipping the configured dispatch
-#   rules. A --secondmate spawn is exempt from all of this and resolves the SECONDMATE
+#   rules.
+#   Whatever path chose them, a fresh crewmate or scout spawn under an active
+#   config/crew-dispatch.json then checks the final harness/model/effort against
+#   every profile the file declares (class sets, rule `use`, and `default`). A
+#   declared model or effort must match exactly; an omitted model admits only the
+#   harness default, and an omitted effort admits any effort. A combination that
+#   matches no declared profile, or a raw launch command, REFUSES before any
+#   endpoint, worktree, or record exists unless --override-reason '<why>' is
+#   passed - an explicit captain override needs one too. With a reason the spawn
+#   proceeds, records dispatch_override_reason=<why> in state/<id>.meta, and
+#   appends one `note:` line naming the profile and reason to state/<id>.status.
+#   The reason must be one printable line of at most 500 characters; it is
+#   refused on --secondmate and --relaunch spawns and ignored with a notice when
+#   the profile is already declared or no dispatch file is active. The check
+#   proves membership in the declared set only; choosing the best-fit rule within
+#   it stays firstmate's intake (AGENTS.md section 4). A --secondmate spawn is exempt from all of this and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
 #   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy)
@@ -244,7 +259,7 @@
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
 #   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo
-#   applies to every pair. A ship batch therefore carries one delivery contract, and each
+#   and --override-reason applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
 #   If config/crew-dispatch.json exists, shared --harness is required for crewmate
 #   and scout batches. The loop lives here, in bash, so callers never hand-write a
@@ -618,6 +633,30 @@ fm_spawn_typed_dispatch_profile() {
   printf '%s|%s|%s\n' "$harness" "$model" "$axis_effort"
 }
 
+# Whether one concrete harness/model/effort is a profile declared anywhere in
+# the dispatch config: a class profile set, a rule's `use`, or `default`.
+# Prints `in` or `out`; returns non-zero when the file cannot be read as JSON.
+# A declared model must match exactly, and a profile that omits model admits
+# only the harness default. A declared effort must match exactly, while a
+# profile that omits effort admits any effort, because the effort fallback
+# (and the class stage's effort answer) applies exactly there.
+fm_spawn_dispatch_profile_membership() {
+  local config=$1 harness=$2 model=$3 effort=$4
+  command -v jq >/dev/null 2>&1 || return 1
+  [ "$model" != default ] || model=''
+  jq -r --arg h "$harness" --arg m "$model" --arg e "$effort" '
+    def profiles: if type == "array" then .[] elif type == "object" then . else empty end;
+    [ ((.classes // {}) | if type == "object" then .[] else empty end | profiles),
+      ((.rules // []) | if type == "array" then .[] else empty end | (.use // empty) | profiles),
+      ((.default // empty) | profiles) ]
+    | map(select(type == "object"
+        and .harness == $h
+        and ((.model // "") == $m)
+        and (((.effort // "") == "") or (.effort == $e))))
+    | if length > 0 then "in" else "out" end
+  ' "$config" 2>/dev/null
+}
+
 KIND=ship
 KIND_SET=0
 HARNESS_ARG=
@@ -634,6 +673,8 @@ BACKEND_SET=0
 MODE_SET=0
 YOLO_SET=0
 TRACEPARENT_SET=0
+OVERRIDE_REASON=
+OVERRIDE_REASON_SET=0
 RELAUNCH=0
 POS=()
 want_value=
@@ -673,6 +714,10 @@ for a in "$@"; do
     traceparent)
       TRACEPARENT_ARG=$a
       TRACEPARENT_SET=1
+      ;;
+    override-reason)
+      OVERRIDE_REASON=$a
+      OVERRIDE_REASON_SET=1
       ;;
     *)
       echo "error: internal parser state for --$want_value" >&2
@@ -727,6 +772,11 @@ for a in "$@"; do
     TRACEPARENT_ARG=${a#--traceparent=}
     TRACEPARENT_SET=1
     ;;
+  --override-reason) want_value=override-reason ;;
+  --override-reason=*)
+    OVERRIDE_REASON=${a#--override-reason=}
+    OVERRIDE_REASON_SET=1
+    ;;
   *) POS+=("$a") ;;
   esac
 done
@@ -762,6 +812,33 @@ done
   echo "error: --traceparent requires a non-empty value" >&2
   exit 1
 }
+# The override reason lands verbatim in one task-record line and one status
+# line, so it must be one printable line of bounded length.
+if [ "$OVERRIDE_REASON_SET" -eq 1 ]; then
+  case "$OVERRIDE_REASON" in
+  *[![:space:]]*) ;;
+  *)
+    echo "error: --override-reason requires a non-empty reason" >&2
+    exit 1
+    ;;
+  esac
+  if [ "$(printf '%s' "$OVERRIDE_REASON" | LC_ALL=C tr -d '\000-\037\177')" != "$OVERRIDE_REASON" ]; then
+    echo "error: --override-reason must be a single line without control characters" >&2
+    exit 1
+  fi
+  [ "${#OVERRIDE_REASON}" -le 500 ] || {
+    echo "error: --override-reason must be at most 500 characters" >&2
+    exit 1
+  }
+  [ "$KIND" != secondmate ] || {
+    echo "error: --override-reason applies only to crewmate and scout spawns; a secondmate spawn is exempt from the dispatch profiles" >&2
+    exit 1
+  }
+  [ "$RELAUNCH" -eq 0 ] || {
+    echo "error: --override-reason applies only to fresh crewmate and scout spawns, not --relaunch" >&2
+    exit 1
+  }
+fi
 # A parent-delivered carrier replaces this home's own resolution, so it is
 # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -1408,6 +1485,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   # spanning several modes is two invocations rather than a silent mixed dispatch.
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
+  [ "$OVERRIDE_REASON_SET" -eq 0 ] || shared_args+=(--override-reason "$OVERRIDE_REASON")
   for pair in "${POS[@]}"; do
     case "$pair" in
     *=*) : ;;
@@ -2106,6 +2184,35 @@ fi
 if [ "$KIND" = secondmate ] && [ "$HARNESS" = rovo ]; then
   echo "error: rovo is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates." >&2
   exit 1
+fi
+
+# Dispatch-profile membership: with config/crew-dispatch.json present, a fresh
+# crewmate or scout spawn whose final harness/model/effort matches no declared
+# profile refuses unless --override-reason states why (see the header).
+DISPATCH_OVERRIDE_REASON=
+if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
+  if [ "$RAW_LAUNCH" -eq 1 ]; then
+    dispatch_membership=raw
+  else
+    dispatch_membership=$(fm_spawn_dispatch_profile_membership "$CONFIG/crew-dispatch.json" "$HARNESS" "$MODEL" "$EFFORT") || {
+      echo "error: config/crew-dispatch.json could not be read as a dispatch profile set; fix the configuration rather than spawning around it" >&2
+      exit 1
+    }
+  fi
+  if [ "$dispatch_membership" != in ]; then
+    dispatch_requested="harness=${HARNESS:-unknown} model=${MODEL:-default} effort=${EFFORT:-default}"
+    [ "$dispatch_membership" != raw ] || dispatch_requested="raw launch command (${HARNESS:-unknown})"
+    if [ "$OVERRIDE_REASON_SET" -eq 0 ]; then
+      echo "error: $dispatch_requested matches no profile declared in config/crew-dispatch.json; dispatch a configured profile, or pass --override-reason '<why>' to record a deliberate out-of-profile choice (an explicit captain override needs one too)" >&2
+      exit 1
+    fi
+    DISPATCH_OVERRIDE_REASON=$OVERRIDE_REASON
+    echo "dispatch: override - $dispatch_requested is outside config/crew-dispatch.json; reason: $OVERRIDE_REASON" >&2
+  elif [ "$OVERRIDE_REASON_SET" -eq 1 ]; then
+    echo "dispatch: --override-reason ignored - harness=$HARNESS model=${MODEL:-default} effort=${EFFORT:-default} is a configured profile" >&2
+  fi
+elif [ "$OVERRIDE_REASON_SET" -eq 1 ] && [ ! -f "$CONFIG/crew-dispatch.json" ]; then
+  echo "dispatch: --override-reason ignored - no config/crew-dispatch.json is active" >&2
 fi
 
 case "$HARNESS" in
@@ -4352,6 +4459,7 @@ preserve_relaunch_meta() {
   [ -z "$GUARD_BASE" ] || echo "guard_base=$GUARD_BASE"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
+  [ -z "$DISPATCH_OVERRIDE_REASON" ] || echo "dispatch_override_reason=$DISPATCH_OVERRIDE_REASON"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;
@@ -4779,6 +4887,11 @@ fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
 
+if [ -n "$DISPATCH_OVERRIDE_REASON" ]; then
+  printf 'note: dispatched outside config/crew-dispatch.json on harness=%s model=%s effort=%s; override reason: %s\n' \
+    "$HARNESS" "${MODEL:-default}" "${EFFORT:-default}" "$DISPATCH_OVERRIDE_REASON" >>"$STATE/$ID.status" ||
+    echo "warning: could not append the dispatch override note to $STATE/$ID.status; the reason is in the task record" >&2
+fi
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT"

@@ -76,7 +76,7 @@ make_spawn_case() {
 
 enable_dispatch_profile() {
   local home=$1
-  printf '%s\n' '{"rules":[{"when":"current events","use":{"harness":"grok","model":"grok-4","effort":"high"}}],"default":{"harness":"codex","model":"gpt-5","effort":"medium"}}' \
+  printf '%s\n' '{"rules":[{"when":"current events","use":{"harness":"grok","model":"grok-4","effort":"high"}}],"default":{"harness":"codex","model":"gpt-5","effort":"high"}}' \
     > "$home/config/crew-dispatch.json"
 }
 
@@ -470,7 +470,16 @@ test_active_dispatch_profile_allows_raw_launch_command() {
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" "custom-agent --flag")
   status=$?
-  expect_code 0 "$status" "raw launch command should satisfy active dispatch-profile requirement"
+  expect_code 1 "$status" "raw launch command outside the declared profiles should refuse without a reason"
+  assert_contains "$out" "raw launch command (custom-agent) matches no profile declared in config/crew-dispatch.json" \
+    "raw launch refusal did not name the out-of-profile command"
+  assert_absent "$HOME_DIR/state/$id.meta" "raw launch refusal should happen before meta is written"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" "custom-agent --flag" --override-reason "verifying a new adapter")
+  status=$?
+  expect_code 0 "$status" "raw launch command with an override reason should satisfy active dispatch-profile requirement"
+  assert_grep "dispatch_override_reason=verifying a new adapter" "$HOME_DIR/state/$id.meta" "raw launch override reason not recorded"
   assert_contains "$out" "spawned $id harness=custom-agent" "spawn did not report raw command harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" custom-agent default default
   launch=$(cat "$LAUNCH_LOG")
@@ -789,10 +798,13 @@ test_batch_preserves_native_ultra() {
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
-    "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness pi --model codex-native/gpt-6-astra --effort ultra)
+    "$id1=$PROJ_DIR" "$id2=$PROJ_DIR" --harness pi --model codex-native/gpt-6-astra --effort ultra \
+    --override-reason "native Ultra smoke")
   expect_code 0 "$?" "native Ultra batch failed: $out"
   assert_meta_profile "$HOME_DIR/state/$id1.meta" pi codex-native/gpt-6-astra ultra
   assert_meta_profile "$HOME_DIR/state/$id2.meta" pi codex-native/gpt-6-astra ultra
+  assert_grep "dispatch_override_reason=native Ultra smoke" "$HOME_DIR/state/$id2.meta" \
+    "batch did not forward the shared override reason"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "--codex-effort 'ultra'" "batch dropped native effort"
   assert_not_contains "$launch" "--thinking 'ultra'" "batch passed an invalid Pi level"
@@ -1692,8 +1704,96 @@ test_typed_dispatch_falls_back_to_the_rule_path_with_a_flag() {
   pass "a classifier failure or low confidence falls back to the rule path with a flag and never blocks"
 }
 
+# Dispatch-profile membership (bin/fm-spawn.sh header): with the file active, a
+# spawn must land on a declared profile or carry a written override reason.
+test_in_profile_spawn_passes_without_reason() {
+  local rec id out status
+  id=profile-member-in-z40
+  rec=$(make_spawn_case profile-member-in claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness grok --model grok-4 --effort high)
+  status=$?
+  expect_code 0 "$status" "a declared rule profile should spawn without an override reason: $out"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" grok grok-4 high
+  assert_no_grep "dispatch_override_reason=" "$HOME_DIR/state/$id.meta" "an in-profile spawn must not record an override"
+  if [ -e "$HOME_DIR/state/$id.status" ]; then
+    assert_no_grep "override reason" "$HOME_DIR/state/$id.status" "an in-profile spawn must not log an override"
+  fi
+  pass "an in-profile spawn passes without an override reason"
+}
+
+test_out_of_profile_spawn_refuses_without_reason() {
+  local rec id out status
+  id=profile-member-out-z41
+  rec=$(make_spawn_case profile-member-out claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+
+  # A declared harness on an undeclared cheap model is out of profile.
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness claude --model haiku --effort low)
+  status=$?
+  expect_code 1 "$status" "an undeclared profile should refuse without an override reason"
+  assert_contains "$out" "harness=claude model=haiku effort=low matches no profile declared in config/crew-dispatch.json" \
+    "the refusal did not name the out-of-profile combination"
+  assert_contains "$out" "--override-reason" "the refusal did not name the override flag"
+  assert_absent "$HOME_DIR/state/$id.meta" "the refusal should happen before meta is written"
+  [ -s "$LAUNCH_LOG" ] && fail "the refusal should happen before any launch"
+
+  # A declared harness and model on an undeclared effort is out of profile too.
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort low)
+  expect_code 1 "$?" "a declared model on an undeclared effort should refuse"
+  assert_absent "$HOME_DIR/state/$id.meta" "the effort refusal should happen before meta is written"
+
+  # A blank or multi-line reason is not a reason.
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness claude --model haiku --override-reason "   ")
+  expect_code 1 "$?" "a blank override reason should refuse"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness claude --model haiku --override-reason "$(printf 'a\nb')")
+  expect_code 1 "$?" "a multi-line override reason should refuse"
+  assert_absent "$HOME_DIR/state/$id.meta" "a malformed reason should refuse before meta is written"
+  pass "an out-of-profile spawn refuses without a usable override reason"
+}
+
+test_out_of_profile_spawn_with_reason_passes_and_records_it() {
+  local rec id out status reason
+  id=profile-member-reason-z42
+  reason="captain asked for haiku on this rote rename"
+  rec=$(make_spawn_case profile-member-reason claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness claude --model haiku --effort low --override-reason "$reason")
+  status=$?
+  expect_code 0 "$status" "an out-of-profile spawn with a reason should proceed: $out"
+  assert_contains "$out" "spawned $id harness=claude" "the override spawn did not launch the requested harness"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" claude haiku low
+  assert_grep "dispatch_override_reason=$reason" "$HOME_DIR/state/$id.meta" "the override reason was not recorded in meta"
+  assert_grep "note: dispatched outside config/crew-dispatch.json on harness=claude model=haiku effort=low; override reason: $reason" \
+    "$HOME_DIR/state/$id.status" "the override reason was not recorded in status"
+  pass "an out-of-profile spawn with a reason passes and records it in meta and status"
+}
+
+test_override_reason_refused_for_secondmate() {
+  local out
+  out=$("$SPAWN" sm-z43 --secondmate --override-reason "why" 2>&1)
+  expect_code 1 "$?" "--override-reason should be refused on a secondmate spawn"
+  assert_contains "$out" "--override-reason applies only to crewmate and scout spawns" "secondmate refusal not explained"
+  pass "--override-reason is refused on secondmate spawns"
+}
+
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_typed_dispatch_resolves_the_jev_class_into_the_spawn
+test_in_profile_spawn_passes_without_reason
+test_out_of_profile_spawn_refuses_without_reason
+test_out_of_profile_spawn_with_reason_passes_and_records_it
+test_override_reason_refused_for_secondmate
 test_typed_dispatch_falls_back_to_the_rule_path_with_a_flag
 
 echo "# all fm-spawn-dispatch-profile tests passed"
