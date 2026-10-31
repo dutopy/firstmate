@@ -125,7 +125,23 @@
 # explicit captain instruction and never skips the live green check, the
 # away-grant check, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--automatic] [--attended-override] [--allow-red <check-name>] [-- <extra forge merge args>]
+# A merge that relies on a standing mandate cites it with --mandate <id>, on the
+# attended and the --automatic (yolo) path alike. The cited mandate is checked
+# by bin/fm-mandate.sh, which owns the record, inside the same critical section
+# as the forge command, against the live UTC clock, the action merge, the
+# repository, the live base branch, and the live changed paths; a missing,
+# revoked, expired, or out-of-scope mandate refuses before anything reaches the
+# forge, even when every other condition is green. Automatic eligibility work
+# is followed by another mandate check before the forge call. Revocation uses
+# the same authority lock, so it cannot complete during that critical section.
+# A cited mandate requires an immediate merge: requested or configured
+# auto-merge refuses, GitHub must prove the absence of a merge queue, and GitLab
+# receives a final --auto-merge=false. The queue/base-change and orphaned-child
+# limitations described above also apply to cited mandates.
+# A mandate never adds authority: without --mandate this script behaves exactly
+# as before.
+#
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--automatic] [--attended-override] [--allow-red <check-name>] [--mandate <id>] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -191,6 +207,7 @@ ATTENDED_OVERRIDE=false
 ALLOW_RED=()
 AUTOMATIC=false
 AUTOMATIC_PROOF=
+MANDATE_ID=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --automatic)
@@ -213,6 +230,16 @@ while [ "$#" -gt 0 ]; do
       ;;
     --allow-red=*)
       echo "error: --allow-red requires a separate check name argument" >&2
+      exit 2
+      ;;
+    --mandate)
+      [ -n "${2:-}" ] || { echo "error: --mandate requires a mandate id" >&2; exit 2; }
+      [ -z "$MANDATE_ID" ] || { echo "error: --mandate may be specified only once" >&2; exit 2; }
+      MANDATE_ID=$2
+      shift 2
+      ;;
+    --mandate=*)
+      echo "error: --mandate requires a separate mandate id argument" >&2
       exit 2
       ;;
     --) shift; break ;;
@@ -445,6 +472,7 @@ RECORDED_PATCH_ID=$(grep '^pr_patch_id=' "$META" | tail -1 | cut -d= -f2- || tru
 # returns non-zero after reporting every condition that failed.
 FM_PR_MERGE_HEAD=
 FM_PR_GITLAB_ASYNC_CONFIGURED=false
+FM_PR_GITLAB_CHANGES_COUNT=null
 gitlab_verify_mergeable() {
   local json fields line
   local total=0 named=0 refusals=''
@@ -503,6 +531,8 @@ FIELDS
     echo "error: could not read the GitLab merge request state before merging" >&2
     return 1
   fi
+
+  FM_PR_GITLAB_CHANGES_COUNT=$(printf '%s' "$json" | jq -c '.changes_count') || return 1
 
   if ! fm_pr_head_valid "$live_head"; then
     echo "error: could not read the GitLab merge request head commit before merging" >&2
@@ -1055,14 +1085,14 @@ persist_accepted_merge_authority() {
 # 404, or an unrelated 403) stays unreadable and refuses the merge. The merge
 # stays synchronous (--auto is refused earlier) and every other gate still
 # applies.
-refuse_github_queue_while_away() {
-  [ "$FM_PR_AWAY_POSTURE" = true ] || return 0
+require_github_immediate_merge() {
+  [ "$FM_PR_AWAY_POSTURE" = true ] || [ -n "$MANDATE_ID" ] || return 0
   # Accepted confused-agent-grade limitation, as in bin/fm-lease-lib.sh, not an
   # oversight: a queue rule or PR base change after this preflight can still
   # enqueue the merge, which can land after its away grant lapses.
   github_read_queue_method
   [ "$FM_PR_GITHUB_QUEUE_STATUS" = none ] && return 0
-  echo "error: GitHub merge refused while away because the base branch's merge-queue state does not prove an immediate merge; nothing was handed to the forge" >&2
+  echo "error: GitHub merge refused under time-bounded authority because the base branch's merge-queue state does not prove an immediate merge; nothing was handed to the forge" >&2
   return 2
 }
 
@@ -1101,6 +1131,87 @@ require_recorded_pr_identity() {
   [ "$existing" = "$URL" ] && return 0
   echo "error: task $ID is bound to $existing, not $URL" >&2
   return 1
+}
+
+# Refuse a merge that relies on a standing mandate unless that mandate is in
+# force and covers this merge right now. bin/fm-mandate.sh owns the record and
+# every rule; this function supplies the live facts: the repository, the base
+# branch, and the changed paths read from the forge's own file list.
+#
+# The file list, never the unified diff, is the source. A binary or non-ASCII
+# path is quoted in the diff's `diff --git` header, and a copy names its source
+# only in `copy from`, so a diff parser can miss a changed path that a deny rule
+# covers. GitHub pages the pull request's files and gives `filename` plus
+# `previous_filename`; GitLab's diffs endpoint gives `old_path` and `new_path`.
+# Both names are returned for a rename, so a rename cannot move a denied path
+# out of the check. A list that cannot be proven complete refuses: GitHub lists
+# at or above its 3000-file cap refuse; GitLab requires changes_count from the
+# live MR read to be a base-10 integer string equal to the returned diff-entry
+# count. Missing, empty, overflow-marked (1000+), or mismatched counts refuse
+# before any path is checked. Tabs and newlines in either forge's path fields
+# also refuse before the line-based transport can alter a name.
+# tests/fm-pr-merge.test.sh covers these boundaries through this entrypoint.
+mandate_changed_paths() {
+  local listing raw files
+  local path_filter='def checked: if test("[\t\n]") then error("unrepresentable changed path") else . end;'
+  case "$PROVIDER" in
+    github)
+      listing=$(gh api --paginate "repos/$PR_PATH/pulls/$PR_NUMBER/files?per_page=100" \
+        --jq "$path_filter"' .[] | "f\t" + (.filename | checked), ((.previous_filename // empty) | "p\t" + checked)' \
+        2>/dev/null) || return 1
+      files=$(printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" { n++ } END { print n + 0 }')
+      [ "$files" -lt 3000 ] || return 1
+      ;;
+    gitlab)
+      raw=$(GITLAB_HOST="$PR_HOST" glab api --paginate \
+        "projects/$(github_urlencode_path_segment "$PR_PATH")/merge_requests/$PR_NUMBER/diffs?per_page=100" \
+        2>/dev/null) || return 1
+      printf '%s\n' "$raw" | jq -se --argjson count "$FM_PR_GITLAB_CHANGES_COUNT" '
+        all(.[]; type == "array")
+        and ($count | type == "string" and test("^[0-9]+$"))
+        and (($count | tonumber) == (map(length) | add // 0))
+      ' >/dev/null 2>&1 || return 1
+      listing=$(printf '%s\n' "$raw" \
+        | jq -r "$path_filter"' .[]? | "f\t" + (.new_path | checked), ((.old_path // empty) | "p\t" + checked)' \
+        2>/dev/null) || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$listing" | awk -F '\t' '$1 == "f" || $1 == "p" { print $2 }' \
+    | awk 'NF && !seen[$0]++'
+}
+
+mandate_base_branch() {
+  case "$PROVIDER" in
+    github) printf '%s\n' "${FM_PR_GITHUB_BASE:-}" ;;
+    gitlab)
+      GITLAB_HOST="$PR_HOST" glab mr view "$PR_NUMBER" -R "$PROJECT_URL" -F json 2>/dev/null \
+        | jq -r '.target_branch // empty' 2>/dev/null
+      ;;
+  esac
+}
+
+require_cited_mandate() {
+  local paths base
+  [ -n "$MANDATE_ID" ] || return 0
+  if { [ "$PROVIDER" = github ] && [ "$FM_PR_GITHUB_AUTO_REQUESTED" = true ]; } \
+    || { [ "$PROVIDER" = gitlab ] && { [ "$FM_PR_GITLAB_ASYNC_REQUESTED" = true ] || [ "$FM_PR_GITLAB_ASYNC_CONFIGURED" = true ]; }; }; then
+    echo "error: a cited mandate requires an immediate merge; auto-merge is not authorized" >&2
+    return 1
+  fi
+  if ! paths=$(mandate_changed_paths) || [ -z "$paths" ]; then
+    printf 'error: refusing to merge %s: the changed paths could not be read to check mandate %s; nothing was merged\n' \
+      "$URL" "$MANDATE_ID" >&2
+    return 1
+  fi
+  base=$(mandate_base_branch || true)
+  if ! printf '%s\n' "$paths" | FM_STATE_OVERRIDE="$STATE" FM_HOME="$FM_HOME" \
+      "$SCRIPT_DIR/fm-mandate.sh" check "$MANDATE_ID" --action merge \
+      --repo "$PR_PATH" --host "$PR_HOST" --branch "$base" --files-from - >&2; then
+    printf 'error: refusing to merge %s: it relies on mandate %s, which does not authorize this merge now; nothing was merged\n' \
+      "$URL" "$MANDATE_ID" >&2
+    return 1
+  fi
 }
 
 FM_PR_GITHUB_MERGE_ACCEPTED=false
@@ -1261,7 +1372,8 @@ case "$PROVIDER" in
     away_status=0
     require_current_away_authority || away_status=$?
     [ "$away_status" -eq 0 ] || exit "$away_status"
-    refuse_github_queue_while_away || exit 2
+    require_github_immediate_merge || exit 2
+    require_cited_mandate || exit 1
     if [ "$AUTOMATIC" = true ]; then
       [ "$(grep '^yolo=' "$META")" = yolo=on ] || {
         echo "error: --automatic requires recorded yolo=on" >&2
@@ -1272,6 +1384,7 @@ case "$PROVIDER" in
       fm_merge_authority_automatic_snapshot_valid "$AUTOMATIC_PROOF" "$URL" \
         "$FM_PR_MERGE_HEAD" || exit 1
       FM_PR_MERGE_AUTHORITY=yolo
+      require_cited_mandate || exit 1
     fi
     merge_status=0
     # Raw gh remainder: gh-axi's `pr merge` offers --method/--auto/--delete-branch
@@ -1334,9 +1447,10 @@ case "$PROVIDER" in
     away_status=0
     require_current_away_authority || away_status=$?
     [ "$away_status" -eq 0 ] || exit "$away_status"
+    require_cited_mandate || exit 1
     merge_status=0
     gitlab_merge_args=()
-    if [ "$FM_PR_AWAY_POSTURE" = true ]; then
+    if [ "$FM_PR_AWAY_POSTURE" = true ] || [ -n "$MANDATE_ID" ]; then
       gitlab_merge_args=(--auto-merge=false)
     fi
     GITLAB_HOST="$FM_PR_HOST" glab mr merge "$PR_NUMBER" -R "$PROJECT_URL" \

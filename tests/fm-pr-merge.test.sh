@@ -233,6 +233,12 @@ SH
   cat > "$case_dir/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+jq_expr=''
+prev=''
+for arg in "$@"; do
+  [ "$prev" != --jq ] || jq_expr=$arg
+  prev=$arg
+done
 case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
@@ -289,6 +295,13 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   api\ *)
+    case " $* " in
+      *"/files"*)
+        [ ! -e "${FM_TEST_GH_FILES_FAIL:-}" ] || { echo 'error: could not read the pull request files' >&2; exit 1; }
+        jq -r "$jq_expr" "$FM_TEST_GH_FILES" || exit 1
+        exit 0
+        ;;
+    esac
     if [ -f "${FM_TEST_GH_RULES_FAIL_BODY:-}" ]; then
       cat "$FM_TEST_GH_RULES_FAIL_BODY" >&2
       exit 1
@@ -370,8 +383,18 @@ case "${1:-} ${2:-}" in
     exit 0
     ;;
   "mr merge")
+    if [ -x "${FM_TEST_AWAY_MUTATE_AT_MERGE:-}" ]; then
+      mutate_rc=0
+      "$FM_TEST_AWAY_MUTATE_AT_MERGE" > "$FM_TEST_AWAY_MUTATE_OUT" 2>&1 || mutate_rc=$?
+      printf '%s\n' "$mutate_rc" > "$FM_TEST_AWAY_MUTATE_RC"
+    fi
     [ ! -e "$case_dir/glab-merge-fails" ] || { echo "error: mr merge failed" >&2 ; exit 1 ; }
     : > "$case_dir/glab-merge-called"
+    exit 0
+    ;;
+  api*)
+    [ ! -e "$case_dir/glab-diffs-fails" ] || { echo "error: could not read the merge request diffs" >&2 ; exit 1 ; }
+    cat "$case_dir/glab-diffs.json" || exit 1
     exit 0
     ;;
 esac
@@ -389,7 +412,7 @@ write_mr_json() {
   local file=$1 kv key value
   local state=opened detail=mergeable conflicts=false discussions=true
   local head=$MR_HEAD pipeline_sha=$MR_HEAD pipeline_status=success pipeline=present
-  local merge_when_pipeline_succeeds=false merge_after=null
+  local merge_when_pipeline_succeeds=false merge_after=null changes_count=null
   shift
   for kv in "$@"; do
     key=${kv%%=*}
@@ -405,6 +428,7 @@ write_mr_json() {
       pipeline) pipeline=$value ;;
       merge_when_pipeline_succeeds) merge_when_pipeline_succeeds=$value ;;
       merge_after) merge_after=$value ;;
+      changes_count) changes_count=$value ;;
       *) fail "write_mr_json: unknown field '$key'" ;;
     esac
   done
@@ -413,10 +437,10 @@ write_mr_json() {
   fi
   printf '{"iid":7,"state":"%s","detailed_merge_status":"%s","has_conflicts":%s,' \
     "$state" "$detail" "$conflicts" > "$file"
-  printf '"blocking_discussions_resolved":%s,"sha":"%s","head_pipeline":%s,' \
+  printf '"target_branch":"main","blocking_discussions_resolved":%s,"sha":"%s","head_pipeline":%s,' \
     "$discussions" "$head" "$pipeline" >> "$file"
-  printf '"merge_when_pipeline_succeeds":%s,"merge_after":%s}\n' \
-    "$merge_when_pipeline_succeeds" "$merge_after" >> "$file"
+  printf '"merge_when_pipeline_succeeds":%s,"merge_after":%s,"changes_count":%s}\n' \
+    "$merge_when_pipeline_succeeds" "$merge_after" "$changes_count" >> "$file"
 }
 
 # make_gitlab_case <name> [<field>=<value> ...]: a case dir with both forge
@@ -483,6 +507,8 @@ run_case_script() {
   FM_TEST_GH_HEAD="$case_dir/github-head" \
   FM_TEST_GH_DIFF="$case_dir/forge-diff.patch" \
   FM_TEST_GH_DIFF_FAIL="$case_dir/github-diff-fails" \
+  FM_TEST_GH_FILES="$case_dir/github-files.json" \
+  FM_TEST_GH_FILES_FAIL="$case_dir/github-files-fail" \
   FM_TEST_GH_MERGE_RC_FILE="$case_dir/github-merge-rc" \
   FM_TEST_GH_MERGE_OUTPUT="$(cat "$case_dir/github-merge-output" 2>/dev/null || true)" \
   FM_TEST_GH_GRAPHQL_FAIL="$case_dir/github-graphql-fail" \
@@ -2500,6 +2526,540 @@ test_github_queue_aware_read_supplies_the_merge_state() {
   pass "the queue-aware read alone supplies the merge state"
 }
 
+# --- standing mandates -------------------------------------------------------
+# A merge that relies on a standing mandate cites it with --mandate, and the
+# mandate must be in force and cover the merge at the moment the merge runs.
+# The forge's changed-file list comes from a real throwaway repository, so the
+# paths the mandate is judged against are the ones git actually wrote.
+
+epoch_to_iso_utc() {
+  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# Commit a change touching the given paths in a fresh throwaway repository and
+# write its diff as the forge diff. The same paths are written as the forge's
+# own changed-file list, which is what the mandate check reads. Args: case_dir
+# path...
+write_throwaway_repo_diff() {
+  local case_dir=$1 repo path json sep=''
+  shift
+  repo="$case_dir/throwaway-repo"
+  git init -q "$repo"
+  for path in "$@"; do
+    mkdir -p "$repo/$(dirname "$path")"
+    printf 'before\n' > "$repo/$path"
+  done
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm base
+  for path in "$@"; do
+    printf 'after\n' > "$repo/$path"
+  done
+  git -C "$repo" commit -qam change
+  git -C "$repo" diff HEAD~1 HEAD > "$case_dir/forge-diff.patch"
+  json=''
+  for path in "$@"; do
+    json="$json$sep$(jq -Rn --arg p "$path" '{filename:$p,previous_filename:null}')"
+    sep=','
+  done
+  printf '[%s]\n' "$json" > "$case_dir/github-files.json"
+  json=''
+  sep=''
+  for path in "$@"; do
+    json="$json$sep$(jq -Rn --arg p "$path" '{old_path:$p,new_path:$p}')"
+    sep=','
+  done
+  printf '[%s]\n' "$json" > "$case_dir/glab-diffs.json"
+}
+
+grant_mandate() {  # case_dir id expires_at extra-grant-args...
+  local case_dir=$1 id=$2 exp=$3
+  shift 3
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-mandate.sh" grant --id "$id" --granted-by captain \
+    --expires-at "$exp" --action merge --repo 'example/*' --branch main "$@" >/dev/null \
+    || fail "could not grant mandate $id"
+}
+
+# The incident shape: a night mandate whose conditions still hold after it
+# expired. Green checks and an in-scope patch do not revive lapsed authority.
+test_expired_mandate_refuses_the_merge() {
+  local case_dir rc exp
+  case_dir=$(make_case mandate-expired)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a
+  write_throwaway_repo_diff "$case_dir" src/lot1.txt
+  exp=$(epoch_to_iso_utc $(($(date -u +%s) + 2)))
+  grant_mandate "$case_dir" night-lots "$exp" --deny-path 'ui/*'
+  sleep 3
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate night-lots \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-expired: an expired mandate must refuse the merge"
+  assert_grep "mandate night-lots expired at $exp" "$case_dir/stderr" \
+    "mandate-expired: refusal did not name the expiry"
+  assert_grep 'relies on mandate night-lots, which does not authorize this merge now' "$case_dir/stderr" \
+    "mandate-expired: refusal did not say the merge relied on the mandate"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-expired: gh pr merge ran on an expired mandate"
+  pass "an expired mandate refuses a merge whose checks are green and whose patch is in scope"
+}
+
+# The yolo path is bound by the same gate: --automatic on a yolo=on task that
+# cites an expired mandate refuses before any eligibility work or forge call.
+test_expired_mandate_refuses_the_automatic_merge() {
+  local case_dir rc exp
+  case_dir=$(make_case mandate-expired-automatic)
+  mkdir -p "$case_dir/wt"
+  printf 'yolo=on\n' >> "$case_dir/state/task-x1.meta"
+  add_gh_mocks "$case_dir" 5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b
+  write_throwaway_repo_diff "$case_dir" src/lot2.txt
+  exp=$(epoch_to_iso_utc $(($(date -u +%s) + 2)))
+  grant_mandate "$case_dir" night-auto "$exp"
+  sleep 3
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --automatic --mandate night-auto \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-expired-automatic: an expired mandate must refuse the yolo merge"
+  assert_grep 'mandate night-auto expired at' "$case_dir/stderr" \
+    "mandate-expired-automatic: refusal did not name the expiry"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-expired-automatic: gh pr merge ran on an expired mandate"
+  pass "an expired mandate refuses the automatic yolo merge too"
+}
+
+test_in_force_mandate_in_scope_merges() {
+  local case_dir rc
+  case_dir=$(make_case mandate-in-force)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c
+  write_throwaway_repo_diff "$case_dir" src/lot3.txt
+  grant_mandate "$case_dir" day-lots "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate day-lots \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "mandate-in-force: an in-force in-scope mandate must not block the merge"
+  assert_grep 'mandate day-lots in force until' "$case_dir/stderr" \
+    "mandate-in-force: the mandate check did not report its verdict"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+  pass "an in-force mandate covering the merge lets it proceed"
+}
+
+test_mandate_out_of_scope_refuses_the_merge() {
+  local case_dir rc
+  case_dir=$(make_case mandate-out-of-scope)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d
+  write_throwaway_repo_diff "$case_dir" src/lot4.txt ui/button.css
+  grant_mandate "$case_dir" no-ui "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --deny-path 'ui/*'
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-mandate.sh" grant --id other-repo --granted-by captain \
+    --expires-at "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --action merge --repo 'elsewhere/*' >/dev/null
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate no-ui \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-out-of-scope: a UI path must refuse"
+  assert_grep 'changed path ui/button.css is excluded by mandate no-ui' "$case_dir/stderr" \
+    "mandate-out-of-scope: refusal did not name the excluded path"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate other-repo \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-out-of-scope: another repository's mandate must refuse"
+  assert_grep 'repository example/repo is outside mandate other-repo' "$case_dir/stderr" \
+    "mandate-out-of-scope: refusal did not name the repository"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate never-granted \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-out-of-scope: an absent mandate must refuse"
+  assert_grep 'mandate never-granted does not exist' "$case_dir/stderr" \
+    "mandate-out-of-scope: refusal did not name the absent mandate"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-out-of-scope: gh pr merge ran on a mandate that does not cover it"
+  pass "a mandate that does not cover the repository or a changed path refuses the merge"
+}
+
+# The report's regression: a binary file with a non-ASCII name appears in the
+# unified diff only as a quoted `diff --git` header and a `Binary files` line,
+# so a diff parser never sees its `---`/`+++` pair and misses the path entirely.
+# The forge's file list still names it, and the deny rule must catch it.
+test_mandate_reads_the_forge_path_list_for_a_binary() {
+  local case_dir rc repo
+  case_dir=$(make_case mandate-quoted-binary)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e
+  repo="$case_dir/throwaway-repo"
+  git init -q "$repo"
+  git -C "$repo" config core.quotepath true
+  mkdir -p "$repo/src" "$repo/ui"
+  printf 'ok\n' > "$repo/src/ok.txt"
+  printf 'a\000b\n' > "$repo/ui/écran.png"
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm base
+  printf 'changed\n' > "$repo/src/ok.txt"
+  printf 'c\000d\n' > "$repo/ui/écran.png"
+  git -C "$repo" commit -qam change
+  git -C "$repo" diff HEAD~1 HEAD > "$case_dir/forge-diff.patch"
+  jq -cn '[
+    {filename:"src/ok.txt",previous_filename:null},
+    {filename:"ui/écran.png",previous_filename:null}]' > "$case_dir/github-files.json"
+  grant_mandate "$case_dir" no-ui-binary "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate no-ui-binary \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-quoted-binary: a denied binary path must refuse"
+  assert_grep 'diff --git "a/ui/' "$case_dir/forge-diff.patch" \
+    "mandate-quoted-binary: the fixture no longer carries the quoted diff header this case covers"
+  assert_grep 'changed path ui/écran.png is excluded by mandate no-ui-binary' "$case_dir/stderr" \
+    "mandate-quoted-binary: the refusal did not name the denied binary path"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-quoted-binary: gh pr merge ran despite the denied binary path"
+  pass "a binary path the unified diff quotes is read from the forge file list and refuses"
+}
+
+# A changed-path read that fails must refuse rather than check a partial list.
+test_mandate_unreadable_path_list_refuses_the_merge() {
+  local case_dir rc
+  case_dir=$(make_case mandate-unreadable-paths)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f
+  write_throwaway_repo_diff "$case_dir" src/lot5.txt
+  : > "$case_dir/github-files-fail"
+  grant_mandate "$case_dir" day-paths "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate day-paths \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-unreadable-paths: an unreadable path list must refuse"
+  assert_grep 'the changed paths could not be read to check mandate day-paths' "$case_dir/stderr" \
+    "mandate-unreadable-paths: the refusal did not name the unreadable path list"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-unreadable-paths: gh pr merge ran without the changed-path list"
+  pass "an unreadable changed-path list refuses instead of checking a partial list"
+}
+
+# GitHub's file list caps at 3000 entries and does not say whether that page
+# set is the whole pull request. A list that long is not proven complete, so
+# the merge refuses instead of checking a prefix a later denied path could
+# sit past.
+test_mandate_refuses_a_file_list_at_the_forge_cap() {
+  local case_dir rc
+  case_dir=$(make_case mandate-file-cap)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6060606060606060606060606060606060606060
+  write_throwaway_repo_diff "$case_dir" src/lot6.txt
+  jq -cn '[range(3000) | {filename:("src/f" + tostring + ".txt"), previous_filename:null}]' \
+    > "$case_dir/github-files.json"
+  grant_mandate "$case_dir" day-cap "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate day-cap \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-file-cap: a file list at the forge cap must refuse"
+  assert_grep 'the changed paths could not be read to check mandate day-cap' "$case_dir/stderr" \
+    "mandate-file-cap: the refusal did not treat the capped list as unreadable"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-file-cap: gh pr merge ran on a file list that was not proven complete"
+  pass "a changed-path list at the forge cap refuses instead of checking a prefix"
+}
+
+# A rename keeps the denied name in previous_filename after the new name has
+# left the deny glob. The file list has to carry both, or the rename walks
+# the denied path out of the check.
+test_mandate_reads_the_github_previous_filename_of_a_rename() {
+  local case_dir rc
+  case_dir=$(make_case mandate-github-rename)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 6161616161616161616161616161616161616161
+  write_throwaway_repo_diff "$case_dir" src/lot7.txt
+  jq -cn '[{filename:"src/new.css",previous_filename:"ui/old.css"}]' \
+    > "$case_dir/github-files.json"
+  grant_mandate "$case_dir" no-ui-rename "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --deny-path 'ui/*'
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --mandate no-ui-rename \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-github-rename: a denied previous_filename must refuse"
+  assert_grep 'changed path ui/old.css is excluded by mandate no-ui-rename' "$case_dir/stderr" \
+    "mandate-github-rename: the refusal did not name the renamed-away path"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "mandate-github-rename: gh pr merge ran despite the denied previous name"
+  pass "a GitHub rename is checked on both filename and previous_filename"
+}
+
+# A rename names its source only in old_path, so a deny rule must see it.
+test_mandate_reads_the_gitlab_old_path_of_a_rename() {
+  local case_dir rc
+  case_dir=$(make_gitlab_case mandate-gitlab-rename 'changes_count="1"')
+  jq -cn '[{old_path:"ui/old.css",new_path:"src/old.css",new_file:false,renamed_file:true}]' \
+    > "$case_dir/glab-diffs.json"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-mandate.sh" grant --id no-ui-gitlab --granted-by captain \
+    --expires-at "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+    --action merge --repo 'group/*' --branch main --deny-path 'ui/*' >/dev/null
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --mandate no-ui-gitlab \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "mandate-gitlab-rename: a denied old_path must refuse"
+  assert_grep 'changed path ui/old.css is excluded by mandate no-ui-gitlab' "$case_dir/stderr" \
+    "mandate-gitlab-rename: the refusal did not name the renamed-away path"
+  assert_no_grep 'mr merge' "$case_dir/glab.log" \
+    "mandate-gitlab-rename: glab mr merge ran despite the denied old_path"
+  pass "a GitLab rename is checked on both old_path and new_path"
+}
+
+test_mandate_refuses_an_incomplete_gitlab_file_list() {
+  local case_dir rc count index=0
+  for count in '"1000+"' '"2"' null '""' '"0"' '"1.0"' '"invalid"' 'missing' '"1"'; do
+    index=$((index + 1))
+    case_dir=$(make_gitlab_case "mandate-gitlab-completeness-$index")
+    if [ "$count" != missing ]; then
+      write_mr_json "$case_dir/mr.json" "changes_count=$count"
+    else
+      jq 'del(.changes_count)' "$case_dir/mr.json" > "$case_dir/mr-missing.json"
+      mv "$case_dir/mr-missing.json" "$case_dir/mr.json"
+    fi
+    if [ "$count" != '"1"' ]; then
+      write_throwaway_repo_diff "$case_dir" src/safe.txt ui/secret.txt
+    fi
+    jq -cn '[{old_path:"src/safe.txt",new_path:"src/safe.txt"}]' \
+      > "$case_dir/glab-diffs.json"
+    FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+      "$ROOT/bin/fm-mandate.sh" grant --id no-ui-gitlab --granted-by captain \
+      --expires-at "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+      --action merge --repo 'group/*' --branch main --deny-path 'ui/*' >/dev/null
+
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$MR_URL" --mandate no-ui-gitlab \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+
+    if [ "$count" = '"1"' ]; then
+      expect_code 0 "$rc" "mandate-gitlab-completeness: a complete allowed list should merge"
+      [ -e "$case_dir/glab-merge-called" ] || fail "the complete list did not reach glab mr merge"
+    else
+      expect_code 1 "$rc" "mandate-gitlab-completeness: unproven count $count must refuse"
+      assert_grep 'the changed paths could not be read to check mandate' "$case_dir/stderr" \
+        "mandate-gitlab-completeness: count $count did not refuse the unreadable list"
+      [ ! -e "$case_dir/glab-merge-called" ] || fail "an incomplete list reached glab mr merge"
+    fi
+  done
+  pass "GitLab mandates require a proven complete changed-file list before merging"
+}
+
+test_mandate_refuses_unrepresentable_forge_paths() {
+  local case_dir rc field separator url index=0
+  for field in filename previous_filename new_path old_path; do
+    for separator in $'\t' $'\n'; do
+      index=$((index + 1))
+      case "$field" in
+        filename|previous_filename)
+          case_dir=$(make_case "mandate-path-separator-$index")
+          mkdir -p "$case_dir/wt"
+          add_gh_mocks "$case_dir" "$MR_HEAD"
+          url=https://github.com/example/repo/pull/9
+          jq -cn --arg field "$field" --arg path "src/name${separator}key.pem" \
+            '[{filename:"src/safe.txt"} | .[$field]=$path]' > "$case_dir/github-files.json"
+          ;;
+        *)
+          case_dir=$(make_gitlab_case "mandate-path-separator-$index" 'changes_count="1"')
+          url=$MR_URL
+          jq -cn --arg field "$field" --arg path "src/name${separator}key.pem" \
+            '[{old_path:"src/safe.txt",new_path:"src/safe.txt"} | .[$field]=$path]' > "$case_dir/glab-diffs.json"
+          ;;
+      esac
+      grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" \
+        --repo '*' --deny-path '*.pem'
+      set +e
+      run_pr_merge "$case_dir" task-x1 "$url" --mandate scoped > "$case_dir/stdout" 2> "$case_dir/stderr"
+      rc=$?
+      set -e
+      expect_code 1 "$rc" "mandate-path-separator: $field must refuse an unrepresentable path"
+      assert_grep 'the changed paths could not be read' "$case_dir/stderr" \
+        "mandate-path-separator: $field was not refused before checking altered paths"
+      assert_no_grep 'pr merge' "$case_dir/gh.log" "an unrepresentable path reached gh pr merge"
+      [ ! -e "$case_dir/glab-merge-called" ] || fail "an unrepresentable path reached glab mr merge"
+    done
+  done
+  pass "tabs and newlines in all forge path fields refuse before mandate authorization"
+}
+
+prepare_automatic_mandate_case() {
+  local case_dir=$1
+  printf 'yolo=on\n' >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tool"
+  cp -R "$ROOT/bin" "$case_dir/tool/"
+  cat > "$case_dir/tool/bin/fm-auto-merge-check.sh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+case_dir=${FM_TEST_GH_LOG%/*}
+: > "$case_dir/eligibility-called"
+if [ -e "$case_dir/expire-during-eligibility" ]; then
+  : > "$case_dir/clock-expired"
+fi
+jq -cn --arg url "$2" --arg head "$(cat "$FM_TEST_GH_HEAD")" \
+  '{url:$url,head:$head,lines:2,files:1}'
+SH
+  PR_MERGE="$case_dir/tool/bin/fm-pr-merge.sh"
+}
+
+test_mandate_serializes_revocation_through_each_merge() {
+  local case_dir rc mode url mutate original=$PR_MERGE PR_MERGE=$PR_MERGE
+  local extra=()
+  for mode in attended automatic gitlab; do
+    PR_MERGE=$original
+    extra=()
+    if [ "$mode" = gitlab ]; then
+      case_dir=$(make_gitlab_case mandate-lock-gitlab 'changes_count="1"')
+      printf '[{"new_path":"src/safe.txt","old_path":"src/safe.txt"}]\n' > "$case_dir/glab-diffs.json"
+      url=$MR_URL
+    else
+      case_dir=$(make_case "mandate-lock-$mode")
+      mkdir -p "$case_dir/wt"
+      add_gh_mocks "$case_dir" "$MR_HEAD"
+      printf '[{"filename":"src/safe.txt"}]\n' > "$case_dir/github-files.json"
+      url=https://github.com/example/repo/pull/9
+      if [ "$mode" = automatic ]; then
+        prepare_automatic_mandate_case "$case_dir"
+        extra=(--automatic)
+      fi
+    fi
+    grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --repo '*'
+    mutate=$(away_change_script "$case_dir" revoke-mandate <<'SH'
+"$FM_TEST_ROOT/bin/fm-mandate.sh" revoke scoped --by reviewer
+SH
+    )
+    export FM_TEST_AWAY_MUTATE_AT_MERGE="$mutate"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" --mandate scoped "${extra[@]+"${extra[@]}"}" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    unset FM_TEST_AWAY_MUTATE_AT_MERGE
+    expect_code 0 "$rc" "mandate-lock: $mode should merge with live authority"
+    expect_code 1 "$(cat "$case_dir/away-mutate-rc")" "mandate-lock: revocation must not complete inside $mode forge call"
+    assert_grep 'locked by live process' "$case_dir/away-mutate-output" "mandate-lock: the revoker did not contend on the authority lock"
+    FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+      "$ROOT/bin/fm-mandate.sh" revoke scoped --by reviewer > "$case_dir/revoke-output" \
+      || fail "mandate-lock: $mode leaked the authority lock"
+    assert_grep 'revoked: mandate scoped' "$case_dir/revoke-output" "mandate-lock: revocation did not complete after $mode merge"
+    if [ "$mode" = gitlab ]; then
+      assert_grep '--auto-merge=false' "$case_dir/glab.log" "a cited GitLab mandate did not force immediate merge"
+    fi
+  done
+  pass "mandate revocation is serialized through attended, automatic, and GitLab forge calls"
+}
+
+test_mandate_expiring_during_automatic_eligibility_refuses() {
+  local case_dir rc exp real_date PR_MERGE=$PR_MERGE
+  case_dir=$(make_case mandate-expiry-during-eligibility)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$MR_HEAD"
+  printf '[{"filename":"src/safe.txt"}]\n' > "$case_dir/github-files.json"
+  exp=$(($(date -u +%s) + 3600))
+  grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc "$exp")"
+  prepare_automatic_mandate_case "$case_dir"
+  : > "$case_dir/expire-during-eligibility"
+  printf '%s\n' "$exp" > "$case_dir/expired-epoch"
+  real_date=$(command -v date)
+  # shellcheck disable=SC2016 # Dollar expressions belong to the generated wrapper.
+  printf '#!/usr/bin/env bash\nif [ "$*" = "-u +%%s" ] && [ -e "${FM_TEST_GH_LOG%%/*}/clock-expired" ]; then\n  cat "${FM_TEST_GH_LOG%%/*}/expired-epoch"\nelse\n  exec "%s" "$@"\nfi\n' \
+    "$real_date" > "$case_dir/fakebin/date"
+  chmod +x "$case_dir/fakebin/date"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 --automatic --mandate scoped \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "mandate-expiry: expiry during eligibility must refuse"
+  [ -e "$case_dir/eligibility-called" ] || fail "mandate-expiry: automatic eligibility was never reached"
+  assert_grep 'mandate scoped expired at' "$case_dir/stderr" "mandate-expiry: the final clock check did not reject expiry"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "mandate-expiry: the forge was called after expiry"
+  pass "the automatic merge rechecks mandate expiry after eligibility work"
+}
+
+test_mandate_refuses_deferred_merges() {
+  local case_dir rc mode url
+  local extra=()
+  for mode in github-auto github-queue gitlab-auto gitlab-configured; do
+    extra=()
+    case "$mode" in
+      github-*)
+        case_dir=$(make_case "mandate-deferred-$mode")
+        mkdir -p "$case_dir/wt"
+        add_gh_mocks "$case_dir" "$MR_HEAD"
+        url=https://github.com/example/repo/pull/9
+        if [ "$mode" = github-auto ]; then
+          extra=(--attended-override -- --auto)
+        else
+          printf 'merge_method=SQUASH\n' > "$case_dir/github-rules"
+        fi
+        ;;
+      *)
+        case_dir=$(make_gitlab_case "mandate-deferred-$mode" 'changes_count="1"')
+        url=$MR_URL
+        if [ "$mode" = gitlab-auto ]; then
+          extra=(--attended-override -- --auto-merge)
+        else
+          write_mr_json "$case_dir/mr.json" 'changes_count="1"' merge_when_pipeline_succeeds=true
+        fi
+        ;;
+    esac
+    grant_mandate "$case_dir" scoped "$(epoch_to_iso_utc $(($(date -u +%s) + 3600)))" --repo '*'
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" --mandate scoped "${extra[@]+"${extra[@]}"}" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "mandate-deferred: $mode was authorized"
+    assert_grep 'immediate merge' "$case_dir/stderr" "mandate-deferred: $mode did not explain the immediate merge requirement"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "mandate-deferred: $mode reached gh pr merge"
+    [ ! -e "$case_dir/glab-merge-called" ] || fail "mandate-deferred: $mode reached glab mr merge"
+  done
+  pass "cited mandates refuse forge queues and requested or configured auto-merges"
+}
+
 test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
@@ -3555,3 +4115,17 @@ test_github_changed_patch_refuses_the_merge
 test_github_unreadable_live_patch_refuses_a_recorded_verdict
 test_github_patch_guard_is_dormant_without_a_recorded_verdict
 test_gitlab_changed_patch_refuses_the_merge
+test_expired_mandate_refuses_the_merge
+test_expired_mandate_refuses_the_automatic_merge
+test_in_force_mandate_in_scope_merges
+test_mandate_out_of_scope_refuses_the_merge
+test_mandate_reads_the_forge_path_list_for_a_binary
+test_mandate_unreadable_path_list_refuses_the_merge
+test_mandate_refuses_a_file_list_at_the_forge_cap
+test_mandate_reads_the_github_previous_filename_of_a_rename
+test_mandate_reads_the_gitlab_old_path_of_a_rename
+test_mandate_refuses_an_incomplete_gitlab_file_list
+test_mandate_refuses_unrepresentable_forge_paths
+test_mandate_serializes_revocation_through_each_merge
+test_mandate_expiring_during_automatic_eligibility_refuses
+test_mandate_refuses_deferred_merges

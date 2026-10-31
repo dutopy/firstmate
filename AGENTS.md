@@ -259,6 +259,7 @@ The path's worker, automated gates, and captain approval remain authoritative:
 
 Delivery mode and `yolo` are orthogonal.
 `yolo` governs merge authority only: with it off, the captain approves every PR merge and every local-only landing; with it on, firstmate merges green, in-scope work itself.
+A time-bounded standing mandate the captain grants is recorded with `bin/fm-mandate.sh`, relayed to a secondmate only through its `relay` so the expiry always travels with it, and cited on every merge that relies on it with `fm-pr-merge.sh --mandate`; an expired, revoked, or out-of-scope mandate grants nothing, and its owner header holds the record and scope rules.
 Never merge a red PR under either setting unless a current explicit captain instruction names the single GitHub check waived through `fm-pr-merge.sh --allow-red`; that attended-only waiver still requires every other check green.
 Destructive, irreversible, and security-sensitive merges still escalate.
 Without a current explicit captain instruction that states the concrete merge, the green default stands, and standing `yolo` cannot authorize a red merge; section 1 owns when such an instruction overrides a Firstmate-written standing rule within its exact scope.
