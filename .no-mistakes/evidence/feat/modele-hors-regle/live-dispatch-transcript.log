@@ -1,0 +1,641 @@
+$ tmux -f /dev/null new-session -d -s validation -x 120 -y 40 /bin/bash --noprofile --norc
+[exit 0]
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project init -q
+[exit 0]
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project -c user.name=Local Tester -c user.email=test@example.invalid commit --allow-empty -qm fixture
+[exit 0]
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv01 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv01
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv01 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv01 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+tmux
+fm-lv01
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv01 --relaunch --harness claude --model haiku --effort low
+error: harness=claude model=haiku effort=low matches no profile declared in config/crew-dispatch.json; dispatch a configured profile, or pass --override-reason '<why>' to record a deliberate out-of-profile choice (an explicit captain override needs one too)
+[exit 1]
+
+PERSISTED TASK RECORD lv01
+window=validation:fm-lv01
+endpoint_task_id=lv01
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv01
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/tasktmp-lv01
+model=haiku
+effort=low
+dispatch_override_reason=old deliberate choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv02 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv02
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv02 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv02 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv02 --relaunch --harness claude --model haiku
+error: harness=claude model=haiku effort=default matches no profile declared in config/crew-dispatch.json; dispatch a configured profile, or pass --override-reason '<why>' to record a deliberate out-of-profile choice (an explicit captain override needs one too)
+[exit 1]
+
+PERSISTED TASK RECORD lv02
+window=validation:fm-lv02
+endpoint_task_id=lv02
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv02
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=scout
+tasktmp=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/tasktmp-lv02
+model=haiku
+effort=default
+dispatch_override_reason=old deliberate choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv03 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv03
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv03 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv03 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv03 --relaunch --harness claude
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv03/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned lv03 harness=claude kind=ship mode=no-mistakes yolo=off window=validation:fm-lv03 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv03
+[exit 0]
+
+PERSISTED TASK RECORD lv03
+window=validation:fm-lv03
+endpoint_task_id=lv03
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv03
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-lv03
+model=default
+effort=default
+busy_gen=g1793481855.2966.3342
+spawn_gen=s1793481855.99787.10756
+dispatch_override_reason=old deliberate choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv04 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv04
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv04 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv04 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv04 --relaunch --harness claude --effort high
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv04/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned lv04 harness=claude kind=ship mode=no-mistakes yolo=off window=validation:fm-lv04 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv04
+[exit 0]
+
+PERSISTED TASK RECORD lv04
+window=validation:fm-lv04
+endpoint_task_id=lv04
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv04
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-lv04
+model=default
+effort=high
+busy_gen=g1793481864.11493.14677
+spawn_gen=s1793481865.8375.2995
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv05 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv05
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv05 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv05 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv05 --relaunch --harness claude --model sonnet --effort high
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv05/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned lv05 harness=claude kind=ship mode=no-mistakes yolo=off window=validation:fm-lv05 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv05
+[exit 0]
+
+PERSISTED TASK RECORD lv05
+window=validation:fm-lv05
+endpoint_task_id=lv05
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv05
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-lv05
+model=sonnet
+effort=high
+busy_gen=g1793481876.22787.6489
+spawn_gen=s1793481876.19698.31062
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv06 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv06
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv06 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv06 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-control.sh lv06 relaunch --note Disposable validation replacement --model haiku --effort low --override-reason Deliberate low-cost replacement
+dispatch: override - harness=claude model=haiku effort=low is outside config/crew-dispatch.json; reason: Deliberate low-cost replacement
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv06/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+relaunched lv06 harness=claude from=claude model=haiku effort=low backend=tmux endpoint=validation:fm-lv06 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv06
+[exit 0]
+
+PERSISTED TASK RECORD lv06
+window=validation:fm-lv06
+endpoint_task_id=lv06
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv06
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-lv06
+model=haiku
+effort=low
+busy_gen=g1793481890.37446.4238
+spawn_gen=s1793481890.35071.24399
+dispatch_override_reason=Deliberate low-cost replacement
+control_relaunch_tx=34179.20261031T212448Z.25984
+
+STATUS lv06
+note: dispatched outside config/crew-dispatch.json on harness=claude model=haiku effort=low; override reason: Deliberate low-cost replacement
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv07 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv07
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv07 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv07 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv07 --relaunch --harness claude --model haiku --override-reason Deliberate scout choice
+dispatch: override - harness=claude model=haiku effort=default is outside config/crew-dispatch.json; reason: Deliberate scout choice
+spawned lv07 harness=claude kind=scout window=validation:fm-lv07 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv07
+[exit 0]
+
+PERSISTED TASK RECORD lv07
+window=validation:fm-lv07
+endpoint_task_id=lv07
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv07
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=scout
+tasktmp=/tmp/fm-lv07
+model=haiku
+effort=default
+busy_gen=g1793481901.50067.8636
+spawn_gen=s1793481901.46750.29132
+dispatch_override_reason=Deliberate scout choice
+
+STATUS lv07
+note: dispatched outside config/crew-dispatch.json on harness=claude model=haiku effort=default; override reason: Deliberate scout choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv08 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv08
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv08 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv08 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+fm-lv08
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv08 --relaunch --harness claude --override-reason bad
+model=injected
+error: --override-reason must be a single line without control characters
+[exit 1]
+
+PERSISTED TASK RECORD lv08
+window=validation:fm-lv08
+endpoint_task_id=lv08
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv08
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/tasktmp-lv08
+model=default
+effort=default
+dispatch_override_reason=old deliberate choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv09 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv09
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv09 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv09 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+fm-lv08
+fm-lv09
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv09 --relaunch --harness claude --override-reason    
+error: --override-reason requires a non-empty reason
+[exit 1]
+
+PERSISTED TASK RECORD lv09
+window=validation:fm-lv09
+endpoint_task_id=lv09
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv09
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/tasktmp-lv09
+model=default
+effort=default
+dispatch_override_reason=old deliberate choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv10 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv10
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv10 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv10 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+fm-lv08
+fm-lv09
+fm-lv10
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv10 --relaunch --harness claude --override-reason xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+error: --override-reason must be at most 500 characters
+[exit 1]
+
+PERSISTED TASK RECORD lv10
+window=validation:fm-lv10
+endpoint_task_id=lv10
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv10
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/tasktmp-lv10
+model=default
+effort=default
+dispatch_override_reason=old deliberate choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv11 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv11
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv11 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv11 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+fm-lv08
+fm-lv09
+fm-lv10
+fm-lv11
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv11 --relaunch --harness claude --override-reason not applicable
+error: --override-reason applies only to crewmate and scout spawns; a secondmate spawn is exempt from the dispatch profiles
+[exit 1]
+
+PERSISTED TASK RECORD lv11
+window=validation:fm-lv11
+endpoint_task_id=lv11
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv11
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=secondmate
+tasktmp=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/tasktmp-lv11
+model=default
+effort=default
+dispatch_override_reason=old deliberate choice
+
+$ tmux list-windows -a -F #{session_name}:#{window_name}
+validation:bash
+validation:fm-lv01
+validation:fm-lv02
+validation:fm-lv03
+validation:fm-lv04
+validation:fm-lv05
+validation:fm-lv06
+validation:fm-lv07
+validation:fm-lv08
+validation:fm-lv09
+validation:fm-lv10
+validation:fm-lv11
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh freshship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project --harness claude --model haiku --mode no-mistakes --yolo off
+error: harness=claude model=haiku effort=default matches no profile declared in config/crew-dispatch.json; dispatch a configured profile, or pass --override-reason '<why>' to record a deliberate out-of-profile choice (an explicit captain override needs one too)
+[exit 1]
+
+$ tmux list-windows -a -F #{session_name}:#{window_name}
+validation:bash
+validation:fm-lv01
+validation:fm-lv02
+validation:fm-lv03
+validation:fm-lv04
+validation:fm-lv05
+validation:fm-lv06
+validation:fm-lv07
+validation:fm-lv08
+validation:fm-lv09
+validation:fm-lv10
+validation:fm-lv11
+[exit 0]
+
+$ tmux list-windows -a -F #{session_name}:#{window_name}
+validation:bash
+validation:fm-lv01
+validation:fm-lv02
+validation:fm-lv03
+validation:fm-lv04
+validation:fm-lv05
+validation:fm-lv06
+validation:fm-lv07
+validation:fm-lv08
+validation:fm-lv09
+validation:fm-lv10
+validation:fm-lv11
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh freshscout /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project --harness claude --model haiku --scout
+error: harness=claude model=haiku effort=default matches no profile declared in config/crew-dispatch.json; dispatch a configured profile, or pass --override-reason '<why>' to record a deliberate out-of-profile choice (an explicit captain override needs one too)
+[exit 1]
+
+$ tmux list-windows -a -F #{session_name}:#{window_name}
+validation:bash
+validation:fm-lv01
+validation:fm-lv02
+validation:fm-lv03
+validation:fm-lv04
+validation:fm-lv05
+validation:fm-lv06
+validation:fm-lv07
+validation:fm-lv08
+validation:fm-lv09
+validation:fm-lv10
+validation:fm-lv11
+[exit 0]
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv12 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv12
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv12 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv12 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+fm-lv08
+fm-lv09
+fm-lv10
+fm-lv11
+fm-lv12
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv12 --relaunch --harness claude
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv12/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned lv12 harness=claude kind=ship mode=no-mistakes yolo=off window=validation:fm-lv12 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv12
+[exit 0]
+
+PERSISTED TASK RECORD lv12
+window=validation:fm-lv12
+endpoint_task_id=lv12
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv12
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-lv12
+model=default
+effort=default
+busy_gen=g1793481916.63227.13962
+spawn_gen=s1793481916.61287.32616
+dispatch_override_reason=old deliberate choice
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv13 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv13
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv13 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv13 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+fm-lv08
+fm-lv09
+fm-lv10
+fm-lv11
+fm-lv12
+fm-lv13
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv13 --relaunch --harness claude --model sonnet
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv13/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned lv13 harness=claude kind=ship mode=no-mistakes yolo=off window=validation:fm-lv13 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv13
+[exit 0]
+
+PERSISTED TASK RECORD lv13
+window=validation:fm-lv13
+endpoint_task_id=lv13
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv13
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-lv13
+model=sonnet
+effort=default
+busy_gen=g1793481930.74014.22109
+spawn_gen=s1793481931.72401.2960
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project worktree add -qb lv14 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv14
+[exit 0]
+
+$ tmux new-window -d -t validation: -n fm-lv14 -c /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv14 /bin/bash --noprofile --norc
+[exit 0]
+
+$ tmux list-windows -t validation -F #{window_name}
+bash
+fm-lv01
+fm-lv02
+fm-lv03
+fm-lv04
+fm-lv05
+fm-lv06
+fm-lv07
+fm-lv08
+fm-lv09
+fm-lv10
+fm-lv11
+fm-lv12
+fm-lv13
+fm-lv14
+[exit 0]
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/bin/fm-spawn.sh lv14 --relaunch --harness codex
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv14/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned lv14 harness=codex kind=ship mode=no-mistakes yolo=off window=validation:fm-lv14 worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv14
+[exit 0]
+
+PERSISTED TASK RECORD lv14
+window=validation:fm-lv14
+endpoint_task_id=lv14
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/wt-lv14
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-lv14
+model=default
+effort=default
+spawn_gen=s1793481947.87570.6809
+
+$ tmux capture-pane -p -t validation:fm-lv06
+s/pierre/.no-mistakes/worktrees/a97fbe58c975/01M69WQ4V9X7K9W2YX5N8G02B5/.local-test/live/home/data/lv06/launch-brief.md'
+)"
+Welcome to Claude Code v2.1.316
+..........................................................
+
+     *                                       █████▓▓░
+                                 *         ███▓░     ░░
+            ░░░░░░                        ███▓░
+    ░░░   ░░░░░░░░░░                      ███▓░
+   ░░░░░░░░░░░░░░░░░░░    *                ██▓░░      ▓
+                                             ░▓▓███▓▓░
+ *                                 ░░░░
+                                 ░░░░░░░░
+                               ░░░░░░░░░░░░░░░░
+       █████████                                        *
+      ██▄█████▄██                        *
+       █████████      *
+.......█ █   █ █..........................................
+
+ Let's get started.
+
+ Choose the text style that looks best with your terminal
+ To change this later, run /theme
+
+     Auto (match terminal)
+ ❯ ✔ Dark mode
+     Light mode
+     Dark mode (colorblind-friendly)
+     Light mode (colorblind-friendly)
+     Dark mode (ANSI colors only)
+     Light mode (ANSI colors only)
+
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  1  function greet() {
+  2 -  console.log("Hello, World!");
+  2 +  console.log("Hello, Claude!");
+  3  }
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  Syntax theme: Monokai Extended (ctrl+t to disable)
+
+[exit 0]
+
+$ tmux kill-server
+[exit 0]

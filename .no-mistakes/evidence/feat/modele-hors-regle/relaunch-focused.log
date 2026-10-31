@@ -1,0 +1,2 @@
+ok - fm-control relaunch: an override reason survives only an unchanged harness/model/effort
+ok - fm-control relaunch: an out-of-profile replacement needs a reason, and a changed triplet drops the old one

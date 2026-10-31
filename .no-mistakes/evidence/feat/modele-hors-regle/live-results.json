@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Worker off-profile relaunch refuses and preserves old record",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "Scout off-profile relaunch refuses and preserves old record",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "Unchanged declared triplet preserves recorded reason",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "name": "Changed effort removes old reason",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "name": "Changed declared model removes old reason",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "name": "Control forwards new override and replaces old reason",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "name": "Scout accepts explicit override on relaunch",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "name": "Newline reason cannot inject metadata",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "Whitespace-only reason refuses",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "Overlong reason refuses",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "Secondmate relaunch rejects override flag",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "ship fresh off-profile launch refuses before creating endpoint or record",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "scout fresh off-profile launch refuses before creating endpoint or record",
+    "pass": true,
+    "exit": 1
+  },
+  {
+    "name": "Unchanged triplet without dispatch config retains reason",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "name": "Model change without dispatch config drops reason",
+    "pass": true,
+    "exit": 0
+  },
+  {
+    "name": "Harness change removes old reason",
+    "pass": true,
+    "exit": 0
+  }
+]

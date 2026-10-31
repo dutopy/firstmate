@@ -1,0 +1,5 @@
+# all fm-spawn-dispatch-profile tests passed
+ok - an in-profile spawn passes without an override reason
+ok - an out-of-profile spawn refuses without a usable override reason
+ok - an out-of-profile spawn with a reason passes and records it in meta and status
+ok - --override-reason is refused on secondmate spawns
