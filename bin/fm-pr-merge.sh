@@ -125,7 +125,16 @@
 # explicit captain instruction and never skips the live green check, the
 # away-grant check, or a captain hold.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--automatic] [--attended-override] [--allow-red <check-name>] [-- <extra forge merge args>]
+# A merge that relies on a standing mandate cites it with --mandate <id>, on the
+# attended and the --automatic (yolo) path alike. The cited mandate is checked
+# by bin/fm-mandate.sh, which owns the record, inside the same critical section
+# as the forge command, against the live UTC clock, the action merge, the
+# repository, the live base branch, and the live changed paths; a missing,
+# revoked, expired, or out-of-scope mandate refuses before anything reaches the
+# forge, even when every other condition is green. A mandate never adds
+# authority: without --mandate this script behaves exactly as before.
+#
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--automatic] [--attended-override] [--allow-red <check-name>] [--mandate <id>] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -191,6 +200,7 @@ ATTENDED_OVERRIDE=false
 ALLOW_RED=()
 AUTOMATIC=false
 AUTOMATIC_PROOF=
+MANDATE_ID=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --automatic)
@@ -213,6 +223,16 @@ while [ "$#" -gt 0 ]; do
       ;;
     --allow-red=*)
       echo "error: --allow-red requires a separate check name argument" >&2
+      exit 2
+      ;;
+    --mandate)
+      [ -n "${2:-}" ] || { echo "error: --mandate requires a mandate id" >&2; exit 2; }
+      [ -z "$MANDATE_ID" ] || { echo "error: --mandate may be specified only once" >&2; exit 2; }
+      MANDATE_ID=$2
+      shift 2
+      ;;
+    --mandate=*)
+      echo "error: --mandate requires a separate mandate id argument" >&2
       exit 2
       ;;
     --) shift; break ;;
@@ -1103,6 +1123,61 @@ require_recorded_pr_identity() {
   return 1
 }
 
+# Refuse a merge that relies on a standing mandate unless that mandate is in
+# force and covers this merge right now. bin/fm-mandate.sh owns the record and
+# every rule; this function supplies the live facts: the repository, the base
+# branch, and the changed paths read from the forge's current diff.
+mandate_changed_paths() {
+  local diff
+  case "$PROVIDER" in
+    github) diff=$(gh pr diff "$PR_NUMBER" --repo "$PR_PATH" 2>/dev/null) || return 1 ;;
+    gitlab) diff=$(GITLAB_HOST="$PR_HOST" glab mr diff "$PR_NUMBER" -R "$PROJECT_URL" --raw 2>/dev/null) || return 1 ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$diff" | awk '
+    function unq(p) { if (p ~ /^".*"$/) { p = substr(p, 2, length(p) - 2) } return p }
+    # Paths that git quotes (spaces, non-ASCII) keep their escaped spelling.
+    /^--- a\// { print unq(substr($0, 7)); next }
+    /^\+\+\+ b\// { print unq(substr($0, 7)); next }
+    /^--- "a\// { p = substr($0, 8); print substr(p, 1, length(p) - 1); next }
+    /^\+\+\+ "b\// { p = substr($0, 8); print substr(p, 1, length(p) - 1); next }
+    /^rename from / { print unq(substr($0, 13)); next }
+    /^rename to / { print unq(substr($0, 11)); next }
+    /^diff --git a\// {
+      rest = substr($0, 14); n = length(rest)
+      if (n % 2 == 1) { half = (n - 3) / 2; a = substr(rest, 1, half); b = substr(rest, half + 4)
+        if (substr(rest, half + 1, 3) == " b/" && a == b) print a }
+    }' | awk 'NF && !seen[$0]++'
+}
+
+mandate_base_branch() {
+  case "$PROVIDER" in
+    github) printf '%s\n' "${FM_PR_GITHUB_BASE:-}" ;;
+    gitlab)
+      GITLAB_HOST="$PR_HOST" glab mr view "$PR_NUMBER" -R "$PROJECT_URL" -F json 2>/dev/null \
+        | jq -r '.target_branch // empty' 2>/dev/null
+      ;;
+  esac
+}
+
+require_cited_mandate() {
+  local paths base
+  [ -n "$MANDATE_ID" ] || return 0
+  if ! paths=$(mandate_changed_paths) || [ -z "$paths" ]; then
+    printf 'error: refusing to merge %s: the changed paths could not be read to check mandate %s; nothing was merged\n' \
+      "$URL" "$MANDATE_ID" >&2
+    return 1
+  fi
+  base=$(mandate_base_branch || true)
+  if ! printf '%s\n' "$paths" | FM_STATE_OVERRIDE="$STATE" FM_HOME="$FM_HOME" \
+      "$SCRIPT_DIR/fm-mandate.sh" check "$MANDATE_ID" --action merge \
+      --repo "$PR_PATH" --host "$PR_HOST" --branch "$base" --files-from - >&2; then
+    printf 'error: refusing to merge %s: it relies on mandate %s, which does not authorize this merge now; nothing was merged\n' \
+      "$URL" "$MANDATE_ID" >&2
+    return 1
+  fi
+}
+
 FM_PR_GITHUB_MERGE_ACCEPTED=false
 FM_PR_GITHUB_CALLER_METHOD=
 
@@ -1262,6 +1337,7 @@ case "$PROVIDER" in
     require_current_away_authority || away_status=$?
     [ "$away_status" -eq 0 ] || exit "$away_status"
     refuse_github_queue_while_away || exit 2
+    require_cited_mandate || exit 1
     if [ "$AUTOMATIC" = true ]; then
       [ "$(grep '^yolo=' "$META")" = yolo=on ] || {
         echo "error: --automatic requires recorded yolo=on" >&2
@@ -1334,6 +1410,7 @@ case "$PROVIDER" in
     away_status=0
     require_current_away_authority || away_status=$?
     [ "$away_status" -eq 0 ] || exit "$away_status"
+    require_cited_mandate || exit 1
     merge_status=0
     gitlab_merge_args=()
     if [ "$FM_PR_AWAY_POSTURE" = true ]; then
