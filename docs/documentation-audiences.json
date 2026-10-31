@@ -425,6 +425,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/deferred-questions.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/secondmate-parent-channel.md",
       "audience": "maintainer-architecture"
     },

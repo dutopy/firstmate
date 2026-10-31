@@ -48,6 +48,7 @@ Grok retains its tracked background-task notification protocol.
 No adapter starts a replacement with shell `&`.
 
 The turn-end guard remains the final backstop rather than the normal continuity mechanism and cooperates with the auto-arm in its `--claude` mode.
+A Claude `AskUserQuestion` prompt holds the turn open with no `Stop`, so neither the auto-arm nor the guard runs until the captain answers; the opt-in [deferred-questions](deferred-questions.md) mode closes that gap.
 
 ## Recovery episode acknowledgement
 

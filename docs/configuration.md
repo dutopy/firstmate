@@ -218,6 +218,10 @@ The bound is required rather than cosmetic because churn and pane staleness read
 The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which run their own crew mix.
 [`architecture.md`](architecture.md) owns the triage contract and `bin/fm-watch.sh`'s `signal_turnend_panes_churned` owns the exact evidence and fail-closed boundaries.
 
+## Deferred questions (config/deferred-questions)
+
+See [`deferred-questions.md`](deferred-questions.md) for opt-in Claude primary question deferral, setup, recovery, and limits; `bin/fm-deferred-question.sh --help` owns exact configuration and command contracts.
+
 ## Disk cleanup simulation
 
 `bin/fm-disk-simulate-imac.sh`, `bin/fm-disk-simulate-vps.sh`, `bin/fm-disk-simulate-staging.sh`, and `bin/fm-disk-simulate-ft.sh` report explicitly named objects without executing cleanup or imported inventory commands.
@@ -1272,6 +1276,7 @@ FM_WATCH_CYCLE_LOG_KEEP_LINES=1000   # newest complete lifecycle rows considered
 FM_WATCHER_STALE_GRACE=300   # defaults to FM_GUARD_GRACE if set, else the poll-derived grace (docs/turnend-guard.md "Guard grace and the poll cadence"); beacon age in seconds that triggers bounded replacement or holder classification (docs/watcher-continuity.md "Honest beacon and bounded replacement")
 FM_SIGNAL_GRACE=30      # seconds to coalesce nearby status and turn-end signals into one wake
 FM_TURNEND_CHURN_ABSORB_SECS=900   # longest one endpoint's bare turn-ends may be deferred on pane-churn evidence alone; only consulted when config/turnend-churn-absorb is present
+FM_DEFERRED_QUESTIONS=            # Claude primary question deferral override; see bin/fm-deferred-question.sh --help
 FM_CAPTAIN_RE='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'   # captain-relevant status regex; nonterminal progress verbs remain excluded even when their prose matches
 FM_CLASSIFY_PAUSED_VERB=paused     # leading status verb for a declared external wait; excluded from FM_CAPTAIN_RE and distinct from blocked
 FM_STALE_ESCALATE_SECS=240         # idle seconds before a provably-working stale pane escalates, unless that pane's own worker declared a wait that has not elapsed, which takes the FM_PAUSE_RESURFACE_SECS recheck below instead; stale panes whose crew is not provably working surface immediately unless admitted directly to the declared-wait cadence, while a live idle declared wait still surfaces once before that cadence bounds repeats
