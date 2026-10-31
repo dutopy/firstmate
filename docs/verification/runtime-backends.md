@@ -666,7 +666,7 @@ Two findings from the run shaped the shipped behavior: an OpenCode vendor update
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
-On 2026-10-31, after `fm_task_inbox_ring` began treating an `empty` submit verdict as delivery and keeping the confirming Enter only while the composer stays `pending` or `pending-unproven`, the same guard was refreshed on macOS arm64 with tmux 3.8, restricted to Claude Code and Codex:
+On 2026-10-31, after the submit-verdict change in `fm_task_inbox_ring` ([doorbell contract](../../bin/fm-task-inbox-lib.sh)), the same guard was refreshed on macOS arm64 with tmux 3.8, restricted to Claude Code and Codex:
 
 ```sh
 FM_SEND_INBOX_LIVE_E2E=1 FM_SEND_INBOX_LIVE_HARNESSES="claude codex" tests/fm-send-inbox-doorbell-live-e2e.test.sh

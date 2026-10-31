@@ -66,7 +66,11 @@
 # so a message that the idle ladder already surfaced still gets its urgent
 # re-rings and a distinct unread-urgent event. FM_TASK_INBOX_URGENT_SECS=0
 # disables the tier; it is evaluated only once a message is past
-# FM_TASK_INBOX_GRACE_SECS.
+# FM_TASK_INBOX_GRACE_SECS. A dead or missing endpoint closes both tiers for
+# the current message after queuing its recovery wake. Escalation markers are
+# message-bound independently of attempt counts: stale attempt bookkeeping
+# must not erase a marker naming the current oldest message (regression:
+# tests/fm-task-inbox.test.sh, dead-pane-stale-ladder).
 # If attempt bookkeeping cannot be persisted while the record remains unhandled,
 # the caller surfaces that failure instead of retrying silently; a concurrently
 # removed inbox is a quiet no-op. Escalation deliberately queues the wake before
