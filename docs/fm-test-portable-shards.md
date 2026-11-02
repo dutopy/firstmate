@@ -87,7 +87,9 @@ These are hint sums, not observed durations of the new CI jobs.
 The longest script, `tests/fm-watch-triage.test.sh`, now measures 720387 ms rather than the previous 262626 ms hint and occupies its own shard.
 It sets a twelve-minute floor, so adding runners alone cannot achieve a sub-ten-minute maximum.
 The estimated spread is 137335 ms; a sub-two-minute spread is impossible with this longest script and the remaining total divided among eleven shards.
-The current serial timeout and its margin rationale are owned by [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+The approved serial timeout in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) is 25 minutes (1500000 ms), more than twice the measured longest script (1440774 ms).
+This leaves runner-speed and setup margin above the twelve-shard maximum estimate; it is a hang tripwire, not a guarantee of future job duration.
+The other job caps remain unchanged.
 
 Refresh the CI-derived hints by downloading the per-shard timing artifacts from several green CI runs and replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the slowest measured `duration_ms` per `path`:
 

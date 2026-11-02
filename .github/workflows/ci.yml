@@ -175,7 +175,7 @@ jobs:
     # measured script alone takes twelve minutes, so retain runner-speed and
     # setup margin rather than treating the target as a hard timeout.
     # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
