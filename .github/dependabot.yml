@@ -1,0 +1,9 @@
+# Mises a jour de dependances (ordre 211, ecart D251). Hebdomadaire, pas de fusion automatique.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: /.opencode/plugins
+    schedule: { interval: weekly, day: monday }
