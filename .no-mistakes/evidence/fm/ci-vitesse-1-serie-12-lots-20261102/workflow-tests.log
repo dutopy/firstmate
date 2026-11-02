@@ -1,0 +1,12 @@
+FM_TEST_BEGIN 2026-11-02T21:03:23Z tests/fm-ci-workflow.test.sh family=unclassified expected_gate_skip=none
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+ok - every main push keeps its own group and is never cancelled
+ok - every ci.yml job carries a finite timeout
+ok - the incident's unbounded jobs keep their recommended caps
+ok - the measured lanes keep their approved bounds
+FM_TEST_END 2026-11-02T21:03:26Z tests/fm-ci-workflow.test.sh exit=0 duration_ms=2000 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=2182
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=2000 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-ci-workflow.test.sh duration_ms=2000
+fm-test-run: wrote timing artifact: /Users/pierre/.no-mistakes/evidence/01M6EZEM7HJ0X75A6ENWHENQJ2/workflow-timing.json
