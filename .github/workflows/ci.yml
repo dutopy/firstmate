@@ -171,17 +171,16 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    # Scope decision (Firstmate, 24 Oct): serial 5 was cancelled at exactly the
-    # former 30 minute cap with no failing test, so the cap is 45 minutes.
-    # This remains a hang tripwire with runner-speed and job-setup margin,
-    # not the expected healthy end of the lane.
+    # Twelve shards target roughly ten minutes of script work; the longest
+    # measured script alone takes twelve minutes, so retain runner-speed and
+    # setup margin rather than treating the target as a hard timeout.
     # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
-    timeout-minutes: 45
+    timeout-minutes: 20
     strategy:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v6
         with:
