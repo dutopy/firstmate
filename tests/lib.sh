@@ -481,6 +481,36 @@ SH
   chmod +x "$fakebin/$tool"
 }
 
+# --- a real process whose executable identity is a harness name --------------
+#
+# Liveness, control and backend suites need a REAL long-lived foreground process
+# the classifier can attribute, without installing an agent. The classic
+# construction - a symlink to `sleep` named `pi` or `claude` - only works with a
+# classic single-command coreutils: Ubuntu 26.04 ships uutils' multi-call
+# `sleep`, which refuses to run under any other name ("Security violation:
+# Requested utility 'pi' does not match executable name") and exits before any
+# process exists, so the case silently measures nothing.
+#
+# bash is not a multi-call utility, is present everywhere these suites run, and
+# keeps the symlink name as its kernel-recorded process identity, so the link
+# points at bash and the case runs it with `sleep N; :`. The trailing `:` is
+# load-bearing: without it bash execs the sleep as its final command, the
+# harness-named identity disappears, and the case again proves nothing.
+#
+#   fm_test_named_agent_link <link-path>       create the harness-named link
+#   fm_test_named_agent_program <seconds>      the program the link must run:
+#                                              `<link> -c '$(fm_test_named_agent_program N)'`
+fm_test_named_agent_link() {
+  local link=$1 bash_bin
+  bash_bin=$(command -v bash) || return 1
+  mkdir -p "$(dirname "$link")" || return 1
+  ln -sfn "$bash_bin" "$link"
+}
+
+fm_test_named_agent_program() {
+  printf 'sleep %s; :' "${1:-300}"
+}
+
 # --- portable file timestamps -----------------------------------------------
 
 # fm_touch_epoch <epoch> <path> [path...]: set each path's modification time to
