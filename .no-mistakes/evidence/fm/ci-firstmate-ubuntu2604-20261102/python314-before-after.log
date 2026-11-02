@@ -1,0 +1,33 @@
+before: exit=1
+Traceback (most recent call last):
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/.local-test/discord-before.py", line 2357, in <module>
+    raise SystemExit(main(sys.argv))
+                     ~~~~^^^^^^^^^^
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/.local-test/discord-before.py", line 2349, in main
+    return int(args.func(args, env))
+               ~~~~~~~~~^^^^^^^^^^^
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/.local-test/discord-before.py", line 2010, in procevent_cmd_source
+    spec = importlib.util.spec_from_file_location("fm_discord_live", env.script_dir / "fm_discord_live.py")
+           ^^^^^^^^^^^^^^
+AttributeError: module 'importlib' has no attribute 'util'
+
+after: exit=1
+Traceback (most recent call last):
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/bin/fm_discord_workspace_lib.py", line 2358, in <module>
+    raise SystemExit(main(sys.argv))
+                     ~~~~^^^^^^^^^^
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/bin/fm_discord_workspace_lib.py", line 2350, in main
+    return int(args.func(args, env))
+               ~~~~~~~~~^^^^^^^^^^^
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/bin/fm_discord_workspace_lib.py", line 2014, in procevent_cmd_source
+    client = live.DiscordClient(live.decrypt_token(env, cfg))
+                                ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/bin/fm_discord_live.py", line 136, in decrypt_token
+    return decrypt_token_from(env, secret_ref, TOKEN_KEY)
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/bin/fm_discord_live.py", line 96, in decrypt_token_from
+    raise FMError(
+        f"secret file is missing: {path}; create it or point secret_file in the Discord config at an existing file"
+    )
+fwl.FMError: secret file is missing: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EGXK2Q5MADK8C3Z2AGBV9T/.local-test/discord-regression/config/discord-workspace.secrets.sops.yaml; create it or point secret_file in the Discord config at an existing file
+
+Python 3.14 regression reproduced before the fix; fixed source loads the live module and reaches its actionable secret-file guard.
