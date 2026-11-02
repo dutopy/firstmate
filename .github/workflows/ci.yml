@@ -72,10 +72,12 @@ jobs:
     # A packed hint sum is not a measured job wall time or proof of headroom.
     # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
     # Changes to this cap or the lane count require a separate scope decision.
-    # Scope decision (Firstmate/captain, 24 Oct): main ran this lane in 9m54s
-    # against the former 10 minute cap, so GitHub cancelled healthy runs
-    # without a verdict. The cap is 15 minutes: a hang tripwire with margin.
-    timeout-minutes: 15
+    # Scope decision (Firstmate/captain, 2 Nov): both this PR and main run
+    # 41510371311 exceeded the 15 minute cap; main took 15m21s including
+    # cancellation cleanup. This is a lower bound, not a completed-work timing.
+    # Raise only shard 1 to an initial 20 minute hang tripwire (five minutes
+    # above the exhausted cap); confirm headroom from actual CI completion.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -126,8 +128,8 @@ jobs:
   tests-portable-parallel-2:
     name: Behavior portable parallel 2
     runs-on: ubuntu-latest
-    # Same timeout rationale and 24 Oct scope decision as portable parallel
-    # shard 1 above.
+    # Retain the 15 minute hang tripwire approved on 24 Oct.
+    # The 2 Nov increase applies only to shard 1.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
