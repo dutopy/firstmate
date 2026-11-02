@@ -100,6 +100,14 @@ jobs:
           set -eu
           npm install -g @earendil-works/pi-coding-agent
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
+      # The ubuntu-26.04 image no longer ships a global `tsc`, and the lane below
+      # fails rather than skips on a missing typecheck prerequisite, so CI
+      # installs the compiler explicitly instead of relying on the image.
+      - name: Install TypeScript for the Pi extension typecheck
+        run: |
+          set -eu
+          npm install -g typescript
+          tsc --version
       - name: Run portable parallel shard 1
         run: |
           set -eu
@@ -219,8 +227,8 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
-          # The Pi package is installed above and CI provides npm and tsc, so
-          # any missing typecheck prerequisite is a broken lane, not a valid skip.
+          # The Pi package is installed above, so a missing typecheck
+          # prerequisite would be a broken lane rather than a valid skip.
           bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
             --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"

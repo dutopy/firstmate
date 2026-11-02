@@ -40,6 +40,24 @@ run_dq() {  # <home> <stdin> <args...>
 pending_count() { find "$1/state/deferred-questions" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l | tr -d ' '; }
 resolved_count() { find "$1/state/deferred-questions/resolved" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l | tr -d ' '; }
 
+# An unusable stdout is what exercises the rollback of a newly written record.
+# A closed descriptor no longer provides it on Linux: bash 5.3 reopens closed
+# standard descriptors on /dev/null, so the script's final write succeeds and the
+# case would silently prove nothing. /dev/full makes the write fail with ENOSPC
+# on every host that has it (Linux); macOS has no such device, so the closed
+# descriptor stays the failure signal there.
+run_dq_failing_stdout() {  # <home> -> exit status of the pretool run
+  local h=$1 rc=0
+  if [ -w /dev/full ]; then
+    printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
+      "$DQ" pretool --claude > /dev/full 2> "$ERR" || rc=$?
+  else
+    printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
+      "$DQ" pretool --claude >&- 2> "$ERR" || rc=$?
+  fi
+  return "$rc"
+}
+
 test_default_off_is_inert() {
   local h
   h=$(new_home off)
@@ -97,9 +115,8 @@ test_failed_delivery_rolls_back_only_new_records() {
     touch "$h/config/deferred-questions"
     rc=0
     if [ "$mode" = closed ]; then
-      printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
-        "$DQ" pretool --claude >&- 2> "$ERR"
-      rc=${PIPESTATUS[1]}
+      run_dq_failing_stdout "$h"
+      rc=$?
     else
       printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
         "$DQ" pretool --claude 2> "$ERR" | :
@@ -110,9 +127,8 @@ test_failed_delivery_rolls_back_only_new_records() {
     run_dq "$h" "$ASK" pretool --claude || fail "seed deferral failed"
     cp "$h"/state/deferred-questions/*.json "$TMP_ROOT/saved-record.json"
     if [ "$mode" = closed ]; then
-      printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
-        "$DQ" pretool --claude >&- 2> "$ERR"
-      rc=${PIPESTATUS[1]}
+      run_dq_failing_stdout "$h"
+      rc=$?
     else
       printf '%s' "$ASK" | env -u FM_DEFERRED_QUESTIONS FM_ROOT_OVERRIDE="$h" FM_HOME="$h" \
         "$DQ" pretool --claude 2> "$ERR" | :
