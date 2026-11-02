@@ -209,11 +209,9 @@ pass "real herdr: interrupt refuses when herdr's own agent registry reports no a
 #
 # A registration alone no longer proves an agent (issue #4115): the adapter
 # verifies the pane's processes through the real `pane process-info` view. So
-# the registered agent is backed by a real agent-named foreground process - a
-# symlink to bash named `claude`, run with fm_test_named_agent_link's program -
-# the same construction tests/fm-tmux-agent-liveness.test.sh uses (a copied
-# platform binary fails code signing on macOS arm64, and a symlink to `sleep`
-# dies immediately under uutils' multi-call coreutils).
+# the registered agent is backed by a real agent-named foreground process.
+# tests/lib.sh owns its portable construction through fm_test_named_agent_link
+# and fm_test_named_agent_program.
 AGENT_BIN="$SCRATCH/agentbin"
 fm_test_named_agent_link "$AGENT_BIN/claude" || fail "could not create the agent-named link"
 AGENT_PROGRAM=$(fm_test_named_agent_program 900)

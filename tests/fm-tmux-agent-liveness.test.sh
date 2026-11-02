@@ -49,13 +49,9 @@ chmod +x "$LAB/shim/tmux"
 PATH="$LAB/shim:$PATH"
 export PATH
 
-# Stand-in "harness" binaries: SYMLINKS to bash, never copies (a copied platform
-# binary fails code-signing validation and is killed on macOS arm64), and never
-# symlinks to `sleep` (uutils' multi-call sleep refuses any other name, so the
-# process would exit before the case measured anything). The symlink name is
-# what the kernel records as the executable identity, which is exactly the
-# signal under test; fm_test_named_agent_link owns the construction in
-# tests/lib.sh, and every invocation below passes the matching program.
+# Stand-in "harness" binaries with the executable identity under test.
+# tests/lib.sh owns their portable construction through fm_test_named_agent_link
+# and fm_test_named_agent_program; every invocation below uses both helpers.
 AGENT_PROGRAM=$(fm_test_named_agent_program 900)
 for name in claude-link pi notaharness omp ompd comp muse-bin-0.1.0-R708.1 musescore amuse muse-binary muse-bind; do
   fm_test_named_agent_link "$LAB/bin/$name" || fail "could not create the stand-in agent link $name"

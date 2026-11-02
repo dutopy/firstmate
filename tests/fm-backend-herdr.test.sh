@@ -593,9 +593,7 @@ test_registered_agent_with_an_agent_descendant_outside_the_foreground_stays_aliv
   local lab sleep_bin shell_pid out shell_verdict program
   sleep_bin=$(command -v sleep) || fail "sleep not found"
   lab="$TMP_ROOT/stale-reg-descendant-bin"; mkdir -p "$lab"
-  # A symlink to bash so the kernel records `pi` as the executable identity
-  # (tests/lib.sh owns the construction: a copied platform binary fails code
-  # signing on macOS, and uutils' multi-call `sleep` refuses any other name).
+  # tests/lib.sh owns the portable agent-named process construction.
   fm_test_named_agent_link "$lab/pi" || fail "could not create the agent-named link"
   program=$(fm_test_named_agent_program 300)
   # A real shell whose child is that agent-named process, while the canned
