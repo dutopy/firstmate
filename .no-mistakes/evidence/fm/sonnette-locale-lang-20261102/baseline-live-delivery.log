@@ -1,0 +1,12 @@
+precondition composer=pending first_action_exists=no
+remote job job-Ezs4tR exit=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/002.msg and the watcher will re-ring
+Literal-send calls during recovery: 0
+MISSING /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/first-acted

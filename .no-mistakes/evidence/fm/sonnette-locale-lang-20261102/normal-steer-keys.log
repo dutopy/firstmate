@@ -1,0 +1,14 @@
+list-windows -t live -F #{window_name}
+display-message -p -t live:worker #{pane_tty}
+display-message -p -t live:worker #{cursor_y}
+capture-pane -e -p -t live:worker -S 0 -E -
+display-message -p -t live:worker #{pane_tty}
+display-message -p -t live:worker #{pane_current_command}
+capture-pane -p -t live:worker -S -40
+send-keys -t live:worker -l : Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox'/handled/.
+send-keys -t live:worker Enter
+display-message -p -t live:worker #{cursor_y}
+capture-pane -e -p -t live:worker -S 0 -E -
+display-message -p -t live:worker #{pane_tty}
+display-message -p -t live:worker #{pane_current_command}
+capture-pane -p -t live:worker

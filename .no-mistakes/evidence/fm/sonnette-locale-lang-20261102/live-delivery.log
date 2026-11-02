@@ -1,0 +1,15 @@
+precondition composer=pending first_action_exists=no
+remote job job-0KqLIT exit=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Literal-send calls during recovery: 0
+observed /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/first-acted
+observed /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted
+observed /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/handled/001.msg
+observed /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/handled/002.msg
+PASS: locale-empty remote worker submitted the existing doorbell without retyping; both durable orders acted on and acknowledged.

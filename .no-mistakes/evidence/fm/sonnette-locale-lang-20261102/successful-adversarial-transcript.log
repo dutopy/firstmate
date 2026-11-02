@@ -1,0 +1,13 @@
+Observed stdout from the successful complete live run (before the later quota-limited repetition):
+adversarial exit 0
+protected human: ring_exit=1; no text or keys sent; composer remains pending
+protected different-path: ring_exit=1; no text or keys sent; composer remains pending
+protected partial: ring_exit=1; no text or keys sent; composer remains pending
+protected added-text: ring_exit=1; no text or keys sent; composer remains pending
+normal remote steer exit=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+PASS: matching transcript did not replace the selected empty composer; exactly one literal doorbell was sent and the third order was acted on and acknowledged.
+
+The complete run used Claude Code 2.1.316, OpenRouter cohere/north-mini-code:free, a private 180x45 tmux terminal, isolated configuration/data, and the real remote-job worker under Bash 5.3.9 with no inherited locale. Both pending orders and a subsequent fresh steer were acted on and acknowledged. handled-001.msg, handled-002.msg, handled-003.msg and key logs retain the product outputs.
+
+A subsequent repetition again recovered both pending orders and protected all four drafts, but exhausted OpenRouter's free-models-per-day allowance before acknowledging its third order. That repetition is retained in adversarial.log and normal-steer-after-transcript.txt; it is not claimed as another complete pass. Earlier setup attempts encountered missing Anthropic authentication and exhausted paid-provider credit; the successful free-provider route overcame those blockers.

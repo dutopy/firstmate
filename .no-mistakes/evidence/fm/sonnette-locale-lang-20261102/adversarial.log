@@ -1,0 +1,7 @@
+protected human: ring_exit=1; no text or keys sent; composer remains pending
+protected different-path: ring_exit=1; no text or keys sent; composer remains pending
+protected partial: ring_exit=1; no text or keys sent; composer remains pending
+protected added-text: ring_exit=1; no text or keys sent; composer remains pending
+normal remote steer exit=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+cp: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/handled/003.msg: No such file or directory

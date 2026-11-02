@@ -1,0 +1,26 @@
+list-windows -t live -F #{window_name}
+display-message -p -t live:worker #{pane_tty}
+display-message -p -t live:worker #{cursor_y}
+capture-pane -e -p -t live:worker -S 0 -E -
+capture-pane -p -t live:worker -S -20
+display-message -p -t live:worker #{pane_id}
+send-keys -t live:worker Enter
+display-message -p -t live:worker #{pane_id}
+send-keys -t live:worker Enter
+display-message -p -t live:worker #{cursor_y}
+capture-pane -e -p -t live:worker -S 0 -E -
+display-message -p -t live:worker #{pane_tty}
+display-message -p -t live:worker #{pane_current_command}
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker
+capture-pane -p -t live:worker

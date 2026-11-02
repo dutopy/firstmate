@@ -1,0 +1,337 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Doorbell live terminal evidence</title><style>body{background:#141414;color:#eee;font:16px system-ui;margin:24px}pre{background:#202020;padding:18px;font:12px/1.4 Menlo,monospace;overflow:auto;white-space:pre}h2{margin-top:40px}</style><h1>Live terminal captures</h1><p>Exports of the actual 180×45 tmux pane, not simulated UI. Claude Code 2.1.316; Bash 5.3.9. Screens are preserved verbatim below.</p>
+<h2>Baseline: next ring leaves doorbell unsubmitted</h2><pre> ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  cohere/north-mini-code:free · API Usage Billing
+ ▝▝   ▝▝   /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/agent-cwd
+
+⚠ Model &quot;cohere/north-mini-code:free&quot; isn&#x27;t recognized · context assumed to be 200k tokens · update Claude Code, or see https://code.claude.com/docs/en/model-config
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/*.msg and, in
+  numeric order, read and act on each, then mv each handled file to
+  &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/handled/.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login for PR status
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<h2>Target: exact wrapped doorbell before the next steer</h2><pre> ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  cohere/north-mini-code:free · API Usage Billing
+ ▝▝   ▝▝   /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/agent-cwd
+
+⚠ Model &quot;cohere/north-mini-code:free&quot; isn&#x27;t recognized · context assumed to be 200k tokens · update Claude Code, or see https://code.claude.com/docs/en/model-config
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/*.msg and, in
+  numeric order, read and act on each, then mv each handled file to
+  &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/handled/.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login for PR status                                                                                     ● high · /effort
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<h2>Target: real agent executing and acknowledging both orders</h2><pre> ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  cohere/north-mini-code:free · API Usage Billing
+ ▝▝   ▝▝   /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/agent-cwd
+
+⚠ Model &quot;cohere/north-mini-code:free&quot; isn&#x27;t recognized · context assumed to be 200k tokens · update Claude Code, or see https://code.claude.com/docs/en/model-config
+
+❯ : Firstmate instruction waiting: list &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/*.msg and, in numeric
+  order, read and act on each, then mv each handled file to
+  &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/handled/.
+
+  Thought for 1s, read 1 file, listed 1 directory (ctrl+o to expand)
+
+⏺ Bash(touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/first-acted&#x27;)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ Bash(mv &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/001.msg&#x27; &#x27;/Users/pierre/.no-mistakes/wor…)
+  ⎿  Done
+
+  Thought for 1s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ Bash(mv &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/002.msg&#x27; &#x27;/Users/pierre/.no-mistakes/wor…)
+  ⎿  Done
+
+⏺ Thinking for 1s… (ctrl+o to expand)
+  ⎿  Good, the touch command completed. Now I need to move the 002.msg file to the handled directory.
+
+✢ Crystallizing… (16s · ↓ 998 tokens · thinking)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login for PR status · esc to interrupt
+
+
+
+
+
+
+</pre>
+<h2>Protected draft: human</h2><pre>
+⏺ Bash(mv &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/001.msg&#x27; &#x27;/Users/pierre/.no-mistakes/wor…)
+  ⎿  Done
+
+  Thought for 1s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ Bash(mv &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/002.msg&#x27; &#x27;/Users/pierre/.no-mistakes/wor…)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ I&#x27;ve completed all the requested tasks:
+
+  1. Listed the .msg files: Found two files in numeric order:
+     - 001.msg
+     - 002.msg
+  2. Read and acted on each file in order:
+
+     001.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/first-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the first-acted file
+     - Moved 001.msg to the handled directory
+
+     002.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the second-acted file
+     - Moved 002.msg to the handled directory
+
+  All files have been processed and moved to /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/handled/ as
+  requested.
+
+  Thought for 1s (ctrl+o to expand)
+
+✻ Baked for 20s · done 3:52 PM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Do not submit this human draft
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login for PR status
+
+</pre>
+<h2>Protected draft: different-path</h2><pre>  ⎿  Done
+
+  Thought for 1s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ Bash(mv &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/002.msg&#x27; &#x27;/Users/pierre/.no-mistakes/wor…)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ I&#x27;ve completed all the requested tasks:
+
+  1. Listed the .msg files: Found two files in numeric order:
+     - 001.msg
+     - 002.msg
+  2. Read and acted on each file in order:
+
+     001.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/first-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the first-acted file
+     - Moved 001.msg to the handled directory
+
+     002.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the second-acted file
+     - Moved 002.msg to the handled directory
+
+  All files have been processed and moved to /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/handled/ as
+  requested.
+
+  Thought for 1s (ctrl+o to expand)
+
+✻ Baked for 20s · done 3:52 PM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/other.inbox&#x27;/*.msg and, in
+  numeric order, read and act on each, then mv each handled file to
+  &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/other.inbox&#x27;/handled/.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login for PR status                                                                         Ctrl+Y to paste deleted text
+
+</pre>
+<h2>Protected draft: partial</h2><pre>  ⎿  Done
+
+  Thought for 1s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ Bash(mv &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/002.msg&#x27; &#x27;/Users/pierre/.no-mistakes/wor…)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ I&#x27;ve completed all the requested tasks:
+
+  1. Listed the .msg files: Found two files in numeric order:
+     - 001.msg
+     - 002.msg
+  2. Read and acted on each file in order:
+
+     001.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/first-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the first-acted file
+     - Moved 001.msg to the handled directory
+
+     002.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the second-acted file
+     - Moved 002.msg to the handled directory
+
+  All files have been processed and moved to /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/handled/ as
+  requested.
+
+  Thought for 1s (ctrl+o to expand)
+
+✻ Baked for 20s · done 3:52 PM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login for PR status                                                                         Ctrl+Y to paste deleted text
+
+
+
+</pre>
+<h2>Protected draft: added-text</h2><pre>  ⎿  Done
+
+  Thought for 1s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ Bash(mv &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/002.msg&#x27; &#x27;/Users/pierre/.no-mistakes/wor…)
+  ⎿  Done
+
+  Thought for 1s (ctrl+o to expand)
+
+⏺ I&#x27;ve completed all the requested tasks:
+
+  1. Listed the .msg files: Found two files in numeric order:
+     - 001.msg
+     - 002.msg
+  2. Read and acted on each file in order:
+
+     001.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/first-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the first-acted file
+     - Moved 001.msg to the handled directory
+
+     002.msg: The instruction was to &quot;Run touch &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/second-acted&#x27;, then acknowledge this message
+     using the instructed mv.&quot;
+     - Created the second-acted file
+     - Moved 002.msg to the handled directory
+
+  All files have been processed and moved to /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox/handled/ as
+  requested.
+
+  Thought for 1s (ctrl+o to expand)
+
+✻ Baked for 20s · done 3:52 PM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/*.msg and, in
+  numeric order, read and act on each, then mv each handled file to
+  &#x27;/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E9WDM51BZDDFZG5H6CW49E/.test-lab/fleet-home/state/check.inbox&#x27;/handled/. DO NOT SUBMIT
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · gh auth login for PR status                                                                         Ctrl+Y to paste deleted text
+
+</pre>
+<h2>Complete successful run and subsequent quota limitation</h2><pre>Observed stdout from the successful complete live run (before the later quota-limited repetition):
+adversarial exit 0
+protected human: ring_exit=1; no text or keys sent; composer remains pending
+protected different-path: ring_exit=1; no text or keys sent; composer remains pending
+protected partial: ring_exit=1; no text or keys sent; composer remains pending
+protected added-text: ring_exit=1; no text or keys sent; composer remains pending
+normal remote steer exit=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+PASS: matching transcript did not replace the selected empty composer; exactly one literal doorbell was sent and the third order was acted on and acknowledged.
+
+The complete run used Claude Code 2.1.316, OpenRouter cohere/north-mini-code:free, a private 180x45 tmux terminal, isolated configuration/data, and the real remote-job worker under Bash 5.3.9 with no inherited locale. Both pending orders and a subsequent fresh steer were acted on and acknowledged. handled-001.msg, handled-002.msg, handled-003.msg and key logs retain the product outputs.
+
+A subsequent repetition again recovered both pending orders and protected all four drafts, but exhausted OpenRouter&#x27;s free-models-per-day allowance before acknowledging its third order. That repetition is retained in adversarial.log and normal-steer-after-transcript.txt; it is not claimed as another complete pass. Earlier setup attempts encountered missing Anthropic authentication and exhausted paid-provider credit; the successful free-provider route overcame those blockers.
+</pre></html>
