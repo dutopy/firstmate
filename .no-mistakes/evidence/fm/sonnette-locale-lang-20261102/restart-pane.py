@@ -1,0 +1,10 @@
+exec(open('.local-test/live.py').read().split('serverlog=')[0])
+def h(*args): return cmd(['herdr',*args,'--session','fm-lab-locale'])
+created=json.loads(h('workspace','create','--cwd',str(base),'--label','isolated-receiver','--no-focus'))
+pane=created['result']['root_pane']['pane_id']; (base/'pane').write_text(pane)
+time.sleep(1)
+port=(base/'model-port').read_text()
+(base/'pi/models.json').write_text(json.dumps({'providers':{'disposable':{'baseUrl':f'http://127.0.0.1:{port}/v1','api':'openai-completions','apiKey':'disposable','models':[{'id':'doorbell-receiver','contextWindow':100000,'maxTokens':1000}]}}}))
+run=f'cd {shlex.quote(str(base))} && HOME={shlex.quote(str(account))} PI_CODING_AGENT_DIR={shlex.quote(str(base/"pi"))} pi --no-session --no-context-files --no-extensions --no-skills --no-tools --no-approve --offline --provider disposable --model doorbell-receiver'
+h('pane','run',pane,run); time.sleep(5)
+print(h('pane','read',pane,'--source','recent','--lines','50'))

@@ -1,0 +1,9 @@
+ACKNOWLEDGED RETRY
+exit=0
+notice: this steer was already delivered and acknowledged at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-route/rsm.inbox/handled/001.msg; nothing re-rung
+receiver requests unchanged; exactly ten durable records remain
+
+HOSTILE PATH REJECTION
+exit=0
+notice: doorbell did not reach fm-remote:w2:p1; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/hostile--home/state/parent-route/rsm.inbox/001.msg
+receiver requests unchanged; one durable message retained

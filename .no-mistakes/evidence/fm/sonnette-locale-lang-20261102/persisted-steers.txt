@@ -1,0 +1,60 @@
+001.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:30:59Z
+--
+Locale-free delivery 1: accents éà and multiline
+second line — durable body, not terminal text.
+002.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:31:14Z
+--
+Locale-free delivery 2: accents éà and multiline
+second line — durable body, not terminal text.
+003.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:31:27Z
+--
+Locale-free delivery 3: accents éà and multiline
+second line — durable body, not terminal text.
+004.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:31:41Z
+--
+Locale-free delivery 4: accents éà and multiline
+second line — durable body, not terminal text.
+005.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:31:53Z
+--
+Locale-free delivery 5: accents éà and multiline
+second line — durable body, not terminal text.
+006.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:32:06Z
+--
+Locale-free delivery 6: accents éà and multiline
+second line — durable body, not terminal text.
+007.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:32:17Z
+--
+Locale-free delivery 7: accents éà and multiline
+second line — durable body, not terminal text.
+008.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:32:29Z
+--
+Locale-free delivery 8: accents éà and multiline
+second line — durable body, not terminal text.
+009.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:32:39Z
+--
+Locale-free delivery 9: accents éà and multiline
+second line — durable body, not terminal text.
+010.msg
+schema=fm-task-inbox.v1
+at=2026-11-02T13:32:51Z
+--
+Locale-free delivery 10: accents éà and multiline
+second line — durable body, not terminal text.

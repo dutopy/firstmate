@@ -1,0 +1,40 @@
+ te/rsm.inbox'/handled/.
+
+
+ Doorbell received by disposable pane.
+
+
+ : Firstmate instruction waiting: list
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-rou
+ te/rsm.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-rou
+ te/rsm.inbox'/handled/.
+
+
+ Doorbell received by disposable pane.
+
+
+ : Firstmate instruction waiting: list
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-rou
+ te/rsm.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-rou
+ te/rsm.inbox'/handled/.
+
+
+ Doorbell received by disposable pane.
+
+
+ : Firstmate instruction waiting: list
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-rou
+ te/rsm.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-rou
+ te/rsm.inbox'/handled/.
+
+
+ Doorbell received by disposable pane.
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test (detached)
+1.5%/100k (auto)                                                                                      doorbell-receiver

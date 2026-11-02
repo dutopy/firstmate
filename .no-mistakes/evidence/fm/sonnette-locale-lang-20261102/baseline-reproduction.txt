@@ -1,0 +1,3 @@
+baseline Bash=5.3.9(1)-release substitution_exit=139 line_bytes=389
+fixed Bash=5.3.9(1)-release substitution_exit=0 line_bytes=389
+: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-route/rsm.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6E6106M03M17JQ5JDF8HZ4W/.local-test/secondmate/state/parent-route/rsm.inbox'/handled/.
