@@ -67,8 +67,12 @@
 #
 # The worker accepts only a tracked, non-symlink executable named fm-*.sh below
 # its configured FM_ROOT/bin. Every child receives env -i with the composed
-# PATH, HOME, FM_HOME, FM_ROOT_OVERRIDE, and FM_REMOTE_JOB_ACTIVE=1. The PATH
-# is intentionally filesystem-discovered rather than login-shell-derived:
+# PATH, HOME, FM_HOME, FM_ROOT_OVERRIDE, FM_REMOTE_JOB_ACTIVE=1, and LANG=C.
+# The doctor bootstrap also sets LANG=C in its sanitized environment.
+# This fallback prevents Bash 5.3 from failing when a command substitution
+# restores a local LC_ALL with no ambient locale; tests/fm-task-inbox.test.sh
+# covers doorbell delivery under env -i without locale variables.
+# The PATH is intentionally filesystem-discovered rather than login-shell-derived:
 # ~/.local/bin; nvm, asdf, and mise shims/install bins; Nix; Homebrew; and the
 # system tail. No shell startup files are evaluated. Each discovered set is
 # appended in the shell's own sorted pathname-expansion order, so which install

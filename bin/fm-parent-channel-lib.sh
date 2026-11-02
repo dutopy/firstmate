@@ -70,6 +70,8 @@ FM_PARENT_CHANNEL_ROUTE=
 # character outside [A-Za-z0-9._-].
 _fm_parent_channel_id_valid() {  # <id>
   local id=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   case "$id" in
     ''|.*|*/*|*[!A-Za-z0-9._-]*) return 1 ;;

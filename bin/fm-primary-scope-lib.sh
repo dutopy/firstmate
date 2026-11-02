@@ -5,6 +5,8 @@
 
 # Return 0 when $1 carries a genuine secondmate-home marker.
 fm_root_is_secondmate_home() {
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local marker="$1/.fm-secondmate-home" id LC_ALL=C
   [ -L "$marker" ] && return 1
   [ -f "$marker" ] || return 1

@@ -867,6 +867,8 @@ github_read_outcome() {
 }
 
 github_urlencode_path_segment() {
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C input=$1 encoded='' char octet hex
   while [ -n "$input" ]; do
     char=${input%"${input#?}"}

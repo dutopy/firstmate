@@ -129,6 +129,8 @@ positive_int() { case "${1-}" in ''|*[!0-9]*) return 1 ;; 0) return 1 ;; *) retu
 
 positive_number() {
   local n=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   [[ "$n" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
   [ "$n" != 0 ] && [[ ! "$n" =~ ^0+(\.0+)?$ ]]
@@ -268,6 +270,8 @@ spec_load() {
     IFS= read -r version && IFS= read -r want && ! IFS= read -r extra
   } < "$trust" || { SPEC_ERROR="trust record is malformed"; return 1; }
   [ "$version" = fm-when-trust-v1 ] || { SPEC_ERROR="trust record has an unknown version"; return 1; }
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { SPEC_ERROR="trust record hash is malformed"; return 1; }
   hash=$(fm_pr_sha256 "$spec") || { SPEC_ERROR="cannot hash the spec"; return 1; }

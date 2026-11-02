@@ -7,9 +7,9 @@
 # account queue, refuses symlinks and malformed records, and executes only a
 # tracked non-symlink fm-*.sh under this worker's configured FM_ROOT/bin.
 #
-# Each child runs under env -i with the shared filesystem-composed PATH, HOME,
-# FM_HOME, FM_ROOT_OVERRIDE, and FM_REMOTE_JOB_ACTIVE=1. Commands receive their
-# captured stdin and have a 360-second default timeout. Their stdout and stderr
+# The shared library header owns each child's sanitized environment.
+# Commands receive their captured stdin and have a 360-second default timeout.
+# Their stdout and stderr
 # are independently constrained to the job library's 1048576-byte bound. A
 # record is marked done only after its bounded outputs and numeric exit status
 # have been committed. The library header owns the exact record fields and
@@ -770,6 +770,8 @@ worker_run_job() { # <account-home> <job-dir>
   stderr_reader=$!
   child_env=(
     /usr/bin/env -i
+    # Bash 5.3 local locale restoration needs a fallback in the empty environment.
+    LANG=C
     "PATH=$FM_REMOTE_JOB_CHILD_PATH"
     "HOME=$account_home"
     "FM_HOME=$home"
