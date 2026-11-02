@@ -171,9 +171,10 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    # Twelve shards target roughly ten minutes of script work; the longest
-    # measured script alone takes twelve minutes, so retain runner-speed and
-    # setup margin rather than treating the target as a hard timeout.
+    # Twelve shards target roughly ten minutes of script work. The approved
+    # cap exceeds twice the longest completed script measurement from three
+    # green main runs, leaving runner-speed and setup margin; it is a hang
+    # tripwire, not the expected healthy duration.
     # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
     timeout-minutes: 25
     strategy:
