@@ -458,7 +458,7 @@ test_watcher_keeps_diagnostics_separate_from_contribution_wakes() {
   out="$home/watcher-diagnostics.out"
   rc=0
   with_home "$home" env FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
-    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 15 > "$out" 2> "$home/watcher-diagnostics.err" || rc=$?
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 60 > "$out" 2> "$home/watcher-diagnostics.err" || rc=$?
   [ "$rc" -eq 0 ] || fail "watcher did not surface contribution diagnostics: $(cat "$home/watcher-diagnostics.err")"
   diagnostic=$(awk -F '\t' -v key="$home/state/contributions.check.sh" '$3 == "check" && $4 == key { print $5 }' "$home/state/.wake-queue")
   [ "$diagnostic" = "check: $home/state/contributions.check.sh: contributions: 1 unreadable durable record(s)" ] \
@@ -502,18 +502,26 @@ test_watcher_surfaces_new_contribution_once() {
   out="$home/watcher.out"
   rc=0
   with_home "$home" env FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
-    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 5 > "$out" 2> "$home/watcher.err" || rc=$?
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 60 > "$out" 2> "$home/watcher.err" || rc=$?
   [ "$rc" -eq 0 ] || fail "watcher did not surface the new contribution signal: $(cat "$home/watcher.err")"
   grep -E '^check: contributions delivery [0-9a-f]{64}$' "$out" >/dev/null \
     || fail "watcher did not surface the durable contribution wake: $(cat "$out")"
   rows=$(awk -F '\t' 'NF >= 5 && $3 == "check" { count++ } END { print count + 0 }' "$home/state/.wake-queue")
   [ "$rows" = 1 ] || fail "one contribution signal created $rows durable check wakes"
+  # This final check proves the repeat observation finished; a short quiet
+  # timeout could pass before the contribution check had even run.
+  printf '#!/bin/sh\nprintf "repeat completed\\n"\n' > "$home/state/zz-repeat-complete.check.sh"
+  chmod 700 "$home/state/zz-repeat-complete.check.sh"
+  with_home "$home" "$ROOT/bin/fm-check-register.sh" zz-repeat-complete >/dev/null \
+    || fail 'could not register repeat completion check'
   rc=0
   with_home "$home" env FM_WATCH_HANDLING_SUCCESSOR=1 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
-    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 2 > "$home/watcher-repeat.out" 2> "$home/watcher-repeat.err" || rc=$?
-  [ "$rc" -eq 124 ] || fail "an already durable contribution signal re-rang the watcher: $(cat "$home/watcher-repeat.out")"
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 60 > "$home/watcher-repeat.out" 2> "$home/watcher-repeat.err" || rc=$?
+  [ "$rc" -eq 0 ] || fail "repeat observation did not complete: $(cat "$home/watcher-repeat.err")"
+  [ "$(cat "$home/watcher-repeat.out")" = "check: $home/state/zz-repeat-complete.check.sh: repeat completed" ] \
+    || fail "an already durable contribution signal re-rang the watcher: $(cat "$home/watcher-repeat.out")"
   rows=$(awk -F '\t' 'NF >= 5 && $3 == "check" { count++ } END { print count + 0 }' "$home/state/.wake-queue")
-  [ "$rows" = 1 ] || fail "repeat contribution observation created $rows durable check wakes"
+  [ "$rows" = 2 ] || fail "repeat observation must retain one contribution wake plus its completion wake, got $rows"
   pass 'watcher surfaces one newly durable contribution signal without re-ringing it'
 }
 
