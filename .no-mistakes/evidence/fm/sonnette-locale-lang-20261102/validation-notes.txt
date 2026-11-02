@@ -1,0 +1,22 @@
+Final-head locale validation: 848618068e1a24da882ac71a4be6b554d80372e6
+Baseline: 3bd813b6ff82bbf70bd02e19eb6c2048bc09409b
+
+Scope: locale-only diff. No composer-recovery behavior belongs to this head.
+
+Targeted existing checks:
+TMPDIR="$PWD/.validation/tmp" bin/fm-test-run.sh tests/fm-task-inbox.test.sh tests/fm-remote-entrypoint.test.sh
+Exit 0. The inbox regression explicitly executed env -i producer/ring checks with stock Bash 3.2.57 and installed Bash 5.3.9. These tests include fake backend fixtures and are supplemental, not the live-delivery proof.
+
+Fresh live product exercise:
+python3 .validation/live.py (driver preserved as live-driver.py)
+Started the unchanged remote worker --serve with an isolated HOME and job-state root and no locale variables. Staged ten real fm-send.sh jobs through the public staging/wait API. Each returned exit 0; ten records contained their exact distinct message bodies; ten complete doorbell lines reached an isolated 240x35 tmux pane. The recipient was a real cat terminal input sink (with terminal echo disabled), not an agent: this proves doorbell transport and Enter, not model interpretation, acknowledgement, or remote SSH authentication. tmux routing was confined by a PATH wrapper using a private socket. An exec wrapper recorded the environment received by real Bash before invoking the unchanged product: LANG=C, LC_ALL absent, hostile parent secret absent.
+
+The initial shell-only terminal correctly produced 'agent has exited' and no typing. Replaced that fixture with the terminal sink and reran all ten sends. The initial doctor fixture correctly rejected overlapping root/home paths. Replaced its root with an unchanged disposable bin copy, tracked in a fixture Git index, and reran successfully. These were setup corrections, not source fixes.
+
+Doctor bootstrap: invoked the unchanged remote entrypoint's doctor --help route with encoded argv, isolated non-overlapping root/home, and redirected only its shell account-home cd lookup to the disposable account. The real doctor emitted its help. Exec instrumentation confirmed LANG=C and no inherited secret. This checks the changed bootstrap environment without inspecting or modifying operator launch agents or running doctor --fix.
+
+Public producer adversarial checks: under env without locale, both installed Bash versions emitted a safely quoted doorbell for a path containing apostrophes and shell metacharacters. Executing the doorbell with /bin/sh created no injected file. Both rejected a newline-containing path with exit 1 and no output.
+
+Before/after reproduction: executed the baseline producer copied from git show (with the same dependencies) and the final-head producer in command substitution without locale. Bash 5.3.9 returned 139 for baseline and 0 for head; stock Bash returned 0 for both. See producer-before-after.json.
+
+No linter, formatter, static analysis, full suite, pipeline-control, push, PR, or CI phase was run. No source or permanent test edits. Product evidence is CLI output, persisted inbox records, terminal capture and invocation-environment logs; this locale change has no changed visual UI requiring screenshots. All disposable worktree setup was removed and the private worker and tmux server were stopped.

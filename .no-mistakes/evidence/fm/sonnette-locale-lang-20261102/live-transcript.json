@@ -1,0 +1,275 @@
+[
+  {
+    "command": [
+      "/usr/local/bin/tmux",
+      "-S",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/tmux.sock",
+      "-f",
+      "/dev/null",
+      "new-session",
+      "-d",
+      "-s",
+      "locale",
+      "-n",
+      "fm-locale",
+      "-x",
+      "240",
+      "-y",
+      "35",
+      "/bin/sh",
+      "-c",
+      "stty -echo; exec /bin/cat"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 01"
+    ],
+    "exit": 0,
+    "stdout": "job=job-Fsx0Pj exit=0\n",
+    "stderr": "\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the requested message WILL still be sent.\n\u25cf  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 02"
+    ],
+    "exit": 0,
+    "stdout": "job=job-aldW2H exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 03"
+    ],
+    "exit": 0,
+    "stdout": "job=job-R3PQXi exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 04"
+    ],
+    "exit": 0,
+    "stdout": "job=job-UnBMxY exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 05"
+    ],
+    "exit": 0,
+    "stdout": "job=job-wgq8k2 exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 06"
+    ],
+    "exit": 0,
+    "stdout": "job=job-VwxpVE exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 07"
+    ],
+    "exit": 0,
+    "stdout": "job=job-b9vcla exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 08"
+    ],
+    "exit": 0,
+    "stdout": "job=job-NJX8K0 exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 09"
+    ],
+    "exit": 0,
+    "stdout": "job=job-6vpahk exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 10"
+    ],
+    "exit": 0,
+    "stdout": "job=job-tmhRrv exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/tmux",
+      "-S",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/tmux.sock",
+      "capture-pane",
+      "-p",
+      "-S",
+      "-200",
+      "-t",
+      "locale:fm-locale"
+    ],
+    "exit": 0,
+    "stdout": ": Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/\nUsers/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n\n\n\n\n\n\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/bin/bash",
+      "-c",
+      ". \"$1/bin/fm-task-inbox-lib.sh\"; line=$(fm_task_inbox_doorbell_line \"$2/001.msg\") || exit; printf \"%s\\n\" \"$line\"; /bin/sh -c \"$line\"",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/inbox ' ; touch SHOULD_NOT_EXIST ; '"
+    ],
+    "exit": 0,
+    "stdout": ": Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/inbox '\\'' ; touch SHOULD_NOT_EXIST ; '\\'''/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/inbox '\\'' ; touch SHOULD_NOT_EXIST ; '\\'''/handled/.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/bin/bash",
+      "-c",
+      ". \"$1/bin/fm-task-inbox-lib.sh\"; fm_task_inbox_doorbell_line \"$2/001.msg\"",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/unsafe\npath"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      ". \"$1/bin/fm-task-inbox-lib.sh\"; line=$(fm_task_inbox_doorbell_line \"$2/001.msg\") || exit; printf \"%s\\n\" \"$line\"; /bin/sh -c \"$line\"",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/inbox ' ; touch SHOULD_NOT_EXIST ; '"
+    ],
+    "exit": 0,
+    "stdout": ": Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/inbox '\\'' ; touch SHOULD_NOT_EXIST ; '\\'''/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/inbox '\\'' ; touch SHOULD_NOT_EXIST ; '\\'''/handled/.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      ". \"$1/bin/fm-task-inbox-lib.sh\"; fm_task_inbox_doorbell_line \"$2/001.msg\"",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/unsafe\npath"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "-C",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/code",
+      "init",
+      "-q"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "-C",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/code",
+      "add",
+      "bin"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "cd() { if [ \"$#\" = 1 ] && [ \"$1\" = \"$REAL_ACCOUNT\" ]; then builtin cd \"$TEST_ACCOUNT\"; else builtin cd \"$@\"; fi; }\nset -- 1 \"$2\" \"$3\" \"$4\"\n. \"$ENTRY\"\n",
+      "_",
+      "unused",
+      "L1VzZXJzL3BpZXJyZS8ubm8tbWlzdGFrZXMvd29ya3RyZWVzL2E5N2ZiZTU4Yzk3NS8wMU02RU5SWVhTWjBWUTBKODNRS1g0M1haWC8udmFsaWRhdGlvbi9saXZlL2NvZGU=",
+      "L1VzZXJzL3BpZXJyZS8ubm8tbWlzdGFrZXMvd29ya3RyZWVzL2E5N2ZiZTU4Yzk3NS8wMU02RU5SWVhTWjBWUTBKODNRS1g0M1haWC8udmFsaWRhdGlvbi9saXZlL2hvbWU=",
+      "Zm0tcmVtb3RlLWRvY3Rvci5zaAAtLWhlbHAA"
+    ],
+    "exit": 0,
+    "stdout": "Usage:\n  bin/fm-on.sh <secondmate-id|ssh-alias> fm-remote-doctor.sh [--fix]\n\nRun it through fm-on.sh so the fixed entrypoint invokes this readiness owner\nover its plain SSH bootstrap. The command reports the same filesystem-composed\nPATH used by worker jobs while retaining authority to inspect and repair the\nworker itself.\n\nA remote second mate always runs on the Herdr backend in the dedicated\nfm-remote session. Its account therefore needs the Firstmate-owned Aqua Herdr\nagent plus the sibling dev.firstmate.remote-job worker that runs normal fm-on\ncommands through the Aqua or Linux job-worker path. On darwin, that Herdr\nagent runs bin/fm-remote-herdr-guard.sh through the remote account's login\nshell (`-l -c`) so the server inherits the account's own environment; the\ngui/<uid> launchd domain it is bootstrapped into, not the shell, is what\ngives the server and its panes the Aqua audit session and login-keychain\naccess. The guard execs the server in the foreground under launchd, leaves an\nAqua-born server alone, and takes the session over from a server born\noutside that session (an SSH remote attach wins the socket at boot), because\nsuch a server's panes cannot read the login keychain;\nbin/fm-remote-herdr-owner-lib.sh owns that birth test. Doctor remains\ninvokable over the plain-SSH bootstrap path to inspect and repair that worker.\nSSH cannot create an Aqua session, so a host with no GUI login is a human\ngap rather than something --fix attempts to bypass.\n\nLine protocol, one fact per line, stable for script consumers:\n  mode=check|fix\n  path=<the child PATH this command inherited>\n  entrypoint=yes|no\n  platform=darwin|linux|<uname -s>|unknown\n  required <tool>=<path>|MISSING\n  optional <tool>=<path>|absent\n  fix <check>=applied: <what changed>       (--fix only)\n  fix <check>=failed: <why the repair did not land>   (--fix only)\n  check <check>=ok: <evidence>\n  check <check>=skip: <why this host is exempt>\n  check <check>=fixable: <gap --fix can close>\n  check <check>=human: <gap only a person at that machine can close>\n  action: <check>: <the exact step to take>\nEvery check line is authoritative for the moment it printed: under --fix it is\nthe state after the repair attempt, so a human gap is never presented as\nfixed. Any remaining fixable or human gap, and any missing required tool,\nexits non-zero.\n\n--fix is idempotent and closes only automatable gaps: it writes and reloads\nboth Firstmate-owned Aqua agents, starts the Linux workers where no Aqua agent\napplies, recreates the entrypoint symlink, and may add an owned ~/.local/bin\nwrapper for a required tool it can discover under nvm, asdf, or mise. It never\ninstalls packages, creates a login session, writes an auto-login password,\nchanges FileVault, stores an account password, or replaces a non-Firstmate\nwrapper; those remain reported gaps.\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/usr/local/bin/tmux",
+      "-S",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/tmux.sock",
+      "kill-server"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

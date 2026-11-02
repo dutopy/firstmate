@@ -1,0 +1,51 @@
+Usage:
+  bin/fm-on.sh <secondmate-id|ssh-alias> fm-remote-doctor.sh [--fix]
+
+Run it through fm-on.sh so the fixed entrypoint invokes this readiness owner
+over its plain SSH bootstrap. The command reports the same filesystem-composed
+PATH used by worker jobs while retaining authority to inspect and repair the
+worker itself.
+
+A remote second mate always runs on the Herdr backend in the dedicated
+fm-remote session. Its account therefore needs the Firstmate-owned Aqua Herdr
+agent plus the sibling dev.firstmate.remote-job worker that runs normal fm-on
+commands through the Aqua or Linux job-worker path. On darwin, that Herdr
+agent runs bin/fm-remote-herdr-guard.sh through the remote account's login
+shell (`-l -c`) so the server inherits the account's own environment; the
+gui/<uid> launchd domain it is bootstrapped into, not the shell, is what
+gives the server and its panes the Aqua audit session and login-keychain
+access. The guard execs the server in the foreground under launchd, leaves an
+Aqua-born server alone, and takes the session over from a server born
+outside that session (an SSH remote attach wins the socket at boot), because
+such a server's panes cannot read the login keychain;
+bin/fm-remote-herdr-owner-lib.sh owns that birth test. Doctor remains
+invokable over the plain-SSH bootstrap path to inspect and repair that worker.
+SSH cannot create an Aqua session, so a host with no GUI login is a human
+gap rather than something --fix attempts to bypass.
+
+Line protocol, one fact per line, stable for script consumers:
+  mode=check|fix
+  path=<the child PATH this command inherited>
+  entrypoint=yes|no
+  platform=darwin|linux|<uname -s>|unknown
+  required <tool>=<path>|MISSING
+  optional <tool>=<path>|absent
+  fix <check>=applied: <what changed>       (--fix only)
+  fix <check>=failed: <why the repair did not land>   (--fix only)
+  check <check>=ok: <evidence>
+  check <check>=skip: <why this host is exempt>
+  check <check>=fixable: <gap --fix can close>
+  check <check>=human: <gap only a person at that machine can close>
+  action: <check>: <the exact step to take>
+Every check line is authoritative for the moment it printed: under --fix it is
+the state after the repair attempt, so a human gap is never presented as
+fixed. Any remaining fixable or human gap, and any missing required tool,
+exits non-zero.
+
+--fix is idempotent and closes only automatable gaps: it writes and reloads
+both Firstmate-owned Aqua agents, starts the Linux workers where no Aqua agent
+applies, recreates the entrypoint symlink, and may add an owned ~/.local/bin
+wrapper for a required tool it can discover under nvm, asdf, or mise. It never
+installs packages, creates a login session, writes an auto-login password,
+changes FileVault, stores an account password, or replaces a non-Firstmate
+wrapper; those remain reported gaps.

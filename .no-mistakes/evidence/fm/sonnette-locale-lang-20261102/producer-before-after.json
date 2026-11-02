@@ -1,0 +1,30 @@
+[
+  {
+    "revision": "base",
+    "shell": "/bin/bash",
+    "exit": 0,
+    "stdout": "producer_status=0 doorbell=: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n",
+    "stderr": ""
+  },
+  {
+    "revision": "base",
+    "shell": "/usr/local/bin/bash",
+    "exit": 139,
+    "stdout": "producer_status=139 doorbell=: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n",
+    "stderr": ""
+  },
+  {
+    "revision": "head",
+    "shell": "/bin/bash",
+    "exit": 0,
+    "stdout": "producer_status=0 doorbell=: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n",
+    "stderr": ""
+  },
+  {
+    "revision": "head",
+    "shell": "/usr/local/bin/bash",
+    "exit": 0,
+    "stdout": "producer_status=0 doorbell=: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/*.msg and, in numeric order, read and act on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox'/handled/.\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,185 @@
+[
+  {
+    "command": [
+      "/usr/local/bin/tmux",
+      "-S",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/tmux.sock",
+      "-f",
+      "/dev/null",
+      "new-session",
+      "-d",
+      "-s",
+      "locale",
+      "-n",
+      "fm-locale",
+      "-x",
+      "240",
+      "-y",
+      "35",
+      "/usr/local/bin/bash",
+      "--noprofile",
+      "--norc",
+      "-i"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 01"
+    ],
+    "exit": 0,
+    "stdout": "job=job-dax6Bh exit=0\n",
+    "stderr": "\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the requested message WILL still be sent.\n\u25cf  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/001.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 02"
+    ],
+    "exit": 0,
+    "stdout": "job=job-2yGkSm exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/002.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 03"
+    ],
+    "exit": 0,
+    "stdout": "job=job-izWtkR exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/003.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 04"
+    ],
+    "exit": 0,
+    "stdout": "job=job-e7aAtZ exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/004.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 05"
+    ],
+    "exit": 0,
+    "stdout": "job=job-du1kO0 exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/005.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 06"
+    ],
+    "exit": 0,
+    "stdout": "job=job-dl8kVf exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/006.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 07"
+    ],
+    "exit": 0,
+    "stdout": "job=job-6b37Pd exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/007.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 08"
+    ],
+    "exit": 0,
+    "stdout": "job=job-Xr8HoT exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/008.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 09"
+    ],
+    "exit": 0,
+    "stdout": "job=job-0br3em exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/009.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/bash",
+      "-c",
+      "set -eu\n. \"$1/bin/fm-remote-job-lib.sh\"\nfm_remote_job_stage \"$HOME\" \"$1\" \"$FM_HOME\" fm-send.sh locale \"$2\" </dev/null >/dev/null\nid=$FM_REMOTE_JOB_ID\nfm_remote_job_wait \"$HOME\" \"$id\"\nprintf 'job=%s exit=%s\\n' \"$id\" \"$FM_REMOTE_JOB_EXIT\"\ncat \"$FM_REMOTE_JOB_STDOUT\"\ncat \"$FM_REMOTE_JOB_STDERR\" >&2\nexit \"$FM_REMOTE_JOB_EXIT\"\n",
+      "_",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX",
+      "Isolated locale steer 10"
+    ],
+    "exit": 0,
+    "stdout": "job=job-C9RMki exit=0\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nfm-send: doorbell not typed because the agent in locale:fm-locale has exited; the steer is durably recorded at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/home/state/locale.inbox/010.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane\n"
+  },
+  {
+    "command": [
+      "/usr/local/bin/tmux",
+      "-S",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/tmux.sock",
+      "capture-pane",
+      "-p",
+      "-S",
+      "-200",
+      "-t",
+      "locale:fm-locale"
+    ],
+    "exit": 0,
+    "stdout": "bash-5.3$\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/usr/local/bin/tmux",
+      "-S",
+      "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6ENRYXSZ0VQ0J83QKX43XZX/.validation/live/tmux.sock",
+      "kill-server"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]
