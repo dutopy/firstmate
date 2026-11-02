@@ -834,7 +834,7 @@ test_ring_without_locale() {
     index=$((index + 1))
     dir=$(ring_case "ring-no-locale-$index")
     rc=0
-    # No LANG, LC_ALL, or LC_* survives this boundary, as in remote jobs.
+    # Omit all locale variables to exercise the helper's own fallback.
     # shellcheck disable=SC2016 # expanded by the selected shell
     env -i PATH="$dir/ringbin:$PATH" FM_FAKE_DIR="$dir" \
       FM_TASK_INBOX_ENTER_PAUSE=0 FM_FAKE_CLEAR_AFTER=2 "$sh" -c '
