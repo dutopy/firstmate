@@ -1210,29 +1210,42 @@ test_portable_serial_shard_lane_refusals() {
 }
 
 test_jobs_requires_proven_isolated() {
-  local tmp rc shard_lane
+  local tmp repo rc shard_lane
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-jobs.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
+  printf '#!/usr/bin/env bash\ntouch ran\necho "ok - unproven fixture"\n' \
+    >"$repo/tests/fm-afk-inject-e2e.test.sh"
+  chmod +x "$repo/tests/fm-afk-inject-e2e.test.sh"
   set +e
-  "$RUNNER" --jobs 2 --lane portable-serial >"$tmp/out" 2>"$tmp/err"
+  "$repo/bin/fm-test-run.sh" --jobs 2 --lane portable-serial >"$tmp/out" 2>"$tmp/err"
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "--jobs with portable-serial must refuse (exit 2), got $rc"
   grep -Fq 'not in the proven-isolated set' "$tmp/err" \
     || fail "--jobs refusal message missing: $(cat "$tmp/err")"
   set +e
-  "$RUNNER" --jobs 2 tests/fm-afk-inject-e2e.test.sh >"$tmp/out2" 2>"$tmp/err2"
+  "$repo/bin/fm-test-run.sh" --jobs 2 tests/fm-afk-inject-e2e.test.sh >"$tmp/out2" 2>"$tmp/err2"
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "--jobs on a family with no recorded proof must refuse, got $rc"
-  # Sharding across runners never relaxes the serial rule inside one shard.
-  shard_lane=$("$RUNNER" --list-lanes | grep -m1 '^portable-serial-[0-9]*of[0-9]*$')
+  shard_lane=$("$repo/bin/fm-test-run.sh" --list-lanes | grep -m1 '^portable-serial-[0-9]*of[0-9]*$')
+  [ "$("$repo/bin/fm-test-run.sh" --list --lane "$shard_lane")" = tests/fm-afk-inject-e2e.test.sh ] \
+    || fail "fixture shard must contain exactly the unproven script"
   set +e
-  "$RUNNER" --jobs 2 --lane "$shard_lane" >"$tmp/out3" 2>"$tmp/err3"
+  "$repo/bin/fm-test-run.sh" --jobs 2 --lane "$shard_lane" >"$tmp/out3" 2>"$tmp/err3"
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "--jobs with a portable serial shard must refuse, got $rc"
   grep -Fq 'not in the proven-isolated set' "$tmp/err3" \
     || fail "shard --jobs refusal message missing: $(cat "$tmp/err3")"
+  assert_absent "$repo/ran" "a refused selection executed the unproven script"
+  "$repo/bin/fm-test-run.sh" --lane "$shard_lane" >"$tmp/serial.out" 2>"$tmp/serial.err" \
+    || fail "the unproven shard must still run serially: $(cat "$tmp/serial.err")"
+  assert_present "$repo/ran" "the admitted serial shard did not execute the fixture"
   rm -rf "$tmp"
   pass "--jobs refuses non-proven / stateful selections"
 }
