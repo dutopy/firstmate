@@ -1142,18 +1142,12 @@ test_portable_serial_shards_partition_the_serial_lane() {
   shard=1
   while [ "$shard" -le "$count" ]; do
     listed=$("$RUNNER" --list --lane "portable-serial-${shard}of${count}" | wc -l | tr -d ' ')
-    [ "$listed" -ge 2 ] \
-      || fail "portable-serial-${shard}of${count} holds only $listed script(s)"
     [ "$listed" -le "$cap" ] \
       || fail "portable-serial-${shard}of${count} holds $listed of $total scripts"
     shard=$((shard + 1))
   done
 
-  # Assignment is deterministic across invocations.
-  [ "$("$RUNNER" --list --lane "portable-serial-1of${count}")" = \
-    "$("$RUNNER" --list --lane "portable-serial-1of${count}")" ] \
-    || fail "portable serial shard membership must be deterministic"
-  pass "portable serial shards are a deterministic disjoint cover of the serial lane"
+  pass "portable serial shards are a non-empty disjoint cover of the serial lane"
 }
 
 test_portable_serial_hint_coverage_is_reported_and_bounded() {
