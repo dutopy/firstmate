@@ -2327,6 +2327,8 @@ fm_wake_status_mark_current() {  # <state> <status-file>
 # (the safe direction), 2 the append itself failed.
 fm_wake_status_append_self_announced() {  # <state> <status-file> <line>
   local state=$1 file=$2 line=$3 marker pre_sig='' pre_size='' pre_ident='' post_size post_ident
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   _fm_wake_require_classify || return 1
   marker=$(fm_wake_signal_seen_path "$state" "$file")
@@ -2408,6 +2410,8 @@ fm_wake_status_cursor_offset() {  # <validated-status-path> -> already-presented
 # non-blank line exists.
 fm_wake_unread_events() {  # <validated-status-path> <unused-tail-byte-cap> <min-offset> [<end-offset>]
   local path=$1 min_offset=$3 end_offset=${4:-} result size chunk chunk_start
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   FM_WAKE_EVENT_LINE=
   FM_WAKE_UNREAD_LINES=
@@ -2460,6 +2464,8 @@ fm_wake_latest_event() {  # <validated-status-path> <tail-byte-cap>
 fm_wake_print_annotations() {  # <deduped-raw-rows> [<presentation-snapshot>]
   local rows=$1 snapshot=${2:-} manifest status_key mode path prefix line task endpoint
   local snapshot_task snapshot_endpoint _snapshot_ident offset last_event event_line
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
 
   manifest=$(fm_wake_annotation_manifest "$rows" | awk -F '\t' '

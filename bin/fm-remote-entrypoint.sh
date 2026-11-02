@@ -165,6 +165,8 @@ if [ "$COMMAND" = fm-remote-doctor.sh ]; then
   fm_remote_job_build_child_path "$ROOT" >/dev/null
   DOCTOR_ENV=(
     /usr/bin/env -i
+    # Bash 5.3 local locale restoration needs a fallback in the empty environment.
+    LANG=C
     "PATH=$FM_REMOTE_JOB_CHILD_PATH"
     "HOME=$ACCOUNT_HOME"
     "FM_HOME=$HOME_PATH"

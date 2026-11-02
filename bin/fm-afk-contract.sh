@@ -241,6 +241,8 @@ fm_afk_contract_blank() {  # <text>
 # Same alphabet as fm_pr_task_id_valid / fm_task_id_path_safe in bin/fm-pr-lib.sh.
 # Kept local so sourcing this file cannot reset that library's parse globals.
 fm_afk_contract_grant_id_valid() {  # <id>
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C id=${1-}
   case "$id" in
     ''|.*|*[!A-Za-z0-9._-]*) return 1 ;;

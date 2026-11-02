@@ -82,6 +82,8 @@ fm_procevent_digest_valid() {
 
 fm_procevent_extension_config_ref_valid() {
   local ref=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   [ -n "$ref" ] && [ "${#ref}" -le 512 ] || return 1
   ! printf '%s' "$ref" | grep -q '[[:cntrl:]]'
@@ -576,6 +578,8 @@ fm_procevent_claim_load_locked() {  # <source-id>
 }
 
 fm_procevent_claim_state_root_field_valid() {  # <canonical-state-root>
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local value=$1 LC_ALL=C
   case "$value" in *[[:cntrl:]]*) return 1 ;; esac
   return 0

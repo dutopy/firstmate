@@ -820,6 +820,37 @@ run_ring() {  # <dir> [env assignments...] -> prints the ring status
 texts() { grep -c '^TEXT ' "$1/keys.log" || true; }
 enters() { grep -c '^KEY Enter$' "$1/keys.log" || true; }
 
+# Prefer the newest installed Bash so macOS exercises Homebrew's current Bash
+# as well as its stock shell; Linux CI uses the current Bash on PATH.
+test_ring_without_locale() {
+  local sh newest=/bin/bash version best='' dir rc index=0
+  for sh in /bin/bash /usr/local/bin/bash /opt/homebrew/bin/bash "$(command -v bash)"; do
+    [ -x "$sh" ] || continue
+    # shellcheck disable=SC2016 # version variables belong to the candidate shell
+    version=$("$sh" -c 'printf "%03d%03d%03d" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}" "${BASH_VERSINFO[2]}"')
+    if [[ "$version" > "$best" ]]; then newest=$sh; best=$version; fi
+  done
+  for sh in /bin/bash "$newest"; do
+    index=$((index + 1))
+    dir=$(ring_case "ring-no-locale-$index")
+    rc=0
+    # No LANG, LC_ALL, or LC_* survives this boundary, as in remote jobs.
+    # shellcheck disable=SC2016 # expanded by the selected shell
+    env -i PATH="$dir/ringbin:$PATH" FM_FAKE_DIR="$dir" \
+      FM_TASK_INBOX_ENTER_PAUSE=0 FM_FAKE_CLEAR_AFTER=2 "$sh" -c '
+        . "$1"
+        line=$(fm_task_inbox_doorbell_line "$2") || exit 2
+        [ -n "$line" ] || exit 2
+        fm_task_inbox_ring tmux sess:fm-t1 "$2" fm-t1
+      ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$(cat "$dir/rec")" || rc=$?
+    [ "$rc" = 0 ] || fail "$sh doorbell without locale failed with status $rc"
+    [ "$(texts "$dir")" = 1 ] || fail "$sh did not deliver exactly one doorbell without locale"
+    [ "$(enters "$dir")" = 2 ] || fail "$sh did not submit and confirm the doorbell without locale"
+    [ ! -e "$dir/typed" ] || fail "$sh left the doorbell in the composer"
+  done
+  pass "doorbell: rings under env -i with stock and newest installed Bash ($newest)"
+}
+
 test_ring_double_enter_then_verifies() {
   local dir rc
   dir=$(ring_case ring-double-enter)
@@ -1062,6 +1093,7 @@ test_watcher_urgent_ack_silences() {
   pass "watcher: acknowledging an urgent re-rung message silences the tier"
 }
 
+test_ring_without_locale
 test_write_is_durable_and_exact
 test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls

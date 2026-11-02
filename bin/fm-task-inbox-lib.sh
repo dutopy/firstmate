@@ -317,6 +317,8 @@ fm_task_inbox_body() {  # <record-path>
 # A non-printable path fails without output so terminal controls never reach
 # the pane's line discipline.
 fm_task_inbox_doorbell_line() {  # <record-path>
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local dir=${1%/*} abs quoted LC_ALL=C
   abs=$(cd "$dir" 2>/dev/null && pwd) || abs=$dir
   case "$abs" in

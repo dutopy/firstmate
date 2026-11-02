@@ -96,6 +96,8 @@ FM_PR_POLL_RETIREMENT_REJECTED=
 
 fm_task_id_path_safe() {
   local id=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   case "$id" in
     ''|.*|*[!A-Za-z0-9._-]*) return 1 ;;
@@ -122,6 +124,8 @@ fm_task_id_creation_valid() {
 # would otherwise be armed as a GitLab watch that can never succeed.
 fm_pr_gitlab_host_valid() {
   local host=${1-} label
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   local -a labels
   [ "${#host}" -ge 1 ] && [ "${#host}" -le 253 ] || return 1
@@ -144,6 +148,8 @@ fm_pr_gitlab_host_valid() {
 # real namespace and each is refused here.
 fm_pr_gitlab_path_valid() {
   local path=${1-} segment
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   local -a segments
   [ "${#path}" -ge 3 ] && [ "${#path}" -le 1024 ] || return 1
@@ -171,6 +177,8 @@ fm_pr_gitlab_path_valid() {
 # instead, so a merge request on any instance resolves without a hardcoded host.
 fm_pr_url_parse() {
   local raw=${1-} pattern host path
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   FM_PR_PROVIDER=
   FM_PR_URL=
@@ -213,12 +221,16 @@ fm_pr_url_parse() {
 
 fm_pr_head_valid() {
   local head=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   [[ "$head" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]]
 }
 
 fm_pr_patch_id_valid() {
   local id=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   [[ "$id" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]]
 }

@@ -770,6 +770,8 @@ worker_run_job() { # <account-home> <job-dir>
   stderr_reader=$!
   child_env=(
     /usr/bin/env -i
+    # Bash 5.3 local locale restoration needs a fallback in the empty environment.
+    LANG=C
     "PATH=$FM_REMOTE_JOB_CHILD_PATH"
     "HOME=$account_home"
     "FM_HOME=$home"

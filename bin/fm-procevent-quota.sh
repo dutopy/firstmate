@@ -65,6 +65,8 @@ usage() {
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 
 resolve_provider() {
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   PROVIDER=${1:-}
   if [ -n "$PROVIDER" ]; then
@@ -79,6 +81,8 @@ resolve_provider() {
 
 positive_number() {
   local n=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   [[ "$n" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
   [ "$n" != 0 ] && [[ ! "$n" =~ ^0+(\.0+)?$ ]]
@@ -88,6 +92,8 @@ positive_int() { case "${1-}" in ''|*[!0-9]*) return 1 ;; 0) return 1 ;; *) retu
 
 valid_percent() {
   local n=${1-}
+  # Bash 5.3 needs a locale fallback when restoring a local LC_ALL under env -i.
+  : "${LANG:=C}"
   local LC_ALL=C
   [[ "$n" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
   jq -en --arg n "$n" '($n | tonumber) <= 100' >/dev/null 2>&1
