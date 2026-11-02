@@ -1,0 +1,28 @@
+ok - live health verifies exact guild and bot identity
+ok - live health refuses a bot identity mismatch
+ok - the bot token is redacted from failure output
+ok - setup apply creates forum channels directly without any COMMUNITY prerequisite
+ok - setup apply creates the three categories with exchanges and artifacts forums plus tags
+ok - setup apply reuses exact existing categories and forums on rerun
+ok - setup apply reuses exact existing channels and recovers from partial runs
+ok - setup apply refuses name collisions with a different channel type or parent
+ok - live reply posts once with empty allowed_mentions and replays through the receipt
+ok - live reply retries transient 5xx responses and records the receipt once
+ok - sustained API failures record no receipt and never leak the token
+ok - live source ingests only captain messages after durable monotonic cursors
+ok - live roundtrip posts once and verifies in both fresh and replay paths
+ok - process-event arm refuses while live polling is disabled and prints the registration command
+ok - process-event arm registers, repeated starts stay idempotent, and retire clears the source
+ok - registered source: repeated empty scans create zero unhandled captures
+ok - one captain message makes exactly one inbox note and a repeat makes none
+ok - genuine failures stay visible, redacted, and retryable without advancing cursors
+PROBE_pre_retire=0
+PROBE_post_retire=0
+ok - registered argv to the task copy works under a main runner from a different code root
+PROBE_S1=0
+PROBE_S2=0
+ok - live mirror posts once, fires typing, converges with replies, and stays allowlist-bounded
+ok - live mirror posts once, fires typing, converges with replies, and stays allowlist-bounded
+ok - a missing decryption tool is one bounded, actionable line
+ok - a decryption failure surfaces its cause in one bounded line
+ok - a missing secret file is one bounded, actionable line

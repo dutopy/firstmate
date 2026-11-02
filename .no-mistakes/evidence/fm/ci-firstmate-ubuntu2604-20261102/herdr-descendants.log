@@ -1,0 +1,2 @@
+ok - herdr stale registration: an agent process outside the foreground group still counts as alive
+ok - herdr stale registration: the descendant walk reads a spaced executable path whole

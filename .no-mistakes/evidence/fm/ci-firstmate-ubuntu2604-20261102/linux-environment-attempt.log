@@ -1,0 +1,7 @@
+time="2026-11-02T15:32:30+01:00" level=info msg="starting colima [profile=validation]"
+time="2026-11-02T15:32:30+01:00" level=info msg="runtime: docker"
+time="2026-11-02T15:32:30+01:00" level=info msg="creating and starting ..." context=vm
+time="2026-11-02T15:32:30+01:00" level=info msg="downloading disk image ..." context=vm
+time="2026-11-02T15:32:36+01:00" level=info msg="Terminal is not available, proceeding without opening an editor"
+time="2026-11-02T15:32:36+01:00" level=fatal msg="instance name `colima-validation` too long: `/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EAC64S8VWZVF4HH5MPX2RD/.validation/lima/colima-validation/ssh.sock.1234567890123456` must be less than UNIX_PATH_MAX=104 characters, but is 137"
+time="2026-11-02T15:32:36+01:00" level=fatal msg="error starting vm: error at 'creating and starting': exit status 1"

@@ -1,0 +1,37 @@
+Python 3.14.3
+
+before: fm-procevent-discord-workspace.sh source; exit=1
+stdout: ''
+stderr: Traceback (most recent call last):
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EAC64S8VWZVF4HH5MPX2RD/.validation/baseline/bin/fm_discord_workspace_lib.py", line 2357, in <module>
+    raise SystemExit(main(sys.argv))
+                     ~~~~^^^^^^^^^^
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EAC64S8VWZVF4HH5MPX2RD/.validation/baseline/bin/fm_discord_workspace_lib.py", line 2349, in main
+    return int(args.func(args, env))
+               ~~~~~~~~~^^^^^^^^^^^
+  File "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EAC64S8VWZVF4HH5MPX2RD/.validation/baseline/bin/fm_discord_workspace_lib.py", line 2010, in procevent_cmd_source
+    spec = importlib.util.spec_from_file_location("fm_discord_live", env.script_dir / "fm_discord_live.py")
+           ^^^^^^^^^^^^^^
+AttributeError: module 'importlib' has no attribute 'util'
+
+after: fm-procevent-discord-workspace.sh source; exit=75
+stdout: ''
+stderr: 
+Persisted inbox note:
+id=1793630044-VUVV6G
+at=2026-11-02T14:34:04Z
+source=discord-workspace
+external_metadata=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6EAC64S8VWZVF4HH5MPX2RD/.validation/probe-after/state/inbox/external/97ff1a49c1d79f52d38c611111234126f3035574acca64b8c4d619798727f743.metadata.json
+external_source=discord-workspace
+external_id=discord:111111111111111111:888888888888888881:999999999999999991
+--
+Discord workspace / firstmate / text
+request: discord:111111111111111111:888888888888888881:999999999999999991
+from: 444444444444444444
+link: https://discord.com/channels/111111111111111111/888888888888888881/999999999999999991
+
+Python 3.14 live polling regression probe
+
+Persisted cursors: ['999999999999999991']
+Repeat scan exit=75; stdout=''; inbox notes=1
+Loopback HTTP requests: ["/guilds/111111111111111111/threads/active", "/channels/888888888888888881/messages?limit=100", "/guilds/111111111111111111/threads/active", "/channels/888888888888888881/messages?limit=100&after=999999999999999991"]

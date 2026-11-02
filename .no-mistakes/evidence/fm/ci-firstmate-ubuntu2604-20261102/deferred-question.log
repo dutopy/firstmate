@@ -1,0 +1,13 @@
+ok - mode is off by default, the env override disables a present flag, and no records means silence
+ok - FM_DEFERRED_QUESTIONS=1 enables the mode without the config flag
+ok - deferral allows with echoed questions plus DEFERRED answers, adds context, and writes one sanitized record
+ok - failed delivery exits 0, rolls back new records, and preserves reused records
+ok - other tools, malformed stdin, and empty questions leave the ordinary prompt untouched
+ok - a linked task worktree (crewmate shape) stays inert even with the flag present
+ok - each command: line runs with the summary on $1 and the record on stdin, and a failing one is harmless
+ok - captain prompts re-surface pending questions (even after opt-out) while operational inputs never do
+ok - a plain captain prompt never reopens the blocking prompt and an identical call reuses its record
+ok - a re-ask of one question never resolves the record holding another
+ok - resolve --all reports a failed write instead of exiting 0
+ok - list shows pending questions and resolve moves them by id or --all, refusing bad ids
+ok - tracked .claude/settings.json registers both deferred-question hooks
