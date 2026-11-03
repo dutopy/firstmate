@@ -329,11 +329,25 @@ fm_task_inbox_doorbell_line() {  # <record-path>
     "$quoted" "$quoted"
 }
 
+# Native recovery uses a generation- and kernel-endpoint-bound session, never
+# the composer. 0 accepted, 1 unbound (retain existing policy), 2 native failure.
+# The native transport's authority and lifecycle live in fm-native-inbox.mjs.
+fm_task_inbox_native_ring() {  # <backend> <target> <record> <doorbell>
+  local inbox=${3%/*} state task
+  state=${inbox%/*}
+  task=${inbox##*/}
+  task=${task%.inbox}
+  [ -f "$state/$task.native-inbox.config.json" ] || return 1
+  command -v node >/dev/null 2>&1 || return 1
+  node "$_FM_TASK_INBOX_LIB_DIR/fm-native-inbox.mjs" request "$1" "$2" "$3" "$4"
+}
+
 # The ONE doorbell, used by every delivery path: fm-send's local ring, the
 # remote host-local steer leg, and the watcher's re-rings all call this, so a
 # delivery fix lands everywhere at once. Sequence per call:
 #   1. endpoint-liveness pre-check (dead or missing: nothing is typed);
-#   2. advisory composer pre-check (proven pending text: skip, see below);
+#   2. prefer a verified native session; otherwise retain the advisory composer
+#      pre-check (proven pending text: skip, see below);
 #   3. type the constant line once and submit it through the backend's
 #      verifying submit machinery (one Enter);
 #   4. respect that submit verdict: `empty` is the backend's proof that the
@@ -369,7 +383,7 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # Once this call has typed the line, a pending composer is presumed to hold
 # that line, exactly as every backend submit core presumes for its own text.
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
-  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
+  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict native_rc=0
   local attempt=0 attempts pause typed=0 last=send-failed
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
     dead|missing) return 3 ;;
@@ -377,6 +391,11 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   if ! line=$(fm_task_inbox_doorbell_line "$rec"); then
     return 2
   fi
+  fm_task_inbox_native_ring "$backend" "$target" "$rec" "$line" || native_rc=$?
+  case "$native_rc" in
+    0) return 0 ;;
+    2) return 2 ;;
+  esac
   cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
   case "$cstate" in
     pending) return 1 ;;

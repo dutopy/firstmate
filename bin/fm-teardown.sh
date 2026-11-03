@@ -3420,6 +3420,9 @@ cleanup_firstmate_home_children() {
       child_busy_gen=$(cat "$sub_state/$child_id.busy-gen" 2>/dev/null || true)
     fi
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
+    if [ -f "$sub_state/$child_id.native-inbox.config.json" ]; then
+      node "$SCRIPT_DIR/fm-native-inbox.mjs" retire "$sub_state" "$child_id" || return 1
+    fi
     status_retire_presentation_task "$sub_state" "$child_id" || return 1
     fm_backlog_atomic_transition remove "$sub_state/$child_id.meta" "task record" "$sub_state" || return 1
     rm -f "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.progress" \
@@ -3887,6 +3890,9 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
+if [ -f "$STATE/$ID.native-inbox.config.json" ]; then
+  node "$SCRIPT_DIR/fm-native-inbox.mjs" retire "$STATE" "$ID" || exit 1
+fi
 status_retire_presentation_task "$STATE" "$ID" || exit 1
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.omp-ext.ts" "$STATE/$ID.worker-guard.log" "$STATE/$ID.grok-turnend-token" \
