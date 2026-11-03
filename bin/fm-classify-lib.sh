@@ -225,8 +225,8 @@ status_is_captain_relevant() {
 
 # 0 if a status line's leading verb is the pause verb (paused: <reason>). A pure
 # read of the line itself, so the daemon's classify_stale can reuse the last line
-# it already read without a fm-crew-state.sh call. Matches only the verb before the
-# first colon, so a reason mentioning "paused" elsewhere does not false-match.
+# it already read without a fm-crew-state.sh call. Uses status_line_verb, so a
+# reason mentioning "paused" elsewhere does not false-match.
 status_is_paused() {  # <status-line>
   local line=$1 verb
   [ -n "$line" ] || return 1
@@ -414,7 +414,8 @@ status_line_verb() {  # <status-line> [<out-var>] -> leading verb word
   if [ "$#" -gt 1 ]; then printf -v "$2" '%s' "$out"; else printf '%s' "$out"; fi
 }
 # 0 when a complete "[key=...]" token sits in the documented position before
-# the line's first colon (or anywhere on a line that has no colon at all).
+# the first colon after _fm_status_without_timestamp normalization (or anywhere
+# on a normalized line that has no colon at all).
 _fm_key_before_colon() {  # <status-line>
   local line
   _fm_status_without_timestamp "$1" line
@@ -424,7 +425,8 @@ _fm_key_before_colon() {  # <status-line>
   esac
 }
 # Raw slug of a complete "[key=<slug>]" token at the head of the note (the
-# first thing after the line's first colon, ignoring whitespace). Fails when
+# first thing after the normalized line's first colon, ignoring whitespace).
+# Normalization is owned by _fm_status_without_timestamp. Fails when
 # the line has no colon or no complete token there; slug charset validity is
 # the caller's check via _fm_decision_slug_ok, exactly as for the before-colon
 # position.
@@ -448,7 +450,7 @@ _fm_decision_slug_ok() {  # <slug>
     *) return 0 ;;
   esac
 }
-status_line_note() {  # <status-line> -> text after the first colon, trimmed
+status_line_note() {  # <status-line> -> note after normalized metadata, trimmed
   local n k line
   _fm_status_without_timestamp "$1" line
   case "$line" in
