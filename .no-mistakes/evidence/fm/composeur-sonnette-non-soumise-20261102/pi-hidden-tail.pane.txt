@@ -1,0 +1,50 @@
+ on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'/handled/.
+
+
+
+ $ ls -la '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'
+
+ total 8
+ drwxr-xr-x  4 pierre  staff  128 Nov  3 04:51 .
+ drwxr-xr-x  7 pierre  staff  224 Nov  3 04:51 ..
+ -rw-r--r--  1 pierre  staff  542 Nov  3 04:51 003.msg
+ drwxr-xr-x  4 pierre  staff  128 Nov  3 04:50 handled
+
+ Took 0.0s
+
+
+
+ read /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/003.msg:1-100
+
+
+
+ $ printf 'native-hidden-tail' > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/pi-hidden-tail.acted'; mv
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/003.msg'
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/handled/003.msg'
+
+ (no output)
+
+ Took 0.0s
+
+
+ Handled 003.msg successfully.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────── ↑ 27 more ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+HUMAN DRAFT - NEVER SUBMIT
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/pi-project (detached)
+↑35k ↓1.4k R2.0k CH43.7% $0.014 0.4%/1.0M (auto)                                                                                                                                    (google) gemini-3.5-flash-lite • minimal

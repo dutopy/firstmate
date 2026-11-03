@@ -1,0 +1,3 @@
+Run exactly this shell command:
+printf 'native-hidden-tail' > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.JJh5Go/codex-hidden-tail.acted'; mv '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.JJh5Go/state/codex.inbox/003.msg' '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.JJh5Go/state/codex.inbox/handled/003.msg'
+Then reply with one short line.

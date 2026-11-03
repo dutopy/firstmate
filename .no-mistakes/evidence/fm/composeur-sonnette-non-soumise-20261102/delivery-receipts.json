@@ -1,0 +1,122 @@
+[
+  {
+    "harness": "pi",
+    "case": "stranded",
+    "action_receipt": "native-stranded",
+    "handled_instruction_file": "pi-stranded.handled.txt",
+    "full_preserved_draft_file": "pi-stranded.draft.txt",
+    "draft_sha256": "c826254676ff6c44bd83a48178719ac6189bac1deb32ee09c4e0b8c75a8eba5c",
+    "draft_bytes": 403,
+    "visual_capture": "pi-stranded.png"
+  },
+  {
+    "harness": "pi",
+    "case": "unrelated",
+    "action_receipt": "native-unrelated",
+    "handled_instruction_file": "pi-unrelated.handled.txt",
+    "full_preserved_draft_file": "pi-unrelated.draft.txt",
+    "draft_sha256": "6ed1e1813f01bb747db77956fae7d5dfe37a3c2bdb2e380634d82ea010636055",
+    "draft_bytes": 26,
+    "visual_capture": "pi-unrelated.png"
+  },
+  {
+    "harness": "pi",
+    "case": "hidden-tail",
+    "action_receipt": "native-hidden-tail",
+    "handled_instruction_file": "pi-hidden-tail.handled.txt",
+    "full_preserved_draft_file": "pi-hidden-tail.draft.txt",
+    "draft_sha256": "ebeaee1b6e564a368964b9a1537a791149cdd56d8210df683b2704f5228d52ce",
+    "draft_bytes": 469,
+    "visual_capture": "pi-hidden-tail.png"
+  },
+  {
+    "harness": "pi",
+    "case": "partial",
+    "action_receipt": "native-partial",
+    "handled_instruction_file": "pi-partial.handled.txt",
+    "full_preserved_draft_file": "pi-partial.draft.txt",
+    "draft_sha256": "f3ad030d531ef1c40164e198b5023a5a383d31ae772f6fb689b821e18f00f9b0",
+    "draft_bytes": 30,
+    "visual_capture": "pi-partial.png"
+  },
+  {
+    "harness": "codex",
+    "case": "stranded",
+    "action_receipt": "native-stranded",
+    "handled_instruction_file": "codex-stranded.handled.txt",
+    "full_preserved_draft_file": "codex-stranded.draft.txt",
+    "draft_sha256": "2a3faae78e481a7e7b9d6a58ef7c6887d698f38db484a85de94f746c0deae3c3",
+    "draft_bytes": 409,
+    "visual_capture": "codex-stranded.png"
+  },
+  {
+    "harness": "codex",
+    "case": "unrelated",
+    "action_receipt": "native-unrelated",
+    "handled_instruction_file": "codex-unrelated.handled.txt",
+    "full_preserved_draft_file": "codex-unrelated.draft.txt",
+    "draft_sha256": "6ed1e1813f01bb747db77956fae7d5dfe37a3c2bdb2e380634d82ea010636055",
+    "draft_bytes": 26,
+    "visual_capture": "codex-unrelated.png"
+  },
+  {
+    "harness": "codex",
+    "case": "hidden-tail",
+    "action_receipt": "native-hidden-tail",
+    "handled_instruction_file": "codex-hidden-tail.handled.txt",
+    "full_preserved_draft_file": "codex-hidden-tail.draft.txt",
+    "draft_sha256": "13adbb21981c83d3860925fce1c95b9c1c5b63906e0e2f64d27951ad56c05afd",
+    "draft_bytes": 475,
+    "visual_capture": "codex-hidden-tail.png"
+  },
+  {
+    "harness": "codex",
+    "case": "partial",
+    "action_receipt": "native-partial",
+    "handled_instruction_file": "codex-partial.handled.txt",
+    "full_preserved_draft_file": "codex-partial.draft.txt",
+    "draft_sha256": "f3ad030d531ef1c40164e198b5023a5a383d31ae772f6fb689b821e18f00f9b0",
+    "draft_bytes": 30,
+    "visual_capture": "codex-partial.png"
+  },
+  {
+    "harness": "opencode",
+    "case": "stranded",
+    "action_receipt": "native-stranded",
+    "handled_instruction_file": "opencode-stranded.handled.txt",
+    "full_preserved_draft_file": "opencode-stranded.draft.txt",
+    "draft_sha256": "da0a97e89c17526784f8359dbad00a1c47a42c61549419956a02161708c48a40",
+    "draft_bytes": 415,
+    "visual_capture": "opencode-stranded.png"
+  },
+  {
+    "harness": "opencode",
+    "case": "unrelated",
+    "action_receipt": "native-unrelated",
+    "handled_instruction_file": "opencode-unrelated.handled.txt",
+    "full_preserved_draft_file": "opencode-unrelated.draft.txt",
+    "draft_sha256": "6ed1e1813f01bb747db77956fae7d5dfe37a3c2bdb2e380634d82ea010636055",
+    "draft_bytes": 26,
+    "visual_capture": "opencode-unrelated.png"
+  },
+  {
+    "harness": "opencode",
+    "case": "hidden-tail",
+    "action_receipt": "native-hidden-tail",
+    "handled_instruction_file": "opencode-hidden-tail.handled.txt",
+    "full_preserved_draft_file": "opencode-hidden-tail.draft.txt",
+    "draft_sha256": "d307de43376fe77c1a4cbd20960feb02627ca49dab1665cd394cd35155c23d02",
+    "draft_bytes": 481,
+    "visual_capture": "opencode-hidden-tail.png"
+  },
+  {
+    "harness": "opencode",
+    "case": "partial",
+    "action_receipt": "native-partial",
+    "handled_instruction_file": "opencode-partial.handled.txt",
+    "full_preserved_draft_file": "opencode-partial.draft.txt",
+    "draft_sha256": "f3ad030d531ef1c40164e198b5023a5a383d31ae772f6fb689b821e18f00f9b0",
+    "draft_bytes": 30,
+    "visual_capture": "opencode-partial.png"
+  }
+]

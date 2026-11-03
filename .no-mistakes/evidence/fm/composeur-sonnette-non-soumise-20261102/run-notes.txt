@@ -1,0 +1,29 @@
+Targeted validation only; no lint, formatter, static analysis, broad suite, push, PR, or CI was run.
+
+Baseline command:
+TMPDIR="$PWD/.phase-test/tmp" bin/fm-test-run.sh tests/fm-native-inbox.test.sh tests/fm-task-inbox.test.sh tests/fm-send-inbox.test.sh
+All three targeted scripts exited 0. Native attribution/race checks in that baseline use fixture clients and are not claimed as live vendor scenarios.
+
+Live command (disposable adapted copy of tests/fm-native-inbox-live-e2e.test.sh):
+PATH="$PWD/.phase-test/shim:$PATH" FM_EVIDENCE=<this evidence directory> FM_NATIVE_INBOX_LIVE_E2E=1 FM_NATIVE_INBOX_LIVE_TIMEOUT=240 bash tests/.phase-native-live.test.sh
+Pi completed all four cases in one run. A subsequent FM_NATIVE_INBOX_LIVE_HARNESSES='codex opencode' run completed all eight cases for those workers. All workers used private HOME/XDG/config/state/temp directories inside the worktree. The tmux server used the worktree-local .s socket and a 220x50 grid.
+Pi and OpenCode used Gemini 3.5 Flash Lite directly. Codex used the same real model via a disposable local Responses compatibility bridge; no product, queue, model response, or instruction-execution mock was used. Environment credentials were not copied to evidence or read from operator configuration files.
+
+Initial setup interruptions, resolved before the successful runs:
+- OpenRouter and DeepInfra returned billing errors; other available providers rejected requests. Gemini was available.
+- Gemini 2.5 Flash reached minute and then daily free-tier quotas. Gemini 2.5 Flash Lite was retired. Switching to the available Gemini 3.5 Flash Lite model and pacing scenarios resolved this.
+- The long initial tmux socket path exceeded the Unix socket limit; a shorter worktree-local .s socket resolved this.
+- Codex's disposable wrapper initially supplied --no-daemon, which queue explicitly refuses. Removing that test-only override restored the normal real Codex queue path.
+- OpenCode required GOOGLE_GENERATIVE_AI_API_KEY rather than GEMINI_API_KEY; the disposable launcher now maps the environment credential explicitly.
+- The existing live fixture ended its exact shell command with an unquoted '.', causing the model to execute mv with the current directory as an extra destination. The real TUI trace demonstrated the incorrect move. The only retained source change separates the shell command and subsequent prose onto different lines. Corrected live runs executed and acknowledged every instruction.
+
+Additional live checks:
+python3 .phase-test/check-boundaries.py rejected a wrong target pane and an old real Pi actor after re-arming its generation, with the complete editor unchanged (live-boundaries.json).
+python3 .phase-test/watch-completions.py observed the initial real Codex completion and three later native follow-up completions updating turn-ended for the same attributed thread (codex-completions.json). The fourth delivery was acknowledged before test cleanup; its final model response was not needed for the delivery assertion.
+FM_NATIVE_INBOX_LIVE_HARNESSES=pi bash tests/.phase-native-batch.test.sh queued two unread records before one native resend with a stranded composer. Both instructions executed and both records moved to handled; the original complete composer remained identical. The command exited 0.
+
+Evidence generation:
+swift .phase-test/render.swift <this evidence directory>
+PNG files render actual captured tmux grids using AppKit's monospace font, not a desktop screenshot. The HTML gallery links all twelve case images, full editor exports and persisted acknowledgements, plus the two-order batch image. delivery-receipts.json records actual receipt values and complete exported draft hashes. No claim is made for Herdr recovery or Codex conversation changes after /new or /resume.
+
+Disposable workers, servers, drivers, homes and caches were removed after verification; evidence remains here. The corrected live test instruction is the only retained worktree change.

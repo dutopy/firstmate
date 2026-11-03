@@ -1,0 +1,50 @@
+
+ $ printf 'native-stranded' > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/pi-stranded.acted'; mv
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/001.msg'
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/handled/001.msg'
+
+ (no output)
+
+ Took 0.0s
+
+
+ Handled 001.msg successfully.
+
+
+ : Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'/*.msg and, in numeric order, read and act
+ on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'/handled/.
+
+
+
+ $ ls -la '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'
+
+ total 8
+ drwxr-xr-x  4 pierre  staff  128 Nov  3 04:50 .
+ drwxr-xr-x  7 pierre  staff  224 Nov  3 04:50 ..
+ -rw-r--r--  1 pierre  staff  538 Nov  3 04:50 002.msg
+ drwxr-xr-x  3 pierre  staff   96 Nov  3 04:49 handled
+
+ Took 0.0s
+
+
+
+ read /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/002.msg:1-100
+
+
+
+ $ printf 'native-unrelated' > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/pi-unrelated.acted'; mv
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/002.msg'
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/handled/002.msg'
+
+ (no output)
+
+ Took 0.0s
+
+
+ Handled 002.msg successfully.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+HUMAN DRAFT - NEVER SUBMIT
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/pi-project (detached)
+↑20k ↓904 $0.008 0.3%/1.0M (auto)                                                                                                                                                   (google) gemini-3.5-flash-lite • minimal

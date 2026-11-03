@@ -1,0 +1,3 @@
+Run exactly this shell command:
+printf 'native-stranded' > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.26Sd3r/pi-stranded.acted'; mv '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.26Sd3r/state/pi.inbox/001.msg' '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.26Sd3r/state/pi.inbox/handled/001.msg'
+Then reply with one short line.

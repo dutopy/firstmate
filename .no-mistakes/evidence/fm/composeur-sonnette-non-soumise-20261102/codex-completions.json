@@ -1,0 +1,31 @@
+[
+  {
+    "turn_ended_mtime_ns": 1793678192307370242,
+    "attributed_thread": "01a19f8d-29ea-7700-b45f-1ced3de96c0c",
+    "handled_records": []
+  },
+  {
+    "turn_ended_mtime_ns": 1793678314550473189,
+    "attributed_thread": "01a19f8d-29ea-7700-b45f-1ced3de96c0c",
+    "handled_records": [
+      "001.msg"
+    ]
+  },
+  {
+    "turn_ended_mtime_ns": 1793678425303705314,
+    "attributed_thread": "01a19f8d-29ea-7700-b45f-1ced3de96c0c",
+    "handled_records": [
+      "001.msg",
+      "002.msg"
+    ]
+  },
+  {
+    "turn_ended_mtime_ns": 1793678535047651081,
+    "attributed_thread": "01a19f8d-29ea-7700-b45f-1ced3de96c0c",
+    "handled_records": [
+      "001.msg",
+      "002.msg",
+      "003.msg"
+    ]
+  }
+]

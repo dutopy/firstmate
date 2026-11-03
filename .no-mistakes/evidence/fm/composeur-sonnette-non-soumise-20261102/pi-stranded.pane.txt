@@ -1,0 +1,50 @@
+ █▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Extensions]
+  pi-extension.ts
+
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.
+
+
+ : Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'/*.msg and, in numeric order, read and act
+ on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'/handled/.
+
+
+
+ $ ls -la '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'
+
+ total 8
+ drwxr-xr-x  4 pierre  staff  128 Nov  3 04:48 .
+ drwxr-xr-x  7 pierre  staff  224 Nov  3 04:48 ..
+ -rw-r--r--  1 pierre  staff  536 Nov  3 04:48 001.msg
+ drwxr-xr-x  2 pierre  staff   64 Nov  3 04:47 handled
+
+ Took 0.0s
+
+
+
+ read /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/001.msg:1-100
+
+
+
+ $ printf 'native-stranded' > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/pi-stranded.acted'; mv
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/001.msg'
+ '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox/handled/001.msg'
+
+ (no output)
+
+ Took 0.0s
+
+
+ Handled 001.msg successfully.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+: Firstmate instruction waiting: list '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'/*.msg and, in numeric order, read and act
+on each, then mv each handled file to '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.inbox'/handled/.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/pi-project (detached)
+↑8.1k ↓451 $0.004 0.2%/1.0M (auto)                                                                                                                                                  (google) gemini-3.5-flash-lite • minimal

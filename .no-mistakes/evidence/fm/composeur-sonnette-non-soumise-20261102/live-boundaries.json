@@ -1,0 +1,21 @@
+{
+  "wrong_endpoint_request": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": ""
+  },
+  "new_generation_arm": {
+    "exit": 0,
+    "stdout": "/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.IUrEVv/state/pi.native-inbox.config.json\n",
+    "stderr": ""
+  },
+  "old_generation": "19104dc5-0302-4d34-a530-da68fb736eb1",
+  "new_generation": "91a59b19-5817-4958-9850-92ba4dff7803",
+  "retired_binding_present": false,
+  "stale_actor_request": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": ""
+  },
+  "complete_editor_unchanged": true
+}

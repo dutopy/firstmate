@@ -1,0 +1,65 @@
+FM_TEST_BEGIN 2026-11-03T03:28:19Z tests/fm-native-inbox.test.sh family=backend-dispatch expected_gate_skip=none
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox.KWsoPe/state/pi.native-inbox.config.json
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox.KWsoPe/state/pi.native-inbox.config.json
+ok - pi native delivery requires exact live endpoint, session, and generation
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox.KWsoPe/state/opencode.native-inbox.config.json
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox.KWsoPe/state/opencode.native-inbox.config.json
+ok - opencode native delivery requires exact live endpoint, session, and generation
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox.KWsoPe/state/race.native-inbox.config.json
+ok - opencode rejects superseded lookups and delivers only to the current binding
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox.KWsoPe/state/codex.native-inbox.config.json
+ok - codex native attribution rejects foreign processes, title threads, and ambiguous root sessions
+FM_TEST_END 2026-11-03T03:28:43Z tests/fm-native-inbox.test.sh exit=0 duration_ms=24566 gate_skip=false
+FM_TEST_BEGIN 2026-11-03T03:28:43Z tests/fm-task-inbox.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - doorbell: rings under env -i with stock and newest installed Bash (/usr/local/bin/bash)
+ok - inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell
+ok - inbox: a hostile-path doorbell executes as a no-op in bare shells
+ok - inbox: terminal-control paths are rejected without typing
+ok - inbox: the ring skips dead or missing endpoints and still rings live or unclassifiable endpoints
+ok - inbox: the idempotent enqueue dedups an exact re-run onto the same record, handled or not
+ok - inbox: idempotent enqueue follows a record concurrently moved to handled
+ok - inbox: the handled mv is the idempotent ack and sequences are never reissued
+ok - inbox: concurrent writers serialize on the sequence lock and lose nothing
+ok - inbox: a writer retries when a competing lock vanishes after its failed claim
+ok - inbox: ladder bookkeeping ignores a concurrently removed inbox
+ok - inbox: fire-and-forget records stay durable and outside the ladder
+ok - inbox: the re-ring ladder paces by grace, escalates once, and resets on ack
+ok - watcher: an unhandled aged message on an idle pane re-rings without waking firstmate, and the ack silences it
+ok - watcher: a busy pane just waits - the record is durable and no doorbell is typed
+ok - watcher: a healthy or empty inbox stays completely silent
+ok - watcher: acknowledgement silences an unwritable ladder without a stale wake
+ok - watcher: unwritable ladder bookkeeping surfaces a stale wake after the doorbell
+ok - watcher: a spent ring budget emits exactly one ordinary stale wake for recovery
+ok - watcher: a positively dead pane is never typed into and surfaces exactly one stale wake
+ok - watcher: a positively dead pane is never typed into and surfaces exactly one stale wake
+ok - watcher: dead-pane recovery overrides stale busy state
+ok - doorbell: types once, Enter, pause, confirming Enter, then verifies the composer
+ok - doorbell: a stuck composer is re-submitted, bounded, never retyped
+ok - doorbell: an unlanded send is retried within the bound, then reported unreachable
+ok - doorbell: proven pending composer text is still never submitted
+ok - doorbell: the submit verdict wins on a busy pane, with no confirming Enter after empty
+ok - inbox: the unread-urgent tier waits for its delay, spaces re-rings, escalates once, and resets on ack
+ok - watcher: an unread-urgent message is re-rung on a busy pane, bounded, then surfaced once
+ok - watcher: acknowledging an urgent re-rung message silences the tier
+FM_TEST_END 2026-11-03T03:30:31Z tests/fm-task-inbox.test.sh exit=0 duration_ms=107336 gate_skip=false
+FM_TEST_BEGIN 2026-11-03T03:30:31Z tests/fm-send-inbox.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-send inbox: the payload is recorded durably and only the doorbell is typed
+ok - fm-send inbox: newlines are legal and the terminal can no longer truncate a steer
+ok - fm-send inbox: a re-send is a new durable record, never a retyped payload
+ok - fm-send inbox: a visibly pending composer skips the ring, and the steer stays durably sent
+ok - fm-send inbox: a failed doorbell is still a durably sent steer
+ok - fm-send planes: slash and codex $skill invocations stay typed; plain $-text rides the inbox
+ok - fm-send planes: an explicit backend target keeps the typed plane
+ok - fm-send planes: the --key lifecycle path never touches the inbox
+ok - fm-send inbox: a secondmate steer records marker+corr in the body and is delivered at enqueue
+ok - fm-send inbox: lost reply bookkeeping never invites a resend, and the delivered steer is never duplicated
+ok - fm-send inbox: metadata lock contention fails bounded without enqueue
+ok - fm-send inbox: an unwritable record is a loud local failure that leaves no false expectation
+ok - fm-send: an empty or whitespace-only text steer refuses before marking, recording, or typing
+FM_TEST_END 2026-11-03T03:31:32Z tests/fm-send-inbox.test.sh exit=0 duration_ms=61407 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=0 duration_ms=193814
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=2 duration_ms=85973 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=107336 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-task-inbox.test.sh duration_ms=107336
+FM_TEST_SLOWEST rank=2 script=tests/fm-send-inbox.test.sh duration_ms=61407
+FM_TEST_SLOWEST rank=3 script=tests/fm-native-inbox.test.sh duration_ms=24566

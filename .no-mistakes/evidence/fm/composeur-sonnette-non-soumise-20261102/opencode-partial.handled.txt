@@ -1,0 +1,3 @@
+Run exactly this shell command:
+printf 'native-partial' > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.JJh5Go/opencode-partial.acted'; mv '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.JJh5Go/state/opencode.inbox/004.msg' '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6FP5GMCE6ECBH8RXVJGNS7T/.phase-test/tmp/fm-native-inbox-live.JJh5Go/state/opencode.inbox/handled/004.msg'
+Then reply with one short line.
