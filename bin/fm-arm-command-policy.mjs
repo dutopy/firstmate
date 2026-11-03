@@ -764,7 +764,7 @@ function nodeHasRedirection(tokens) {
 }
 
 function nodeHasUnsafeSubstitution(tokens) {
-  return tokens.some((token) => token.type === "word" && token.subs.length > 0);
+  return tokens.some((token) => (token.subs?.length ?? 0) > 0);
 }
 
 function isWatcherPgrep(position, context) {
@@ -820,15 +820,13 @@ function analyzeProgram(command, context, depth = 0) {
         nodePgrepWatcher ||= nested.pgrepWatcher;
         if (nested.error && rawMentionsProtected(token.content)) unsupported = true;
       }
-      if (token.type === "word") {
-        for (const substitution of token.subs) {
-          const nested = analyzeProgram(substitution.content, nodeContext, depth + 1);
-          substitutionResults.set(substitution, nested);
-          nodeNestedProtected ||= nested.protectedFound;
-          broadKill ||= nested.broadKill;
-          nodePgrepWatcher ||= nested.pgrepWatcher;
-          if (nested.error && rawMentionsProtected(substitution.content)) unsupported = true;
-        }
+      for (const substitution of token.subs ?? []) {
+        const nested = analyzeProgram(substitution.content, nodeContext, depth + 1);
+        substitutionResults.set(substitution, nested);
+        nodeNestedProtected ||= nested.protectedFound;
+        broadKill ||= nested.broadKill;
+        nodePgrepWatcher ||= nested.pgrepWatcher;
+        if (nested.error && rawMentionsProtected(substitution.content)) unsupported = true;
       }
     }
 

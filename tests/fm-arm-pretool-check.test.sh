@@ -123,6 +123,15 @@ matrix_case D56 deny 'for x in 1; do pkill -f fm-watch; done'
 matrix_case D57 deny 'case x in x) pkill -f fm-watch ;; esac'
 matrix_case D58 deny 'until false; do kill $(pgrep -f fm-watch); done'
 
+matrix_case D59 deny $'{ cat <<EOF\ncaller\'s note\n$(pkill -f fm-watch)\nEOF\n}'
+matrix_case D60 deny $'{ cat <<EOF\ncaller\'s note\n$(bin/fm-watch.sh)\nEOF\n}'
+matrix_case D61 deny $'{ cat <<EOF\ncaller\'s note\n$(bin/fm-watch-arm.sh)\nEOF\n}'
+matrix_case D62 deny $'{ cat <<-EOF\n\tcaller\'s note\n\t`bin/fm-watch-checkpoint.sh --seconds 180`\n\tEOF\n}'
+matrix_case D63 deny $'f() { cat <<EOF\ncaller\'s note\n`pkill -f fm-watch`\nEOF\n}\nf'
+matrix_case R20 allow $'{ cat <<\'EOF\'\ncaller\'s note\n$(pkill -f fm-watch)\n$(bin/fm-watch-arm.sh)\nEOF\n}'
+matrix_case R21 allow $'{ cat <<EOF\ncaller\'s note\n\\$(pkill -f fm-watch)\n\\`bin/fm-watch.sh\\`\nEOF\n}'
+matrix_case R22 allow $'{ cat <<EOF\ncaller\'s note\n$(printf "%s" fm-watch-arm.sh)\nEOF\n}'
+
 matrix_case E01 allow "bin/fm-watch-checkpoint.sh --seconds '180;still-one-arg'"
 matrix_case E02 allow "bin/fm-watch-checkpoint.sh --label 'fm-watch-arm.sh; literal argument'"
 matrix_case E03 allow 'bin/fm-watch-arm.sh # output > file &'

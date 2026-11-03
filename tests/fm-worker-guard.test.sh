@@ -1091,6 +1091,54 @@ test_heredoc_and_case_filesystem_effects() {
   pass "heredoc expansions and persistent case filesystem effects are inspected"
 }
 
+test_executable_stdin_and_created_link_consumers() {
+  local cmd consumer mode script="$WT/input-consumers.sh"
+  local cmds=()
+  for consumer in bash sh at batch; do
+    cmds+=("f() { $consumer <<EOF"$'\n'"# caller's note"$'\n'"rm \$(printf -- -rf) '$FOREIGN/keep'"$'\nEOF\n}\nf')
+    cmds+=("f() { $consumer <<-EOF"$'\n\t'"# caller's note"$'\n\t'"rm \$(printf -- -rf) '$FOREIGN/keep'"$'\n\tEOF\n}\nf')
+  done
+  cmds+=("python3 - <<EOF"$'\n'"\$(printf \"import shutil; shutil.rmtree('$FOREIGN/keep')\")"$'\nEOF')
+  cmds+=("node <<EOF"$'\n'"\$(printf \"require('fs').rmSync('$FOREIGN/keep', {recursive:true})\")"$'\nEOF')
+  cmds+=("bash <<< \"rm \$(printf -- -rf) '$FOREIGN/keep'\"")
+  printf '#!/usr/bin/env bash\nrm -rf "%s/keep"\n' "$FOREIGN" >"$FOREIGN/danger.sh"
+  for consumer in 'bash' 'source' '.' 'at -f' ''; do
+    cmds+=("case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) $consumer ./case-link/danger.sh ;; esac")
+    cmds+=("case \"\$(ln -s '$FOREIGN/danger.sh' ./case-script.sh)\" in *) $consumer ./case-script.sh ;; esac")
+    cmds+=("case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) script=./case-link/danger.sh; $consumer \"\$script\" ;; esac")
+    cmds+=("case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) $consumer '$WT/case-link/../foreign/danger.sh' ;; esac")
+  done
+  cp "$WT/ok.sh" "$WT/input-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "executable stdin and created links" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/input-consumers.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "executable stdin and created links in $mode scripts" "bash '$script'"
+      fi
+      case "$HOOK_ERR" in
+        *UNPARSEABLE*|*INTERNAL*) fail "input denial must inspect executable behavior: $HOOK_ERR" ;;
+      esac
+    done
+  done
+  cp "$WT/input-ok.saved" "$WT/ok.sh"
+  for consumer in bash sh at batch; do
+    assert_allowed "quoted literal executable stdin" "$consumer <<'EOF'"$'\nrm -rf ./scratch\nEOF'
+    assert_allowed "literal executable stdin" "$consumer <<EOF"$'\nrm -rf ./scratch\nEOF'
+  done
+  assert_allowed "literal Python stdin" $'python3 - <<EOF\nprint("caller\'s selection }")\nEOF'
+  assert_allowed "quoted Python dollar data" $'python3 - <<\'EOF\'\nprint("$(printf selection)")\nEOF'
+  assert_allowed "escaped Python dollar data" $'python3 - <<EOF\nprint("\\$(printf selection)")\nEOF'
+  assert_allowed "data-only dynamic stdin" "cat <<EOF"$'\n'"rm \$(printf -- -rf) '$FOREIGN/keep'"$'\nEOF'
+  assert_allowed "created link does not block unrelated script" "case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) bash ok.sh ;; esac"
+  ln -s "$WT" "$WT/preexisting-safe-link"
+  assert_allowed "existing resolvable script symlink" 'bash ./preexisting-safe-link/ok.sh'
+  assert_nothing_destroyed "executable stdin and created link consumers"
+  pass "executable stdin uncertainty and created-link script traversal are refused"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -1101,6 +1149,7 @@ test_scripts_are_shellcheck_clean() {
 test_shell_lexical_contexts
 test_case_analysis_boundaries
 test_heredoc_and_case_filesystem_effects
+test_executable_stdin_and_created_link_consumers
 test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied

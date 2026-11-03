@@ -655,6 +655,16 @@ function userWritable(file) {
 function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
   const abs = path.isAbsolute(rawPath) ? rawPath : st.cwd ? path.join(st.cwd, rawPath) : null;
   if (!abs) return;
+  let prefix = path.isAbsolute(rawPath) ? "/" : st.cwd;
+  for (const component of st.links.size > 0 ? rawPath.split("/") : []) {
+    prefix = path.join(prefix, component);
+    const physicalPrefix = ctx.roots.physical(prefix);
+    for (const link of st.links) {
+      if (link === "/" || prefix === link || prefix.startsWith(`${link}/`) || physicalPrefix === link || physicalPrefix.startsWith(`${link}/`)) {
+        deny("OPAQUE_EXEC", `${rawPath} traverses ${link}, a symlink created earlier in this command whose destination the guard cannot follow`);
+      }
+    }
+  }
   const physical = ctx.roots.physical(abs);
   const virtual = st.vfiles.has(physical) ? st.vfiles.get(physical) : st.vfiles.get(abs);
   let text;
@@ -855,6 +865,7 @@ function payloadText(word) {
 }
 
 function runInline(text, lang, st, ctx, depth, origin) {
+  if (text === null) deny("OPAQUE_EXEC", `${origin} is expanded by the shell into code the guard cannot read without running it`);
   if (lang === "shell") {
     analyzeShell(text, cloneState(st), { ...ctx, nested: true, strict: ctx.strict ?? true }, depth + 1);
   } else {
@@ -922,7 +933,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
       else deny("OPAQUE_EXEC", "at runs piped input that is not a literal the guard can read");
     }
     const file = args.findIndex((w) => w.value === "-f");
-    if (file !== -1 && args[file + 1]) scanScriptFile(args[file + 1].value, st, ctx, ctx.depth ?? 0, "shell");
+    if (file !== -1 && args[file + 1]) scanScriptFile(wordValue(args[file + 1], st) ?? args[file + 1].value, st, ctx, ctx.depth ?? 0, "shell");
     return;
   }
 
@@ -989,7 +1000,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     return runInline(text, "shell", st, ctx, ctx.depth ?? 0, "eval");
   }
   if (name === "source" || name === ".") {
-    if (args[0]) scanScriptFile(args[0].value, st, ctx, ctx.depth ?? 0, "shell");
+    if (args[0]) scanScriptFile(wordValue(args[0], st) ?? args[0].value, st, ctx, ctx.depth ?? 0, "shell");
     return;
   }
   if (SHELLS.has(name) || isInterpreter(name)) {
@@ -1262,9 +1273,9 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       }
     }
     const positionExtras = { stdinBodies: [], pipedFrom: null };
-    for (const t of tokens) if (t.type === "redir" && typeof t.heredoc === "string" && t.fd === 0) positionExtras.stdinBodies.push(t.heredoc);
+    for (const t of tokens) if (t.type === "redir" && typeof t.heredoc === "string" && t.fd === 0) positionExtras.stdinBodies.push(t.heredocDynamic ? null : t.heredoc);
     for (let t = 0; t < tokens.length; t += 1) {
-      if (tokens[t].type === "redir" && tokens[t].value === "<<<" && tokens[t + 1]?.type === "word") positionExtras.stdinBodies.push(tokens[t + 1].value);
+      if (tokens[t].type === "redir" && tokens[t].value === "<<<" && tokens[t + 1]?.type === "word") positionExtras.stdinBodies.push(wordValue(tokens[t + 1], st));
     }
     if (n > 0 && (program.separators[n - 1] === "|" || program.separators[n - 1] === "|&")) {
       positionExtras.pipedFrom = { literalText: literalProducerText(stripPrefixKeywords(program.nodes[n - 1])) };
