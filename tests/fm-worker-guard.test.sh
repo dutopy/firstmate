@@ -913,17 +913,322 @@ EOF
       cmp -s "$repo/before" "$repo/AGENTS.md" || fail "memory helper altered existing governance"
     fi
   done
-  assert_denied "bare case syntax remains unsupported" 'case x in x) rm -rf ./keep ;; esac'
-  assert_contains "$HOOK_ERR" "[UNPARSEABLE]" "unsupported case syntax must not be exempted"
-  assert_denied "quoted heredoc in a group remains unsupported" "f() {
-cat <<'EOF'
-project's note
-EOF
-}
-rm -rf ./keep"
-  assert_contains "$HOOK_ERR" "[UNPARSEABLE]" "unsupported heredoc syntax must not be exempted"
   assert_nothing_destroyed "memory helper supported route"
   pass "external memory helper runs after strict policy inspection and preserves governance and file boundaries"
+}
+
+test_shell_lexical_contexts() {
+  local form script="$WT/lexical.sh" action
+  # Reduced from fm-test-run.sh: coverage_guard, write_json and option parsing.
+  for form in comment heredoc case; do
+    case "$form" in
+      comment)
+        cat >"$script" <<'SCRIPT'
+f() {
+  # Serial listings without disturbing a caller's selection.
+  :
+ACTION
+}
+f
+SCRIPT
+        ;;
+      heredoc)
+        cat >"$script" <<'SCRIPT'
+f() {
+  python3 - <<'PY'
+scripts = []
+scripts.append({
+    "path": "tests/example.test.sh",
+})
+print("caller's selection }")
+PY
+ACTION
+}
+f
+SCRIPT
+        ;;
+      case)
+        cat >"$script" <<'SCRIPT'
+f() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --all)
+        [ -z "$MODE" ] || echo "only one selection mode is allowed"
+        MODE=all
+ACTION
+        shift
+        ;;
+    esac
+  done
+}
+f --all
+SCRIPT
+        ;;
+    esac
+    cp "$script" "$WT/template"
+    for action in 'rm -rf ./scratch' "rm -rf $FOREIGN/keep" "kill $FOREIGN_PID"; do
+      # Only substitute the action placeholder; none of these files is executed.
+      node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[2], fs.readFileSync(process.argv[1],"utf8").replace("ACTION",process.argv[3]))' "$WT/template" "$script" "$action"
+      if [ "$action" = 'rm -rf ./scratch' ]; then
+        assert_allowed "$form allows owned deletion in a new script" 'bash lexical.sh'
+      else
+        assert_denied "$form still denies foreign destruction" 'bash lexical.sh'
+        case "$HOOK_ERR" in
+          *UNPARSEABLE*) fail "$form denial must inspect the dangerous command, not fail lexing" ;;
+        esac
+      fi
+    done
+  done
+  assert_nothing_destroyed "lexical contexts"
+  pass "comments, heredocs and case patterns preserve deletion and PID boundaries"
+}
+
+test_case_analysis_boundaries() {
+  local cmd mode script="$WT/case-boundaries.sh"
+  local cmds=(
+    "case \"\$(rm -rf '$FOREIGN/keep')\" in *) : ;; esac"
+    "case x in \"\$(rm -rf '$FOREIGN/keep')\") : ;; esac"
+    "case x in x) target='$FOREIGN/keep' ;; y) target=./scratch ;; esac; rm -rf \"\$target\""
+    "case x in x) cd '$FOREIGN' ;; y) cd '$WT' ;; esac; rm -rf ./keep"
+    "case x in x) p=$FOREIGN_PID ;; y) sleep 1 & p=\$! ;; esac; kill \$p"
+    "target='$FOREIGN/keep'; case x in y) target=./scratch ;; esac; rm -rf \"\$target\""
+    "case x in x) target='$FOREIGN/keep' ;; y) rm -rf \"\$target\" ;; esac"
+    "case x in x) target='$FOREIGN/keep' ;; y) case z in z) target=./scratch ;; esac ;; esac; rm -rf \"\$target\""
+    "case x in x) export target='$FOREIGN/keep' ;; y) export target=./scratch ;; esac; rm -rf \"\$target\""
+    "p=$FOREIGN_PID; case x in x) : ;; y) p=\$! ;; esac; kill \$p"
+    "case x in x) cd '$FOREIGN';; y) cd '$WT';; esac; find ./keep -delete"
+    "p=\$!; case x in x) export p=$FOREIGN_PID; kill \$p ;; esac"
+    "case x in x) alias zap='rm -rf $FOREIGN/keep' ;; y) alias zap=: ;; esac; zap"
+    "case x in x) printf 'rm -rf $FOREIGN/keep' > branch.sh ;; y) printf : > branch.sh ;; esac; bash branch.sh"
+    "case x in x) ln -s '$FOREIGN' ./case-link ;; y) : ;; esac; rm -rf ./case-link/keep"
+    "for target in \"\$(rm -rf '$FOREIGN/keep')\"; do :; done"
+  )
+  cp "$WT/ok.sh" "$WT/ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = modified ]; then
+        printf '%s\n' "$cmd" >"$WT/ok.sh"
+        assert_denied "case boundaries in a modified script" 'bash ok.sh'
+      elif [ "$mode" = script ]; then
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "case boundaries in a new script" 'bash case-boundaries.sh'
+      else
+        assert_denied "case boundaries in direct commands" "$cmd"
+      fi
+      case "$HOOK_ERR" in
+        *UNPARSEABLE*|*INTERNAL*) fail "case denial must inspect executable behavior: $HOOK_ERR" ;;
+      esac
+    done
+  done
+  cp "$WT/ok.saved" "$WT/ok.sh"
+  assert_allowed "owned deletion in independent arms" 'case x in x) target=./scratch; rm -rf "$target" ;; y) target=./other; rm -rf "$target" ;; esac'
+  assert_allowed "unchanged ownership after case" 'target=./scratch; case x in x) : ;; y) : ;; esac; rm -rf "$target"'
+  assert_allowed "literal owned pipelines in and after case" 'case x in x) printf "rm -rf ./scratch" | bash ;; y) : ;; esac; printf "rm -rf ./scratch" | bash'
+  assert_allowed "nested case without final arm separator" 'case x in x) case y in y) rm -rf ./scratch; esac; esac'
+  assert_allowed "owned subject substitution" 'case "$(rm -rf ./scratch)" in *) : ;; esac'
+  assert_allowed "owned PID evidence retained across case" 'p=$!; case x in x) : ;; y) p=$! ;; esac; kill "$p"'
+  mkdir -p "$WT/case-owned"
+  cmd='case x in x) rm -rf ./case-owned ;; y) : ;; esac'
+  assert_allowed "case owned deletion executes" "$cmd"
+  (cd "$WT" && bash -c "$cmd") || fail "allowed case deletion failed"
+  [ ! -d "$WT/case-owned" ] || fail "allowed case did not delete owned directory"
+  assert_nothing_destroyed "case analysis boundaries"
+  pass "case substitutions and alternative ownership states are inspected"
+}
+
+test_heredoc_and_case_filesystem_effects() {
+  local cmd mode delimiter operator expansion script="$WT/expansion-effects.sh"
+  local cmds=(
+    "case \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\" in x) : ;; *) bash generated.sh ;; esac"
+    "case x in \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\") : ;; *) bash generated.sh ;; esac"
+    "case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) rm -rf ./case-link/keep ;; esac"
+    "case x in \"\$(ln -s '$FOREIGN' ./case-link)\") : ;; *) rm -rf ./case-link/keep ;; esac"
+    "case x in x) : ;; \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\") : ;; *) bash generated.sh ;; esac"
+    "case \"\$(case x in x) ln -s '$FOREIGN' ./case-link ;; esac)\" in *) rm -rf ./case-link/keep ;; esac"
+    "(ln -s '$FOREIGN' ./case-link); rm -rf ./case-link/keep"
+    "case \"\$(cd '$FOREIGN'; printf 'rm -rf $FOREIGN/keep' > '$WT/generated.sh')\" in *) bash generated.sh ;; esac"
+    "case \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\" in esac; bash generated.sh"
+    "case \"\$(ln -s '$FOREIGN' ./case-link)\" in esac; rm -rf ./case-link/keep"
+  )
+  for operator in '<<' '<<-'; do
+    for expansion in "\$(rm -rf '$FOREIGN/keep')" "\`kill $FOREIGN_PID\`" "\$((1 + \$(rm -rf '$FOREIGN/keep')))" "'\$(rm -rf '$FOREIGN/keep')'"; do
+      cmds+=("f() { cat $operator"$'EOF\n'"caller's note"$'\n'"$expansion"$'\nEOF\n}\nf')
+    done
+  done
+  cmds+=("cat <<EOF"$'\n$\\\n'"(rm -rf '$FOREIGN/keep')"$'\nEOF')
+  cmds+=("cat <<-EOF"$'\n\t'"\$(rm -rf '$FOREIGN/keep')"$'\n\tEOF')
+  cp "$WT/ok.sh" "$WT/expansion-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "persistent expansion effects in direct commands" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/expansion-effects.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "persistent expansion effects in $mode scripts" "bash '$script'"
+      fi
+      case "$HOOK_ERR" in
+        *UNPARSEABLE*|*INTERNAL*) fail "expansion denial must inspect executable behavior: $HOOK_ERR" ;;
+      esac
+    done
+  done
+  cp "$WT/expansion-ok.saved" "$WT/ok.sh"
+  for operator in '<<' '<<-'; do
+    for delimiter in "'EOF'" '"EOF"' 'E\OF'; do
+      cmd="f() { cat $operator$delimiter"$'\n'"caller's note"$'\n'"\$(rm -rf '$FOREIGN/keep')"$'\n'"\`kill $FOREIGN_PID\`"$'\nEOF\n}\nf'
+      assert_allowed "quoted heredoc expansions are inert" "$cmd"
+    done
+    cmd="f() { cat $operator"$'EOF\n'
+    cmd+="\\\$(rm -rf '$FOREIGN/keep')"$'\n'
+    cmd+="\\\`kill $FOREIGN_PID\\\`"$'\nEOF\n}\nf'
+    assert_allowed "escaped unquoted heredoc expansions are inert" "$cmd"
+    (cd "$WT" && bash -c "$cmd" >/dev/null) || fail "escaped heredoc failed to execute safely"
+    cmd="f() { cat $operator"$'EOF\n'"\$(rm -rf ./scratch)"$'\nEOF\n}\nf'
+    assert_allowed "owned unquoted heredoc expansion" "$cmd"
+  done
+  assert_allowed "case subject virtual script survives alternatives" 'case "$(printf "rm -rf ./scratch" > generated.sh)" in x) : ;; *) bash generated.sh ;; esac'
+  assert_allowed "subshell shell state stays isolated" "target=./scratch; p=\$!; case \"\$(cd '$FOREIGN'; target='$FOREIGN/keep'; p=$FOREIGN_PID)\" in *) rm -rf \"\$target\"; kill \"\$p\" ;; esac"
+  assert_allowed "case subject link does not poison a sibling arm" "case x in x) ln -s '$FOREIGN' ./case-link ;; y) rm -rf ./case-link/keep ;; esac"
+  assert_nothing_destroyed "heredoc and case expansion effects"
+  pass "heredoc expansions and persistent case filesystem effects are inspected"
+}
+
+test_executable_stdin_and_created_link_consumers() {
+  local cmd consumer mode script="$WT/input-consumers.sh"
+  local cmds=()
+  for consumer in bash sh at batch; do
+    cmds+=("f() { $consumer <<EOF"$'\n'"# caller's note"$'\n'"rm \$(printf -- -rf) '$FOREIGN/keep'"$'\nEOF\n}\nf')
+    cmds+=("f() { $consumer <<-EOF"$'\n\t'"# caller's note"$'\n\t'"rm \$(printf -- -rf) '$FOREIGN/keep'"$'\n\tEOF\n}\nf')
+  done
+  cmds+=("python3 - <<EOF"$'\n'"\$(printf \"import shutil; shutil.rmtree('$FOREIGN/keep')\")"$'\nEOF')
+  cmds+=("node <<EOF"$'\n'"\$(printf \"require('fs').rmSync('$FOREIGN/keep', {recursive:true})\")"$'\nEOF')
+  cmds+=("bash <<< \"rm \$(printf -- -rf) '$FOREIGN/keep'\"")
+  printf '#!/usr/bin/env bash\nrm -rf "%s/keep"\n' "$FOREIGN" >"$FOREIGN/danger.sh"
+  for consumer in 'bash' 'source' '.' 'at -f' ''; do
+    cmds+=("case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) $consumer ./case-link/danger.sh ;; esac")
+    cmds+=("case \"\$(ln -s '$FOREIGN/danger.sh' ./case-script.sh)\" in *) $consumer ./case-script.sh ;; esac")
+    cmds+=("case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) script=./case-link/danger.sh; $consumer \"\$script\" ;; esac")
+    cmds+=("case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) $consumer '$WT/case-link/../foreign/danger.sh' ;; esac")
+  done
+  cp "$WT/ok.sh" "$WT/input-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "executable stdin and created links" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/input-consumers.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "executable stdin and created links in $mode scripts" "bash '$script'"
+      fi
+      case "$HOOK_ERR" in
+        *UNPARSEABLE*|*INTERNAL*) fail "input denial must inspect executable behavior: $HOOK_ERR" ;;
+      esac
+    done
+  done
+  cp "$WT/input-ok.saved" "$WT/ok.sh"
+  for consumer in bash sh at batch; do
+    assert_allowed "quoted literal executable stdin" "$consumer <<'EOF'"$'\nrm -rf ./scratch\nEOF'
+    assert_allowed "literal executable stdin" "$consumer <<EOF"$'\nrm -rf ./scratch\nEOF'
+  done
+  assert_allowed "literal Python stdin" $'python3 - <<EOF\nprint("caller\'s selection }")\nEOF'
+  assert_allowed "quoted Python dollar data" $'python3 - <<\'EOF\'\nprint("$(printf selection)")\nEOF'
+  assert_allowed "escaped Python dollar data" $'python3 - <<EOF\nprint("\\$(printf selection)")\nEOF'
+  assert_allowed "data-only dynamic stdin" "cat <<EOF"$'\n'"rm \$(printf -- -rf) '$FOREIGN/keep'"$'\nEOF'
+  assert_allowed "created link does not block unrelated script" "case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) bash ok.sh ;; esac"
+  ln -s "$WT" "$WT/preexisting-safe-link"
+  assert_allowed "existing resolvable script symlink" 'bash ./preexisting-safe-link/ok.sh'
+  assert_nothing_destroyed "executable stdin and created link consumers"
+  pass "executable stdin uncertainty and created-link script traversal are refused"
+}
+
+test_case_alias_identity_and_literal_dollars() {
+  local cmd mode script="$WT/alias-identity.sh" body consumer expression
+  local cmds=(
+    "case x in y) alias rm=: ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) alias rm=: ;; y) : ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) : ;; y) alias rm=: ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) alias rm=: ;; y) alias rm=: ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) alias kill=: ;; esac; kill $FOREIGN_PID"
+    "alias zap='rm'; case x in x) alias zap=: ;; esac; zap -rf '$FOREIGN/keep'"
+    "case x in x) case y in y) alias rm=: ;; esac ;; esac; rm -rf '$FOREIGN/keep'"
+  )
+  cp "$WT/ok.sh" "$WT/alias-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "conditional aliases cannot hide command identity" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/alias-identity.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "conditional aliases in $mode scripts" "bash '$script'"
+      fi
+      assert_contains "$HOOK_ERR" OPAQUE_EXEC "alias disagreement must be refused at merge"
+    done
+  done
+  cp "$WT/alias-ok.saved" "$WT/ok.sh"
+  assert_allowed "identical inherited aliases survive case merges" 'alias zap="rm"; case x in x) alias zap="rm" ;; y) : ;; esac; zap -rf ./scratch'
+  for body in 'print("selection$")' 'print("$: punctuation")' 'print("$%")'; do
+    for consumer in stdin virtual producer; do
+      case "$consumer" in
+        stdin) cmd="python3 - <<EOF"$'\n'"$body"$'\nEOF' ;;
+        virtual) cmd="cat > dollar.py <<EOF"$'\n'"$body"$'\nEOF\npython3 dollar.py' ;;
+        producer) cmd="cat <<EOF | python3 -"$'\n'"$body"$'\nEOF' ;;
+      esac
+      assert_allowed "literal dollars in $consumer heredoc" "$cmd"
+    done
+  done
+  for expression in '$value' '${value}' '$1' '$@' '$*' '$#' '$?' '$$' '$!' '$-' '$_' '$((1+1))' '$[1+1]' '$(printf selection)' '`printf selection`'; do
+    body="print(\"$expression\")"
+    for consumer in stdin virtual producer; do
+      case "$consumer" in
+        stdin) cmd="python3 - <<EOF"$'\n'"$body"$'\nEOF' ;;
+        virtual) cmd="cat > dollar.py <<EOF"$'\n'"$body"$'\nEOF\npython3 dollar.py' ;;
+        producer) cmd="cat <<EOF | python3 -"$'\n'"$body"$'\nEOF' ;;
+      esac
+      assert_denied "genuine expansion in $consumer heredoc" "$cmd"
+      assert_contains "$HOOK_ERR" OPAQUE_EXEC "expanded input must not be treated as literal code"
+    done
+  done
+  assert_denied "shadowed cat is not a literal heredoc producer" "alias cat='printf \"rm -rf $FOREIGN/keep\"'; cat <<EOF | bash"$'\n:\nEOF'
+  printf '#!/usr/bin/env bash\nprintf "rm -rf %s/keep"\n' "$FOREIGN" >"$WT/cat"
+  chmod +x "$WT/cat"
+  assert_denied "script named cat is not a literal heredoc producer" './cat <<EOF | bash'$'\n:\nEOF'
+  assert_denied "overridden cat stdin is not a literal heredoc producer" "cat <<EOF < '$FOREIGN/danger.sh' | bash"$'\n:\nEOF'
+  assert_nothing_destroyed "alias identity and literal dollar heredocs"
+  pass "case aliases retain identity and literal heredoc dollars remain inspectable"
+}
+
+test_case_fallthrough_is_unsupported() {
+  local operator cmd mode script="$WT/fallthrough.sh"
+  local cmds=()
+  for operator in ';;&' ';&' $';;\\\n&' $';\\\n&' $';\\\n;\\\n&'; do
+    cmds+=("target=./scratch; case x in x) target='$FOREIGN/keep' $operator *) rm -rf \"\$target\" ;; esac")
+    cmds+=("case x in x) cd '$FOREIGN' $operator *) rm -rf ./keep ;; esac")
+    cmds+=("p=\$!; case x in x) p=$FOREIGN_PID $operator *) kill \"\$p\" ;; esac")
+    cmds+=("printf : > fallthrough-generated.sh; case x in x) printf 'rm -rf $FOREIGN/keep' > fallthrough-generated.sh $operator *) bash fallthrough-generated.sh ;; esac")
+    cmds+=("case x in x) ln -s '$FOREIGN' ./fallthrough-link $operator *) rm -rf ./fallthrough-link/keep ;; esac")
+    cmds+=("f() { case x in x) : $operator *) rm -rf '$FOREIGN/keep' ;; esac; }; f")
+  done
+  cp "$WT/ok.sh" "$WT/fallthrough-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "unsupported case fall-through" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/fallthrough.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "unsupported case fall-through in $mode scripts" "bash '$script'"
+      fi
+      assert_contains "$HOOK_ERR" UNPARSEABLE "fall-through must be rejected by the lexer"
+    done
+  done
+  cp "$WT/fallthrough-ok.saved" "$WT/ok.sh"
+  assert_allowed "ordinary mutually exclusive case arms" 'case x in x) rm -rf ./scratch ;; *) rm -rf ./other ;; esac'
+  assert_allowed "quoted fall-through spellings are data" "printf '%s' ';&' ';;&'; rm -rf ./scratch"
+  assert_allowed "commented fall-through spellings are data" $'f() {\n# ;& ;;&\nrm -rf ./scratch\n}; f'
+  assert_allowed "heredoc fall-through spellings are data" $'cat <<EOF\n;& ;;&\nEOF\nrm -rf ./scratch'
+  assert_nothing_destroyed "unsupported case fall-through"
+  pass "unsupported case fall-through cannot erase ownership evidence"
 }
 
 test_scripts_are_shellcheck_clean() {
@@ -933,6 +1238,12 @@ test_scripts_are_shellcheck_clean() {
   pass "transport is shellcheck-clean"
 }
 
+test_shell_lexical_contexts
+test_case_analysis_boundaries
+test_heredoc_and_case_filesystem_effects
+test_executable_stdin_and_created_link_consumers
+test_case_alias_identity_and_literal_dollars
+test_case_fallthrough_is_unsupported
 test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied

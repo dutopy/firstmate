@@ -261,7 +261,7 @@ function ownershipProblem(pid, ctx) {
 // ---------------------------------------------------------------- state
 
 function cloneState(st) {
-  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), functions: new Set(st.functions), vfiles: st.vfiles, links: new Set(st.links) };
+  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), functions: new Set(st.functions), vfiles: st.vfiles, links: st.links };
 }
 
 function lexWords(text) {
@@ -655,8 +655,18 @@ function userWritable(file) {
 function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
   const abs = path.isAbsolute(rawPath) ? rawPath : st.cwd ? path.join(st.cwd, rawPath) : null;
   if (!abs) return;
+  let prefix = path.isAbsolute(rawPath) ? "/" : st.cwd;
+  for (const component of st.links.size > 0 ? rawPath.split("/") : []) {
+    prefix = path.join(prefix, component);
+    const physicalPrefix = ctx.roots.physical(prefix);
+    for (const link of st.links) {
+      if (link === "/" || prefix === link || prefix.startsWith(`${link}/`) || physicalPrefix === link || physicalPrefix.startsWith(`${link}/`)) {
+        deny("OPAQUE_EXEC", `${rawPath} traverses ${link}, a symlink created earlier in this command whose destination the guard cannot follow`);
+      }
+    }
+  }
   const physical = ctx.roots.physical(abs);
-  const virtual = st.vfiles.get(physical) ?? st.vfiles.get(abs);
+  const virtual = st.vfiles.has(physical) ? st.vfiles.get(physical) : st.vfiles.get(abs);
   let text;
   let strict = true;
   if (virtual === null) deny("OPAQUE_EXEC", `${rawPath} was written with text the guard cannot read literally`);
@@ -855,6 +865,7 @@ function payloadText(word) {
 }
 
 function runInline(text, lang, st, ctx, depth, origin) {
+  if (text === null) deny("OPAQUE_EXEC", `${origin} is expanded by the shell into code the guard cannot read without running it`);
   if (lang === "shell") {
     analyzeShell(text, cloneState(st), { ...ctx, nested: true, strict: ctx.strict ?? true }, depth + 1);
   } else {
@@ -922,7 +933,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
       else deny("OPAQUE_EXEC", "at runs piped input that is not a literal the guard can read");
     }
     const file = args.findIndex((w) => w.value === "-f");
-    if (file !== -1 && args[file + 1]) scanScriptFile(args[file + 1].value, st, ctx, ctx.depth ?? 0, "shell");
+    if (file !== -1 && args[file + 1]) scanScriptFile(wordValue(args[file + 1], st) ?? args[file + 1].value, st, ctx, ctx.depth ?? 0, "shell");
     return;
   }
 
@@ -989,7 +1000,7 @@ function dispatch(rawWords, st, ctx, position, extra = {}) {
     return runInline(text, "shell", st, ctx, ctx.depth ?? 0, "eval");
   }
   if (name === "source" || name === ".") {
-    if (args[0]) scanScriptFile(args[0].value, st, ctx, ctx.depth ?? 0, "shell");
+    if (args[0]) scanScriptFile(wordValue(args[0], st) ?? args[0].value, st, ctx, ctx.depth ?? 0, "shell");
     return;
   }
   if (SHELLS.has(name) || isInterpreter(name)) {
@@ -1037,11 +1048,15 @@ function stripPrefixKeywords(tokens) {
   return tokens.slice(i);
 }
 
-function literalProducerText(tokens) {
-  const words = tokens.filter((t) => t.type === "word");
-  const heredoc = tokens.find((t) => t.type === "redir" && typeof t.heredoc === "string");
+function literalProducerText(tokens, st) {
+  const words = commandPosition(tokens).words;
+  const redirections = tokens.filter((t) => t.type === "redir");
+  const heredoc = redirections.length === 1 && redirections[0].fd === 0 && typeof redirections[0].heredoc === "string" ? redirections[0] : null;
   const name = basename(words[0]?.value || "");
-  if (name === "cat" && heredoc && words.length === 1) return heredoc.heredoc;
+  if (words[0]?.value === "cat" && heredoc && words.length === 1) {
+    if (st.pathTouched || st.aliases.has(words[0].value) || st.functions.has(words[0].value)) return null;
+    return heredoc.heredocDynamic ? null : heredoc.heredoc;
+  }
   if ((name === "echo" || name === "printf") && words.slice(1).every((w) => w.literal && w.subs.length === 0)) {
     const rest = words.slice(1);
     // Only the leading options are options; a later "-rf" is text the shell will run.
@@ -1067,6 +1082,27 @@ function foldBraceArguments(tokens) {
   });
 }
 
+function caseState(st) {
+  return { ...cloneState(st), vfiles: new Map(st.vfiles), links: new Set(st.links) };
+}
+
+function mergeCaseState(result, branch) {
+  if (result.cwd !== branch.cwd) result.cwd = null;
+  for (const [name, value] of result.vars) {
+    if (!branch.vars.has(name) || branch.vars.get(name) !== value) result.vars.delete(name);
+  }
+  for (const name of result.ownPids) if (!branch.ownPids.has(name)) result.ownPids.delete(name);
+  for (const name of new Set([...result.aliases.keys(), ...branch.aliases.keys()])) {
+    if (!result.aliases.has(name) || !branch.aliases.has(name) || result.aliases.get(name) !== branch.aliases.get(name)) deny("OPAQUE_EXEC", `case arms define conflicting aliases for ${name}`);
+  }
+  for (const name of branch.functions) result.functions.add(name);
+  for (const link of branch.links) result.links.add(link);
+  result.pathTouched ||= branch.pathTouched;
+  for (const name of new Set([...result.vfiles.keys(), ...branch.vfiles.keys()])) {
+    if (!result.vfiles.has(name) || !branch.vfiles.has(name) || result.vfiles.get(name) !== branch.vfiles.get(name)) result.vfiles.set(name, null);
+  }
+}
+
 export function analyzeShell(text, st, ctx, depth = 0) {
   if (depth > MAX_DEPTH) deny("DEPTH", "command nesting is too deep to inspect");
   const lexed = new Lexer(text).tokenize();
@@ -1074,11 +1110,54 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     if (DANGER_RAW.test(text)) deny("UNPARSEABLE", `command text contains kill/delete words but cannot be parsed (${lexed.error})`);
     return;
   }
-  const program = splitProgram(lexed.tokens);
+  const program = splitProgram(lexed.tokens.flatMap((token) => {
+    if (!token.caseBoundary) return [token];
+    const boundary = [{ type: "op", value: ";" }, { type: "caseBoundary", value: token.caseBoundary }, { type: "op", value: ";" }];
+    return token.type === "word" ? [...boundary, token] : boundary;
+  }).filter((token, i, tokens) => token.type !== "op" || tokens[i - 1]?.type !== "op"));
+  const cases = [];
   for (let n = 0; n < program.nodes.length; n += 1) {
     let tokens = stripPrefixKeywords(program.nodes[n]);
     const first = tokens[0];
     if (!first) continue;
+    if (first.type === "caseBoundary") {
+      if (first.value === "start") cases.push({ entry: caseState(st), result: null, vfiles: st.vfiles, links: st.links, pattern: true });
+      else {
+        const frame = cases.at(-1);
+        if (frame.pattern) {
+          frame.entry.vfiles = new Map(st.vfiles);
+          frame.entry.links = new Set(st.links);
+        }
+        if (first.value === "arm") frame.pattern = false;
+        else {
+          if (!frame.pattern) {
+            if (frame.result) mergeCaseState(frame.result, st);
+            else frame.result = caseState(st);
+          }
+          if (first.value === "next") {
+            Object.assign(st, caseState(frame.entry));
+            frame.pattern = true;
+          } else {
+            if (frame.result) mergeCaseState(frame.result, frame.entry);
+            else frame.result = frame.entry;
+            frame.vfiles.clear();
+            for (const [name, value] of frame.result.vfiles) frame.vfiles.set(name, value);
+            for (const link of frame.result.links) frame.links.add(link);
+            Object.assign(st, frame.result, { vfiles: frame.vfiles, links: frame.links });
+            cases.pop();
+          }
+        }
+      }
+      continue;
+    }
+    for (const token of tokens) {
+      if (token.type === "group") {
+        analyzeShell(token.content, token.kind === "subshell" ? cloneState(st) : st, ctx, depth + 1);
+      } else if (token.type === "word" || token.type === "redir") {
+        for (const sub of token.subs ?? []) analyzeShell(sub.content, cloneState(st), ctx, depth + 1);
+      }
+    }
+    if (cases.at(-1)?.pattern) continue;
     if (first.type === "word" && KEYWORDS_SKIP.has(first.value) && first.literal) {
       if (first.value === "for") {
         const variable = tokens[1]?.value;
@@ -1088,13 +1167,6 @@ export function analyzeShell(text, st, ctx, depth = 0) {
         }
       }
       continue;
-    }
-    for (const token of tokens) {
-      if (token.type === "group") {
-        analyzeShell(token.content, token.kind === "subshell" ? cloneState(st) : st, ctx, depth + 1);
-      } else if (token.type === "word") {
-        for (const sub of token.subs) analyzeShell(sub.content, cloneState(st), ctx, depth + 1);
-      }
     }
     const defined = tokens[0].type === "word" && tokens[1]?.type === "group" && tokens[1].kind === "subshell" && tokens[2]?.type === "group" && tokens[2].kind === "brace"
       ? tokens[0].value
@@ -1115,7 +1187,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     if (position.command && basename(position.command.value) === "tee") {
       for (const w of words.slice(position.index + 1)) if (!w.value.startsWith("-")) writeTargets.push(w);
     }
-    const body = heredocToken ? heredocToken.heredoc : literalProducerText(tokens);
+    const body = heredocToken ? (heredocToken.heredocDynamic ? null : heredocToken.heredoc) : literalProducerText(tokens, st);
     if (body !== null && body !== undefined) {
       for (const target of writeTargets) {
         const value = wordValue(target, st);
@@ -1124,7 +1196,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
         const key = abs && ctx.roots.physical(abs);
         if (abs) st.vfiles.set(key, st.vfiles.get(key) === null ? null : (st.vfiles.get(key) ?? "") + body);
       }
-    } else if (position.command && /^(echo|printf)$/.test(basename(position.command.value))) {
+    } else if (heredocToken?.heredocDynamic || (position.command && /^(echo|printf)$/.test(basename(position.command.value)))) {
       for (const target of writeTargets) {
         const value = wordValue(target, st);
         if (value === null) continue;
@@ -1188,6 +1260,8 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       for (const a of args) {
         const m = a.value.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s);
         if (!m) continue;
+        if (m[2] === "$!" || m[2] === "$$") st.ownPids.add(m[1]);
+        else st.ownPids.delete(m[1]);
         const value = a.subs.length === 0 ? wordValue({ ...a, value: m[2] }, st) : null;
         if (value !== null) st.vars.set(m[1], value);
         else st.vars.delete(m[1]);
@@ -1202,12 +1276,12 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       }
     }
     const positionExtras = { stdinBodies: [], pipedFrom: null };
-    for (const t of tokens) if (t.type === "redir" && typeof t.heredoc === "string" && t.fd === 0) positionExtras.stdinBodies.push(t.heredoc);
+    for (const t of tokens) if (t.type === "redir" && typeof t.heredoc === "string" && t.fd === 0) positionExtras.stdinBodies.push(t.heredocDynamic ? null : t.heredoc);
     for (let t = 0; t < tokens.length; t += 1) {
-      if (tokens[t].type === "redir" && tokens[t].value === "<<<" && tokens[t + 1]?.type === "word") positionExtras.stdinBodies.push(tokens[t + 1].value);
+      if (tokens[t].type === "redir" && tokens[t].value === "<<<" && tokens[t + 1]?.type === "word") positionExtras.stdinBodies.push(wordValue(tokens[t + 1], st));
     }
     if (n > 0 && (program.separators[n - 1] === "|" || program.separators[n - 1] === "|&")) {
-      positionExtras.pipedFrom = { literalText: literalProducerText(stripPrefixKeywords(program.nodes[n - 1])) };
+      positionExtras.pipedFrom = { literalText: literalProducerText(stripPrefixKeywords(program.nodes[n - 1]), st) };
     }
     dispatch(words.slice(position.index), st, { ...ctx, depth }, { ...position, ...positionExtras });
   }

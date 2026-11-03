@@ -56,7 +56,9 @@ Malformed or unsupported shell syntax that contains a protected command is a sem
 ## Command-position classification
 
 The tokenizer recognizes cooked words with quote provenance, comments, heredoc bodies, shell list operators, pipelines, redirections, command and process substitutions, parenthesized subshells, brace groups, and literal nested execution payloads.
-Quoted text, comments, heredoc bodies, and later argument words are data positions unless a recognized execution sink recursively executes them.
+Nested groups use the same comment and heredoc rules as the outer shell, so apostrophes in comments and quotes or braces in heredoc data do not terminate a group.
+Ordinary `case` patterns are separated from their command bodies; fall-through operators `;&` and `;;&`, including line-continued spellings, are unsupported and cause a lexer error.
+Quoted text, comments, literal heredoc text, and later argument words are data positions unless a recognized execution sink recursively executes them.
 
 A command word in executed position is a protected execution when its normalized path suffix matches one of the protected watcher scripts:
 
@@ -84,7 +86,9 @@ A literal nested payload that executes a protected command is denied as `watcher
 Dynamic payloads such as `bash -lc "$WATCHER_COMMAND"` cannot be proven statically and remain the post-arm guard's responsibility.
 If the submitted command first constructs a protected literal assignment and then feeds a dynamic value to a recognized shell or `eval` sink, the classifier denies conservatively as `watcher-nested`.
 
-Comments and heredoc bodies are ignored as execution syntax.
+Comments and literal heredoc text are ignored as execution syntax.
+Command substitutions and backticks in unquoted `<<` and `<<-` bodies are recursively classified, even when the receiving command only consumes data.
+Quoted heredoc delimiters and shell-escaped dollar signs or backticks keep those bytes literal.
 An actual protected command with a heredoc still has a redirection and is denied.
 
 ## Blessed syntax tree

@@ -4,6 +4,8 @@
 // This parser is deliberately narrow.
 // It recognizes executed command positions without evaluating, expanding,
 // sourcing, or running any byte of the submitted command.
+// Nested shell groups share comment and heredoc handling with the outer lexer;
+// a case-pattern terminator separates the pattern from its command body.
 //
 // This file is the sole owner of firstmate's shell command classification.
 // The tokenizer and command-position analysis (Lexer, splitProgram,
@@ -60,43 +62,14 @@ function basename(value) {
   return value.split("/").filter(Boolean).at(-1) || value;
 }
 
-function extractBalanced(source, start, open, close) {
-  let depth = 1;
-  let quote = "";
-  let escaped = false;
-  for (let i = start; i < source.length; i += 1) {
-    const char = source[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (quote === "'") {
-      if (char === "'") quote = "";
-      continue;
-    }
-    if (quote === '"') {
-      if (char === "\\") {
-        escaped = true;
-      } else if (char === '"') {
-        quote = "";
-      }
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (char === open) depth += 1;
-    if (char === close) {
-      depth -= 1;
-      if (depth === 0) return { content: source.slice(start, i), next: i + 1 };
-    }
-  }
-  return null;
+function extractBalanced(source, start, close) {
+  // Use the same word/comment/heredoc rules at every nesting level.
+  // In particular, data inside a heredoc cannot close a shell group.
+  const lexer = new Lexer(source);
+  lexer.index = start;
+  lexer.tokenize(close);
+  if (lexer.error || source[lexer.index] !== close) return null;
+  return { content: source.slice(start, lexer.index), next: lexer.index + 1 };
 }
 
 function extractBackticks(source, start) {
@@ -185,9 +158,11 @@ export class Lexer {
     this.tokens = [];
     this.pendingHeredocs = [];
     this.expectHeredoc = null;
+    this.cases = [];
+    this.commandStart = true;
   }
 
-  tokenize() {
+  tokenize(close = "") {
     while (this.index < this.source.length && !this.error) {
       const char = this.source[this.index];
       if (char === " " || char === "\t" || char === "\r") {
@@ -201,12 +176,33 @@ export class Lexer {
       if (char === "\n") {
         this.tokens.push({ type: "op", value: "newline" });
         this.index += 1;
+        this.commandStart = true;
         if (this.pendingHeredocs.length > 0) this.skipHeredocBodies();
         continue;
       }
+      const caseState = this.cases.at(-1);
+      if (caseState === "pattern" && char === "(") {
+        this.index += 1;
+        continue;
+      }
+      if (caseState === "pattern" && char === ")") {
+        this.cases[this.cases.length - 1] = "body";
+        this.tokens.push({ type: "op", value: ";", caseBoundary: "arm" });
+        this.commandStart = true;
+        this.index += 1;
+        continue;
+      }
+      if (close && char === close) break;
+      if (char === ";" && /^;(?:\\\r?\n)*(?:;(?:\\\r?\n)*)?&/.test(this.source.slice(this.index))) {
+        this.error = "unsupported case fall-through operator";
+        break;
+      }
       const control = this.readControlOperator();
       if (control) {
-        this.tokens.push({ type: "op", value: control });
+        const nextArm = control === ";;" && this.cases.at(-1) === "body";
+        this.tokens.push({ type: "op", value: control, ...(nextArm ? { caseBoundary: "next" } : {}) });
+        this.commandStart = true;
+        if (nextArm) this.cases[this.cases.length - 1] = "pattern";
         continue;
       }
       const redirection = this.readRedirection();
@@ -218,7 +214,7 @@ export class Lexer {
       }
       if (char === "(" || char === "{") {
         const close = char === "(" ? ")" : "}";
-        const balanced = extractBalanced(this.source, this.index + 1, char, close);
+        const balanced = extractBalanced(this.source, this.index + 1, close);
         if (!balanced) {
           this.error = `unclosed ${char}`;
           break;
@@ -227,13 +223,29 @@ export class Lexer {
         this.index = balanced.next;
         continue;
       }
-      const word = this.readWord();
+      const word = this.readWord(close);
       if (!word) {
         this.error = `unsupported token at byte ${this.index}`;
         break;
       }
       this.tokens.push(word);
+      if (!word.quoted && word.literal) {
+        if (this.commandStart && (!caseState || caseState === "body") && word.value === "case") {
+          this.cases.push("subject");
+          word.caseBoundary = "start";
+        }
+        else if (caseState === "subject") this.cases[this.cases.length - 1] = "in";
+        else if (caseState === "in" && word.value === "in") this.cases[this.cases.length - 1] = "pattern";
+        else if (word.value === "esac" && (this.commandStart || caseState === "pattern")) {
+          this.cases.pop();
+          word.caseBoundary = "end";
+        }
+      } else if (caseState === "subject") {
+        this.cases[this.cases.length - 1] = "in";
+      }
+      this.commandStart = this.commandStart && !word.quoted && ["if", "then", "else", "elif", "while", "until", "do", "!", "time"].includes(word.value);
       if (this.expectHeredoc) {
+        this.expectHeredoc.token.heredocQuoted = word.quoted;
         this.pendingHeredocs.push({ delimiter: word.value, stripTabs: this.expectHeredoc.stripTabs, token: this.expectHeredoc.token });
         this.expectHeredoc = null;
       }
@@ -268,8 +280,40 @@ export class Lexer {
         break;
       }
       heredoc.token.heredoc = body;
+      if (!heredoc.token.heredocQuoted) this.readHeredocExpansions(heredoc.token);
     }
     this.pendingHeredocs = [];
+  }
+
+  readHeredocExpansions(token) {
+    const body = token.heredoc.replace(/\\[\s\S]/g, (escape) => escape === "\\\n" ? "" : escape);
+    token.subs = [];
+    token.heredoc = "";
+    for (let i = 0; i < body.length;) {
+      if (body[i] === "\\" && "$`\\\n".includes(body[i + 1] || "\0")) {
+        if (body[i + 1] !== "\n") token.heredoc += body[i + 1];
+        i += 2;
+        continue;
+      }
+      const command = body.startsWith("$(", i) && !body.startsWith("$((", i);
+      const backtick = body[i] === "`";
+      if (command || backtick) {
+        const sub = command ? extractBalanced(body, i + 2, ")") : extractBackticks(body, i + 1);
+        if (!sub) {
+          this.error = "unclosed heredoc substitution";
+          return;
+        }
+        const content = backtick ? sub.content.replace(/\\([$`\\])/g, "$1") : sub.content;
+        token.subs.push({ kind: "command", content });
+        token.heredocDynamic = true;
+        token.heredoc += body.slice(i, sub.next);
+        i = sub.next;
+        continue;
+      }
+      if (body[i] === "$" && /[A-Za-z0-9_{(\[*@#?$!-]/.test(body[i + 1] || "")) token.heredocDynamic = true;
+      token.heredoc += body[i];
+      i += 1;
+    }
   }
 
   readControlOperator() {
@@ -294,11 +338,15 @@ export class Lexer {
     return { value: normalized, inlineTarget, fd };
   }
 
-  readWord() {
+  readWord(close = "") {
     const word = { type: "word", value: "", literal: true, subs: [], quoted: false, unquotedExpansion: false };
     let consumed = false;
+    let braceDepth = 0;
     while (this.index < this.source.length) {
       const char = this.source[this.index];
+      if (char === "}" && close === "}" && braceDepth === 0) break;
+      if (char === "{") braceDepth += 1;
+      if (char === "}" && braceDepth > 0) braceDepth -= 1;
       if (/\s/.test(char) || ";&|<>()".includes(char)) break;
       if (char === "#" && !consumed) break;
       consumed = true;
@@ -327,6 +375,7 @@ export class Lexer {
           this.index += 2;
           continue;
         }
+        if (this.expectHeredoc) word.quoted = true;
         word.value += this.source[this.index + 1];
         this.index += 2;
         continue;
@@ -349,7 +398,7 @@ export class Lexer {
         continue;
       }
       if (this.source.startsWith("$(", this.index)) {
-        const balanced = extractBalanced(this.source, this.index + 2, "(", ")");
+        const balanced = extractBalanced(this.source, this.index + 2, ")");
         if (!balanced) {
           this.error = "unclosed command substitution";
           return null;
@@ -360,7 +409,7 @@ export class Lexer {
         continue;
       }
       if ((char === "<" || char === ">") && this.source[this.index + 1] === "(") {
-        const balanced = extractBalanced(this.source, this.index + 2, "(", ")");
+        const balanced = extractBalanced(this.source, this.index + 2, ")");
         if (!balanced) {
           this.error = "unclosed process substitution";
           return null;
@@ -409,7 +458,7 @@ export class Lexer {
         continue;
       }
       if (this.source.startsWith("$(", this.index)) {
-        const balanced = extractBalanced(this.source, this.index + 2, "(", ")");
+        const balanced = extractBalanced(this.source, this.index + 2, ")");
         if (!balanced) break;
         word.subs.push({ kind: "command", content: balanced.content, at: word.value.length });
         word.literal = false;
@@ -719,7 +768,7 @@ function nodeHasRedirection(tokens) {
 }
 
 function nodeHasUnsafeSubstitution(tokens) {
-  return tokens.some((token) => token.type === "word" && token.subs.length > 0);
+  return tokens.some((token) => (token.subs?.length ?? 0) > 0);
 }
 
 function isWatcherPgrep(position, context) {
@@ -775,15 +824,13 @@ function analyzeProgram(command, context, depth = 0) {
         nodePgrepWatcher ||= nested.pgrepWatcher;
         if (nested.error && rawMentionsProtected(token.content)) unsupported = true;
       }
-      if (token.type === "word") {
-        for (const substitution of token.subs) {
-          const nested = analyzeProgram(substitution.content, nodeContext, depth + 1);
-          substitutionResults.set(substitution, nested);
-          nodeNestedProtected ||= nested.protectedFound;
-          broadKill ||= nested.broadKill;
-          nodePgrepWatcher ||= nested.pgrepWatcher;
-          if (nested.error && rawMentionsProtected(substitution.content)) unsupported = true;
-        }
+      for (const substitution of token.subs ?? []) {
+        const nested = analyzeProgram(substitution.content, nodeContext, depth + 1);
+        substitutionResults.set(substitution, nested);
+        nodeNestedProtected ||= nested.protectedFound;
+        broadKill ||= nested.broadKill;
+        nodePgrepWatcher ||= nested.pgrepWatcher;
+        if (nested.error && rawMentionsProtected(substitution.content)) unsupported = true;
       }
     }
 
