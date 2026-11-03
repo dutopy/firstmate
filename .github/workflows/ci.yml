@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 # Per-PR supersession: a new push to the same PR replaces that PR's in-flight
-# CI instead of letting superseded heads keep 13 jobs of hosted-runner work.
+# CI instead of letting superseded heads keep consuming hosted runners.
 # The group uses the PR number for pull_request events, so every run of one PR
 # shares a group, and falls back to the unique run id for push events, so each
 # main push gets its own group and is never cancelled. Cancellation is likewise
