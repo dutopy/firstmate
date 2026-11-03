@@ -1048,11 +1048,15 @@ function stripPrefixKeywords(tokens) {
   return tokens.slice(i);
 }
 
-function literalProducerText(tokens) {
-  const words = tokens.filter((t) => t.type === "word");
-  const heredoc = tokens.find((t) => t.type === "redir" && typeof t.heredoc === "string");
+function literalProducerText(tokens, st) {
+  const words = commandPosition(tokens).words;
+  const redirections = tokens.filter((t) => t.type === "redir");
+  const heredoc = redirections.length === 1 && redirections[0].fd === 0 && typeof redirections[0].heredoc === "string" ? redirections[0] : null;
   const name = basename(words[0]?.value || "");
-  if (name === "cat" && heredoc && words.length === 1) return heredoc.heredocDynamic ? null : heredoc.heredoc;
+  if (words[0]?.value === "cat" && heredoc && words.length === 1) {
+    if (st.pathTouched || st.aliases.has(words[0].value) || st.functions.has(words[0].value)) return null;
+    return heredoc.heredocDynamic ? null : heredoc.heredoc;
+  }
   if ((name === "echo" || name === "printf") && words.slice(1).every((w) => w.literal && w.subs.length === 0)) {
     const rest = words.slice(1);
     // Only the leading options are options; a later "-rf" is text the shell will run.
@@ -1088,9 +1092,8 @@ function mergeCaseState(result, branch) {
     if (!branch.vars.has(name) || branch.vars.get(name) !== value) result.vars.delete(name);
   }
   for (const name of result.ownPids) if (!branch.ownPids.has(name)) result.ownPids.delete(name);
-  for (const [name, value] of branch.aliases) {
-    if (result.aliases.has(name) && result.aliases.get(name) !== value) deny("OPAQUE_EXEC", `case arms define conflicting aliases for ${name}`);
-    result.aliases.set(name, value);
+  for (const name of new Set([...result.aliases.keys(), ...branch.aliases.keys()])) {
+    if (!result.aliases.has(name) || !branch.aliases.has(name) || result.aliases.get(name) !== branch.aliases.get(name)) deny("OPAQUE_EXEC", `case arms define conflicting aliases for ${name}`);
   }
   for (const name of branch.functions) result.functions.add(name);
   for (const link of branch.links) result.links.add(link);
@@ -1184,7 +1187,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     if (position.command && basename(position.command.value) === "tee") {
       for (const w of words.slice(position.index + 1)) if (!w.value.startsWith("-")) writeTargets.push(w);
     }
-    const body = heredocToken ? (heredocToken.heredocDynamic ? null : heredocToken.heredoc) : literalProducerText(tokens);
+    const body = heredocToken ? (heredocToken.heredocDynamic ? null : heredocToken.heredoc) : literalProducerText(tokens, st);
     if (body !== null && body !== undefined) {
       for (const target of writeTargets) {
         const value = wordValue(target, st);
@@ -1278,7 +1281,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       if (tokens[t].type === "redir" && tokens[t].value === "<<<" && tokens[t + 1]?.type === "word") positionExtras.stdinBodies.push(wordValue(tokens[t + 1], st));
     }
     if (n > 0 && (program.separators[n - 1] === "|" || program.separators[n - 1] === "|&")) {
-      positionExtras.pipedFrom = { literalText: literalProducerText(stripPrefixKeywords(program.nodes[n - 1])) };
+      positionExtras.pipedFrom = { literalText: literalProducerText(stripPrefixKeywords(program.nodes[n - 1]), st) };
     }
     dispatch(words.slice(position.index), st, { ...ctx, depth }, { ...position, ...positionExtras });
   }

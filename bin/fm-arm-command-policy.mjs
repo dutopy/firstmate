@@ -306,7 +306,7 @@ export class Lexer {
         i = sub.next;
         continue;
       }
-      if (body[i] === "$") token.heredocDynamic = true;
+      if (body[i] === "$" && /[A-Za-z0-9_{(\[*@#?$!-]/.test(body[i + 1] || "")) token.heredocDynamic = true;
       token.heredoc += body[i];
       i += 1;
     }

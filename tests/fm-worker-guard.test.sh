@@ -1139,6 +1139,63 @@ test_executable_stdin_and_created_link_consumers() {
   pass "executable stdin uncertainty and created-link script traversal are refused"
 }
 
+test_case_alias_identity_and_literal_dollars() {
+  local cmd mode script="$WT/alias-identity.sh" body consumer expression
+  local cmds=(
+    "case x in y) alias rm=: ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) alias rm=: ;; y) : ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) : ;; y) alias rm=: ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) alias rm=: ;; y) alias rm=: ;; esac; rm -rf '$FOREIGN/keep'"
+    "case x in x) alias kill=: ;; esac; kill $FOREIGN_PID"
+    "alias zap='rm'; case x in x) alias zap=: ;; esac; zap -rf '$FOREIGN/keep'"
+    "case x in x) case y in y) alias rm=: ;; esac ;; esac; rm -rf '$FOREIGN/keep'"
+  )
+  cp "$WT/ok.sh" "$WT/alias-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "conditional aliases cannot hide command identity" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/alias-identity.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "conditional aliases in $mode scripts" "bash '$script'"
+      fi
+      assert_contains "$HOOK_ERR" OPAQUE_EXEC "alias disagreement must be refused at merge"
+    done
+  done
+  cp "$WT/alias-ok.saved" "$WT/ok.sh"
+  assert_allowed "identical inherited aliases survive case merges" 'alias zap="rm"; case x in x) alias zap="rm" ;; y) : ;; esac; zap -rf ./scratch'
+  for body in 'print("selection$")' 'print("$: punctuation")' 'print("$%")'; do
+    for consumer in stdin virtual producer; do
+      case "$consumer" in
+        stdin) cmd="python3 - <<EOF"$'\n'"$body"$'\nEOF' ;;
+        virtual) cmd="cat > dollar.py <<EOF"$'\n'"$body"$'\nEOF\npython3 dollar.py' ;;
+        producer) cmd="cat <<EOF | python3 -"$'\n'"$body"$'\nEOF' ;;
+      esac
+      assert_allowed "literal dollars in $consumer heredoc" "$cmd"
+    done
+  done
+  for expression in '$value' '${value}' '$1' '$@' '$*' '$#' '$?' '$$' '$!' '$-' '$_' '$((1+1))' '$[1+1]' '$(printf selection)' '`printf selection`'; do
+    body="print(\"$expression\")"
+    for consumer in stdin virtual producer; do
+      case "$consumer" in
+        stdin) cmd="python3 - <<EOF"$'\n'"$body"$'\nEOF' ;;
+        virtual) cmd="cat > dollar.py <<EOF"$'\n'"$body"$'\nEOF\npython3 dollar.py' ;;
+        producer) cmd="cat <<EOF | python3 -"$'\n'"$body"$'\nEOF' ;;
+      esac
+      assert_denied "genuine expansion in $consumer heredoc" "$cmd"
+      assert_contains "$HOOK_ERR" OPAQUE_EXEC "expanded input must not be treated as literal code"
+    done
+  done
+  assert_denied "shadowed cat is not a literal heredoc producer" "alias cat='printf \"rm -rf $FOREIGN/keep\"'; cat <<EOF | bash"$'\n:\nEOF'
+  printf '#!/usr/bin/env bash\nprintf "rm -rf %s/keep"\n' "$FOREIGN" >"$WT/cat"
+  chmod +x "$WT/cat"
+  assert_denied "script named cat is not a literal heredoc producer" './cat <<EOF | bash'$'\n:\nEOF'
+  assert_denied "overridden cat stdin is not a literal heredoc producer" "cat <<EOF < '$FOREIGN/danger.sh' | bash"$'\n:\nEOF'
+  assert_nothing_destroyed "alias identity and literal dollar heredocs"
+  pass "case aliases retain identity and literal heredoc dollars remain inspectable"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -1150,6 +1207,7 @@ test_shell_lexical_contexts
 test_case_analysis_boundaries
 test_heredoc_and_case_filesystem_effects
 test_executable_stdin_and_created_link_consumers
+test_case_alias_identity_and_literal_dollars
 test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied
