@@ -744,7 +744,7 @@ A real run on 2026-11-03 produced the following version-scoped results:
 | --- | --- | --- |
 | Pi | 1.0.0 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged. |
 | Codex | codex-cli 0.163.0 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged. |
-| OpenCode | 1.19.3 | Not verified: the corrected native session bound and received its doorbell, but the TUI's Cerebras GPT OSS 120B model refused billing; the instruction was not executed or acknowledged. |
+| OpenCode | 1.19.3 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged; normal-caller guard exit 0 and private laboratory cleaned up. |
 
 The initial OpenCode binding failure was measured in its real Bun runtime:
 `realpathSync` on the actual Unix socket throws `EOPNOTSUPP`. Canonicalizing the
