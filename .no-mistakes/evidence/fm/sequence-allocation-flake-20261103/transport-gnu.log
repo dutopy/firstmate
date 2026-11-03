@@ -1,0 +1,19 @@
+FM_TEST_BEGIN 2026-11-03T06:37:41Z tests/fm-remote-transport-lanes.test.sh family=secondmate expected_gate_skip=none
+ok - atomic sequence claims remain unique and reap only after expiry
+ok - sequence claims remain unique when mkdir reports false success
+ok - lanes run homes concurrently while each home stays FIFO
+ok - same-home jobs staged in the same second execute in staging-sequence order
+ok - same-home sequence order follows completed staging publication
+ok - a caller killed mid-wait cancels its queued job before execution
+ok - a caller killed mid-wait stops its running job's process group
+ok - a signal-less caller disconnect cancels the abandoned job through the parent probe
+ok - bounded reads after a cancellation meet their own budget with no convoy
+ok - an open caller stdin no longer wedges a non-payload remote command
+ok - a live explicit-stdin stage survives the staging-litter age bound
+ok - --stdin still delivers a payload caller's bytes
+ok - abandoned stage litter is reaped by age while live staging survives
+ALL TESTS PASSED
+FM_TEST_END 2026-11-03T06:39:43Z tests/fm-remote-transport-lanes.test.sh exit=0 duration_ms=122578 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=122762
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=122578 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-remote-transport-lanes.test.sh duration_ms=122578

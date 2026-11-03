@@ -1,0 +1,48 @@
+job-1MsaA1: state=queued sequence=1
+job-3wAOFi: state=queued sequence=1
+job-5K4oTr: state=queued sequence=2
+job-6yqAfH: state=queued sequence=3
+job-HtMwf4: state=queued sequence=1
+job-MNCN83: state=queued sequence=1
+job-NGIBpM: state=queued sequence=1
+job-NIYsOQ: state=queued sequence=1
+job-O0IEfx: state=queued sequence=3
+job-PxwbMJ: state=queued sequence=2
+job-S55oPR: state=queued sequence=1
+job-SCkIQw: state=queued sequence=1
+job-YIKp7l: state=queued sequence=1
+job-h3tfpr: state=queued sequence=1
+job-heUpC3: state=queued sequence=1
+job-jhmuWu: state=queued sequence=1
+job-rHrGhf: state=queued sequence=2
+job-rLuWHV: state=queued sequence=1
+job-sbP2Xx: state=queued sequence=1
+job-smpzVw: state=queued sequence=1
+sorted published sequences: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3]
+expected: every integer from 2 through 21 exactly once; legacy claim 1 must remain reserved
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+AssertionError: published jobs reused a reserved sequence
+BASELINE exit=1 (expected nonzero)
+job-01kDbL: state=queued sequence=17
+job-32eUmE: state=queued sequence=7
+job-3GvBK1: state=queued sequence=3
+job-CEAXtI: state=queued sequence=15
+job-DdKFuj: state=queued sequence=10
+job-EToiEm: state=queued sequence=21
+job-J7hwyT: state=queued sequence=9
+job-KVZU8D: state=queued sequence=12
+job-QEP1Wl: state=queued sequence=4
+job-QgwP24: state=queued sequence=20
+job-QycfK2: state=queued sequence=11
+job-W1xHzN: state=queued sequence=14
+job-ZW9CIG: state=queued sequence=13
+job-e8y5xq: state=queued sequence=19
+job-gqzSOE: state=queued sequence=16
+job-pCBned: state=queued sequence=2
+job-ptGhyE: state=queued sequence=8
+job-sPodP5: state=queued sequence=6
+job-uAsAIt: state=queued sequence=5
+job-y6T3hF: state=queued sequence=18
+sorted published sequences: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+expected: every integer from 2 through 21 exactly once; legacy claim 1 must remain reserved

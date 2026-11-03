@@ -1,0 +1,27 @@
+mkdir (GNU coreutils) 9.8
+gnu-fixed round=1 allocated unique contiguous sequences 1..32
+gnu-fixed round=2 allocated unique contiguous sequences 1..32
+gnu-fixed round=3 allocated unique contiguous sequences 1..32
+gnu-fixed round=4 allocated unique contiguous sequences 1..32
+gnu-fixed round=5 allocated unique contiguous sequences 1..32
+gnu-fixed round=6 allocated unique contiguous sequences 1..32
+gnu-fixed round=7 allocated unique contiguous sequences 1..32
+gnu-fixed round=8 allocated unique contiguous sequences 1..32
+gnu-fixed round=9 allocated unique contiguous sequences 1..32
+gnu-fixed round=10 allocated unique contiguous sequences 1..32
+gnu-fixed round=11 allocated unique contiguous sequences 1..32
+gnu-fixed round=12 allocated unique contiguous sequences 1..32
+gnu-fixed round=13 allocated unique contiguous sequences 1..32
+gnu-fixed round=14 allocated unique contiguous sequences 1..32
+gnu-fixed round=15 allocated unique contiguous sequences 1..32
+gnu-fixed round=16 allocated unique contiguous sequences 1..32
+gnu-fixed round=17 allocated unique contiguous sequences 1..32
+gnu-fixed round=18 allocated unique contiguous sequences 1..32
+gnu-fixed round=19 allocated unique contiguous sequences 1..32
+gnu-fixed round=20 allocated unique contiguous sequences 1..32
+gnu-fixed round=21 allocated unique contiguous sequences 1..32
+gnu-fixed round=22 allocated unique contiguous sequences 1..32
+gnu-fixed round=23 allocated unique contiguous sequences 1..32
+gnu-fixed round=24 allocated unique contiguous sequences 1..32
+gnu-fixed round=25 allocated unique contiguous sequences 1..32
+gnu-fixed failed_rounds=0/25

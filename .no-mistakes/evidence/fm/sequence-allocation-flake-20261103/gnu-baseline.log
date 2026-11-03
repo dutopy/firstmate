@@ -1,0 +1,27 @@
+mkdir (GNU coreutils) 9.8
+gnu-old round=1 allocated unique contiguous sequences 1..32
+gnu-old round=2 allocated unique contiguous sequences 1..32
+gnu-old round=3 allocated unique contiguous sequences 1..32
+gnu-old round=4 allocated unique contiguous sequences 1..32
+gnu-old round=5 allocated unique contiguous sequences 1..32
+gnu-old round=6 allocated unique contiguous sequences 1..32
+gnu-old round=7 allocated unique contiguous sequences 1..32
+gnu-old round=8 allocated unique contiguous sequences 1..32
+gnu-old round=9 allocated unique contiguous sequences 1..32
+gnu-old round=10 allocated unique contiguous sequences 1..32
+gnu-old round=11 allocated unique contiguous sequences 1..32
+gnu-old round=12 allocated unique contiguous sequences 1..32
+gnu-old round=13 allocated unique contiguous sequences 1..32
+gnu-old round=14 allocated unique contiguous sequences 1..32
+gnu-old round=15 allocated unique contiguous sequences 1..32
+gnu-old round=16 allocated unique contiguous sequences 1..32
+gnu-old round=17 allocated unique contiguous sequences 1..32
+gnu-old round=18 allocated unique contiguous sequences 1..32
+gnu-old round=19 allocated unique contiguous sequences 1..32
+gnu-old round=20 allocated unique contiguous sequences 1..32
+gnu-old round=21 allocated unique contiguous sequences 1..32
+gnu-old round=22 allocated unique contiguous sequences 1..32
+gnu-old round=23 allocated unique contiguous sequences 1..32
+gnu-old round=24 allocated unique contiguous sequences 1..32
+gnu-old round=25 allocated unique contiguous sequences 1..32
+gnu-old failed_rounds=0/25

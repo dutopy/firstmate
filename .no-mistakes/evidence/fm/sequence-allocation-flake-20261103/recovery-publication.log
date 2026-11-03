@@ -1,0 +1,4 @@
+Seeded 100000 contiguous claims, mixed file/directory types, and high claims 100009/100010
+job-nCe9MS
+Published job job-nCe9MS state=queued sequence=100011; expected sequence=100011 after bounded-walk rescan
+Symlink claim refused without altering its target: cannot allocate and publish a remote job staging sequence
