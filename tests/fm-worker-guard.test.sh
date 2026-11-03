@@ -1078,7 +1078,9 @@ test_heredoc_and_case_filesystem_effects() {
       cmd="f() { cat $operator$delimiter"$'\n'"caller's note"$'\n'"\$(rm -rf '$FOREIGN/keep')"$'\n'"\`kill $FOREIGN_PID\`"$'\nEOF\n}\nf'
       assert_allowed "quoted heredoc expansions are inert" "$cmd"
     done
-    cmd="f() { cat $operator"$'EOF\n''\'"\$(rm -rf '$FOREIGN/keep')"$'\n''\'"\`kill $FOREIGN_PID"'\'"\`"$'\nEOF\n}\nf'
+    cmd="f() { cat $operator"$'EOF\n'
+    cmd+="\\\$(rm -rf '$FOREIGN/keep')"$'\n'
+    cmd+="\\\`kill $FOREIGN_PID\\\`"$'\nEOF\n}\nf'
     assert_allowed "escaped unquoted heredoc expansions are inert" "$cmd"
     (cd "$WT" && bash -c "$cmd" >/dev/null) || fail "escaped heredoc failed to execute safely"
     cmd="f() { cat $operator"$'EOF\n'"\$(rm -rf ./scratch)"$'\nEOF\n}\nf'
