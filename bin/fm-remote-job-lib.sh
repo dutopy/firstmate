@@ -600,7 +600,9 @@ fm_remote_job_next_seq() { # [stage-dir destination]
       [ "$recovered" -eq 0 ] || return 1
       maximum=0
       for entry in "$FM_REMOTE_JOB_SEQ_CLAIMS"/*; do
-        [ ! -L "$entry" ] && { [ -f "$entry" ] || [ -d "$entry" ]; } || continue
+        if [ -L "$entry" ] || { [ ! -f "$entry" ] && [ ! -d "$entry" ]; }; then
+          continue
+        fi
         entry=${entry##*/}
         case "$entry" in ''|*[!0-9]*|0) continue ;; esac
         [ "$entry" -le "$maximum" ] || maximum=$entry
@@ -852,7 +854,9 @@ fm_remote_job_reap_stale() { # <account-home>
     if [ -n "$tmp" ] && printf '%s\n' "$now" > "$tmp" && chmod 600 "$tmp" \
       && mv -f -- "$tmp" "$marker"; then
       for claim in "$FM_REMOTE_JOB_SEQ_CLAIMS"/*; do
-        [ ! -L "$claim" ] && { [ -f "$claim" ] || [ -d "$claim" ]; } || continue
+        if [ -L "$claim" ] || { [ ! -f "$claim" ] && [ ! -d "$claim" ]; }; then
+          continue
+        fi
         value=${claim##*/}
         case "$value" in ''|*[!0-9]*|0) continue ;; esac
         mtime=$(fm_remote_job_path_mtime "$claim" 2>/dev/null || true)
