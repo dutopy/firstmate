@@ -154,9 +154,9 @@ JS
       return 1
     fi
     sleep 1
-    snapshot "$h" && cmp -s "$LAB/$h.expected" "$LAB/$h.snapshot" || {
+    if ! snapshot "$h" || ! cmp -s "$LAB/$h.expected" "$LAB/$h.snapshot"; then
       printf 'not ok - %s (%s): native delivery changed the real %s draft\n' "$h" "$version" "$case_name"; return 1;
-    }
+    fi
     printf 'ok - %s (%s): %s draft unchanged; native instruction executed and inbox record acknowledged\n' "$h" "$version" "$case_name"
   done
   CHECKED=$((CHECKED+1))
