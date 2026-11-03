@@ -4,7 +4,7 @@ This document is the authoritative human-readable contract for the guard that ke
 `bin/fm-worker-guard-policy.mjs` is the single decision owner.
 `bin/fm-worker-guard-pretool-check.sh` is the stable hook transport.
 `bin/fm-worker-guard-omp-ext.ts` is the omp adapter.
-Shell lexing is the shared parser owned by `bin/fm-arm-command-policy.mjs`.
+Shell lexing is the shared parser owned by `bin/fm-arm-command-policy.mjs`; [command-position classification](arm-pretool-check.md#command-position-classification) documents its lexical rules and unsupported syntax.
 Behavior is proven by `tests/fm-worker-guard.test.sh` (portable) and `tests/fm-worker-guard-live-e2e.test.sh` (installed Claude and omp, opt-in).
 
 ## Why this exists
@@ -37,8 +37,15 @@ The only processes the guard starts are `ps`, `lsof`, and `git rev-parse` to rea
 
 The shell walk recurses into groups, substitutions, `-c` payloads, `eval` arguments, `env -S` payloads, here-documents, here-strings, literal `echo`/`printf`/`cat <<` pipes into a shell, and files written by `cat > f <<EOF` or `tee f` earlier in the same command line.
 It tracks `cd` (including `builtin cd`), literal variable assignments, aliases, and `ln -s` links created earlier in the same command line, so a delete that goes through such a link is refused.
+Script execution through a link created in the same command is refused as `OPAQUE_EXEC` when the guard cannot follow its destination.
+For ordinary `case` arms, each body is inspected from the entry state and merged conservatively with the other arms and the unmatched path: differing cwd, variable, or PID-ownership facts cannot prove later ownership, differing virtual script contents become opaque, and conflicting alias definitions cause `OPAQUE_EXEC`.
+Filesystem effects from substitutions remain visible to later commands, while their shell-local cwd, variable, and PID state stays isolated.
 A brace group that starts an argument (`rm -r {/a,b}`) is read as brace expansion, and option values (`bash -o pipefail -c`, `python -X opt -c`, `node --eval=CODE`) are skipped when finding the code.
-The argument of `echo` and `printf` is text the shell may run, so only the leading `-n`, `-e`, `-E` options of `echo` are dropped. The text is read literally only when it has no backslash other than `\n` and, for `printf`, no `%`; otherwise the producer is unreadable and treated as opaque.
+The argument of `echo` and `printf` is text the shell may run, so only the leading `-n`, `-e`, `-E` options of `echo` are dropped.
+The text is read literally only when it has no backslash other than `\n` and, for `printf`, no `%`; otherwise the producer is unreadable and treated as opaque.
+A `cat <<` pipe is a literal producer only for bare, unshadowed `cat`, with no earlier `PATH` change and exactly one stdin heredoc redirection.
+Shell-expanded heredoc code is opaque for executable stdin, literal-producer classification, and scripts written earlier in the same command; later execution is refused as `OPAQUE_EXEC`.
+A dollar sign that starts no shell expansion, such as in `print("selection$")`, remains literal; quoted delimiters and shell escapes also preserve literal input.
 A script file the worker runs is read; installed system locations (`/usr`, `/opt`, `/Library`, and similar) are skipped only when neither the file nor its directory is writable by the current user, so a user-writable `/opt/homebrew` or `/usr/local` is scanned.
 The guard process environment may add colon-separated prefixes to that list with `FM_WORKER_GUARD_SYSTEM_PREFIXES` (launch state only, used by the tests).
 For a script inside the copy:
