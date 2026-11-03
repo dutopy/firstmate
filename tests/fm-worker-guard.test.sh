@@ -913,17 +913,74 @@ EOF
       cmp -s "$repo/before" "$repo/AGENTS.md" || fail "memory helper altered existing governance"
     fi
   done
-  assert_denied "bare case syntax remains unsupported" 'case x in x) rm -rf ./keep ;; esac'
-  assert_contains "$HOOK_ERR" "[UNPARSEABLE]" "unsupported case syntax must not be exempted"
-  assert_denied "quoted heredoc in a group remains unsupported" "f() {
-cat <<'EOF'
-project's note
-EOF
-}
-rm -rf ./keep"
-  assert_contains "$HOOK_ERR" "[UNPARSEABLE]" "unsupported heredoc syntax must not be exempted"
   assert_nothing_destroyed "memory helper supported route"
   pass "external memory helper runs after strict policy inspection and preserves governance and file boundaries"
+}
+
+test_shell_lexical_contexts() {
+  local form script="$WT/lexical.sh" action
+  # Reduced from fm-test-run.sh: coverage_guard, write_json and option parsing.
+  for form in comment heredoc case; do
+    case "$form" in
+      comment)
+        cat >"$script" <<'SCRIPT'
+f() {
+  # Serial listings without disturbing a caller's selection.
+  :
+ACTION
+}
+f
+SCRIPT
+        ;;
+      heredoc)
+        cat >"$script" <<'SCRIPT'
+f() {
+  python3 - <<'PY'
+scripts = []
+scripts.append({
+    "path": "tests/example.test.sh",
+})
+print("caller's selection }")
+PY
+ACTION
+}
+f
+SCRIPT
+        ;;
+      case)
+        cat >"$script" <<'SCRIPT'
+f() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --all)
+        [ -z "$MODE" ] || echo "only one selection mode is allowed"
+        MODE=all
+ACTION
+        shift
+        ;;
+    esac
+  done
+}
+f --all
+SCRIPT
+        ;;
+    esac
+    cp "$script" "$WT/template"
+    for action in 'rm -rf ./scratch' "rm -rf $FOREIGN/keep" "kill $FOREIGN_PID"; do
+      # Only substitute the action placeholder; none of these files is executed.
+      node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[2], fs.readFileSync(process.argv[1],"utf8").replace("ACTION",process.argv[3]))' "$WT/template" "$script" "$action"
+      if [ "$action" = 'rm -rf ./scratch' ]; then
+        assert_allowed "$form allows owned deletion in a new script" 'bash lexical.sh'
+      else
+        assert_denied "$form still denies foreign destruction" 'bash lexical.sh'
+        case "$HOOK_ERR" in
+          *UNPARSEABLE*) fail "$form denial must inspect the dangerous command, not fail lexing" ;;
+        esac
+      fi
+    done
+  done
+  assert_nothing_destroyed "lexical contexts"
+  pass "comments, heredocs and case patterns preserve deletion and PID boundaries"
 }
 
 test_scripts_are_shellcheck_clean() {
@@ -933,6 +990,7 @@ test_scripts_are_shellcheck_clean() {
   pass "transport is shellcheck-clean"
 }
 
+test_shell_lexical_contexts
 test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied
