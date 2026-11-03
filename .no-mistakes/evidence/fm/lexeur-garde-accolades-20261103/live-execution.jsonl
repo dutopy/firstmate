@@ -1,0 +1,23 @@
+{"surface": "worker hook", "command": "bash edited.sh", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "comment", "mode": "modified", "product_command": "bash edited.sh", "exit": 0, "stdout": "", "stderr": "", "owned_directory_deleted": true}
+{"surface": "worker hook", "command": "bash new.sh", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "comment", "mode": "new", "product_command": "bash new.sh", "exit": 0, "stdout": "", "stderr": "", "owned_directory_deleted": true}
+{"surface": "worker hook", "command": "bash edited.sh", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "quoted Python heredoc", "mode": "modified", "product_command": "bash edited.sh", "exit": 0, "stdout": "{'selection': \"caller's } selection\"}\n", "stderr": "", "owned_directory_deleted": true}
+{"surface": "worker hook", "command": "bash new.sh", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "quoted Python heredoc", "mode": "new", "product_command": "bash new.sh", "exit": 0, "stdout": "{'selection': \"caller's } selection\"}\n", "stderr": "", "owned_directory_deleted": true}
+{"surface": "worker hook", "command": "bash edited.sh", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "while/case options", "mode": "modified", "product_command": "bash edited.sh", "exit": 0, "stdout": "", "stderr": "", "owned_directory_deleted": true}
+{"surface": "worker hook", "command": "bash new.sh", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "while/case options", "mode": "new", "product_command": "bash new.sh", "exit": 0, "stdout": "", "stderr": "", "owned_directory_deleted": true}
+{"surface": "worker hook", "command": "python3 - <<EOF\nprint(\"selection$\")\nEOF", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "literal dollar stdin", "exit": 0, "stdout": "selection$\n", "stderr": ""}
+{"surface": "worker hook", "command": "cat > dollar.py <<EOF\nprint(\"selection$\")\nEOF\npython3 dollar.py", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "literal dollar virtual script", "exit": 0, "stdout": "selection$\n", "stderr": ""}
+{"surface": "worker hook", "command": "cat <<EOF | python3 -\nprint(\"selection$\")\nEOF", "exit": 0, "stdout": "", "stderr": ""}
+{"scenario": "literal dollar producer pipe", "exit": 0, "stdout": "selection$\n", "stderr": ""}
+{"surface": "watcher hook", "scenario": "command expansion", "command": "{ cat <<EOF\ncaller's note\n$(pkill -f fm-watch)\nEOF\n}", "exit": 2, "stdout": "", "stderr": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\"},\"systemMessage\":\"[broad-watcher-kill] a broad process kill targeting the firstmate watcher is forbidden\"}\n"}
+{"surface": "watcher hook", "scenario": "nested arm", "command": "{ cat <<EOF\ncaller's note\n$(bin/fm-watch-arm.sh)\nEOF\n}", "exit": 2, "stdout": "", "stderr": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\"},\"systemMessage\":\"[watcher-nested] a protected watcher command must not run through a wrapper, substitution, or compound command\"}\n"}
+{"surface": "watcher hook", "scenario": "backtick", "command": "f() { cat <<EOF\ncaller's note\n`pkill -f fm-watch`\nEOF\n}\nf", "exit": 2, "stdout": "", "stderr": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\"},\"systemMessage\":\"[broad-watcher-kill] a broad process kill targeting the firstmate watcher is forbidden\"}\n"}
+{"surface": "watcher hook", "scenario": "quoted inert", "command": "{ cat <<'EOF'\ncaller's note\n$(pkill -f fm-watch)\nEOF\n}", "exit": 0, "stdout": "", "stderr": ""}
+{"surface": "watcher hook", "scenario": "escaped inert", "command": "{ cat <<EOF\ncaller's note\n\\$(pkill -f fm-watch)\nEOF\n}", "exit": 0, "stdout": "", "stderr": ""}

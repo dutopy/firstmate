@@ -1,0 +1,6 @@
+ok - comments, heredocs and case patterns preserve deletion and PID boundaries
+ok - case substitutions and alternative ownership states are inspected
+ok - heredoc expansions and persistent case filesystem effects are inspected
+ok - executable stdin uncertainty and created-link script traversal are refused
+ok - case aliases retain identity and literal heredoc dollars remain inspectable
+ok - unsupported case fall-through cannot erase ownership evidence
