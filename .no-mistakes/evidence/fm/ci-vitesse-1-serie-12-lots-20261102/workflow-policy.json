@@ -1,0 +1,29 @@
+{
+  "rendered_lanes": [
+    "portable-serial-1of12",
+    "portable-serial-2of12",
+    "portable-serial-3of12",
+    "portable-serial-4of12",
+    "portable-serial-5of12",
+    "portable-serial-6of12",
+    "portable-serial-7of12",
+    "portable-serial-8of12",
+    "portable-serial-9of12",
+    "portable-serial-10of12",
+    "portable-serial-11of12",
+    "portable-serial-12of12"
+  ],
+  "timeouts": {
+    "lint": 25,
+    "test-coverage": 5,
+    "tests-portable-parallel-1": 20,
+    "tests-portable-parallel-2": 15,
+    "tests-portable-serial": 25,
+    "tests-herdr": 75,
+    "tests-timing-aggregate": 5,
+    "macos-stock-bash": 10,
+    "invariants": 5
+  },
+  "fail_fast": false,
+  "macos_condition": "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+}

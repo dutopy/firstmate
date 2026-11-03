@@ -1,0 +1,2 @@
+ok - watcher keeps observer diagnostics separate from contribution wakes
+ok - watcher surfaces one newly durable contribution signal without re-ringing it

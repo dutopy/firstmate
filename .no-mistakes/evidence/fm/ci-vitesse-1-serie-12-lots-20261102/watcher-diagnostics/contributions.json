@@ -1,0 +1,58 @@
+{
+  "schema": "fm-contributions.v1",
+  "task": "delivery",
+  "records": [
+    {
+      "url": "https://github.com/o/r/pull/8",
+      "kind": "pr",
+      "checked_at": "2026-09-16T08:00:00Z",
+      "error": null,
+      "pending": [
+        {
+          "token": "comment:12:2026-09-16T08:01:00Z:",
+          "type": "comment",
+          "source": "https://github.com/o/r/pull/8#issuecomment-12",
+          "head": null,
+          "author": "maintainer",
+          "body": "Please clarify the contract"
+        }
+      ],
+      "seen": [
+        "comment:12:2026-09-16T08:01:00Z:"
+      ],
+      "verdict": null,
+      "observation": {
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "open",
+        "draft": false,
+        "mergeable": "mergeable",
+        "can_merge": false,
+        "review_decision": "APPROVED",
+        "reviews": [],
+        "checks": [
+          {
+            "name": "test",
+            "id": 1,
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-09-16T08:00:00Z"
+          }
+        ],
+        "events": [
+          {
+            "token": "comment:12:2026-09-16T08:01:00Z:",
+            "type": "comment",
+            "source": "https://github.com/o/r/pull/8#issuecomment-12",
+            "head": null,
+            "author": "maintainer",
+            "body": "Please clarify the contract"
+          }
+        ],
+        "absent_checks": []
+      },
+      "notified": [
+        "comment:12:2026-09-16T08:01:00Z:"
+      ]
+    }
+  ]
+}

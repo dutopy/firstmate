@@ -1,0 +1,61 @@
+{
+  "families": [
+    {
+      "count": 1,
+      "duration_ms": 643461,
+      "failed": 0,
+      "name": "pure-contract-unit"
+    },
+    {
+      "count": 1,
+      "duration_ms": 220239,
+      "failed": 1,
+      "name": "snapshot-bearings"
+    },
+    {
+      "count": 1,
+      "duration_ms": 3109,
+      "failed": 0,
+      "name": "unclassified"
+    }
+  ],
+  "finished_at": "2026-11-03T01:06:04Z",
+  "run_id": "fm-test-run-1793667097027-14069",
+  "scripts": [
+    {
+      "duration_ms": 643461,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "pure-contract-unit",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-test-run.test.sh"
+    },
+    {
+      "duration_ms": 3109,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "unclassified",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-ci-workflow.test.sh"
+    },
+    {
+      "duration_ms": 220239,
+      "exit": 1,
+      "expected_gate_skip": "optional-binary",
+      "family": "snapshot-bearings",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-contributions.test.sh"
+    }
+  ],
+  "selection": "scripts;jobs=1",
+  "started_at": "2026-11-03T00:51:36Z",
+  "summary": {
+    "duration_ms": 867410,
+    "failed": 1,
+    "skipped_gate": 0,
+    "total": 3
+  }
+}

@@ -1,0 +1,33 @@
+Real runner discovery: 12 nonempty lanes; union exactly 226 serial scripts; duplicates 0.
+portable-serial-1of12: 1 scripts
+portable-serial-2of12: 21 scripts
+portable-serial-3of12: 19 scripts
+portable-serial-4of12: 21 scripts
+portable-serial-5of12: 22 scripts
+portable-serial-6of12: 21 scripts
+portable-serial-7of12: 19 scripts
+portable-serial-8of12: 19 scripts
+portable-serial-9of12: 21 scripts
+portable-serial-10of12: 19 scripts
+portable-serial-11of12: 22 scripts
+portable-serial-12of12: 21 scripts
+$ bin/fm-test-run.sh --list --lane portable-serial-1of5
+exit=2
+fm-test-run: lane 'portable-serial-1of5' asks for 5 portable serial shards but this runner is configured for 12 (see --list-lanes)
+$ bin/fm-test-run.sh --list --lane portable-serial-13of12
+exit=2
+fm-test-run: lane 'portable-serial-13of12' shard index is outside 1..12 (see --list-lanes)
+$ bin/fm-test-run.sh --list --lane portable-serial-0of12
+exit=2
+fm-test-run: lane 'portable-serial-0of12' shard index is outside 1..12 (see --list-lanes)
+$ bin/fm-test-run.sh --jobs 2 --lane portable-serial-1of12
+exit=2
+fm-test-run: --jobs 2 refused: tests/fm-afk-inject-e2e.test.sh is not in the proven-isolated set (see bin/fm-test-isolation-proof.sh --list) and its family has no recorded concurrent proof. Unproven stateful scripts stay serial.
+$ bin/fm-test-run.sh --lane portable-serial-1of12
+exit=0
+FM_TEST_BEGIN 2026-11-03T01:11:56Z tests/fm-afk-inject-e2e.test.sh family=afk expected_gate_skip=none
+real runner executed disposable unproven script
+FM_TEST_END 2026-11-03T01:11:56Z tests/fm-afk-inject-e2e.test.sh exit=0 duration_ms=71 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=271
+FM_TEST_SUMMARY_FAMILY family=afk count=1 duration_ms=71 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-afk-inject-e2e.test.sh duration_ms=71
