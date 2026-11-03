@@ -264,7 +264,7 @@ test_incremental_agrees_with_full_fold_across_appends() {
 
 test_timestamp_prefix_preserves_status_grammar() {
   local verb plain stamped line dir f
-  for verb in working needs-decision blocked done failed note paused resolved captain-held; do
+  for verb in working needs-decision blocked 'done' failed note paused resolved captain-held; do
     plain="$verb [key=before]: [key=after] prose: paused: not a verb"
     stamped="2026-11-03T04:51:49Z $plain"
     [ "$(status_line_verb "$stamped")" = "$verb" ] || fail "timestamp hid $verb"
