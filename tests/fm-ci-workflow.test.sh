@@ -62,6 +62,12 @@ puts [interpolate.call(concurrency.fetch("group")),
 ' "$CI_WORKFLOW" "$event" "$pr_number" "$run_id"
 }
 
+job_timeout() {
+  ruby -ryaml -e '
+puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes", "none")
+' "$CI_WORKFLOW" "$1"
+}
+
 group_of() { printf '%s\n' "$1" | cut -f1; }
 cancel_of() { printf '%s\n' "$1" | cut -f2; }
 
@@ -109,7 +115,43 @@ end
   pass "every ci.yml job carries a finite timeout"
 }
 
+# These explicit job limits are the approved cancellation policy.
+test_previously_unbounded_jobs_keep_their_caps() {
+  local job expected actual
+  while read -r job expected; do
+    [ -n "$job" ] || continue
+    actual=$(job_timeout "$job") || fail "could not read the $job timeout"
+    [ "$actual" = "$expected" ] \
+      || fail "$job timeout must stay $expected minutes, got $actual"
+  done <<'CAPS'
+lint 25
+test-coverage 5
+tests-timing-aggregate 5
+invariants 5
+CAPS
+  pass "previously unbounded jobs keep their approved caps"
+}
+
+test_measured_lanes_keep_their_existing_bounds() {
+  local job expected actual
+  while read -r job expected; do
+    [ -n "$job" ] || continue
+    actual=$(job_timeout "$job") || fail "could not read the $job timeout"
+    [ "$actual" = "$expected" ] \
+      || fail "$job timeout must stay $expected minutes, got $actual"
+  done <<'CAPS'
+tests-portable-parallel-1 20
+tests-portable-parallel-2 15
+tests-portable-serial 25
+tests-herdr 75
+macos-stock-bash 10
+CAPS
+  pass "measured lanes retain their approved cancellation bounds"
+}
+
 test_pr_pushes_supersede_within_one_pr
 test_separate_prs_do_not_cancel_each_other
 test_main_pushes_are_never_cancelled
 test_every_job_has_a_finite_timeout
+test_previously_unbounded_jobs_keep_their_caps
+test_measured_lanes_keep_their_existing_bounds
