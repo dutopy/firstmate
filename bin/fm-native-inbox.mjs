@@ -108,7 +108,7 @@ export function retire(state, id) {
   const files = paths(state, id);
   for (const path of Object.values(files)) remove(path);
 }
-export async function startNativeInbox({ config: configPath, session, deliver }) {
+export function startNativeInbox({ config: configPath, session, deliver }) {
   const config = load(configPath), identity = config && actorIdentity(config);
   const sessionID = session();
   if (!identity || !sessionID || typeof sessionID !== 'string') return null;
@@ -147,9 +147,9 @@ export async function startNativeInbox({ config: configPath, session, deliver })
 }
 export function installPiNativeInbox(pi, config) {
   let actor = null;
-  pi.on('session_start', async (_event, ctx) => {
+  pi.on('session_start', (_event, ctx) => {
     actor?.close();
-    actor = await startNativeInbox({
+    actor = startNativeInbox({
       config,
       session: () => ctx.sessionManager.getSessionId(),
       deliver: text => pi.sendUserMessage(text, { deliverAs: 'followUp' }),
@@ -158,24 +158,27 @@ export function installPiNativeInbox(pi, config) {
   pi.on('session_shutdown', () => { actor?.close(); actor = null; });
 }
 export function openCodeNativeInbox(client, config) {
-  let actor = null, active = '';
-  const close = () => { actor?.close(); actor = null; active = ''; };
+  let actor = null, active = '', revision = 0;
+  const close = () => { revision++; actor?.close(); actor = null; active = ''; };
   return {
     message: async ({ sessionID }) => {
-      if (active === sessionID) return;
+      const lookupRevision = ++revision;
+      if (actor && active === sessionID) return;
       const response = await client.session.get({ path: { id: sessionID } });
+      if (lookupRevision !== revision) return;
       const info = response.data;
       const settings = load(config);
       if (!settings || info?.id !== sessionID || info.parentID || realpathSync(info.directory) !== settings.cwd) return;
       close();
       active = sessionID;
-      actor = await startNativeInbox({
+      actor = startNativeInbox({
         config,
         session: () => active,
         deliver: text => client.session.promptAsync({ path: { id: sessionID }, body: { parts: [{ type: 'text', text }] } }),
       });
     },
     event: event => {
+      if (['tui.session.select', 'session.deleted', 'server.instance.disposed'].includes(event.type)) revision++;
       if ((event.type === 'tui.session.select' && event.properties.sessionID !== active)
           || (event.type === 'session.deleted' && event.properties.info.id === active)
           || event.type === 'server.instance.disposed') close();
@@ -233,8 +236,9 @@ export async function notifyCodex(configPath, event) {
       || !sameEndpoint(launch, endpoint(metadata(config).window, launch.socket))) return false;
   if (event.type !== 'agent-turn-complete' || event.client !== 'codex-tui' || event.cwd !== config.cwd
       || !Array.isArray(event['input-messages']) || typeof event['input-messages'][0] !== 'string'
-      || hash(event['input-messages'][0]) !== launch.promptHash || !/^[0-9a-f-]{36}$/.test(event['thread-id'] || '')) return false;
+      || !/^[0-9a-f-]{36}$/.test(event['thread-id'] || '')) return false;
   const previous = load(files.binding);
+  if (previous?.session !== event['thread-id'] && hash(event['input-messages'][0]) !== launch.promptHash) return false;
   if (launch.ambiguous || (previous && previous.session !== event['thread-id'])) {
     save(files.launch, { ...launch, ambiguous: true });
     remove(files.binding);

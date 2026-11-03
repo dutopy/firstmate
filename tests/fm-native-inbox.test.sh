@@ -76,6 +76,70 @@ for h in pi opencode; do
   test ! -e "$LAB/$h.acted"
   echo "ok - $h native delivery requires exact live endpoint, session, and generation"
 done
+printf 'backend=tmux\nwindow=native:opencode-race\nharness=opencode\n' > "$LAB/state/race.meta"
+mkdir -p "$LAB/state/race.inbox/handled"
+printf 'instruction\n' > "$LAB/state/race.inbox/001.msg"
+node "$MODULE" arm "$LAB/state" race opencode "$LAB"
+cat > "$LAB/opencode-race.mjs" <<'JS'
+import assert from 'node:assert/strict';
+import {readFileSync, writeFileSync, existsSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+const {openCodeNativeInbox, request}=await import(pathToFileURL(process.argv[2]));
+const lab=process.argv[3], config=`${lab}/state/race.native-inbox.config.json`;
+const binding=`${lab}/state/race.native-inbox.binding.json`;
+const pending=[];
+const delivered=[];
+const inbox=openCodeNativeInbox({session:{
+  get:({path})=>new Promise(resolve=>pending.push({id:path.id,resolve})),
+  promptAsync:async ({path,body})=>{delivered.push([path.id,body.parts[0].text]);},
+}},config);
+const resolveNext=()=>{
+  const lookup=pending.shift();
+  lookup.resolve({data:{id:lookup.id,directory:lab}});
+};
+for (const event of [
+  {type:'tui.session.select',properties:{sessionID:'B'}},
+  {type:'tui.session.select',properties:{sessionID:'A'}},
+  {type:'session.deleted',properties:{info:{id:'A'}}},
+  {type:'server.instance.disposed',properties:{}},
+]) {
+  const lookup=inbox.message({sessionID:'A'});
+  inbox.event(event);
+  resolveNext();
+  await lookup;
+  assert.equal(existsSync(binding),false,`${event.type} must invalidate pending attribution`);
+}
+const older=inbox.message({sessionID:'A'});
+const newer=inbox.message({sessionID:'B'});
+pending.splice(1,1)[0].resolve({data:{id:'B',directory:lab}});
+await newer;
+resolveNext();
+await older;
+assert.equal(JSON.parse(readFileSync(binding,'utf8')).session,'B');
+const superseded=inbox.message({sessionID:'A'});
+await inbox.message({sessionID:'B'});
+resolveNext();
+await superseded;
+assert.equal(JSON.parse(readFileSync(binding,'utf8')).session,'B');
+assert.equal(await request('tmux','native:opencode-race',`${lab}/state/race.inbox/001.msg`,'doorbell'),0);
+assert.deepEqual(delivered,[['B','doorbell']]);
+inbox.event({type:'session.deleted',properties:{info:{id:'B'}}});
+assert.equal(existsSync(binding),false);
+assert.equal(await request('tmux','native:opencode-race',`${lab}/state/race.inbox/001.msg`,'stale'),1);
+const ordinary=inbox.message({sessionID:'A'});
+resolveNext();
+await ordinary;
+assert.equal(await request('tmux','native:opencode-race',`${lab}/state/race.inbox/001.msg`,'ordinary'),0);
+assert.deepEqual(delivered,[['B','doorbell'],['A','ordinary']]);
+inbox.event({type:'server.instance.disposed',properties:{}});
+assert.equal(existsSync(binding),false);
+writeFileSync(`${lab}/race.acted`,'verified');
+JS
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t native: -n opencode-race -c "$LAB" -- node "$LAB/opencode-race.mjs" "$MODULE" "$LAB"
+i=0
+while [ ! -e "$LAB/race.acted" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+test "$(cat "$LAB/race.acted")" = verified
+echo 'ok - opencode rejects superseded lookups and delivers only to the current binding'
 # Codex attribution uses real notification subprocess ancestry and the exact
 # launch prompt, not the most recent thread (which can be title generation).
 printf 'backend=tmux\nwindow=native:codex\nharness=codex\n' > "$LAB/state/codex.meta"
@@ -105,6 +169,18 @@ assert.equal(notify().status,0);
 assert.equal(JSON.parse(readFileSync(binding,'utf8')).session,event['thread-id']);
 assert.equal(existsSync(turnEnded),true,'an attributed root completion must notify supervision');
 unlinkSync(turnEnded);
+for (const input of ['steering doorbell', 'ordinary follow-up']) {
+  event['input-messages']=[input];
+  assert.equal(notify().status,0,'attributed subsequent turns must notify supervision');
+  assert.equal(existsSync(turnEnded),true);
+  assert.equal(JSON.parse(readFileSync(binding,'utf8')).session,event['thread-id']);
+  unlinkSync(turnEnded);
+}
+event['thread-id']='00000000-0000-0000-0000-000000000003';
+assert.notEqual(notify().status,0);
+assert.equal(existsSync(turnEnded),false);
+assert.equal(JSON.parse(readFileSync(binding,'utf8')).session,'00000000-0000-0000-0000-000000000001');
+event['input-messages']=['actual launch prompt'];
 // A second possible root session invalidates rather than replaces attribution.
 event['thread-id']='00000000-0000-0000-0000-000000000002';
 assert.notEqual(notify().status,0);

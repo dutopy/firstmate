@@ -712,6 +712,11 @@ so a native resend can target that thread instead of the displayed conversation.
 Without an actual inbox acknowledgement, the resend is not counted as delivered;
 the existing retry and escalation policy still applies.
 
+The supervising MAIN decision accepts tmux-only recovery coverage for this PR.
+Herdr recovery is separate work: its existing terminal-delivery policy remains
+unchanged, including the pending-composer guard that protects human drafts. No
+Herdr recovery coverage is claimed here.
+
 Without a verified binding, the existing terminal-delivery policy is unchanged.
 Other backends, secondmates, pi-signed, Claude, and omp do not acquire a native
 transport from this change. In particular, no Claude trust or channel setting is
