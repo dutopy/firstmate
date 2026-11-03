@@ -186,12 +186,12 @@ test_answer_close_is_self_announced() {
 # that key". The stated key must be honored in that position too, end to end
 # through the real send.
 test_colon_first_key_position_is_answerable() {
-  local dir fb log home rc out
-  dir="$TMP_ROOT/colon-first"; mkdir -p "$dir"
+  local dir fb log home rc out prefix=${1:-} label=${2:-plain}
+  dir="$TMP_ROOT/colon-first-$label"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/send.log"
-  home=$(setup_home colon-first)
+  home=$(setup_home "colon-first-$label")
   fm_write_meta "$home/state/t8.meta" "window=sess:fm-t8" "kind=ship"
-  printf 'needs-decision: [key=seam-max-bound] cap the seam at 4 or 8\n' > "$home/state/t8.status"
+  printf '%sneeds-decision: [key=seam-max-bound] cap the seam at 4 or 8\n' "$prefix" > "$home/state/t8.status"
 
   out=$(drain_out "$home")
   printf '%s' "$out" | grep -F '[key=seam-max-bound]' >/dev/null \
@@ -725,6 +725,7 @@ test_remote_reserved_pending_reply_key_closes_locally() {
 test_answer_send_closes_open_decision
 test_answer_close_is_self_announced
 test_colon_first_key_position_is_answerable
+test_colon_first_key_position_is_answerable '2026-11-03T04:51:49Z ' timestamped
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
 test_not_open_key_refuses_before_send

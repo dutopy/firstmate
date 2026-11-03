@@ -160,11 +160,12 @@ last_status_line() {  # <status-file> [<previous-event-var>]
 # A bare legacy free-text line counts as an event only when a captain token leads
 # at column zero, so indented continuation prose cannot hide a declaration.
 _fm_status_event_scan() {
-  local line last='' prev='' fallback='' verb legacy_re
+  local line last='' prev='' fallback='' verb legacy_re event
   legacy_re="^(${FM_CAPTAIN_RE:-$FM_CLASSIFY_CAPTAIN_RE_DEFAULT})"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in *[![:space:]]*) fallback=$line ;; *) continue ;; esac
-    case "$line" in *:*) status_line_verb "$line" verb ;; *) verb='' ;; esac
+    _fm_status_without_timestamp "$line" event
+    case "$event" in *:*) status_line_verb "$event" verb ;; *) verb='' ;; esac
     case "$verb" in
       working|needs-decision|blocked|done|failed|note|\
       "${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}"|\
@@ -364,12 +365,28 @@ _fm_classify_is_corr_token() {  # <word>
   return 1
 }
 
+# Remove one optional leading UTC ISO timestamp before splitting status metadata
+# at a colon. Only the column-zero YYYY-MM-DDTHH:MM:SSZ token is accepted; never
+# search message prose for a status verb. Assign without a subprocess on hot reads.
+_fm_status_without_timestamp() {  # <status-line> <out-var>
+  local _fm_status_text=$1
+  case "$_fm_status_text" in
+    [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z[[:space:]]*)
+      _fm_status_text=${_fm_status_text#*[[:space:]]}
+      _fm_status_text=${_fm_status_text#"${_fm_status_text%%[![:space:]]*}"}
+      ;;
+  esac
+  printf -v "$2" '%s' "$_fm_status_text"
+}
+
 # Printed, or assigned to <out-var> when one is given, so a per-line caller on a
 # hot path can take the verb without forking a command substitution. Under bash's
 # dynamic scope an <out-var> named like one of this function's own locals (v, out,
 # word) would be assigned here and lost, so callers pass a distinct name.
 status_line_verb() {  # <status-line> [<out-var>] -> leading verb word
-  local v=${1%%:*} out='' word
+  local v out='' word
+  _fm_status_without_timestamp "$1" v
+  v=${v%%:*}
   v=${v%%\[*}
   v=${v#"${v%%[![:space:]]*}"}
   v=${v%"${v##*[![:space:]]}"}
@@ -399,7 +416,9 @@ status_line_verb() {  # <status-line> [<out-var>] -> leading verb word
 # 0 when a complete "[key=...]" token sits in the documented position before
 # the line's first colon (or anywhere on a line that has no colon at all).
 _fm_key_before_colon() {  # <status-line>
-  case "${1%%:*}" in
+  local line
+  _fm_status_without_timestamp "$1" line
+  case "${line%%:*}" in
     *\[key=*\]*) return 0 ;;
     *) return 1 ;;
   esac
@@ -410,9 +429,10 @@ _fm_key_before_colon() {  # <status-line>
 # the caller's check via _fm_decision_slug_ok, exactly as for the before-colon
 # position.
 _fm_key_at_note_head() {  # <status-line> -> raw slug
-  local rest
-  case "$1" in
-    *:*) rest=${1#*:} ;;
+  local rest line
+  _fm_status_without_timestamp "$1" line
+  case "$line" in
+    *:*) rest=${line#*:} ;;
     *) return 1 ;;
   esac
   rest=${rest#"${rest%%[![:space:]]*}"}
@@ -429,15 +449,16 @@ _fm_decision_slug_ok() {  # <slug>
   esac
 }
 status_line_note() {  # <status-line> -> text after the first colon, trimmed
-  local n k
-  case "$1" in
-    *:*) n=${1#*:}; n=${n#"${n%%[![:space:]]*}"} ;;
-    *) printf '%s' "$1"; return 0 ;;
+  local n k line
+  _fm_status_without_timestamp "$1" line
+  case "$line" in
+    *:*) n=${line#*:}; n=${n#"${n%%[![:space:]]*}"} ;;
+    *) printf '%s' "$line"; return 0 ;;
   esac
   # A note-head token that states this line's key (no before-colon token, valid
   # slug) is key metadata, not note text: strip it so both stated-key positions
   # yield the same note.
-  if ! _fm_key_before_colon "$1" && k=$(_fm_key_at_note_head "$1") \
+  if ! _fm_key_before_colon "$line" && k=$(_fm_key_at_note_head "$line") \
     && _fm_decision_slug_ok "$k"; then
     n=${n#"[key=$k]"}
     n=${n#"${n%%[![:space:]]*}"}
@@ -445,13 +466,14 @@ status_line_note() {  # <status-line> -> text after the first colon, trimmed
   printf '%s' "$n"
 }
 _fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
-  local k
-  if _fm_key_before_colon "$1"; then
-    k=${1%%:*}
+  local k line
+  _fm_status_without_timestamp "$1" line
+  if _fm_key_before_colon "$line"; then
+    k=${line%%:*}
     k=${k#*\[key=}
     k=${k%%\]*}
   else
-    k=$(_fm_key_at_note_head "$1") || { printf 'default'; return 0; }
+    k=$(_fm_key_at_note_head "$line") || { printf 'default'; return 0; }
   fi
   _fm_decision_slug_ok "$k" || return 1
   printf '%s' "$k"
@@ -536,6 +558,7 @@ _fm_status_kind() {
 
 _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb> <kind>
   local open=$1 line=$2 resolve=$3 held=$4 kind=$5 verb key note
+  _fm_status_without_timestamp "$line" line
   # Declaration guard. A transition's verb ends at a colon, or - in the colonless
   # form _fm_decision_key still accepts below - at a complete "[key=...]" token.
   # A line holding neither is continuation prose, a bare word, or blank, and can
@@ -674,8 +697,10 @@ status_key_closing_verb() {  # <status-file> <key>
   kind=$(_fm_status_kind "$f")
   resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
   held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  # Date-shaped prefixes deliberately over-include; the shared parser alone
+  # validates their exact timestamp shape before any transition is accepted.
   candidates=$(grep -E \
-    "^[[:space:]]*(needs-decision|blocked|done|failed|$resolve|$held)[[:space:]:[]" \
+    "^([0-9]{4}-[^[:space:]]+[[:space:]]+)?[[:space:]]*(needs-decision|blocked|done|failed|$resolve|$held)[[:space:]:[]" \
     "$f") || [ "$?" -eq 1 ] || candidates=$(cat "$f")
   while IFS= read -r line || [ -n "$line" ]; do
     status_line_verb "$line" event
@@ -808,10 +833,9 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # 8: a colonless line without a complete "[key=...]" token is no longer a
 # transition at all, so a cursor holding a phantom decision that bare prose
 # opened - which no later line could close - is discarded.
-# Version 4 was already spent on the bracketed-tag parser change above, and a
-# cursor persisted under that reading predates this one, so it must still be
-# discarded and rebuilt from byte 0 under the new reading.
-FM_OPEN_DECISIONS_FOLD_VERSION=8
+# 9: UTC ISO timestamp prefixes are read before status metadata, so decisions
+# previously hidden behind the timestamp's first colon must be folded again.
+FM_OPEN_DECISIONS_FOLD_VERSION=9
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
