@@ -3,6 +3,7 @@
 # acknowledgement. External-editor export / Pi's native editor API proves the
 # ENTIRE draft remains identical; rendered rows are never delivery authority.
 set -u
+# shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 fm_live_gate opt-in FM_NATIVE_INBOX_LIVE_E2E tmux node
