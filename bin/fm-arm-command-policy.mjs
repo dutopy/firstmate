@@ -241,6 +241,7 @@ export class Lexer {
       }
       this.commandStart = this.commandStart && !word.quoted && ["if", "then", "else", "elif", "while", "until", "do", "!", "time"].includes(word.value);
       if (this.expectHeredoc) {
+        this.expectHeredoc.token.heredocQuoted = word.quoted;
         this.pendingHeredocs.push({ delimiter: word.value, stripTabs: this.expectHeredoc.stripTabs, token: this.expectHeredoc.token });
         this.expectHeredoc = null;
       }
@@ -275,8 +276,40 @@ export class Lexer {
         break;
       }
       heredoc.token.heredoc = body;
+      if (!heredoc.token.heredocQuoted) this.readHeredocExpansions(heredoc.token);
     }
     this.pendingHeredocs = [];
+  }
+
+  readHeredocExpansions(token) {
+    const body = token.heredoc.replace(/\\[\s\S]/g, (escape) => escape === "\\\n" ? "" : escape);
+    token.subs = [];
+    token.heredoc = "";
+    for (let i = 0; i < body.length;) {
+      if (body[i] === "\\" && "$`\\\n".includes(body[i + 1] || "\0")) {
+        if (body[i + 1] !== "\n") token.heredoc += body[i + 1];
+        i += 2;
+        continue;
+      }
+      const command = body.startsWith("$(", i) && !body.startsWith("$((", i);
+      const backtick = body[i] === "`";
+      if (command || backtick) {
+        const sub = command ? extractBalanced(body, i + 2, ")") : extractBackticks(body, i + 1);
+        if (!sub) {
+          this.error = "unclosed heredoc substitution";
+          return;
+        }
+        const content = backtick ? sub.content.replace(/\\([$`\\])/g, "$1") : sub.content;
+        token.subs.push({ kind: "command", content });
+        token.heredocDynamic = true;
+        token.heredoc += body.slice(i, sub.next);
+        i = sub.next;
+        continue;
+      }
+      if (body[i] === "$") token.heredocDynamic = true;
+      token.heredoc += body[i];
+      i += 1;
+    }
   }
 
   readControlOperator() {
@@ -338,6 +371,7 @@ export class Lexer {
           this.index += 2;
           continue;
         }
+        if (this.expectHeredoc) word.quoted = true;
         word.value += this.source[this.index + 1];
         this.index += 2;
         continue;

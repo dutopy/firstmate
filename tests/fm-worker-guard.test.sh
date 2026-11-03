@@ -1036,6 +1036,61 @@ test_case_analysis_boundaries() {
   pass "case substitutions and alternative ownership states are inspected"
 }
 
+test_heredoc_and_case_filesystem_effects() {
+  local cmd mode delimiter operator expansion script="$WT/expansion-effects.sh"
+  local cmds=(
+    "case \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\" in x) : ;; *) bash generated.sh ;; esac"
+    "case x in \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\") : ;; *) bash generated.sh ;; esac"
+    "case \"\$(ln -s '$FOREIGN' ./case-link)\" in *) rm -rf ./case-link/keep ;; esac"
+    "case x in \"\$(ln -s '$FOREIGN' ./case-link)\") : ;; *) rm -rf ./case-link/keep ;; esac"
+    "case x in x) : ;; \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\") : ;; *) bash generated.sh ;; esac"
+    "case \"\$(case x in x) ln -s '$FOREIGN' ./case-link ;; esac)\" in *) rm -rf ./case-link/keep ;; esac"
+    "(ln -s '$FOREIGN' ./case-link); rm -rf ./case-link/keep"
+    "case \"\$(cd '$FOREIGN'; printf 'rm -rf $FOREIGN/keep' > '$WT/generated.sh')\" in *) bash generated.sh ;; esac"
+    "case \"\$(printf 'rm -rf $FOREIGN/keep' > generated.sh)\" in esac; bash generated.sh"
+    "case \"\$(ln -s '$FOREIGN' ./case-link)\" in esac; rm -rf ./case-link/keep"
+  )
+  for operator in '<<' '<<-'; do
+    for expansion in "\$(rm -rf '$FOREIGN/keep')" "\`kill $FOREIGN_PID\`" "\$((1 + \$(rm -rf '$FOREIGN/keep')))" "'\$(rm -rf '$FOREIGN/keep')'"; do
+      cmds+=("f() { cat $operator"$'EOF\n'"caller's note"$'\n'"$expansion"$'\nEOF\n}\nf')
+    done
+  done
+  cmds+=("cat <<EOF"$'\n$\\\n'"(rm -rf '$FOREIGN/keep')"$'\nEOF')
+  cmds+=("cat <<-EOF"$'\n\t'"\$(rm -rf '$FOREIGN/keep')"$'\n\tEOF')
+  cp "$WT/ok.sh" "$WT/expansion-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "persistent expansion effects in direct commands" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/expansion-effects.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "persistent expansion effects in $mode scripts" "bash '$script'"
+      fi
+      case "$HOOK_ERR" in
+        *UNPARSEABLE*|*INTERNAL*) fail "expansion denial must inspect executable behavior: $HOOK_ERR" ;;
+      esac
+    done
+  done
+  cp "$WT/expansion-ok.saved" "$WT/ok.sh"
+  for operator in '<<' '<<-'; do
+    for delimiter in "'EOF'" '"EOF"' 'E\OF'; do
+      cmd="f() { cat $operator$delimiter"$'\n'"caller's note"$'\n'"\$(rm -rf '$FOREIGN/keep')"$'\n'"\`kill $FOREIGN_PID\`"$'\nEOF\n}\nf'
+      assert_allowed "quoted heredoc expansions are inert" "$cmd"
+    done
+    cmd="f() { cat $operator"$'EOF\n''\'"\$(rm -rf '$FOREIGN/keep')"$'\n''\'"\`kill $FOREIGN_PID"'\'"\`"$'\nEOF\n}\nf'
+    assert_allowed "escaped unquoted heredoc expansions are inert" "$cmd"
+    (cd "$WT" && bash -c "$cmd" >/dev/null) || fail "escaped heredoc failed to execute safely"
+    cmd="f() { cat $operator"$'EOF\n'"\$(rm -rf ./scratch)"$'\nEOF\n}\nf'
+    assert_allowed "owned unquoted heredoc expansion" "$cmd"
+  done
+  assert_allowed "case subject virtual script survives alternatives" 'case "$(printf "rm -rf ./scratch" > generated.sh)" in x) : ;; *) bash generated.sh ;; esac'
+  assert_allowed "subshell shell state stays isolated" "target=./scratch; p=\$!; case \"\$(cd '$FOREIGN'; target='$FOREIGN/keep'; p=$FOREIGN_PID)\" in *) rm -rf \"\$target\"; kill \"\$p\" ;; esac"
+  assert_allowed "case subject link does not poison a sibling arm" "case x in x) ln -s '$FOREIGN' ./case-link ;; y) rm -rf ./case-link/keep ;; esac"
+  assert_nothing_destroyed "heredoc and case expansion effects"
+  pass "heredoc expansions and persistent case filesystem effects are inspected"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -1045,6 +1100,7 @@ test_scripts_are_shellcheck_clean() {
 
 test_shell_lexical_contexts
 test_case_analysis_boundaries
+test_heredoc_and_case_filesystem_effects
 test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied

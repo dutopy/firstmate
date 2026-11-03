@@ -261,7 +261,7 @@ function ownershipProblem(pid, ctx) {
 // ---------------------------------------------------------------- state
 
 function cloneState(st) {
-  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), functions: new Set(st.functions), vfiles: st.vfiles, links: new Set(st.links) };
+  return { ...st, vars: new Map(st.vars), ownPids: new Set(st.ownPids), aliases: new Map(st.aliases), functions: new Set(st.functions), vfiles: st.vfiles, links: st.links };
 }
 
 function lexWords(text) {
@@ -1041,7 +1041,7 @@ function literalProducerText(tokens) {
   const words = tokens.filter((t) => t.type === "word");
   const heredoc = tokens.find((t) => t.type === "redir" && typeof t.heredoc === "string");
   const name = basename(words[0]?.value || "");
-  if (name === "cat" && heredoc && words.length === 1) return heredoc.heredoc;
+  if (name === "cat" && heredoc && words.length === 1) return heredoc.heredocDynamic ? null : heredoc.heredoc;
   if ((name === "echo" || name === "printf") && words.slice(1).every((w) => w.literal && w.subs.length === 0)) {
     const rest = words.slice(1);
     // Only the leading options are options; a later "-rf" is text the shell will run.
@@ -1068,7 +1068,7 @@ function foldBraceArguments(tokens) {
 }
 
 function caseState(st) {
-  return { ...cloneState(st), vfiles: new Map(st.vfiles) };
+  return { ...cloneState(st), vfiles: new Map(st.vfiles), links: new Set(st.links) };
 }
 
 function mergeCaseState(result, branch) {
@@ -1107,19 +1107,29 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     const first = tokens[0];
     if (!first) continue;
     if (first.type === "caseBoundary") {
-      if (first.value === "start") cases.push({ entry: caseState(st), result: caseState(st), vfiles: st.vfiles, pattern: true });
+      if (first.value === "start") cases.push({ entry: caseState(st), result: null, vfiles: st.vfiles, links: st.links, pattern: true });
       else {
         const frame = cases.at(-1);
+        if (frame.pattern) {
+          frame.entry.vfiles = new Map(st.vfiles);
+          frame.entry.links = new Set(st.links);
+        }
         if (first.value === "arm") frame.pattern = false;
         else {
-          if (!frame.pattern) mergeCaseState(frame.result, st);
+          if (!frame.pattern) {
+            if (frame.result) mergeCaseState(frame.result, st);
+            else frame.result = caseState(st);
+          }
           if (first.value === "next") {
             Object.assign(st, caseState(frame.entry));
             frame.pattern = true;
           } else {
+            if (frame.result) mergeCaseState(frame.result, frame.entry);
+            else frame.result = frame.entry;
             frame.vfiles.clear();
             for (const [name, value] of frame.result.vfiles) frame.vfiles.set(name, value);
-            Object.assign(st, frame.result, { vfiles: frame.vfiles });
+            for (const link of frame.result.links) frame.links.add(link);
+            Object.assign(st, frame.result, { vfiles: frame.vfiles, links: frame.links });
             cases.pop();
           }
         }
@@ -1129,8 +1139,8 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     for (const token of tokens) {
       if (token.type === "group") {
         analyzeShell(token.content, token.kind === "subshell" ? cloneState(st) : st, ctx, depth + 1);
-      } else if (token.type === "word") {
-        for (const sub of token.subs) analyzeShell(sub.content, cloneState(st), ctx, depth + 1);
+      } else if (token.type === "word" || token.type === "redir") {
+        for (const sub of token.subs ?? []) analyzeShell(sub.content, cloneState(st), ctx, depth + 1);
       }
     }
     if (cases.at(-1)?.pattern) continue;
@@ -1163,7 +1173,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     if (position.command && basename(position.command.value) === "tee") {
       for (const w of words.slice(position.index + 1)) if (!w.value.startsWith("-")) writeTargets.push(w);
     }
-    const body = heredocToken ? heredocToken.heredoc : literalProducerText(tokens);
+    const body = heredocToken ? (heredocToken.heredocDynamic ? null : heredocToken.heredoc) : literalProducerText(tokens);
     if (body !== null && body !== undefined) {
       for (const target of writeTargets) {
         const value = wordValue(target, st);
@@ -1172,7 +1182,7 @@ export function analyzeShell(text, st, ctx, depth = 0) {
         const key = abs && ctx.roots.physical(abs);
         if (abs) st.vfiles.set(key, st.vfiles.get(key) === null ? null : (st.vfiles.get(key) ?? "") + body);
       }
-    } else if (position.command && /^(echo|printf)$/.test(basename(position.command.value))) {
+    } else if (heredocToken?.heredocDynamic || (position.command && /^(echo|printf)$/.test(basename(position.command.value)))) {
       for (const target of writeTargets) {
         const value = wordValue(target, st);
         if (value === null) continue;
