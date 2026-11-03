@@ -346,8 +346,9 @@ fm_task_inbox_native_ring() {  # <backend> <target> <record> <doorbell>
 # remote host-local steer leg, and the watcher's re-rings all call this, so a
 # delivery fix lands everywhere at once. Sequence per call:
 #   1. endpoint-liveness pre-check (dead or missing: nothing is typed);
-#   2. prefer an attributed native transport; otherwise retain the advisory composer
-#      pre-check (proven pending text: skip, see below);
+#   2. prefer an attributed native transport (acceptance ends this call; failure
+#      returns 2 without terminal fallback); when unbound, retain the advisory
+#      composer pre-check (proven pending text: skip, see below);
 #   3. type the constant line once and submit it through the backend's
 #      verifying submit machinery (one Enter);
 #   4. respect that submit verdict: `empty` is the backend's proof that the
@@ -367,10 +368,11 @@ fm_task_inbox_native_ring() {  # <backend> <target> <record> <doorbell>
 # the measured cause of "doorbell did not reach" on remote panes; the worst
 # outcome of that retype is a duplicated CONSTANT line the worker recovers
 # semantically.
-# Returns 0 rang (verified, or unverifiable because the classifier cannot read
-# the composer), 1 skipped because the composer PROVENLY holds pending text
-# before anything was typed (the watcher re-rings later), 2 the backend send
-# failed on every attempt, 3 skipped because the endpoint is positively dead
+# Returns 0 native transport accepted or terminal rang (verified, or unverifiable
+# because the classifier cannot read the composer), 1 skipped because the composer
+# PROVENLY holds pending text before anything was typed (the watcher re-rings
+# later), 2 native transport failed or the backend send failed on every attempt,
+# 3 skipped because the endpoint is positively dead
 # or missing (nothing typed; recovery owns the record), 4 typed but the
 # composer still holds pending text after every attempt. No return value is
 # delivery proof; the acknowledgement move is the only delivery signal.

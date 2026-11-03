@@ -688,42 +688,9 @@ The 2026-08-23 receipt above remains the earlier multi-harness result on tmux 3.
 
 ### Native resend without submitting a composer
 
-`bin/fm-native-inbox.mjs` owns the native steering transport for newly launched
-Pi, Codex, and OpenCode workers on tmux. Native resend requires an attributed
-process and endpoint, not equality with rendered composer text. Native delivery
-sends only the canonical inbox doorbell; it never reads, clears, or submits the
-editor. Moving the instruction into `handled/` remains the delivery proof:
-acceptance by a native queue is not an acknowledgement.
+[Native steering-inbox delivery](../tmux-backend.md#native-steering-inbox-delivery) owns the current transport contract, accepted tmux-only scope, and known Codex active-conversation limitation.
 
-The binding includes the tmux socket, pane, root process, native process start
-identity, launch generation, and session. Pi uses `sendUserMessage` in its
-extension; OpenCode uses the existing plugin client's `session.promptAsync`.
-Codex's launch-owned `notify` callback attributes the root thread using the exact
-initial prompt and native process ancestry before `codex queue --thread` may
-target it. A title-generation notification cannot select the thread; multiple
-matching root threads invalidate attribution rather than choosing the newest.
-Pi and OpenCode session changes retire their old bindings. Relaunch and cleanup
-retire bindings for all three harnesses.
-
-Known Codex limitation: attribution verifies the native process and endpoint,
-not the active conversation after `/new` or `/resume` in the same TUI. Those
-commands can leave the binding pointing to the previously attributed thread,
-so a native resend can target that thread instead of the displayed conversation.
-Without an actual inbox acknowledgement, the resend is not counted as delivered;
-the existing retry and escalation policy still applies.
-
-The supervising MAIN decision accepts tmux-only recovery coverage for this PR.
-Herdr recovery is separate work: its existing terminal-delivery policy remains
-unchanged, including the pending-composer guard that protects human drafts. No
-Herdr recovery coverage is claimed here.
-
-Without a verified binding, the existing terminal-delivery policy is unchanged.
-Other backends, secondmates, pi-signed, Claude, and omp do not acquire a native
-transport from this change. In particular, no Claude trust or channel setting is
-changed and no rendered doorbell-only matcher authorizes Enter.
-
-Portable boundary verification on 2026-11-03 used real Node processes in private
-tmux panes, without a model or provider request:
+Portable boundary verification on 2026-11-03 used real Node processes in private tmux panes, without a model or provider request:
 
 ```sh
 bin/fm-test-run.sh tests/fm-native-inbox.test.sh
@@ -735,21 +702,17 @@ ok - opencode native delivery requires exact live endpoint, session, and generat
 ok - codex native attribution rejects foreign processes, title threads, and ambiguous root sessions
 ```
 
-That result verifies Pi/OpenCode session invalidation and Codex process/endpoint
-attribution, not Codex active-conversation tracking or native harness behavior.
-Refresh the separate `live-harness-optin` guard after a Pi, Codex, or OpenCode
-upgrade:
+That result verifies Pi/OpenCode session invalidation and Codex process/endpoint attribution, not Codex active-conversation tracking or native harness behavior.
+Refresh the separate `live-harness-optin` guard after a Pi, Codex, or OpenCode upgrade:
 
 ```sh
 FM_NATIVE_INBOX_LIVE_E2E=1 bin/fm-test-run.sh tests/fm-native-inbox-live-e2e.test.sh
 ```
 
-The guard names each installed version or absent harness. For each installed
-harness it requires an actual unsubmitted doorbell, native resend, execution of
-the real instruction, and its inbox acknowledgement. It then repeats delivery
-with unrelated human text, a hidden human tail after the doorbell, and a partial
-doorbell. Pi's editor API and Codex/OpenCode's external-editor export compare the
-entire real buffer before and after delivery, rather than trusting visible rows.
+The guard names each installed version or absent harness.
+For each installed harness it requires an actual unsubmitted doorbell, native resend, execution of the real instruction, and its inbox acknowledgement.
+It then repeats delivery with unrelated human text, a hidden human tail after the doorbell, and a partial doorbell.
+Pi's editor API and Codex/OpenCode's external-editor export compare the entire real buffer before and after delivery, rather than trusting visible rows.
 An absent harness is reported, never counted as a live pass.
 
 A real run on 2026-11-03 produced the following version-scoped results:
@@ -760,28 +723,17 @@ A real run on 2026-11-03 produced the following version-scoped results:
 | Codex | codex-cli 0.163.0 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged. |
 | OpenCode | 1.19.3 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged; normal-caller guard exit 0 and private laboratory cleaned up. |
 
-The initial OpenCode binding failure was measured in its real Bun runtime:
-`realpathSync` on the actual Unix socket throws `EOPNOTSUPP`. Canonicalizing the
-socket's directory while retaining the name returned by the actual tmux server
-restored the verified binding without a rendered-text exception.
+OpenCode's real Bun runtime rejected `realpathSync` on the actual Unix socket with `EOPNOTSUPP`.
+Canonicalizing the socket's directory while retaining the name returned by the actual tmux server restored the verified binding without a rendered-text exception.
 
-The OpenCode laboratory uses `tests/fm-native-inbox-opencode-launch.mjs` to start
-the real binary with a minimal explicit environment, a private `HOME`, and private
-config, data, cache, state, runtime, and temporary directories. Only the OpenCode
-Go API credential from the selected auth file enters the child environment;
-provider variables and configuration inherited from the caller are discarded.
-The credential is not placed in arguments or output. The source auth file is not
-modified. `FM_NATIVE_INBOX_OPENCODE_AUTH_FILE` and
-`FM_NATIVE_INBOX_OPENCODE_BIN` select explicit paths when the runner's home or
-binary search path differs; `FM_NATIVE_INBOX_OPENCODE_MODEL` defaults to
-`opencode-go/deepseek-v4.1-flash`.
+The OpenCode laboratory uses `tests/fm-native-inbox-opencode-launch.mjs` to start the real binary with a minimal explicit environment, a private `HOME`, and private config, data, cache, state, runtime, and temporary directories.
+Only the OpenCode Go API credential from the selected auth file enters the child environment; provider variables and configuration inherited from the caller are discarded.
+The credential is not placed in arguments or output.
+The source auth file is not modified.
+`FM_NATIVE_INBOX_OPENCODE_AUTH_FILE` and `FM_NATIVE_INBOX_OPENCODE_BIN` select explicit paths when the runner's home or binary search path differs; `FM_NATIVE_INBOX_OPENCODE_MODEL` defaults to `opencode-go/deepseek-v4.1-flash`.
 
-On 2026-11-03, a separate real OpenCode 1.19.3 TUI launched from an `env -i`
-caller outside the repository, with deliberately invalid inherited provider keys
-and a Cerebras model override, displayed
-`Build · DeepSeek V4.1 Flash OpenCode Go` and returned `Ready.`. This establishes
-caller-independent model selection and access, separately from the recovery
-receipts above.
+On 2026-11-03, a separate real OpenCode 1.19.3 TUI launched from an `env -i` caller outside the repository, with deliberately invalid inherited provider keys and a Cerebras model override, displayed `Build · DeepSeek V4.1 Flash OpenCode Go` and returned `Ready.`.
+This establishes caller-independent model selection and access, separately from the recovery receipts above.
 
 ## Gemini
 

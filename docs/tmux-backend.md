@@ -68,6 +68,33 @@ Cursor is identified from its exact `cursor-agent` identity or versioned install
 The CI-enforced portable regression and opt-in real-harness drift guard follow the split owned by `.agents/skills/firstmate-coding-guidelines/SKILL.md`.
 Run the real-harness guard after any harness upgrade and before trusting refreshed evidence.
 
+### Native steering-inbox delivery
+
+Newly launched Pi, Codex, and OpenCode workers can receive the canonical inbox doorbell through the native transport owned by [`bin/fm-native-inbox.mjs`](../bin/fm-native-inbox.mjs), without reading, clearing, or submitting the editor.
+This allows a resend while an unsubmitted doorbell or human draft remains untouched in the composer.
+Moving the instruction into `handled/` remains the delivery proof; acceptance by a native queue is not an acknowledgement.
+
+Native resend requires an attributed process and endpoint, not equality with rendered composer text.
+The binding includes the tmux socket, pane, root process, native process start identity, launch generation, and session.
+Pi uses `sendUserMessage` in its extension; OpenCode uses the existing plugin client's `session.promptAsync`.
+Codex's launch-owned `notify` callback attributes the root thread using the exact initial prompt and native process ancestry before `codex queue --thread` may target it.
+A title-generation notification cannot select the thread; multiple matching root threads invalidate attribution rather than choosing the newest.
+Pi and OpenCode session changes retire their old bindings.
+Relaunch and cleanup retire bindings for all three harnesses.
+
+Known Codex limitation: attribution verifies the native process and endpoint, not the active conversation after `/new` or `/resume` in the same TUI.
+Those commands can leave the binding pointing to the previously attributed thread, so a native resend can target that thread instead of the displayed conversation.
+Without an actual inbox acknowledgement, the resend is not counted as delivered; the existing retry and escalation policy still applies.
+
+Recovery coverage is intentionally tmux-only; Herdr recovery is separate work.
+Herdr retains its existing terminal-delivery policy, including the pending-composer guard that protects human drafts.
+No Herdr recovery coverage is claimed here.
+Without a verified binding, the existing terminal-delivery policy is unchanged.
+Other backends, secondmates, pi-signed, Claude, and omp do not acquire a native transport from this change.
+No Claude trust or channel setting is changed and no rendered doorbell-only matcher authorizes Enter.
+
+[Native resend verification](verification/runtime-backends.md#native-resend-without-submitting-a-composer) owns the portable and live-harness evidence and refresh entry points.
+
 ### Composer, busy state, and delivery
 
 Agent liveness and composer safety are separate checks.

@@ -132,7 +132,7 @@ JS
     rec=$(printf '%s/state/%s.inbox/%03d.msg' "$LAB" "$h" "$index")
     handled="$LAB/state/$h.inbox/handled/${rec##*/}"
     acted="$LAB/$h-$case_name.acted"
-    printf "Run exactly: printf 'native-%s' > '%s'; mv '%s' '%s' . Then reply with one short line.\n" "$case_name" "$acted" "$rec" "$handled" > "$rec"
+    printf "Run exactly this shell command:\nprintf 'native-%s' > '%s'; mv '%s' '%s'\nThen reply with one short line.\n" "$case_name" "$acted" "$rec" "$handled" > "$rec"
     line=$(fm_task_inbox_doorbell_line "$rec") || return 1
     case "$case_name" in
       stranded) printf '%s' "$line" > "$LAB/$h.expected" ;;
