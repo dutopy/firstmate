@@ -329,7 +329,7 @@ fm_task_inbox_doorbell_line() {  # <record-path>
     "$quoted" "$quoted"
 }
 
-# Native recovery uses a generation- and kernel-endpoint-bound session, never
+# Native recovery uses generation-bound process and endpoint attribution, never
 # the composer. 0 accepted, 1 unbound (retain existing policy), 2 native failure.
 # The native transport's authority and lifecycle live in fm-native-inbox.mjs.
 fm_task_inbox_native_ring() {  # <backend> <target> <record> <doorbell>
@@ -346,7 +346,7 @@ fm_task_inbox_native_ring() {  # <backend> <target> <record> <doorbell>
 # remote host-local steer leg, and the watcher's re-rings all call this, so a
 # delivery fix lands everywhere at once. Sequence per call:
 #   1. endpoint-liveness pre-check (dead or missing: nothing is typed);
-#   2. prefer a verified native session; otherwise retain the advisory composer
+#   2. prefer an attributed native transport; otherwise retain the advisory composer
 #      pre-check (proven pending text: skip, see below);
 #   3. type the constant line once and submit it through the backend's
 #      verifying submit machinery (one Enter);

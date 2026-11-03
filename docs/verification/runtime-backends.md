@@ -689,8 +689,8 @@ The 2026-08-23 receipt above remains the earlier multi-harness result on tmux 3.
 ### Native resend without submitting a composer
 
 `bin/fm-native-inbox.mjs` owns the native steering transport for newly launched
-Pi, Codex, and OpenCode workers on tmux. The delivery decision is a verified
-native-session binding, not equality with rendered composer text. Native delivery
+Pi, Codex, and OpenCode workers on tmux. Native resend requires an attributed
+process and endpoint, not equality with rendered composer text. Native delivery
 sends only the canonical inbox doorbell; it never reads, clears, or submits the
 editor. Moving the instruction into `handled/` remains the delivery proof:
 acceptance by a native queue is not an acknowledgement.
@@ -702,7 +702,15 @@ Codex's launch-owned `notify` callback attributes the root thread using the exac
 initial prompt and native process ancestry before `codex queue --thread` may
 target it. A title-generation notification cannot select the thread; multiple
 matching root threads invalidate attribution rather than choosing the newest.
-Session changes, relaunch, and cleanup retire the old binding.
+Pi and OpenCode session changes retire their old bindings. Relaunch and cleanup
+retire bindings for all three harnesses.
+
+Known Codex limitation: attribution verifies the native process and endpoint,
+not the active conversation after `/new` or `/resume` in the same TUI. Those
+commands can leave the binding pointing to the previously attributed thread,
+so a native resend can target that thread instead of the displayed conversation.
+Without an actual inbox acknowledgement, the resend is not counted as delivered;
+the existing retry and escalation policy still applies.
 
 Without a verified binding, the existing terminal-delivery policy is unchanged.
 Other backends, secondmates, pi-signed, Claude, and omp do not acquire a native
@@ -722,7 +730,8 @@ ok - opencode native delivery requires exact live endpoint, session, and generat
 ok - codex native attribution rejects foreign processes, title threads, and ambiguous root sessions
 ```
 
-That result proves process/session authority, not native harness behavior.
+That result verifies Pi/OpenCode session invalidation and Codex process/endpoint
+attribution, not Codex active-conversation tracking or native harness behavior.
 Refresh the separate `live-harness-optin` guard after a Pi, Codex, or OpenCode
 upgrade:
 

@@ -13,7 +13,10 @@
 // Other backends remain unbound, never inferred from cwd or rendered text.
 // Pi/OpenCode actors live inside the harness, keep one native session binding,
 // and deliver through the API without reading, clearing, or submitting editors.
-// Session changes and launch generations invalidate old bindings and requests.
+// Pi/OpenCode session changes invalidate their old bindings and requests.
+// Codex attribution verifies its native process and endpoint, not the active
+// conversation after /new or /resume in the same TUI. All launch generations
+// invalidate old bindings and requests.
 import { randomUUID, createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync, unlinkSync, realpathSync, accessSync, constants } from 'node:fs';
 import { dirname, basename, join, resolve, delimiter } from 'node:path';
