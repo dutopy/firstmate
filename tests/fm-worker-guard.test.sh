@@ -983,6 +983,59 @@ SCRIPT
   pass "comments, heredocs and case patterns preserve deletion and PID boundaries"
 }
 
+test_case_analysis_boundaries() {
+  local cmd mode script="$WT/case-boundaries.sh"
+  local cmds=(
+    "case \"\$(rm -rf '$FOREIGN/keep')\" in *) : ;; esac"
+    "case x in \"\$(rm -rf '$FOREIGN/keep')\") : ;; esac"
+    "case x in x) target='$FOREIGN/keep' ;; y) target=./scratch ;; esac; rm -rf \"\$target\""
+    "case x in x) cd '$FOREIGN' ;; y) cd '$WT' ;; esac; rm -rf ./keep"
+    "case x in x) p=$FOREIGN_PID ;; y) sleep 1 & p=\$! ;; esac; kill \$p"
+    "target='$FOREIGN/keep'; case x in y) target=./scratch ;; esac; rm -rf \"\$target\""
+    "case x in x) target='$FOREIGN/keep' ;; y) rm -rf \"\$target\" ;; esac"
+    "case x in x) target='$FOREIGN/keep' ;; y) case z in z) target=./scratch ;; esac ;; esac; rm -rf \"\$target\""
+    "case x in x) export target='$FOREIGN/keep' ;; y) export target=./scratch ;; esac; rm -rf \"\$target\""
+    "p=$FOREIGN_PID; case x in x) : ;; y) p=\$! ;; esac; kill \$p"
+    "case x in x) cd '$FOREIGN';; y) cd '$WT';; esac; find ./keep -delete"
+    "p=\$!; case x in x) export p=$FOREIGN_PID; kill \$p ;; esac"
+    "case x in x) alias zap='rm -rf $FOREIGN/keep' ;; y) alias zap=: ;; esac; zap"
+    "case x in x) printf 'rm -rf $FOREIGN/keep' > branch.sh ;; y) printf : > branch.sh ;; esac; bash branch.sh"
+    "case x in x) ln -s '$FOREIGN' ./case-link ;; y) : ;; esac; rm -rf ./case-link/keep"
+    "for target in \"\$(rm -rf '$FOREIGN/keep')\"; do :; done"
+  )
+  cp "$WT/ok.sh" "$WT/ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = modified ]; then
+        printf '%s\n' "$cmd" >"$WT/ok.sh"
+        assert_denied "case boundaries in a modified script" 'bash ok.sh'
+      elif [ "$mode" = script ]; then
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "case boundaries in a new script" 'bash case-boundaries.sh'
+      else
+        assert_denied "case boundaries in direct commands" "$cmd"
+      fi
+      case "$HOOK_ERR" in
+        *UNPARSEABLE*|*INTERNAL*) fail "case denial must inspect executable behavior: $HOOK_ERR" ;;
+      esac
+    done
+  done
+  cp "$WT/ok.saved" "$WT/ok.sh"
+  assert_allowed "owned deletion in independent arms" 'case x in x) target=./scratch; rm -rf "$target" ;; y) target=./other; rm -rf "$target" ;; esac'
+  assert_allowed "unchanged ownership after case" 'target=./scratch; case x in x) : ;; y) : ;; esac; rm -rf "$target"'
+  assert_allowed "literal owned pipelines in and after case" 'case x in x) printf "rm -rf ./scratch" | bash ;; y) : ;; esac; printf "rm -rf ./scratch" | bash'
+  assert_allowed "nested case without final arm separator" 'case x in x) case y in y) rm -rf ./scratch; esac; esac'
+  assert_allowed "owned subject substitution" 'case "$(rm -rf ./scratch)" in *) : ;; esac'
+  assert_allowed "owned PID evidence retained across case" 'p=$!; case x in x) : ;; y) p=$! ;; esac; kill "$p"'
+  mkdir -p "$WT/case-owned"
+  cmd='case x in x) rm -rf ./case-owned ;; y) : ;; esac'
+  assert_allowed "case owned deletion executes" "$cmd"
+  (cd "$WT" && bash -c "$cmd") || fail "allowed case deletion failed"
+  [ ! -d "$WT/case-owned" ] || fail "allowed case did not delete owned directory"
+  assert_nothing_destroyed "case analysis boundaries"
+  pass "case substitutions and alternative ownership states are inspected"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -991,6 +1044,7 @@ test_scripts_are_shellcheck_clean() {
 }
 
 test_shell_lexical_contexts
+test_case_analysis_boundaries
 test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied

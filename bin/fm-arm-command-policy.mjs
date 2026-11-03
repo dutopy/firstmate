@@ -187,7 +187,7 @@ export class Lexer {
       }
       if (caseState === "pattern" && char === ")") {
         this.cases[this.cases.length - 1] = "body";
-        this.tokens.push({ type: "op", value: ";" });
+        this.tokens.push({ type: "op", value: ";", caseBoundary: "arm" });
         this.commandStart = true;
         this.index += 1;
         continue;
@@ -195,9 +195,10 @@ export class Lexer {
       if (close && char === close) break;
       const control = this.readControlOperator();
       if (control) {
-        this.tokens.push({ type: "op", value: control });
+        const nextArm = control === ";;" && this.cases.at(-1) === "body";
+        this.tokens.push({ type: "op", value: control, ...(nextArm ? { caseBoundary: "next" } : {}) });
         this.commandStart = true;
-        if (control === ";;" && this.cases.at(-1) === "body") this.cases[this.cases.length - 1] = "pattern";
+        if (nextArm) this.cases[this.cases.length - 1] = "pattern";
         continue;
       }
       const redirection = this.readRedirection();
@@ -225,10 +226,16 @@ export class Lexer {
       }
       this.tokens.push(word);
       if (!word.quoted && word.literal) {
-        if (this.commandStart && (!caseState || caseState === "body") && word.value === "case") this.cases.push("subject");
+        if (this.commandStart && (!caseState || caseState === "body") && word.value === "case") {
+          this.cases.push("subject");
+          word.caseBoundary = "start";
+        }
         else if (caseState === "subject") this.cases[this.cases.length - 1] = "in";
         else if (caseState === "in" && word.value === "in") this.cases[this.cases.length - 1] = "pattern";
-        else if (word.value === "esac" && (this.commandStart || caseState === "pattern")) this.cases.pop();
+        else if (word.value === "esac" && (this.commandStart || caseState === "pattern")) {
+          this.cases.pop();
+          word.caseBoundary = "end";
+        }
       } else if (caseState === "subject") {
         this.cases[this.cases.length - 1] = "in";
       }

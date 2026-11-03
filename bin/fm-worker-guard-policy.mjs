@@ -656,7 +656,7 @@ function scanScriptFile(rawPath, st, ctx, depth, hintLang) {
   const abs = path.isAbsolute(rawPath) ? rawPath : st.cwd ? path.join(st.cwd, rawPath) : null;
   if (!abs) return;
   const physical = ctx.roots.physical(abs);
-  const virtual = st.vfiles.get(physical) ?? st.vfiles.get(abs);
+  const virtual = st.vfiles.has(physical) ? st.vfiles.get(physical) : st.vfiles.get(abs);
   let text;
   let strict = true;
   if (virtual === null) deny("OPAQUE_EXEC", `${rawPath} was written with text the guard cannot read literally`);
@@ -1067,6 +1067,28 @@ function foldBraceArguments(tokens) {
   });
 }
 
+function caseState(st) {
+  return { ...cloneState(st), vfiles: new Map(st.vfiles) };
+}
+
+function mergeCaseState(result, branch) {
+  if (result.cwd !== branch.cwd) result.cwd = null;
+  for (const [name, value] of result.vars) {
+    if (!branch.vars.has(name) || branch.vars.get(name) !== value) result.vars.delete(name);
+  }
+  for (const name of result.ownPids) if (!branch.ownPids.has(name)) result.ownPids.delete(name);
+  for (const [name, value] of branch.aliases) {
+    if (result.aliases.has(name) && result.aliases.get(name) !== value) deny("OPAQUE_EXEC", `case arms define conflicting aliases for ${name}`);
+    result.aliases.set(name, value);
+  }
+  for (const name of branch.functions) result.functions.add(name);
+  for (const link of branch.links) result.links.add(link);
+  result.pathTouched ||= branch.pathTouched;
+  for (const name of new Set([...result.vfiles.keys(), ...branch.vfiles.keys()])) {
+    if (!result.vfiles.has(name) || !branch.vfiles.has(name) || result.vfiles.get(name) !== branch.vfiles.get(name)) result.vfiles.set(name, null);
+  }
+}
+
 export function analyzeShell(text, st, ctx, depth = 0) {
   if (depth > MAX_DEPTH) deny("DEPTH", "command nesting is too deep to inspect");
   const lexed = new Lexer(text).tokenize();
@@ -1074,17 +1096,32 @@ export function analyzeShell(text, st, ctx, depth = 0) {
     if (DANGER_RAW.test(text)) deny("UNPARSEABLE", `command text contains kill/delete words but cannot be parsed (${lexed.error})`);
     return;
   }
-  const program = splitProgram(lexed.tokens);
+  const program = splitProgram(lexed.tokens.flatMap((token) => {
+    if (!token.caseBoundary) return [token];
+    const boundary = [{ type: "op", value: ";" }, { type: "caseBoundary", value: token.caseBoundary }, { type: "op", value: ";" }];
+    return token.type === "word" ? [...boundary, token] : boundary;
+  }).filter((token, i, tokens) => token.type !== "op" || tokens[i - 1]?.type !== "op"));
+  const cases = [];
   for (let n = 0; n < program.nodes.length; n += 1) {
     let tokens = stripPrefixKeywords(program.nodes[n]);
     const first = tokens[0];
     if (!first) continue;
-    if (first.type === "word" && KEYWORDS_SKIP.has(first.value) && first.literal) {
-      if (first.value === "for") {
-        const variable = tokens[1]?.value;
-        if (variable) {
-          st.vars.delete(variable);
-          st.ownPids.delete(variable);
+    if (first.type === "caseBoundary") {
+      if (first.value === "start") cases.push({ entry: caseState(st), result: caseState(st), vfiles: st.vfiles, pattern: true });
+      else {
+        const frame = cases.at(-1);
+        if (first.value === "arm") frame.pattern = false;
+        else {
+          if (!frame.pattern) mergeCaseState(frame.result, st);
+          if (first.value === "next") {
+            Object.assign(st, caseState(frame.entry));
+            frame.pattern = true;
+          } else {
+            frame.vfiles.clear();
+            for (const [name, value] of frame.result.vfiles) frame.vfiles.set(name, value);
+            Object.assign(st, frame.result, { vfiles: frame.vfiles });
+            cases.pop();
+          }
         }
       }
       continue;
@@ -1095,6 +1132,17 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       } else if (token.type === "word") {
         for (const sub of token.subs) analyzeShell(sub.content, cloneState(st), ctx, depth + 1);
       }
+    }
+    if (cases.at(-1)?.pattern) continue;
+    if (first.type === "word" && KEYWORDS_SKIP.has(first.value) && first.literal) {
+      if (first.value === "for") {
+        const variable = tokens[1]?.value;
+        if (variable) {
+          st.vars.delete(variable);
+          st.ownPids.delete(variable);
+        }
+      }
+      continue;
     }
     const defined = tokens[0].type === "word" && tokens[1]?.type === "group" && tokens[1].kind === "subshell" && tokens[2]?.type === "group" && tokens[2].kind === "brace"
       ? tokens[0].value
@@ -1188,6 +1236,8 @@ export function analyzeShell(text, st, ctx, depth = 0) {
       for (const a of args) {
         const m = a.value.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s);
         if (!m) continue;
+        if (m[2] === "$!" || m[2] === "$$") st.ownPids.add(m[1]);
+        else st.ownPids.delete(m[1]);
         const value = a.subs.length === 0 ? wordValue({ ...a, value: m[2] }, st) : null;
         if (value !== null) st.vars.set(m[1], value);
         else st.vars.delete(m[1]);
