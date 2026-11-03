@@ -1,0 +1,12 @@
+
+$ fm-crew-state.sh feat-pause
+state: paused · source: status-log · holding for the upstream tool release
+
+$ fm-crew-state.sh feat-pause
+state: paused · source: status-log · holding for the upstream tool release
+
+$ fm-crew-state.sh feat-pause
+state: parked · source: status-log · choose the wording
+
+$ fm-crew-state.sh feat-pause
+state: paused · source: status-log · waiting for release

@@ -1,0 +1,22 @@
+
+$ fm-wake-drain.sh (input status follows)
+2026-11-03T04:51:49Z needs-decision: [key=x] choose the wording
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: choose the wording
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+$ fm-wake-drain.sh (input status follows)
+2026-11-03T04:51:49Z needs-decision: [key=x] choose the wording
+2026-11-03T04:52:00Z done: unrelated work
+2026-11-03T04:52:01Z note: resolved: [key=x] merely prose
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+produit 2026-11-03T04:52:01Z note: resolved: [key=x] merely prose
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: choose the wording
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+$ fm-wake-drain.sh (input status follows)
+2026-11-03T04:51:49Z needs-decision: [key=x] choose the wording
+2026-11-03T04:52:00Z done: unrelated work
+2026-11-03T04:52:01Z note: resolved: [key=x] merely prose
+2026-11-03T04:53:00Z resolved: [key=x] wording accepted

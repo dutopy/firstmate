@@ -1,0 +1,50 @@
+
+Append adversarial input: 2026-11-03T04:51:49Z done
+$ fm-wake-drain.sh
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+produit 2026-11-03T04:51:49Z done
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: keep this open
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+Append adversarial input: 2026-11-03T04:51:49Z note: resolved: [key=x] merely prose
+$ fm-wake-drain.sh
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+produit 2026-11-03T04:51:49Z note: resolved: [key=x] merely prose
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: keep this open
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+Append adversarial input: prefix 2026-11-03T04:51:49Z resolved: [key=x] not leading
+$ fm-wake-drain.sh
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: keep this open
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+Append adversarial input: 2026-11-03T04:51:49Z prose resolved: [key=x] not leading
+$ fm-wake-drain.sh
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: keep this open
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+Append adversarial input: 2026-11-03T04:51:49Zresolved: [key=x] no separator
+$ fm-wake-drain.sh
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: keep this open
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+Append adversarial input: 2026-11-03T04:51Z resolved: [key=x] incomplete timestamp
+$ fm-wake-drain.sh
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=x] needs-decision: keep this open
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+Append valid timestamped before-colon resolution
+$ fm-wake-drain.sh
+
+
+Append timestamped decision with competing key positions
+$ fm-wake-drain.sh
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+produit [key=before] needs-decision: [key=after] preserve note: with colon
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'

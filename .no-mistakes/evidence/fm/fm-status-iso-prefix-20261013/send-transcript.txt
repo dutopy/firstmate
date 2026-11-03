@@ -1,0 +1,19 @@
+
+$ fm-wake-drain.sh
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t8 [key=seam-max-bound] needs-decision: cap the seam at 4 or 8
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+$ fm-send.sh t8 --resolve-key seam-max-bound cap it at 4
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+exit=0
+Persisted status:
+2026-11-03T04:51:49Z needs-decision: [key=seam-max-bound] cap the seam at 4 or 8
+resolved [key=seam-max-bound]: answered: cap it at 4
+
+Durable inbox:
+schema=fm-task-inbox.v1
+at=2026-11-03T05:29:47Z
+--
+cap it at 4
+$ fm-wake-drain.sh

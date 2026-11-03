@@ -1,0 +1,3 @@
+not ok - paused log -> paused (missing: 'state: paused')
+--- output ---
+state: done · source: status-log · old completion
