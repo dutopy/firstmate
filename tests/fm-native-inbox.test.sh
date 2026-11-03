@@ -81,31 +81,40 @@ done
 printf 'backend=tmux\nwindow=native:codex\nharness=codex\n' > "$LAB/state/codex.meta"
 node "$MODULE" arm "$LAB/state" codex codex "$LAB"
 cat > "$LAB/codex-actor.mjs" <<'JS'
+#!/usr/bin/env node
 import assert from 'node:assert/strict';
-import {readFileSync, writeFileSync, existsSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, unlinkSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
-import {pathToFileURL} from 'node:url';
-const modulePath=process.argv[2], config=process.argv[3], lab=process.argv[4];
-const {prepareCodexLaunch}=await import(pathToFileURL(modulePath));
-assert.ok(await prepareCodexLaunch(config,'actual launch prompt',process.execPath));
+const lab=process.env.FM_NATIVE_FIXTURE_LAB;
+const config=`${lab}/state/codex.native-inbox.config.json`;
+const args=process.argv.slice(2);
+const setting=args.find((arg,index)=>index>0&&args[index-1]==='-c'&&arg.startsWith('notify='));
+assert.ok(setting,'the actual Codex subprocess must receive its native notify program');
+const program=JSON.parse(setting.slice('notify='.length));
 writeFileSync(`${lab}/codex.ready`,'ready');
 while(!existsSync(`${lab}/codex.go`)) await new Promise(resolve=>setTimeout(resolve,50));
 const binding=config.replace('config.json','binding.json');
+const turnEnded=`${lab}/state/codex.turn-ended`;
 const event={type:'agent-turn-complete',client:'codex-tui',cwd:process.cwd(),'thread-id':'00000000-0000-0000-0000-000000000001','input-messages':['title generation: actual launch prompt']};
-const notify=()=>spawnSync(process.execPath,[modulePath,'codex-notify',config,JSON.stringify(event)],{encoding:'utf8'});
+const notify=()=>spawnSync(program[0],[...program.slice(1),JSON.stringify(event)],{encoding:'utf8'});
 assert.notEqual(notify().status,0);
 assert.equal(existsSync(binding),false);
+assert.equal(existsSync(turnEnded),false,'title generation must not close the worker turn');
 event['input-messages']=['actual launch prompt'];
 assert.equal(notify().status,0);
 assert.equal(JSON.parse(readFileSync(binding,'utf8')).session,event['thread-id']);
+assert.equal(existsSync(turnEnded),true,'an attributed root completion must notify supervision');
+unlinkSync(turnEnded);
 // A second possible root session invalidates rather than replaces attribution.
 event['thread-id']='00000000-0000-0000-0000-000000000002';
 assert.notEqual(notify().status,0);
 assert.equal(existsSync(binding),false);
 assert.equal(JSON.parse(readFileSync(config.replace('config.json','launch.json'),'utf8')).ambiguous,true);
+assert.equal(existsSync(turnEnded),false,'an ambiguous root must not close another turn');
 writeFileSync(`${lab}/codex.acted`,'verified');
 JS
-"$REAL_TMUX" -L "$SOCKET" new-window -d -t native: -n codex -c "$LAB" -- node "$LAB/codex-actor.mjs" "$MODULE" "$LAB/state/codex.native-inbox.config.json" "$LAB"
+chmod +x "$LAB/codex-actor.mjs"
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t native: -n codex -c "$LAB" -- env FM_NATIVE_FIXTURE_LAB="$LAB" node "$MODULE" codex "$LAB/state/codex.native-inbox.config.json" -- "$LAB/codex-actor.mjs" 'actual launch prompt'
 i=0
 while [ ! -e "$LAB/codex.ready" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
 test -e "$LAB/codex.ready"

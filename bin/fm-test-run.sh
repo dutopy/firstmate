@@ -1596,6 +1596,9 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
       ;;
+    tests/fm-native-inbox-opencode-launch.mjs)
+      printf '%s\n' live-harness-optin
+      ;;
     bin/fm-task-inbox-lib.sh|bin/fm-native-inbox.mjs)
       # The steering-inbox record/doorbell/ladder owner: fm-send's data plane
       # (backend-dispatch), the watcher's re-ring check (watcher-wake-lock),

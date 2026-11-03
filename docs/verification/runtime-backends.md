@@ -744,7 +744,18 @@ A real run on 2026-11-03 produced the following version-scoped results:
 | --- | --- | --- |
 | Pi | 1.0.0 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged. |
 | Codex | codex-cli 0.163.0 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged. |
-| OpenCode | 1.19.3 | Not verified: the native session never bound; the captured TUI used Cerebras GPT OSS 120B and reported a billing refusal. This is not a native recovery pass. |
+| OpenCode | 1.19.3 | Not verified: the corrected native session bound and received its doorbell, but the TUI's Cerebras GPT OSS 120B model refused billing; the instruction was not executed or acknowledged. |
+
+The initial OpenCode binding failure was measured in its real Bun runtime:
+`realpathSync` on the actual Unix socket throws `EOPNOTSUPP`. Canonicalizing the
+socket's directory while retaining the name returned by the actual tmux server
+restored the verified binding without a rendered-text exception.
+
+The laboratory now isolates `XDG_STATE_HOME` so saved recent-model state cannot
+override its explicit `--model` selection; it leaves the authentication data
+store unchanged. A separate real OpenCode 1.19.3 TUI on 2026-11-03 displayed
+`Build · DeepSeek V4.1 Flash OpenCode Go` and returned `native-model-ready`.
+That establishes model selection and access, not the four-case recovery result.
 
 ## Gemini
 

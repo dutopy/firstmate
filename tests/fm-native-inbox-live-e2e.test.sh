@@ -65,6 +65,8 @@ set_draft() { # harness expected-file
 }
 check_harness() { # pi|codex|opencode
   local h=$1 version config launch i case_name index=0 rec handled acted line
+  local opencode_bin auth_file
+  local -a launcher
   version=$("$h" --version 2>/dev/null)
   printf 'backend=tmux\nwindow=%s:%s\nharness=%s\n' "$SESSION" "$h" "$h" > "$LAB/state/$h.meta"
   mkdir -p "$LAB/state/$h.inbox/handled" "$LAB/$h-project"
@@ -104,13 +106,17 @@ export const nativeInbox=async({client})=>{
   return {"chat.message":actor.message,event:async({event})=>actor.event(event)};
 };
 JS
-      launch="OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' opencode --model '${FM_NATIVE_INBOX_OPENCODE_MODEL:-opencode-go/deepseek-v4.1-flash}' --prompt 'Reply native-ready. Do not run commands.'"
+      opencode_bin=${FM_NATIVE_INBOX_OPENCODE_BIN:-$(type -P opencode)}
+      auth_file=${FM_NATIVE_INBOX_OPENCODE_AUTH_FILE:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json}
+      version=$("$opencode_bin" --version 2>/dev/null)
+      launcher=("$(type -P node)" "$ROOT/tests/fm-native-inbox-opencode-launch.mjs" "$opencode_bin" "$LAB/opencode-home" "$auth_file" "${FM_NATIVE_INBOX_OPENCODE_MODEL:-opencode-go/deepseek-v4.1-flash}" "$LAB/shim:$(dirname "$(type -P node)"):$(dirname "$opencode_bin"):/usr/local/bin:/usr/bin:/bin")
       ;;
   esac
+  [ "$h" = opencode ] || launcher=(bash -c "$launch")
   tmux new-window -d -t "$SESSION:" -n "$h" -c "$LAB/$h-project" -- env \
     EDITOR="$LAB/editor.sh" VISUAL="$LAB/editor.sh" \
     FM_NATIVE_EDITOR_SNAPSHOT="$LAB/$h.snapshot" FM_NATIVE_EDITOR_SEED="$LAB/$h.seed" \
-    bash -c "$launch" || return 1
+    "${launcher[@]}" || return 1
   i=0
   while [ ! -f "$LAB/state/$h.native-inbox.binding.json" ] && [ "$i" -lt "$TIMEOUT" ]; do sleep 1; i=$((i+1)); done
   if [ ! -f "$LAB/state/$h.native-inbox.binding.json" ]; then
