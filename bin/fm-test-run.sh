@@ -360,7 +360,7 @@ family_for_basename() {
     fm-pr-state-live-e2e.test.sh|\
     fm-sessionstart-hook-live-e2e.test.sh|fm-sessionstart-instruction-refresh-live-e2e.test.sh|\
     fm-quota-array-dispatch-live-e2e.test.sh|fm-send-secondmate-marker-herdr-e2e.test.sh|\
-    fm-send-inbox-doorbell-live-e2e.test.sh|\
+    fm-send-inbox-doorbell-live-e2e.test.sh|fm-native-inbox-live-e2e.test.sh|\
     fm-calm-claude-mod-plugin.test.sh|fm-calm-claude-mod-live-e2e.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh|fm-worker-guard-live-e2e.test.sh|fm-worker-guard-spawn-lab-e2e.test.sh)
       printf '%s\n' live-harness-optin

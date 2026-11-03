@@ -72,7 +72,9 @@ function endpoint(target, socket) {
     const args = socket ? ['-S', socket] : [];
     const result = execFileSync('tmux', [...args, 'display-message', '-p', '-t', target, '#{socket_path}|#{pane_id}|#{pane_pid}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split('|');
     if (result.length !== 3 || !result[0] || !/^%[0-9]+$/.test(result[1]) || !/^[0-9]+$/.test(result[2])) return null;
-    return { socket: realpathSync(result[0]), pane: result[1], root: Number(result[2]) };
+    // Bun rejects realpath on Unix sockets (EOPNOTSUPP). Resolve the directory,
+    // preserving the socket name returned by this actual tmux server.
+    return { socket: join(realpathSync(dirname(result[0])), basename(result[0])), pane: result[1], root: Number(result[2]) };
   } catch { return null; }
 }
 function sameEndpoint(a, b) { return !!a && !!b && a.socket === b.socket && a.pane === b.pane && a.root === b.root; }

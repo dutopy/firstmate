@@ -686,6 +686,66 @@ The guard launches an isolated tmux server, so this refresh does not exercise He
 `tests/fm-task-inbox.test.sh` separates that busy reading from a still-pending composer.
 The 2026-08-23 receipt above remains the earlier multi-harness result on tmux 3.6a, from before the submit-verdict change.
 
+### Native resend without submitting a composer
+
+`bin/fm-native-inbox.mjs` owns the native steering transport for newly launched
+Pi, Codex, and OpenCode workers on tmux. The delivery decision is a verified
+native-session binding, not equality with rendered composer text. Native delivery
+sends only the canonical inbox doorbell; it never reads, clears, or submits the
+editor. Moving the instruction into `handled/` remains the delivery proof:
+acceptance by a native queue is not an acknowledgement.
+
+The binding includes the tmux socket, pane, root process, native process start
+identity, launch generation, and session. Pi uses `sendUserMessage` in its
+extension; OpenCode uses the existing plugin client's `session.promptAsync`.
+Codex's launch-owned `notify` callback attributes the root thread using the exact
+initial prompt and native process ancestry before `codex queue --thread` may
+target it. A title-generation notification cannot select the thread; multiple
+matching root threads invalidate attribution rather than choosing the newest.
+Session changes, relaunch, and cleanup retire the old binding.
+
+Without a verified binding, the existing terminal-delivery policy is unchanged.
+Other backends, secondmates, pi-signed, Claude, and omp do not acquire a native
+transport from this change. In particular, no Claude trust or channel setting is
+changed and no rendered doorbell-only matcher authorizes Enter.
+
+Portable boundary verification on 2026-11-03 used real Node processes in private
+tmux panes, without a model or provider request:
+
+```sh
+bin/fm-test-run.sh tests/fm-native-inbox.test.sh
+```
+
+```text
+ok - pi native delivery requires exact live endpoint, session, and generation
+ok - opencode native delivery requires exact live endpoint, session, and generation
+ok - codex native attribution rejects foreign processes, title threads, and ambiguous root sessions
+```
+
+That result proves process/session authority, not native harness behavior.
+Refresh the separate `live-harness-optin` guard after a Pi, Codex, or OpenCode
+upgrade:
+
+```sh
+FM_NATIVE_INBOX_LIVE_E2E=1 bin/fm-test-run.sh tests/fm-native-inbox-live-e2e.test.sh
+```
+
+The guard names each installed version or absent harness. For each installed
+harness it requires an actual unsubmitted doorbell, native resend, execution of
+the real instruction, and its inbox acknowledgement. It then repeats delivery
+with unrelated human text, a hidden human tail after the doorbell, and a partial
+doorbell. Pi's editor API and Codex/OpenCode's external-editor export compare the
+entire real buffer before and after delivery, rather than trusting visible rows.
+An absent harness is reported, never counted as a live pass.
+
+A real run on 2026-11-03 produced the following version-scoped results:
+
+| Harness | Installed version | Native recovery evidence |
+| --- | --- | --- |
+| Pi | 1.0.0 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged. |
+| Codex | codex-cli 0.163.0 | Stranded doorbell and all three human-draft cases: complete buffer unchanged, instruction executed, inbox record acknowledged. |
+| OpenCode | 1.19.3 | Not verified: the native session never bound; the captured TUI used Cerebras GPT OSS 120B and reported a billing refusal. This is not a native recovery pass. |
+
 ## Gemini
 
 The Gemini crewmate adapter was verified on 2026-09-04 with gemini-cli 0.58.0 on Linux, Node v24.20.0, tmux 3.4.
