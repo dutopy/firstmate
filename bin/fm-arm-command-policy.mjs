@@ -193,6 +193,10 @@ export class Lexer {
         continue;
       }
       if (close && char === close) break;
+      if (char === ";" && /^;(?:\\\r?\n)*(?:;(?:\\\r?\n)*)?&/.test(this.source.slice(this.index))) {
+        this.error = "unsupported case fall-through operator";
+        break;
+      }
       const control = this.readControlOperator();
       if (control) {
         const nextArm = control === ";;" && this.cases.at(-1) === "body";

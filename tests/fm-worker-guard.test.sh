@@ -1196,6 +1196,39 @@ test_case_alias_identity_and_literal_dollars() {
   pass "case aliases retain identity and literal heredoc dollars remain inspectable"
 }
 
+test_case_fallthrough_is_unsupported() {
+  local operator cmd mode script="$WT/fallthrough.sh"
+  local cmds=()
+  for operator in ';;&' ';&' $';;\\\n&' $';\\\n&' $';\\\n;\\\n&'; do
+    cmds+=("target=./scratch; case x in x) target='$FOREIGN/keep' $operator *) rm -rf \"\$target\" ;; esac")
+    cmds+=("case x in x) cd '$FOREIGN' $operator *) rm -rf ./keep ;; esac")
+    cmds+=("p=\$!; case x in x) p=$FOREIGN_PID $operator *) kill \"\$p\" ;; esac")
+    cmds+=("printf : > fallthrough-generated.sh; case x in x) printf 'rm -rf $FOREIGN/keep' > fallthrough-generated.sh $operator *) bash fallthrough-generated.sh ;; esac")
+    cmds+=("case x in x) ln -s '$FOREIGN' ./fallthrough-link $operator *) rm -rf ./fallthrough-link/keep ;; esac")
+    cmds+=("f() { case x in x) : $operator *) rm -rf '$FOREIGN/keep' ;; esac; }; f")
+  done
+  cp "$WT/ok.sh" "$WT/fallthrough-ok.saved"
+  for cmd in "${cmds[@]}"; do
+    for mode in direct script modified; do
+      if [ "$mode" = direct ]; then
+        assert_denied "unsupported case fall-through" "$cmd"
+      else
+        if [ "$mode" = modified ]; then script="$WT/ok.sh"; else script="$WT/fallthrough.sh"; fi
+        printf '%s\n' "$cmd" >"$script"
+        assert_denied "unsupported case fall-through in $mode scripts" "bash '$script'"
+      fi
+      assert_contains "$HOOK_ERR" UNPARSEABLE "fall-through must be rejected by the lexer"
+    done
+  done
+  cp "$WT/fallthrough-ok.saved" "$WT/ok.sh"
+  assert_allowed "ordinary mutually exclusive case arms" 'case x in x) rm -rf ./scratch ;; *) rm -rf ./other ;; esac'
+  assert_allowed "quoted fall-through spellings are data" "printf '%s' ';&' ';;&'; rm -rf ./scratch"
+  assert_allowed "commented fall-through spellings are data" $'f() {\n# ;& ;;&\nrm -rf ./scratch\n}; f'
+  assert_allowed "heredoc fall-through spellings are data" $'cat <<EOF\n;& ;;&\nEOF\nrm -rf ./scratch'
+  assert_nothing_destroyed "unsupported case fall-through"
+  pass "unsupported case fall-through cannot erase ownership evidence"
+}
+
 test_scripts_are_shellcheck_clean() {
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck "$CHECK" || fail "transport must be shellcheck-clean"
@@ -1208,6 +1241,7 @@ test_case_analysis_boundaries
 test_heredoc_and_case_filesystem_effects
 test_executable_stdin_and_created_link_consumers
 test_case_alias_identity_and_literal_dollars
+test_case_fallthrough_is_unsupported
 test_external_memory_helper_supported_route
 test_broad_kill_denied
 test_script_bypass_denied
