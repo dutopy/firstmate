@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -72,11 +75,9 @@ jobs:
     # A packed hint sum is not a measured job wall time or proof of headroom.
     # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
     # Changes to this cap or the lane count require a separate scope decision.
-    # Scope decision (Firstmate/captain, 2 Nov): both this PR and main run
-    # 41510371311 exceeded the 15 minute cap; main took 15m21s including
-    # cancellation cleanup. This is a lower bound, not a completed-work timing.
-    # Raise only shard 1 to an initial 20 minute hang tripwire (five minutes
-    # above the exhausted cap); confirm headroom from actual CI completion.
+    # Main exceeded the former 15-minute cap; allow a 20-minute tripwire.
+    # Cancellation only bounds completed work from below, so retain margin
+    # rather than treating the previous cap as a healthy lane duration.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -128,8 +129,7 @@ jobs:
   tests-portable-parallel-2:
     name: Behavior portable parallel 2
     runs-on: ubuntu-latest
-    # Retain the 15 minute hang tripwire approved on 24 Oct.
-    # The 2 Nov increase applies only to shard 1.
+    # Retain this lane's 15-minute hang tripwire; only shard 1 needed more margin.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -173,10 +173,9 @@ jobs:
   tests-portable-serial:
     name: Behavior portable serial ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    # Twelve shards target roughly ten minutes of script work. The approved
-    # cap exceeds twice the longest completed script measurement from three
-    # green main runs, leaving runner-speed and setup margin; it is a hang
-    # tripwire, not the expected healthy duration.
+    # Twelve shards target roughly ten minutes of script work; the longest
+    # measured script alone takes 720387 ms, so 25 minutes gives at least
+    # twice that script duration, including runner-speed and setup margin.
     # Evidence and refresh procedure: docs/fm-test-portable-shards.md.
     timeout-minutes: 25
     strategy:
@@ -408,6 +407,9 @@ jobs:
 
   macos-stock-bash:
     name: Stock macOS Bash snapshot compatibility
+    # Scheduled runs use main; manual dispatch also permits branch verification.
+    # Keep stock-Bash coverage outside the PR/main-push critical path.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 10
     steps:

@@ -1232,6 +1232,7 @@ test_jobs_requires_proven_isolated() {
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "--jobs on a family with no recorded proof must refuse, got $rc"
+  # Prove refusal using an unproven fixture, not production shard membership.
   shard_lane=$("$repo/bin/fm-test-run.sh" --list-lanes | grep -m1 '^portable-serial-[0-9]*of[0-9]*$')
   [ "$("$repo/bin/fm-test-run.sh" --list --lane "$shard_lane")" = tests/fm-afk-inject-e2e.test.sh ] \
     || fail "fixture shard must contain exactly the unproven script"

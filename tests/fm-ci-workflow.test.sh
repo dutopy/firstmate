@@ -115,6 +115,7 @@ end
   pass "every ci.yml job carries a finite timeout"
 }
 
+# These explicit job limits are the approved cancellation policy.
 test_previously_unbounded_jobs_keep_their_caps() {
   local job expected actual
   while read -r job expected; do
@@ -128,7 +129,7 @@ test-coverage 5
 tests-timing-aggregate 5
 invariants 5
 CAPS
-  pass "the incident's unbounded jobs keep their recommended caps"
+  pass "previously unbounded jobs keep their approved caps"
 }
 
 test_measured_lanes_keep_their_existing_bounds() {
@@ -145,7 +146,7 @@ tests-portable-serial 25
 tests-herdr 75
 macos-stock-bash 10
 CAPS
-  pass "the measured lanes keep their approved bounds"
+  pass "measured lanes retain their approved cancellation bounds"
 }
 
 test_pr_pushes_supersede_within_one_pr

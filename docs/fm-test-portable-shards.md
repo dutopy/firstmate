@@ -9,7 +9,7 @@ Balance hints come from serial runs of the real lanes on `ubuntu-latest`.
 The concurrent isolation proof in [fm-test-isolation-proof.md](fm-test-isolation-proof.md) establishes concurrency safety, not serial CI duration.
 Local timings are not interchangeable with CI timings: platform and machine load can affect each script differently and change their relative weights.
 
-The retained parallel hints are the slowest completed value each script reached across six CI runs on 2026-09-10: [34459949083](https://github.com/kunchenguid/firstmate/actions/runs/34459949083), [34460760299](https://github.com/kunchenguid/firstmate/actions/runs/34460760299), [34462530836](https://github.com/kunchenguid/firstmate/actions/runs/34462530836), [34462758357](https://github.com/kunchenguid/firstmate/actions/runs/34462758357), [34466966385](https://github.com/kunchenguid/firstmate/actions/runs/34466966385), and [34470382458](https://github.com/kunchenguid/firstmate/actions/runs/34470382458).
+The retained hints are the slowest completed value each script reached across six CI runs on 2026-09-10: [34459949083](https://github.com/kunchenguid/firstmate/actions/runs/34459949083), [34460760299](https://github.com/kunchenguid/firstmate/actions/runs/34460760299), [34462530836](https://github.com/kunchenguid/firstmate/actions/runs/34462530836), [34462758357](https://github.com/kunchenguid/firstmate/actions/runs/34462758357), [34466966385](https://github.com/kunchenguid/firstmate/actions/runs/34466966385), and [34470382458](https://github.com/kunchenguid/firstmate/actions/runs/34470382458).
 Shard 2 completed in all six, so its scripts come from the uploaded `fm-test-timing-portable-parallel-2` artifacts.
 Shard 1 was cancelled at its job cap in five of the six, so its scripts come from the `FM_TEST_END duration_ms=` markers in each cancelled job's log, which record every script that finished before the cancellation, plus the one complete `fm-test-timing-portable-parallel-1` artifact from run 34462758357.
 Observed maxima provide conservative packing weights, not an upper bound on future durations.
@@ -65,11 +65,29 @@ Balance is worth keeping current because stale hints can place much more real wo
 Refresh the hints whenever the serial lane gains scripts, rather than waiting for that bound to trip.
 
 `bin/fm-test-run.sh` owns the current packing and `--check-coverage` proves the partition independently of these timing estimates.
-Use the runner's `--list --lane` and `--list-scheduled --lane` interfaces to inspect current membership and weights instead of retaining a copied packing table.
-Hint sums are estimates, not observed durations of the new CI jobs.
-The longest completed script measurement in the refresh inputs is 720387 ms for `tests/fm-watch-triage.test.sh`.
-That measurement exceeds twelve minutes, so adding runners alone cannot establish a sub-ten-minute maximum.
-The approved serial cap and its runner-speed and setup margin rationale are owned by [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+The refresh covers all 226 serial scripts, with the native-Windows exception above.
+The resulting twelve-shard estimates are:
+
+| Shard | Scripts | Estimated script time (ms) |
+|---:|---:|---:|
+| 1 | 1 | 720387 |
+| 2 | 21 | 583085 |
+| 3 | 19 | 583077 |
+| 4 | 21 | 583093 |
+| 5 | 22 | 583090 |
+| 6 | 21 | 583052 |
+| 7 | 19 | 583089 |
+| 8 | 19 | 583084 |
+| 9 | 21 | 583093 |
+| 10 | 19 | 583084 |
+| 11 | 22 | 583089 |
+| 12 | 21 | 583076 |
+
+These are hint sums, not observed durations of the new CI jobs.
+The longest script, `tests/fm-watch-triage.test.sh`, now measures 720387 ms rather than the previous 262626 ms hint and occupies its own shard.
+It sets a twelve-minute floor, so adding runners alone cannot achieve a sub-ten-minute maximum.
+The estimated spread is 137335 ms; a sub-two-minute spread is impossible with this longest script and the remaining total divided among eleven shards.
+The current serial timeout and its margin rationale are owned by [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
 
 Refresh the CI-derived hints by downloading the per-shard timing artifacts from several green CI runs and replacing the `portable_serial_weight_hints` table in `bin/fm-test-run.sh` with the slowest measured `duration_ms` per `path`:
 
@@ -91,6 +109,7 @@ Use the shard count actually present in the selected runs; the three refresh inp
 A timed-out shard uploads no complete artifact, so require every serial shard to be green and downloaded before refreshing.
 Retain separately measured platform-only hints instead of replacing them with gate-skip timings.
 After refreshing, compare the listed serial inventory against the measured paths, recompute every shard's hint sum, and run the coverage guard and runner regression tests.
+Record the new PR's twelve observed shard durations and maximum in a PR comment, not its description.
 Measure native-Windows-only scripts through the focused Git Bash runner and retain that `duration_ms` separately, because the portable CI shards skip them.
 
 ## Coverage guard
