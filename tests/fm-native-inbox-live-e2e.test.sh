@@ -8,7 +8,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 fm_live_gate opt-in FM_NATIVE_INBOX_LIVE_E2E tmux node
 LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-native-inbox-live.XXXXXX")
 LAB=$(cd "$LAB" && pwd -P)
-SOCKET="fm-native-inbox-live-$$"
+SOCKET="fm-native-inbox-live-$$-${LAB##*.}"
 SESSION=nativelive
 TIMEOUT=${FM_NATIVE_INBOX_LIVE_TIMEOUT:-180}
 REAL_TMUX=$(command -v tmux)
@@ -17,6 +17,7 @@ cleanup() {
   for h in pi codex opencode idle; do
     "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SESSION:$h" C-c C-c C-d 2>/dev/null || true
   done
+  "$REAL_TMUX" -L "$SOCKET" kill-server 2>/dev/null || true
   rm -rf "$LAB"
 }
 trap cleanup EXIT

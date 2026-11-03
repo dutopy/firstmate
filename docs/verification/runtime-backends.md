@@ -751,11 +751,23 @@ The initial OpenCode binding failure was measured in its real Bun runtime:
 socket's directory while retaining the name returned by the actual tmux server
 restored the verified binding without a rendered-text exception.
 
-The laboratory now isolates `XDG_STATE_HOME` so saved recent-model state cannot
-override its explicit `--model` selection; it leaves the authentication data
-store unchanged. A separate real OpenCode 1.19.3 TUI on 2026-11-03 displayed
-`Build · DeepSeek V4.1 Flash OpenCode Go` and returned `native-model-ready`.
-That establishes model selection and access, not the four-case recovery result.
+The OpenCode laboratory uses `tests/fm-native-inbox-opencode-launch.mjs` to start
+the real binary with a minimal explicit environment, a private `HOME`, and private
+config, data, cache, state, runtime, and temporary directories. Only the OpenCode
+Go API credential from the selected auth file enters the child environment;
+provider variables and configuration inherited from the caller are discarded.
+The credential is not placed in arguments or output. The source auth file is not
+modified. `FM_NATIVE_INBOX_OPENCODE_AUTH_FILE` and
+`FM_NATIVE_INBOX_OPENCODE_BIN` select explicit paths when the runner's home or
+binary search path differs; `FM_NATIVE_INBOX_OPENCODE_MODEL` defaults to
+`opencode-go/deepseek-v4.1-flash`.
+
+On 2026-11-03, a separate real OpenCode 1.19.3 TUI launched from an `env -i`
+caller outside the repository, with deliberately invalid inherited provider keys
+and a Cerebras model override, displayed
+`Build · DeepSeek V4.1 Flash OpenCode Go` and returned `Ready.`. This establishes
+caller-independent model selection and access, separately from the recovery
+receipts above.
 
 ## Gemini
 
