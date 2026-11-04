@@ -283,8 +283,10 @@ test_disk_pressure() (
       assert_contains "$out" "$pct%" "warning omitted usage"
       assert_contains "$out" "85%" "warning omitted threshold"
       assert_contains "$out" "$FM_SPAWN_DISK_OVERRIDE_REASON" "warning omitted reason"
-      assert_grep "disk_override=$FM_SPAWN_DISK_OVERRIDE_REASON" "$HOME_DIR/state/$id.meta" "task metadata omitted reason"
-      assert_grep "note: disk_override=$FM_SPAWN_DISK_OVERRIDE_REASON" "$HOME_DIR/state/$id.status" "task status omitted reason"
+      assert_not_contains "$(< "$HOME_DIR/state/$id.meta")" "disk_override=" "task metadata duplicated the journal reason"
+      if [ -e "$HOME_DIR/state/$id.status" ]; then
+        assert_not_contains "$(< "$HOME_DIR/state/$id.status")" "disk_override=" "task status duplicated the journal reason"
+      fi
       grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z task=$id disk_percent=$pct threshold=85 reason=$FM_SPAWN_DISK_OVERRIDE_REASON$" \
         "$HOME_DIR/state/spawn-disk-overrides.log" >/dev/null || fail "dated home journal omitted grant"
       [ "$(wc -l < "$HOME_DIR/state/spawn-disk-overrides.log")" -eq 2 ] || fail "each guard grant must occupy one journal line"
@@ -326,10 +328,12 @@ FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker
   test_disk_pressure override 96 pass || exit 1
 FM_SPAWN_DISK_OVERRIDE=1 test_disk_pressure missing-reason 96 refuse || exit 1
 FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='' test_disk_pressure empty-reason 96 refuse || exit 1
-FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=short test_disk_pressure short-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='   ' test_disk_pressure blank-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=cleanup test_disk_pressure short-reason 96 pass || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=x test_disk_pressure single-character-reason 96 pass scout || exit 1
 FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=$'cleanup\nworker' test_disk_pressure multiline-reason 96 refuse || exit 1
 FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=$'cleanup\tworker' test_disk_pressure control-reason 96 refuse || exit 1
-FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON="$(printf '%0201d' 0)" test_disk_pressure long-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON="$(printf '%0201d' 0)" test_disk_pressure long-reason 96 pass || exit 1
 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' test_disk_pressure reason-only 96 refuse || exit 1
 FM_SPAWN_DISK_OVERRIDE=0 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' test_disk_pressure wrong-flag 96 refuse || exit 1
 FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' \

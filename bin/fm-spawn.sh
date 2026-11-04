@@ -2825,7 +2825,6 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
-SPAWN_DISK_OVERRIDE_REASON=
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
 fi
@@ -4507,7 +4506,6 @@ preserve_relaunch_meta() {
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   [ -z "$DISPATCH_OVERRIDE_REASON" ] || echo "dispatch_override_reason=$DISPATCH_OVERRIDE_REASON"
-  [ -z "$SPAWN_DISK_OVERRIDE_REASON" ] || echo "disk_override=$SPAWN_DISK_OVERRIDE_REASON"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;
@@ -4939,10 +4937,6 @@ if [ -n "$DISPATCH_OVERRIDE_REASON" ]; then
   printf 'note: dispatched outside config/crew-dispatch.json on harness=%s model=%s effort=%s; override reason: %s\n' \
     "$HARNESS" "${MODEL:-default}" "${EFFORT:-default}" "$DISPATCH_OVERRIDE_REASON" >>"$STATE/$ID.status" ||
     echo "warning: could not append the dispatch override note to $STATE/$ID.status; the reason is in the task record" >&2
-fi
-if [ -n "$SPAWN_DISK_OVERRIDE_REASON" ]; then
-  printf 'note: disk_override=%s\n' "$SPAWN_DISK_OVERRIDE_REASON" >>"$STATE/$ID.status" ||
-    echo "warning: could not append the disk override note to $STATE/$ID.status; the reason is in the task record" >&2
 fi
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"

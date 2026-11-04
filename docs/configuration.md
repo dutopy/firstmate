@@ -153,10 +153,10 @@ On macOS the check prefers `/System/Volumes/Data` when present, avoiding the mis
 Otherwise it measures the Treehouse pool root (`TREEHOUSE_ROOT`, then the primary checkout's `treehouse.toml` or user `~/.config/treehouse/config.toml`, then `~/.treehouse`), or the project path for Orca, whose allocation root is opaque to spawn.
 A root not created yet is measured through its nearest existing ancestor.
 When root selection reads a Treehouse configuration file, it requires Python 3.11 or newer for standard-library TOML parsing; unreadable configuration or disk usage refuses the spawn rather than assuming spare capacity.
-For an emergency such as spawning a cleanup worker, set `FM_SPAWN_DISK_OVERRIDE=1` and `FM_SPAWN_DISK_OVERRIDE_REASON` in that spawn's environment; the reason must be one non-blank line of 8-200 characters without control characters.
+For an emergency such as spawning a cleanup worker, set `FM_SPAWN_DISK_OVERRIDE=1` and `FM_SPAWN_DISK_OVERRIDE_REASON` in that spawn's environment; the reason must be one non-blank line without control characters, with no length restriction.
 Both are required, and neither bypasses unreadable configuration or unmeasurable disk usage.
 Each granted check prints a warning with the target, usage, fixed 85 percent threshold and reason, and appends one UTC ISO-dated line with task id, disk percent, threshold and reason to the home's `state/spawn-disk-overrides.log`; a journal write failure refuses the spawn.
-Successful spawns also retain `disk_override=<reason>` in their task metadata and a status note.
+This journal is the sole persistent audit record of the disk override reason.
 If the allocation-time check refuses after endpoint setup, spawn attempts to close only this attempt's new endpoint before exiting, without allocating a worktree or publishing task metadata; a failed close emits a warning.
 [`bin/fm-pool-lib.sh`](../bin/fm-pool-lib.sh) implements root selection and refusal mechanics; [`tests/fm-spawn-pool-diagnostic.test.sh`](../tests/fm-spawn-pool-diagnostic.test.sh) exercises the executable boundary.
 
