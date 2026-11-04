@@ -41,8 +41,7 @@
 #   it for standalone inspection. These snapshots do not reserve copies.
 #   Every fresh ship/scout also passes fm-pool-lib.sh's disk guard before any
 #   endpoint or worktree allocation; --relaunch and secondmate launches reuse
-#   existing copies and are exempt. An explicit disk bypass is recorded as
-#   disk_override=1 in task metadata and a note in the task status log.
+#   existing copies and are exempt.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>] [--override-reason <why>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is
@@ -2825,7 +2824,6 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
-FM_SPAWN_DISK_BYPASSED=0
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
 fi
@@ -3493,6 +3491,7 @@ EOF
     T="$CMUX_WORKSPACE_ID:$CMUX_SURFACE_ID"
     ;;
   orca)
+    fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
     set +e
     ORCA_WT_RAW=$(fm_backend_orca_worktree_create "$PROJ_ABS" "$W")
     ORCA_WT_STATUS=$?
@@ -3808,6 +3807,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   get_result="$STATE/.$ID.treehouse-get.$$.${RANDOM:-0}.result"
   rm -f -- "$get_result"
   get_result_quoted=${get_result//\'/\'\\\'\'}
+  fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
   spawn_send_text_line "$WT_TARGET" "treehouse get || printf '%s\\n' \"\$?\" > '$get_result_quoted'"
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
@@ -4496,7 +4496,6 @@ preserve_relaunch_meta() {
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   [ -z "$DISPATCH_OVERRIDE_REASON" ] || echo "dispatch_override_reason=$DISPATCH_OVERRIDE_REASON"
-  [ "$FM_SPAWN_DISK_BYPASSED" != 1 ] || echo "disk_override=1"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;
@@ -4928,10 +4927,6 @@ if [ -n "$DISPATCH_OVERRIDE_REASON" ]; then
   printf 'note: dispatched outside config/crew-dispatch.json on harness=%s model=%s effort=%s; override reason: %s\n' \
     "$HARNESS" "${MODEL:-default}" "${EFFORT:-default}" "$DISPATCH_OVERRIDE_REASON" >>"$STATE/$ID.status" ||
     echo "warning: could not append the dispatch override note to $STATE/$ID.status; the reason is in the task record" >&2
-fi
-if [ "$FM_SPAWN_DISK_BYPASSED" = 1 ]; then
-  printf 'note: spawned with FM_SPAWN_DISK_OVERRIDE=1; disk guard bypass recorded in task metadata\n' >>"$STATE/$ID.status" ||
-    echo "warning: could not append disk override note to $STATE/$ID.status; disk_override=1 is in the task record" >&2
 fi
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"

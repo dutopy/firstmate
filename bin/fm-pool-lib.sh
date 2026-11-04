@@ -49,9 +49,7 @@
 # whose allocation path is opaque to spawn. A not-yet-created root is measured
 # through its nearest existing ancestor. Configured Treehouse roots are decoded
 # with Python 3.11's standard-library TOML reader; unreadable roots or df refuse.
-# FM_SPAWN_DISK_MAX_PCT defaults to 85 (0 disables); at or above it refuses
-# unless FM_SPAWN_DISK_OVERRIDE=1. FM_SPAWN_DISK_BYPASSED marks that explicit
-# bypass for the caller to persist. No directories or records are created here.
+# At or above 85 percent used it refuses. No directories or records are created here.
 
 FM_POOL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-timeout-lib.sh
@@ -316,20 +314,7 @@ fm_pool_capacity_action() {
 }
 
 fm_spawn_disk_check() { # <project-dir> <backend>
-  local project=$1 backend=$2 target config pct report max=${FM_SPAWN_DISK_MAX_PCT:-85}
-  FM_SPAWN_DISK_BYPASSED=0
-  case "$max" in
-    ''|*[!0-9]*)
-      echo "error: FM_SPAWN_DISK_MAX_PCT must be an integer from 0 to 100" >&2
-      return 1
-      ;;
-  esac
-  if [ "${#max}" -gt 3 ] || [ "$((10#$max))" -gt 100 ]; then
-    echo "error: FM_SPAWN_DISK_MAX_PCT must be an integer from 0 to 100" >&2
-    return 1
-  fi
-  max=$((10#$max))
-  [ "$max" -ne 0 ] || return 0
+  local project=$1 backend=$2 target config pct report
   target=$project
   if [ "$(uname -s)" = Darwin ] && [ -d /System/Volumes/Data ]; then
     target=/System/Volumes/Data
@@ -375,15 +360,8 @@ PY
       return 1
       ;;
   esac
-  if [ "$pct" -ge "$max" ]; then
-    if [ "${FM_SPAWN_DISK_OVERRIDE:-0}" != 1 ]; then
-      printf 'error: disk at %s is %s%% used (threshold %s%%); refusing a new worktree. Explicit bypass: FM_SPAWN_DISK_OVERRIDE=1\n' "$target" "$pct" "$max" >&2
-      return 1
-    fi
-  fi
-  if [ "${FM_SPAWN_DISK_OVERRIDE:-0}" = 1 ]; then
-    # shellcheck disable=SC2034 # Output consumed by fm-spawn.sh for durable recording.
-    FM_SPAWN_DISK_BYPASSED=1
-    printf 'warning: FM_SPAWN_DISK_OVERRIDE=1 bypasses disk guard at %s (%s%% used, threshold %s%%)\n' "$target" "$pct" "$max" >&2
+  if [ "$pct" -ge 85 ]; then
+    printf 'error: disk at %s is %s%% used (threshold 85%%); refusing a new worktree.\n' "$target" "$pct" >&2
+    return 1
   fi
 }

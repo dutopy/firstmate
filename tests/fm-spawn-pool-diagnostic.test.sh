@@ -91,10 +91,29 @@ SH
 printf '%s\n' "$*" >> "${FM_FAKE_DF_LOG:-/dev/null}"
 if [ "${FM_FAKE_DF_RC:-0}" -ne 0 ]; then exit "$FM_FAKE_DF_RC"; fi
 pct=${FM_FAKE_DISK_PCT:-20}
+if [ -n "${FM_FAKE_DISK_NEXT_PCT:-}" ] && [ "$(wc -l < "${FM_FAKE_DF_LOG:?}")" -gt 1 ]; then
+  pct=$FM_FAKE_DISK_NEXT_PCT
+fi
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
 printf '/dev/fake 100 85 15 %s%% /fake volume\n' "$pct"
 SH
   chmod +x "$fakebin/df"
+  cat > "$fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = status ]; then
+  printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}\n'
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = 'repo show' ]; then
+  printf '{"ok":true,"result":{"repo":{"id":"fake-repo"}}}\n'
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = 'worktree create' ]; then
+  git -C "${FM_FAKE_ALLOCATE_PROJ:?}" worktree add --quiet --detach "${FM_FAKE_ALLOCATE_WT:?}" HEAD
+fi
+exit 1
+SH
+  chmod +x "$fakebin/orca"
   fm_test_fake_sleep_noop "$fakebin"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
 }
@@ -120,7 +139,7 @@ run_pool_spawn() {
   export FM_FAKE_TH_STATUS_ERR FM_FAKE_PANE_LOG FM_SPAWN_ISOLATION_WAIT_SECS
   : > "$FM_FAKE_PANE_LOG"
   fm_test_run_spawn "$HOME_DIR" "$pane" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" \
-    --mode no-mistakes --yolo off
+    --mode no-mistakes --yolo off --backend "${7:-tmux}"
 }
 
 SATURATED_JSON='[{"status":"in-use"},{"status":"leased"},{"status":"dirty"},{"status":"in-use"},{"status":"available"}]'
@@ -194,55 +213,48 @@ test_isolation_timeout_distinguishes_capacity() {
 
 
 # These cases allocate a real Git worktree only when spawn reaches the allocator.
-# Removing the guard, changing >= to >, or failing to persist a bypass breaks them.
 test_disk_pressure() (
-  local name=$1 pct=$2 threshold=$3 override=$4 want=$5 kind=${6:-ship}
+  local name=$1 pct=$2 want=$3 kind=${4:-ship} backend=${5:-tmux} next_pct=${6:-}
   local id="disk-$name" rec out status
   rec=$(make_pool_case "$name" "$id" 5 fresh)
   read_pool_case "$rec"
-  export FM_FAKE_DISK_PCT="$pct" FM_SPAWN_DISK_OVERRIDE="$override"
-  if [ "$threshold" = default ]; then
-    unset FM_SPAWN_DISK_MAX_PCT
-  else
-    export FM_SPAWN_DISK_MAX_PCT="$threshold"
-  fi
+  export FM_FAKE_DISK_PCT="$pct" FM_FAKE_DISK_NEXT_PCT="$next_pct"
   export FM_FAKE_ALLOCATE_WT="$WT_DIR" FM_FAKE_ALLOCATE_PROJ="$PROJ_DIR"
   export FM_FAKE_DF_LOG="$CASE_DIR/df.log"
   export FM_FAKE_PANE_LOG="$CASE_DIR/pane.log"
   if [ "$kind" = scout ]; then
-    out=$(fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --scout)
+    out=$(fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --scout --backend "$backend")
   else
-    out=$(run_pool_spawn "$id" "$WT_DIR" "$HEALTHY_JSON" 0 0 3)
+    out=$(run_pool_spawn "$id" "$WT_DIR" "$HEALTHY_JSON" 0 0 3 "$backend")
   fi
   status=$?
   if [ "$want" = refuse ]; then
     [ "$status" -ne 0 ] || fail "disk at $pct% unexpectedly spawned"$'\n'"$out"
     [ ! -e "$WT_DIR" ] || fail "disk refusal created a worktree"
     [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "disk refusal published a task"
-    assert_contains "$out" "$pct%" "refusal omitted measured percent"
+    assert_contains "$out" "${next_pct:-$pct}%" "refusal omitted measured percent"
     assert_contains "$out" "85%" "refusal omitted threshold"
-    assert_contains "$out" 'FM_SPAWN_DISK_OVERRIDE=1' "refusal omitted explicit bypass"
   else
     expect_code 0 "$status" "disk case $name should spawn"$'\n'"$out"
     git -C "$WT_DIR" rev-parse --is-inside-work-tree >/dev/null || fail "no worktree allocated"
     assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "spawn did not publish its worktree"
-    if [ "$override" = 1 ]; then
-      assert_grep 'disk_override=1' "$HOME_DIR/state/$id.meta" "disk bypass was not recorded"
-      assert_grep 'note: spawned with FM_SPAWN_DISK_OVERRIDE=1' "$HOME_DIR/state/$id.status" "disk bypass has no durable note"
-    fi
   fi
-  if [ "$(uname -s)" = Darwin ] && [ -d /System/Volumes/Data ] && [ "$threshold" != 0 ]; then
+  if [ -n "$next_pct" ]; then
+    [ "$(wc -l < "$CASE_DIR/df.log")" -eq 2 ] || fail "allocation did not recheck disk usage"
+  fi
+  if [ "$(uname -s)" = Darwin ] && [ -d /System/Volumes/Data ]; then
     assert_grep '-P /System/Volumes/Data' "$CASE_DIR/df.log" "spawn measured sealed root instead of Data"
   fi
   pass "disk pressure $name ($kind)"
 )
 
-test_disk_pressure threshold 85 default 0 refuse || exit 1
-test_disk_pressure below 84 default 0 pass || exit 1
-test_disk_pressure scout-threshold 96 default 0 refuse scout || exit 1
-test_disk_pressure override 96 default 1 pass || exit 1
-test_disk_pressure disabled 100 0 0 pass || exit 1
-test_disk_pressure configured 89 90 0 pass || exit 1
+test_disk_pressure threshold 85 refuse || exit 1
+test_disk_pressure below 84 pass || exit 1
+test_disk_pressure scout-threshold 96 refuse scout || exit 1
+test_disk_pressure full 100 refuse || exit 1
+test_disk_pressure rising 84 refuse ship tmux 85 || exit 1
+test_disk_pressure scout-rising 84 refuse scout tmux 85 || exit 1
+test_disk_pressure orca-rising 84 refuse ship orca 85 || exit 1
 test_saturated_pool_warns_and_still_spawns
 test_full_pool_failure_reports_effective_capacity
 test_unreadable_status_failure_stays_unknown
