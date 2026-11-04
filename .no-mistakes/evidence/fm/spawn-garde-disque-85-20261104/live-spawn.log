@@ -1,0 +1,346 @@
+$ tmux -f /dev/null new-session -d -x 120 -y 40 -s firstmate -n untouched /bin/bash --noprofile --norc
+[exit 0]
+$ tmux set-option -g default-shell /bin/bash
+[exit 0]
+$ tmux set-option -g default-command /bin/bash --noprofile --norc
+[exit 0]
+$ git init -b main /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+Initialized empty Git repository in /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project/.git/
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project add .
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project commit -m fixture
+[main (root-commit) 5a3aaed] fixture
+ 1 file changed, 1 insertion(+)
+ create mode 100644 README
+[exit 0]
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh refuse85 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree.
+[exit 1]
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+[exit 0]
+$ tmux list-windows -a -F #{window_name}
+untouched
+[exit 0]
+Measured targets: -P /System/Volumes/Data
+SCENARIO VERIFIED: 85% ship refuses without allocation/publication, removed bypass variables ineffective
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh refuse96 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --scout
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree.
+[exit 1]
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+[exit 0]
+$ tmux list-windows -a -F #{window_name}
+untouched
+[exit 0]
+Measured targets: -P /System/Volumes/Data
+SCENARIO VERIFIED: 96% scout refuses without allocation/publication, removed bypass variables ineffective
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh refuse100 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: disk at /System/Volumes/Data is 100% used (threshold 85%); refusing a new worktree.
+[exit 1]
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+[exit 0]
+$ tmux list-windows -a -F #{window_name}
+untouched
+[exit 0]
+Measured targets: -P /System/Volumes/Data
+SCENARIO VERIFIED: 100% ship refuses without allocation/publication, removed bypass variables ineffective
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+[exit 0]
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/home/data/rising-ship/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree.
+[exit 1]
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+[exit 0]
+$ tmux list-windows -a -F #{window_name}
+untouched
+[exit 0]
+SCENARIO VERIFIED: rising-ship 84→85 refuses at allocation and closes only new endpoint
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/home/data/rising-ship/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned rising-ship harness=printf kind=ship mode=no-mistakes yolo=off window=firstmate:fm-rising-ship worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+[exit 0]
+Published task record:
+window=firstmate:fm-rising-ship
+endpoint_task_id=rising-ship
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+harness=printf
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-rising-ship
+model=default
+effort=default
+guard_base=5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+spawn_gen=s1793789772.25885.4565
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+@2 fm-rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+detached
+
+[exit 0]
+$ tmux capture-pane -p -t firstmate:fm-rising-ship -S -12
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003
+XX7QQ/.test-disk/home/state/.rising-ship.treehouse-get.25885.14020.result'
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.tre
+ehouse/project-b8dccd/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-rising-ship/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=rising-ship
+Pierres-iMac-Pro:project pierre$ printf 'disposable worker launch received\n'
+disposable worker launch received
+Pierres-iMac-Pro:project pierre$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[exit 0]
+SCENARIO VERIFIED: rising-ship retry at 84% succeeds with real Treehouse/Git and no orphan conflict
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+@2 fm-rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+detached
+
+[exit 0]
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh rising-ship --relaunch --harness codex
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/home/data/rising-ship/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned rising-ship harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-rising-ship worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+[exit 0]
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+@2 fm-rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+detached
+
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project status --short
+?? uncommitted.txt
+[exit 0]
+SCENARIO VERIFIED: existing-worktree relaunch at 100% preserves dirty work, endpoint, and inventory without disk probe
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+@2 fm-rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+detached
+
+[exit 0]
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh rising-scout /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --scout
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree.
+[exit 1]
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+@2 fm-rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+detached
+
+[exit 0]
+$ tmux list-windows -a -F #{window_name}
+untouched
+fm-rising-ship
+[exit 0]
+SCENARIO VERIFIED: rising-scout 84→85 refuses at allocation and closes only new endpoint
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh rising-scout /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --scout
+spawned rising-scout harness=printf kind=scout window=firstmate:fm-rising-scout worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/2/project
+[exit 0]
+Published task record:
+window=firstmate:fm-rising-scout
+endpoint_task_id=rising-scout
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/2/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+harness=printf
+kind=scout
+tasktmp=/tmp/fm-rising-scout
+model=default
+effort=default
+guard_base=5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+spawn_gen=s1793789790.40910.293
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+@2 fm-rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+@4 fm-rising-scout /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/2/project
+[exit 0]
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/1/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.treehouse/project-b8dccd/2/project
+HEAD 5a3aaedae05c93e164b7333ecf4d2e68237d7e00
+detached
+
+[exit 0]
+$ tmux capture-pane -p -t firstmate:fm-rising-scout -S -12
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003
+XX7QQ/.test-disk/home/state/.rising-scout.treehouse-get.40910.8733.result'
+A new version of treehouse is available: v3.1.0 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/pool/.tre
+ehouse/project-b8dccd/2/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-rising-scout/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=rising-scout
+Pierres-iMac-Pro:project pierre$ printf 'disposable worker launch received\n'
+disposable worker launch received
+Pierres-iMac-Pro:project pierre$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[exit 0]
+SCENARIO VERIFIED: rising-scout retry at 84% succeeds with real Treehouse/Git and no orphan conflict
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh target-env /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk is 85% used (threshold 85%); refusing a new worktree.
+[exit 1]
+Measured target: -P /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk
+SCENARIO VERIFIED: non-Data env root resolves nearest existing ancestor before refusal
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh target-config /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/config-root is 85% used (threshold 85%); refusing a new worktree.
+[exit 1]
+Measured target: -P /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/config-root
+SCENARIO VERIFIED: non-Data config root resolves nearest existing ancestor before refusal
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh target-default /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/user/.treehouse is 85% used (threshold 85%); refusing a new worktree.
+[exit 1]
+Measured target: -P /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/user/.treehouse
+SCENARIO VERIFIED: non-Data default root resolves nearest existing ancestor before refusal
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh target-user-config /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/config-root is 85% used (threshold 85%); refusing a new worktree.
+[exit 1]
+SCENARIO VERIFIED: non-Data user Treehouse config root is measured
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh probe-error /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: cannot measure disk usage at /System/Volumes/Data; refusing spawn
+[exit 1]
+SCENARIO VERIFIED: unavailable disk probe error refuses rather than allocating
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh probe-invalid /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/project printf 'disposable worker launch received\n' --backend tmux --mode no-mistakes --yolo off
+error: unreadable disk usage at /System/Volumes/Data; refusing spawn
+[exit 1]
+SCENARIO VERIFIED: unavailable disk probe invalid refuses rather than allocating
+$ tmux kill-server
+[exit 0]

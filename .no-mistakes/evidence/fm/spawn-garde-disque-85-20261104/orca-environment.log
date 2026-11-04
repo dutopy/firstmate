@@ -1,0 +1,4 @@
+$ HOME=<disposable workspace home> orca serve --port 17689 --no-pairing --project-root <disposable project> --json
+[press-and-hold] set ApplePressAndHoldEnabled=false so held keys repeat; takes effect next launch
+Disposable server remains running after 8 seconds; stopping after capability probe.
+exit=0

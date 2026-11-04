@@ -1,0 +1,31 @@
+$ tmux -f /dev/null new-session -d -x 120 -y 40 -s firstmate -n untouched /bin/bash --noprofile --norc
+[exit 0]
+$ tmux set-option -g default-shell /bin/bash
+[exit 0]
+$ tmux set-option -g default-command /bin/bash --noprofile --norc
+[exit 0]
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/bin/fm-spawn.sh disk-secondmate /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/secondmate printf 'existing secondmate home received launch\n' --secondmate --backend tmux
+spawned disk-secondmate harness=printf kind=secondmate mode=secondmate yolo=off window=firstmate:fm-disk-secondmate worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/secondmate
+[exit 0]
+window=firstmate:fm-disk-secondmate
+endpoint_task_id=disk-secondmate
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/secondmate
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/secondmate
+harness=printf
+kind=secondmate
+mode=secondmate
+yolo=off
+tasktmp=/tmp/fm-disk-secondmate
+model=default
+effort=default
+guard_base=561fa71e93dc2dda74fbb6d49814e67f44ef41c9
+spawn_gen=s1793789845.15052.10974
+home=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/secondmate
+projects=
+$ tmux list-windows -a -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ
+@1 fm-disk-secondmate /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K2SH2SRDC8FTMN003XX7QQ/.test-disk/secondmate
+[exit 0]
+SCENARIO VERIFIED: persistent secondmate existing home launches at 100% without disk probe or new worktree
+$ tmux kill-server
+[exit 0]
