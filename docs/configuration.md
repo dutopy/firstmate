@@ -146,6 +146,16 @@ A herdr spawn additionally version-gates against the installed `herdr` binary's 
 A zellij spawn additionally version-gates against the installed `zellij` binary's version and requires `jq`, refusing loudly when either is missing or the version is older than 0.44.
 A cmux spawn additionally version-gates against the installed `cmux` binary's version, requires `jq`, and requires the control socket to be reachable and accessible (see [`docs/cmux-backend.md`](cmux-backend.md) "Setup" for the one-time socket-access configuration this needs; Automation mode is the recommended socket control mode, with Password mode supported via `config/cmux-socket-password`), refusing loudly and non-retryably on a `cmuxOnly`/unauthenticated socket.
 A backend spawn refusal from a missing dependency, version gate, or unauthenticated socket is terminal for that selected backend; firstmate surfaces it as a blocker instead of silently retrying another backend.
+
+Fresh ship and scout spawns refuse new worktrees at or above 85 percent disk usage, checking both before endpoint setup and immediately before worktree allocation.
+Existing-worktree relaunches and persistent secondmate launches are exempt.
+On macOS the check prefers `/System/Volumes/Data` when present, avoiding the misleading sealed-root usage figure.
+Otherwise it measures the Treehouse pool root (`TREEHOUSE_ROOT`, then the primary checkout's `treehouse.toml` or user `~/.config/treehouse/config.toml`, then `~/.treehouse`), or the project path for Orca, whose allocation root is opaque to spawn.
+A root not created yet is measured through its nearest existing ancestor.
+When root selection reads a Treehouse configuration file, it requires Python 3.11 or newer for standard-library TOML parsing; unreadable configuration or disk usage refuses the spawn rather than assuming spare capacity.
+If the allocation-time check refuses after endpoint setup, spawn attempts to close only this attempt's new endpoint before exiting, without allocating a worktree or publishing task metadata; a failed close emits a warning.
+[`bin/fm-pool-lib.sh`](../bin/fm-pool-lib.sh) implements root selection and refusal mechanics; [`tests/fm-spawn-pool-diagnostic.test.sh`](../tests/fm-spawn-pool-diagnostic.test.sh) exercises the executable boundary.
+
 Task meta records `backend=` only for a non-default backend; an absent `backend=` means `tmux`, preserving existing default-path meta files.
 Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
 A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=`, and `herdr_pane_id=`.

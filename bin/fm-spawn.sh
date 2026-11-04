@@ -39,6 +39,9 @@
 #   a fresh capacity report, even when capacity is unknown. bin/fm-pool-lib.sh's
 #   header owns the shared capacity classification; bin/fm-pool-status.sh exposes
 #   it for standalone inspection. These snapshots do not reserve copies.
+#   Every fresh ship/scout also passes fm-pool-lib.sh's disk guard before any
+#   endpoint or worktree allocation; --relaunch and secondmate launches reuse
+#   existing copies and are exempt.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>] [--override-reason <why>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is
@@ -2821,6 +2824,9 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+  fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
+fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # Early actionable saturation notice at the dispatch boundary. This is a
   # read-only snapshot before the project lock, so it holds no allocation lock
@@ -3485,6 +3491,7 @@ EOF
     T="$CMUX_WORKSPACE_ID:$CMUX_SURFACE_ID"
     ;;
   orca)
+    fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
     set +e
     ORCA_WT_RAW=$(fm_backend_orca_worktree_create "$PROJ_ABS" "$W")
     ORCA_WT_STATUS=$?
@@ -3800,6 +3807,16 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   get_result="$STATE/.$ID.treehouse-get.$$.${RANDOM:-0}.result"
   rm -f -- "$get_result"
   get_result_quoted=${get_result//\'/\'\\\'\'}
+  if ! fm_spawn_disk_check "$PROJ_ABS" "$BACKEND"; then
+    if [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
+      case "$BACKEND" in
+      tmux) tmux kill-window -t "$WID" ;;
+      cmux) fm_backend_kill "$BACKEND" "$T" ;;
+      *) fm_backend_kill "$BACKEND" "$T" "${ZELLIJ_TAB_ID:-}" "$W" ;;
+      esac || echo "warning: could not close the new $BACKEND endpoint after disk refusal" >&2
+    fi
+    exit 1
+  fi
   spawn_send_text_line "$WT_TARGET" "treehouse get || printf '%s\\n' \"\$?\" > '$get_result_quoted'"
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.

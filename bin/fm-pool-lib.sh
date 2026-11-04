@@ -42,6 +42,11 @@
 #
 # fm_treehouse_pool_capacity returns 0 for a complete inventory (ok, saturated,
 # or full) and 1 for unknown, but always leaves every field above set.
+#
+# fm_spawn_disk_check <project-dir> <backend> is the fresh-spawn disk guard.
+# docs/configuration.md's Runtime backend section owns the operator policy.
+# Returns 0 when allocation is allowed, 1 on refusal.
+# No directories or records are created here.
 
 FM_POOL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-timeout-lib.sh
@@ -303,4 +308,57 @@ fm_pool_capacity_action() {
       printf '%s\n' "pool capacity is unknown, so availability must not be treated as available: ${FM_POOL_DETAIL:-no detail}"
       ;;
   esac
+}
+
+fm_spawn_disk_check() { # <project-dir> <backend>
+  local project=$1 backend=$2 target config pct report
+  target=$project
+  if [ "$(uname -s)" = Darwin ] && [ -d /System/Volumes/Data ]; then
+    target=/System/Volumes/Data
+  elif [ "$backend" != orca ]; then
+    target=${TREEHOUSE_ROOT:-}
+    if [ -z "$target" ]; then
+      config=$(fm_pool_config_path "$project") || return 1
+      if [ -f "$config" ]; then
+        target=$(python3 - "$config" <<'PY'
+import os
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as stream:
+    root = tomllib.load(stream).get("root", "")
+if not isinstance(root, str) or "\n" in root or "\r" in root:
+    raise SystemExit("invalid Treehouse root")
+print(os.path.expandvars(os.path.expanduser(root)))
+PY
+        ) || {
+          echo "error: cannot resolve Treehouse disk target from $config (Python 3.11+ required); refusing spawn" >&2
+          return 1
+        }
+      fi
+    fi
+    target=${target:-$HOME/.treehouse}
+    case "$target" in
+      /*) ;;
+      *) target="$project/$target" ;;
+    esac
+  fi
+  while [ ! -d "$target" ]; do
+    target=$(dirname "$target")
+  done
+  if ! report=$(LC_ALL=C df -P "$target" 2>/dev/null); then
+    echo "error: cannot measure disk usage at $target; refusing spawn" >&2
+    return 1
+  fi
+  pct=$(printf '%s\n' "$report" | awk 'NR == 2 && $5 ~ /^[0-9]+%$/ { sub(/%$/, "", $5); print $5 }')
+  case "$pct" in
+    ''|*[!0-9]*)
+      echo "error: unreadable disk usage at $target; refusing spawn" >&2
+      return 1
+      ;;
+  esac
+  if [ "$pct" -ge 85 ]; then
+    printf 'error: disk at %s is %s%% used (threshold 85%%); refusing a new worktree.\n' "$target" "$pct" >&2
+    return 1
+  fi
 }

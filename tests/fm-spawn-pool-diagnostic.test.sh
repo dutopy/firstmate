@@ -26,13 +26,47 @@ make_pool_case() { # <name> <id> <max>
   fakebin="$case_dir/fake"
   mkdir -p "$fakebin"
   fm_test_spawn_home "$home" codex
-  fm_git_worktree "$proj" "$wt" "wt-$name"
+  if [ "${4:-existing}" = fresh ]; then
+    fm_git_init_commit "$proj"
+  else
+    fm_git_worktree "$proj" "$wt" "wt-$name"
+  fi
   fm_test_spawn_brief "$home" "$id"
   printf 'max_trees = %s\n' "$max" > "$proj/treehouse.toml"
 
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
+if [ -n "${FM_FAKE_WINDOW_DIR:-}" ]; then
+  case "${1:-}" in
+    list-windows)
+      for window in "$FM_FAKE_WINDOW_DIR"/*; do
+        [ ! -f "$window" ] || printf '%s\n' "${window##*/}"
+      done
+      exit 0
+      ;;
+    new-window)
+      while [ "$#" -gt 0 ]; do
+        if [ "$1" = -n ]; then name=$2; break; fi
+        shift
+      done
+      [ ! -e "$FM_FAKE_WINDOW_DIR/$name" ] || exit 1
+      printf '@100\n' > "$FM_FAKE_WINDOW_DIR/$name"
+      printf '@100\n'
+      exit 0
+      ;;
+    kill-window)
+      for window in "$FM_FAKE_WINDOW_DIR"/*; do
+        [ -f "$window" ] || continue
+        if [ "${3:-}" = "$(< "$window")" ]; then
+          rm -- "$window"
+          exit 0
+        fi
+      done
+      exit 1
+      ;;
+  esac
+fi
 case "$*" in
   *"#{pane_current_path}"*)
     printf '%s\n' "${FM_FAKE_PANE_PATH:-}"
@@ -70,6 +104,10 @@ if [ "${1:-}" = status ]; then
   fi
   exit "${FM_FAKE_TH_STATUS_RC:-0}"
 fi
+if [ -n "${FM_FAKE_ALLOCATE_WT:-}" ]; then
+  git -C "${FM_FAKE_ALLOCATE_PROJ:?}" worktree add --quiet --detach "$FM_FAKE_ALLOCATE_WT" HEAD
+  exit $?
+fi
 if [ "${FM_FAKE_TH_GET_RC:-0}" -ne 0 ]; then
   printf 'error: all %s worktrees are in use or dirty (max_trees = %s). Run treehouse status.\n' \
     "${FM_FAKE_TH_MAX:-2}" "${FM_FAKE_TH_MAX:-2}" >&2
@@ -78,6 +116,34 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/treehouse"
+  cat > "$fakebin/df" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_DF_LOG:-/dev/null}"
+if [ "${FM_FAKE_DF_RC:-0}" -ne 0 ]; then exit "$FM_FAKE_DF_RC"; fi
+pct=${FM_FAKE_DISK_PCT:-20}
+if [ -n "${FM_FAKE_DISK_NEXT_PCT:-}" ] && [ "$(wc -l < "${FM_FAKE_DF_LOG:?}")" -gt 1 ]; then
+  pct=$FM_FAKE_DISK_NEXT_PCT
+fi
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf '/dev/fake 100 85 15 %s%% /fake volume\n' "$pct"
+SH
+  chmod +x "$fakebin/df"
+  cat > "$fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = status ]; then
+  printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}\n'
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = 'repo show' ]; then
+  printf '{"ok":true,"result":{"repo":{"id":"fake-repo"}}}\n'
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = 'worktree create' ]; then
+  git -C "${FM_FAKE_ALLOCATE_PROJ:?}" worktree add --quiet --detach "${FM_FAKE_ALLOCATE_WT:?}" HEAD
+fi
+exit 1
+SH
+  chmod +x "$fakebin/orca"
   fm_test_fake_sleep_noop "$fakebin"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
 }
@@ -103,7 +169,7 @@ run_pool_spawn() {
   export FM_FAKE_TH_STATUS_ERR FM_FAKE_PANE_LOG FM_SPAWN_ISOLATION_WAIT_SECS
   : > "$FM_FAKE_PANE_LOG"
   fm_test_run_spawn "$HOME_DIR" "$pane" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" \
-    --mode no-mistakes --yolo off
+    --mode no-mistakes --yolo off --backend "${7:-tmux}"
 }
 
 SATURATED_JSON='[{"status":"in-use"},{"status":"leased"},{"status":"dirty"},{"status":"in-use"},{"status":"available"}]'
@@ -175,6 +241,75 @@ test_isolation_timeout_distinguishes_capacity() {
   pass "(d) an isolation timeout with a healthy pool says capacity is not the refusal"
 }
 
+
+# These cases allocate a real Git worktree only when spawn reaches the allocator.
+test_disk_pressure() (
+  local name=$1 pct=$2 want=$3 kind=${4:-ship} backend=${5:-tmux} next_pct=${6:-}
+  local id="disk-$name" rec out status
+  rec=$(make_pool_case "$name" "$id" 5 fresh)
+  read_pool_case "$rec"
+  export FM_FAKE_DISK_PCT="$pct" FM_FAKE_DISK_NEXT_PCT="$next_pct"
+  export FM_FAKE_ALLOCATE_WT="$WT_DIR" FM_FAKE_ALLOCATE_PROJ="$PROJ_DIR"
+  export FM_FAKE_DF_LOG="$CASE_DIR/df.log"
+  export FM_FAKE_PANE_LOG="$CASE_DIR/pane.log"
+  export FM_FAKE_WINDOW_DIR="$CASE_DIR/windows"
+  mkdir -p "$FM_FAKE_WINDOW_DIR"
+  printf '@7\n' > "$FM_FAKE_WINDOW_DIR/untouched"
+  if [ "$kind" = scout ]; then
+    out=$(fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --scout --backend "$backend")
+  else
+    out=$(run_pool_spawn "$id" "$WT_DIR" "$HEALTHY_JSON" 0 0 3 "$backend")
+  fi
+  status=$?
+  if [ "$want" = refuse ]; then
+    [ "$status" -ne 0 ] || fail "disk at $pct% unexpectedly spawned"$'\n'"$out"
+    [ ! -e "$WT_DIR" ] || fail "disk refusal created a worktree"
+    [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "disk refusal published a task"
+    assert_contains "$out" "${next_pct:-$pct}%" "refusal omitted measured percent"
+    assert_contains "$out" "85%" "refusal omitted threshold"
+  else
+    expect_code 0 "$status" "disk case $name should spawn"$'\n'"$out"
+    git -C "$WT_DIR" rev-parse --is-inside-work-tree >/dev/null || fail "no worktree allocated"
+    assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "spawn did not publish its worktree"
+  fi
+  if [ -n "$next_pct" ]; then
+    [ "$(wc -l < "$CASE_DIR/df.log")" -eq 2 ] || fail "allocation did not recheck disk usage"
+  fi
+  if [ "$(uname -s)" = Darwin ] && [ -d /System/Volumes/Data ]; then
+    assert_grep '-P /System/Volumes/Data' "$CASE_DIR/df.log" "spawn measured sealed root instead of Data"
+  fi
+  [ -f "$FM_FAKE_WINDOW_DIR/untouched" ] || fail "disk check closed an existing endpoint"
+  if [ "$backend" = tmux ]; then
+    if [ "$want" = refuse ]; then
+      [ ! -e "$FM_FAKE_WINDOW_DIR/fm-$id" ] || fail "disk refusal left an orphan endpoint"
+    else
+      [ -e "$FM_FAKE_WINDOW_DIR/fm-$id" ] || fail "successful spawn lost its endpoint"
+    fi
+    if [ -n "$next_pct" ]; then
+      export FM_FAKE_DISK_PCT=84 FM_FAKE_DISK_NEXT_PCT=''
+      if [ "$kind" = scout ]; then
+        out=$(fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --scout --backend "$backend")
+      else
+        out=$(run_pool_spawn "$id" "$WT_DIR" "$HEALTHY_JSON" 0 0 3 "$backend")
+      fi
+      status=$?
+      expect_code 0 "$status" "retry after disk refusal should spawn"$'\n'"$out"
+      git -C "$WT_DIR" rev-parse --is-inside-work-tree >/dev/null || fail "retry allocated no worktree"
+      assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "retry did not publish its worktree"
+      [ -e "$FM_FAKE_WINDOW_DIR/fm-$id" ] || fail "retry lost its new endpoint"
+      [ -f "$FM_FAKE_WINDOW_DIR/untouched" ] || fail "retry closed an existing endpoint"
+    fi
+  fi
+  pass "disk pressure $name ($kind)"
+)
+
+test_disk_pressure threshold 85 refuse || exit 1
+test_disk_pressure below 84 pass || exit 1
+test_disk_pressure scout-threshold 96 refuse scout || exit 1
+test_disk_pressure full 100 refuse || exit 1
+test_disk_pressure rising 84 refuse ship tmux 85 || exit 1
+test_disk_pressure scout-rising 84 refuse scout tmux 85 || exit 1
+test_disk_pressure orca-rising 84 refuse ship orca 85 || exit 1
 test_saturated_pool_warns_and_still_spawns
 test_full_pool_failure_reports_effective_capacity
 test_unreadable_status_failure_stays_unknown
