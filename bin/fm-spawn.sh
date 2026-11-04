@@ -42,6 +42,7 @@
 #   Every fresh ship/scout also passes fm-pool-lib.sh's disk guard before any
 #   endpoint or worktree allocation; --relaunch and secondmate launches reuse
 #   existing copies and are exempt.
+#   Emergency bypass and audit policy: docs/configuration.md, Runtime backend.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>] [--override-reason <why>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is
@@ -2824,6 +2825,7 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
+SPAWN_DISK_OVERRIDE_REASON=
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
 fi
@@ -4505,6 +4507,7 @@ preserve_relaunch_meta() {
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   [ -z "$DISPATCH_OVERRIDE_REASON" ] || echo "dispatch_override_reason=$DISPATCH_OVERRIDE_REASON"
+  [ -z "$SPAWN_DISK_OVERRIDE_REASON" ] || echo "disk_override=$SPAWN_DISK_OVERRIDE_REASON"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;
@@ -4936,6 +4939,10 @@ if [ -n "$DISPATCH_OVERRIDE_REASON" ]; then
   printf 'note: dispatched outside config/crew-dispatch.json on harness=%s model=%s effort=%s; override reason: %s\n' \
     "$HARNESS" "${MODEL:-default}" "${EFFORT:-default}" "$DISPATCH_OVERRIDE_REASON" >>"$STATE/$ID.status" ||
     echo "warning: could not append the dispatch override note to $STATE/$ID.status; the reason is in the task record" >&2
+fi
+if [ -n "$SPAWN_DISK_OVERRIDE_REASON" ]; then
+  printf 'note: disk_override=%s\n' "$SPAWN_DISK_OVERRIDE_REASON" >>"$STATE/$ID.status" ||
+    echo "warning: could not append the disk override note to $STATE/$ID.status; the reason is in the task record" >&2
 fi
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"

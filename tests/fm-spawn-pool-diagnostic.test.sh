@@ -265,12 +265,30 @@ test_disk_pressure() (
     [ "$status" -ne 0 ] || fail "disk at $pct% unexpectedly spawned"$'\n'"$out"
     [ ! -e "$WT_DIR" ] || fail "disk refusal created a worktree"
     [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "disk refusal published a task"
-    assert_contains "$out" "${next_pct:-$pct}%" "refusal omitted measured percent"
-    assert_contains "$out" "85%" "refusal omitted threshold"
+    if [ "$pct" = unreadable ] || [ "${FM_FAKE_DF_RC:-0}" -ne 0 ]; then
+      assert_contains "$out" "disk usage" "measurement failure was not reported"
+    else
+      assert_contains "$out" "${next_pct:-$pct}%" "refusal omitted measured percent"
+      assert_contains "$out" "85%" "refusal omitted threshold"
+      assert_contains "$out" "FM_SPAWN_DISK_OVERRIDE=1" "refusal omitted override flag"
+      assert_contains "$out" "FM_SPAWN_DISK_OVERRIDE_REASON" "refusal omitted override reason"
+    fi
+    [ ! -s "$HOME_DIR/state/spawn-disk-overrides.log" ] || fail "refused override was journaled"
   else
     expect_code 0 "$status" "disk case $name should spawn"$'\n'"$out"
     git -C "$WT_DIR" rev-parse --is-inside-work-tree >/dev/null || fail "no worktree allocated"
     assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "spawn did not publish its worktree"
+    if [ "${FM_SPAWN_DISK_OVERRIDE:-}" = 1 ] && [ "$pct" -ge 85 ]; then
+      assert_contains "$out" "warning: disk override" "override warning missing"
+      assert_contains "$out" "$pct%" "warning omitted usage"
+      assert_contains "$out" "85%" "warning omitted threshold"
+      assert_contains "$out" "$FM_SPAWN_DISK_OVERRIDE_REASON" "warning omitted reason"
+      assert_grep "disk_override=$FM_SPAWN_DISK_OVERRIDE_REASON" "$HOME_DIR/state/$id.meta" "task metadata omitted reason"
+      assert_grep "note: disk_override=$FM_SPAWN_DISK_OVERRIDE_REASON" "$HOME_DIR/state/$id.status" "task status omitted reason"
+      grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z task=$id disk_percent=$pct threshold=85 reason=$FM_SPAWN_DISK_OVERRIDE_REASON$" \
+        "$HOME_DIR/state/spawn-disk-overrides.log" >/dev/null || fail "dated home journal omitted grant"
+      [ "$(wc -l < "$HOME_DIR/state/spawn-disk-overrides.log")" -eq 2 ] || fail "each guard grant must occupy one journal line"
+    fi
   fi
   if [ -n "$next_pct" ]; then
     [ "$(wc -l < "$CASE_DIR/df.log")" -eq 2 ] || fail "allocation did not recheck disk usage"
@@ -302,6 +320,22 @@ test_disk_pressure() (
   fi
   pass "disk pressure $name ($kind)"
 )
+
+unset FM_SPAWN_DISK_OVERRIDE FM_SPAWN_DISK_OVERRIDE_REASON FM_FAKE_DF_RC
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' \
+  test_disk_pressure override 96 pass || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 test_disk_pressure missing-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='' test_disk_pressure empty-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=short test_disk_pressure short-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=$'cleanup\nworker' test_disk_pressure multiline-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON=$'cleanup\tworker' test_disk_pressure control-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON="$(printf '%0201d' 0)" test_disk_pressure long-reason 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' test_disk_pressure reason-only 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=0 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' test_disk_pressure wrong-flag 96 refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' \
+  test_disk_pressure unreadable unreadable refuse || exit 1
+FM_SPAWN_DISK_OVERRIDE=1 FM_SPAWN_DISK_OVERRIDE_REASON='Emergency cleanup worker' FM_FAKE_DF_RC=1 \
+  test_disk_pressure unmeasurable 96 refuse || exit 1
 
 test_disk_pressure threshold 85 refuse || exit 1
 test_disk_pressure below 84 pass || exit 1

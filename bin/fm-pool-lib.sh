@@ -46,7 +46,8 @@
 # fm_spawn_disk_check <project-dir> <backend> is the fresh-spawn disk guard.
 # docs/configuration.md's Runtime backend section owns the operator policy.
 # Returns 0 when allocation is allowed, 1 on refusal.
-# No directories or records are created here.
+# Granted emergency overrides append to the spawn home's state journal and set
+# SPAWN_DISK_OVERRIDE_REASON for the caller's task metadata/status publication.
 
 FM_POOL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-timeout-lib.sh
@@ -311,7 +312,7 @@ fm_pool_capacity_action() {
 }
 
 fm_spawn_disk_check() { # <project-dir> <backend>
-  local project=$1 backend=$2 target config pct report
+  local project=$1 backend=$2 target config pct report reason timestamp
   target=$project
   if [ "$(uname -s)" = Darwin ] && [ -d /System/Volumes/Data ]; then
     target=/System/Volumes/Data
@@ -358,7 +359,22 @@ PY
       ;;
   esac
   if [ "$pct" -ge 85 ]; then
-    printf 'error: disk at %s is %s%% used (threshold 85%%); refusing a new worktree.\n' "$target" "$pct" >&2
-    return 1
+    reason=${FM_SPAWN_DISK_OVERRIDE_REASON:-}
+    if [ "${FM_SPAWN_DISK_OVERRIDE:-}" != 1 ] ||
+      [ "${#reason}" -lt 8 ] || [ "${#reason}" -gt 200 ] ||
+      [[ "$reason" =~ [[:cntrl:]] ]] || [[ ! "$reason" =~ [^[:space:]] ]]; then
+      printf 'error: disk at %s is %s%% used (threshold 85%%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (8-200 characters, one line, no control characters).\n' "$target" "$pct" >&2
+      return 1
+    fi
+    timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || return 1
+    if [ -z "${STATE:-}" ] || [ -z "${ID:-}" ] ||
+      ! printf '%s task=%s disk_percent=%s threshold=85 reason=%s\n' \
+        "$timestamp" "$ID" "$pct" "$reason" >>"$STATE/spawn-disk-overrides.log"; then
+      echo "error: cannot journal disk override; refusing spawn" >&2
+      return 1
+    fi
+    # shellcheck disable=SC2034 # Consumed by fm-spawn.sh metadata/status publication.
+    SPAWN_DISK_OVERRIDE_REASON=$reason
+    printf 'warning: disk override at %s: %s%% used (threshold 85%%); reason: %s\n' "$target" "$pct" "$reason" >&2
   fi
 }
