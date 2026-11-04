@@ -44,12 +44,9 @@
 # or full) and 1 for unknown, but always leaves every field above set.
 #
 # fm_spawn_disk_check <project-dir> <backend> is the fresh-spawn disk guard.
-# It measures Data on macOS when present, otherwise the Treehouse root (env,
-# repo/user config, default ~/.treehouse), or the project root for providers
-# whose allocation path is opaque to spawn. A not-yet-created root is measured
-# through its nearest existing ancestor. Configured Treehouse roots are decoded
-# with Python 3.11's standard-library TOML reader; unreadable roots or df refuse.
-# At or above 85 percent used it refuses. No directories or records are created here.
+# docs/configuration.md's Runtime backend section owns the operator policy.
+# Returns 0 when allocation is allowed, 1 on refusal.
+# No directories or records are created here.
 
 FM_POOL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-timeout-lib.sh

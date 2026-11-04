@@ -150,9 +150,11 @@ A backend spawn refusal from a missing dependency, version gate, or unauthentica
 Fresh ship and scout spawns refuse new worktrees at or above 85 percent disk usage, checking both before endpoint setup and immediately before worktree allocation.
 Existing-worktree relaunches and persistent secondmate launches are exempt.
 On macOS the check prefers `/System/Volumes/Data` when present, avoiding the misleading sealed-root usage figure.
-Otherwise it measures the Treehouse pool root, or the project path when the selected provider does not expose its allocation root to spawn, using the nearest existing ancestor for a root not created yet.
-Reading a configured Treehouse root requires Python 3.11 or newer; unreadable configuration or disk usage refuses the spawn rather than assuming spare capacity.
-[`bin/fm-pool-lib.sh`](../bin/fm-pool-lib.sh) owns root selection and refusal mechanics; [`tests/fm-spawn-pool-diagnostic.test.sh`](../tests/fm-spawn-pool-diagnostic.test.sh) exercises the executable boundary.
+Otherwise it measures the Treehouse pool root (`TREEHOUSE_ROOT`, then the primary checkout's `treehouse.toml` or user `~/.config/treehouse/config.toml`, then `~/.treehouse`), or the project path for Orca, whose allocation root is opaque to spawn.
+A root not created yet is measured through its nearest existing ancestor.
+When root selection reads a Treehouse configuration file, it requires Python 3.11 or newer for standard-library TOML parsing; unreadable configuration or disk usage refuses the spawn rather than assuming spare capacity.
+If the allocation-time check refuses after endpoint setup, spawn attempts to close only this attempt's new endpoint before exiting, without allocating a worktree or publishing task metadata; a failed close emits a warning.
+[`bin/fm-pool-lib.sh`](../bin/fm-pool-lib.sh) implements root selection and refusal mechanics; [`tests/fm-spawn-pool-diagnostic.test.sh`](../tests/fm-spawn-pool-diagnostic.test.sh) exercises the executable boundary.
 
 Task meta records `backend=` only for a non-default backend; an absent `backend=` means `tmux`, preserving existing default-path meta files.
 Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
