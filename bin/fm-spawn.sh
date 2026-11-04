@@ -3807,7 +3807,16 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   get_result="$STATE/.$ID.treehouse-get.$$.${RANDOM:-0}.result"
   rm -f -- "$get_result"
   get_result_quoted=${get_result//\'/\'\\\'\'}
-  fm_spawn_disk_check "$PROJ_ABS" "$BACKEND" || exit 1
+  if ! fm_spawn_disk_check "$PROJ_ABS" "$BACKEND"; then
+    if [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
+      case "$BACKEND" in
+      tmux) tmux kill-window -t "$WID" ;;
+      cmux) fm_backend_kill "$BACKEND" "$T" ;;
+      *) fm_backend_kill "$BACKEND" "$T" "${ZELLIJ_TAB_ID:-}" "$W" ;;
+      esac || echo "warning: could not close the new $BACKEND endpoint after disk refusal" >&2
+    fi
+    exit 1
+  fi
   spawn_send_text_line "$WT_TARGET" "treehouse get || printf '%s\\n' \"\$?\" > '$get_result_quoted'"
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.

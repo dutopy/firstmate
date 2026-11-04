@@ -37,6 +37,36 @@ make_pool_case() { # <name> <id> <max>
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
+if [ -n "${FM_FAKE_WINDOW_DIR:-}" ]; then
+  case "${1:-}" in
+    list-windows)
+      for window in "$FM_FAKE_WINDOW_DIR"/*; do
+        [ ! -f "$window" ] || printf '%s\n' "${window##*/}"
+      done
+      exit 0
+      ;;
+    new-window)
+      while [ "$#" -gt 0 ]; do
+        if [ "$1" = -n ]; then name=$2; break; fi
+        shift
+      done
+      [ ! -e "$FM_FAKE_WINDOW_DIR/$name" ] || exit 1
+      printf '@100\n' > "$FM_FAKE_WINDOW_DIR/$name"
+      printf '@100\n'
+      exit 0
+      ;;
+    kill-window)
+      for window in "$FM_FAKE_WINDOW_DIR"/*; do
+        [ -f "$window" ] || continue
+        if [ "${3:-}" = "$(< "$window")" ]; then
+          rm -- "$window"
+          exit 0
+        fi
+      done
+      exit 1
+      ;;
+  esac
+fi
 case "$*" in
   *"#{pane_current_path}"*)
     printf '%s\n' "${FM_FAKE_PANE_PATH:-}"
@@ -222,6 +252,9 @@ test_disk_pressure() (
   export FM_FAKE_ALLOCATE_WT="$WT_DIR" FM_FAKE_ALLOCATE_PROJ="$PROJ_DIR"
   export FM_FAKE_DF_LOG="$CASE_DIR/df.log"
   export FM_FAKE_PANE_LOG="$CASE_DIR/pane.log"
+  export FM_FAKE_WINDOW_DIR="$CASE_DIR/windows"
+  mkdir -p "$FM_FAKE_WINDOW_DIR"
+  printf '@7\n' > "$FM_FAKE_WINDOW_DIR/untouched"
   if [ "$kind" = scout ]; then
     out=$(fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --scout --backend "$backend")
   else
@@ -244,6 +277,28 @@ test_disk_pressure() (
   fi
   if [ "$(uname -s)" = Darwin ] && [ -d /System/Volumes/Data ]; then
     assert_grep '-P /System/Volumes/Data' "$CASE_DIR/df.log" "spawn measured sealed root instead of Data"
+  fi
+  [ -f "$FM_FAKE_WINDOW_DIR/untouched" ] || fail "disk check closed an existing endpoint"
+  if [ "$backend" = tmux ]; then
+    if [ "$want" = refuse ]; then
+      [ ! -e "$FM_FAKE_WINDOW_DIR/fm-$id" ] || fail "disk refusal left an orphan endpoint"
+    else
+      [ -e "$FM_FAKE_WINDOW_DIR/fm-$id" ] || fail "successful spawn lost its endpoint"
+    fi
+    if [ -n "$next_pct" ]; then
+      export FM_FAKE_DISK_PCT=84 FM_FAKE_DISK_NEXT_PCT=''
+      if [ "$kind" = scout ]; then
+        out=$(fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --scout --backend "$backend")
+      else
+        out=$(run_pool_spawn "$id" "$WT_DIR" "$HEALTHY_JSON" 0 0 3 "$backend")
+      fi
+      status=$?
+      expect_code 0 "$status" "retry after disk refusal should spawn"$'\n'"$out"
+      git -C "$WT_DIR" rev-parse --is-inside-work-tree >/dev/null || fail "retry allocated no worktree"
+      assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "retry did not publish its worktree"
+      [ -e "$FM_FAKE_WINDOW_DIR/fm-$id" ] || fail "retry lost its new endpoint"
+      [ -f "$FM_FAKE_WINDOW_DIR/untouched" ] || fail "retry closed an existing endpoint"
+    fi
   fi
   pass "disk pressure $name ($kind)"
 )
