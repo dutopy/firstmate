@@ -42,6 +42,7 @@
 #   Every fresh ship/scout also passes fm-pool-lib.sh's disk guard before any
 #   endpoint or worktree allocation; --relaunch and secondmate launches reuse
 #   existing copies and are exempt.
+#   Emergency bypass and audit policy: docs/configuration.md, Runtime backend.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>] [--override-reason <why>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
 #   task's own recorded endpoint and worktree instead of creating either. It is

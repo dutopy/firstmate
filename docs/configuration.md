@@ -147,12 +147,16 @@ A zellij spawn additionally version-gates against the installed `zellij` binary'
 A cmux spawn additionally version-gates against the installed `cmux` binary's version, requires `jq`, and requires the control socket to be reachable and accessible (see [`docs/cmux-backend.md`](cmux-backend.md) "Setup" for the one-time socket-access configuration this needs; Automation mode is the recommended socket control mode, with Password mode supported via `config/cmux-socket-password`), refusing loudly and non-retryably on a `cmuxOnly`/unauthenticated socket.
 A backend spawn refusal from a missing dependency, version gate, or unauthenticated socket is terminal for that selected backend; firstmate surfaces it as a blocker instead of silently retrying another backend.
 
-Fresh ship and scout spawns refuse new worktrees at or above 85 percent disk usage, checking both before endpoint setup and immediately before worktree allocation.
+By default, fresh ship and scout spawns refuse new worktrees at or above 85 percent disk usage, checking both before endpoint setup and immediately before worktree allocation.
 Existing-worktree relaunches and persistent secondmate launches are exempt.
 On macOS the check prefers `/System/Volumes/Data` when present, avoiding the misleading sealed-root usage figure.
 Otherwise it measures the Treehouse pool root (`TREEHOUSE_ROOT`, then the primary checkout's `treehouse.toml` or user `~/.config/treehouse/config.toml`, then `~/.treehouse`), or the project path for Orca, whose allocation root is opaque to spawn.
 A root not created yet is measured through its nearest existing ancestor.
 When root selection reads a Treehouse configuration file, it requires Python 3.11 or newer for standard-library TOML parsing; unreadable configuration or disk usage refuses the spawn rather than assuming spare capacity.
+For an emergency such as spawning a cleanup worker, set `FM_SPAWN_DISK_OVERRIDE=1` and `FM_SPAWN_DISK_OVERRIDE_REASON` in that spawn's environment; the reason must be one non-blank line without control characters, with no length restriction.
+Both are required, and neither bypasses unreadable configuration or unmeasurable disk usage.
+Each granted check prints a warning with the target, usage, fixed 85 percent threshold and reason, and appends one UTC ISO-dated line with task id, disk percent, threshold and reason to the home's `state/spawn-disk-overrides.log`; a journal write failure refuses the spawn.
+This journal is the sole persistent audit record of the disk override reason.
 If the allocation-time check refuses after endpoint setup, spawn attempts to close only this attempt's new endpoint before exiting, without allocating a worktree or publishing task metadata; a failed close emits a warning.
 [`bin/fm-pool-lib.sh`](../bin/fm-pool-lib.sh) implements root selection and refusal mechanics; [`tests/fm-spawn-pool-diagnostic.test.sh`](../tests/fm-spawn-pool-diagnostic.test.sh) exercises the executable boundary.
 
