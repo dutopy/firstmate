@@ -1,4 +1,4 @@
-FM_TEST_BEGIN 2026-11-04T10:50:26Z tests/fm-spawn-pool-diagnostic.test.sh family=unclassified expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-04T11:08:15Z tests/fm-spawn-pool-diagnostic.test.sh family=unclassified expected_gate_skip=none
 ok - disk pressure threshold (ship)
 ok - disk pressure below (ship)
 ok - disk pressure scout-threshold (scout)
@@ -10,7 +10,7 @@ ok - (a) a saturated pool warns before dispatch and still spawns
 ok - (b) a full-pool refusal reports effective capacity and action
 ok - (c) an unreadable pool stays unknown, never zero-available
 ok - (d) an isolation timeout with a healthy pool says capacity is not the refusal
-FM_TEST_END 2026-11-04T10:51:10Z tests/fm-spawn-pool-diagnostic.test.sh exit=0 duration_ms=43690 gate_skip=false
-FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=43902
-FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=43690 failed=0
-FM_TEST_SLOWEST rank=1 script=tests/fm-spawn-pool-diagnostic.test.sh duration_ms=43690
+FM_TEST_END 2026-11-04T11:08:50Z tests/fm-spawn-pool-diagnostic.test.sh exit=0 duration_ms=35426 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=35642
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=35426 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-spawn-pool-diagnostic.test.sh duration_ms=35426

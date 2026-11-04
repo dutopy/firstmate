@@ -1,0 +1,740 @@
+$ git init -b main /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+Initialized empty Git repository in /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project/.git/
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project config user.email disposable@example.invalid
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project config user.name Disposable
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project add .
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project commit -m Disposable seed
+[main (root-commit) cd85793] Disposable seed
+ 2 files changed, 2 insertions(+)
+ create mode 100644 README.md
+ create mode 100644 treehouse.toml
+
+exit=0
+$ tmux -f /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/tmux.conf new-session -d -s firstmate -n untouched -x 120 -y 40
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh exact-85 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh scout-96 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --scout
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh full-100 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: disk at /System/Volumes/Data is 100% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh obsolete-bypass /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/data/rising-ship/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/data/rising-ship/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned rising-ship harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-rising-ship worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+
+exit=0
+PERSISTED window=firstmate:fm-rising-ship
+endpoint_task_id=rising-ship
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-rising-ship
+model=default
+effort=default
+guard_base=cd85793477cac24de79723d4abc70dd87b3b6f51
+spawn_gen=s1793791202.57130.15518
+
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@2 fm-rising-ship /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ tmux capture-pane -p -t firstmate:fm-rising-ship
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87
+J5EHY/.test-disposable/live/home/state/.rising-ship.treehouse-get.57130.21253.result'
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/liv
+e/pool/.treehouse/project-9c3098/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-rising-ship/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=rising-ship
+Pierres-iMac-Pro:project pierre$ env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dangerously-bypass-appro
+vals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/
+01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/state/rising-ship.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/w
+orktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-m
+istakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/data/rising-ship/launch-brief.md')"
+DISPOSABLE_AGENT_RECEIVED_BRIEF
+Pierres-iMac-Pro:project pierre$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit=0
+$ tmux kill-window -t firstmate:fm-rising-ship
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh rising-scout /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --scout
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh rising-scout /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --scout
+spawned rising-scout harness=codex kind=scout window=firstmate:fm-rising-scout worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+
+exit=0
+PERSISTED window=firstmate:fm-rising-scout
+endpoint_task_id=rising-scout
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+harness=codex
+kind=scout
+tasktmp=/tmp/fm-rising-scout
+model=default
+effort=default
+guard_base=cd85793477cac24de79723d4abc70dd87b3b6f51
+spawn_gen=s1793791211.63398.26863
+
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@4 fm-rising-scout /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ tmux capture-pane -p -t firstmate:fm-rising-scout
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87
+J5EHY/.test-disposable/live/home/state/.rising-scout.treehouse-get.63398.10302.result'
+A new version of treehouse is available: v3.1.0 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/liv
+e/pool/.treehouse/project-9c3098/2/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-rising-scout/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=rising-scout
+Pierres-iMac-Pro:project pierre$ env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dangerously-bypass-appro
+vals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/
+01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/state/rising-scout.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/
+worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-
+mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/data/rising-scout/launch-brief.md'
+)"
+DISPOSABLE_AGENT_RECEIVED_BRIEF
+Pierres-iMac-Pro:project pierre$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit=0
+$ tmux kill-window -t firstmate:fm-rising-scout
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/data/below/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned below harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-below worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ tmux capture-pane -p -t firstmate:fm-below
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87
+J5EHY/.test-disposable/live/home/state/.below.treehouse-get.71224.6704.result'
+A new version of treehouse is available: v3.1.0 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/liv
+e/pool/.treehouse/project-9c3098/3/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-below/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=below
+Pierres-iMac-Pro:project pierre$ env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dangerously-bypass-appro
+vals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/
+01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/state/below.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/worktre
+es/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-mistake
+s/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/data/below/launch-brief.md')"
+DISPOSABLE_AGENT_RECEIVED_BRIEF
+Pierres-iMac-Pro:project pierre$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh below --relaunch
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/home/data/below/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned below harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-below worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+PRESERVED DIRTY FILE: must survive relaunch
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh unreadable-df /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: unreadable disk usage at /System/Volumes/Data; refusing spawn
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh failed-df /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: cannot measure disk usage at /System/Volumes/Data; refusing spawn
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh env-root /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live is 85% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh config-root /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project/.. is 85% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh default-root /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/user/.treehouse is 85% used (threshold 85%); refusing a new worktree.
+
+exit=1
+$ tmux list-windows -t firstmate -F #{window_id} #{window_name} #{pane_current_path}
+@0 untouched /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY
+@5 fm-below /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+
+exit=0
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project worktree list --porcelain
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+branch refs/heads/main
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/1/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/2/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/pool/.treehouse/project-9c3098/3/project
+HEAD cd85793477cac24de79723d4abc70dd87b3b6f51
+detached
+
+
+exit=0
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/bin/fm-spawn.sh user-config-root /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project --backend tmux --mode no-mistakes --yolo off
+error: disk at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live is 85% used (threshold 85%); refusing a new worktree.
+
+exit=1
+DF TARGETS / MEASUREMENTS
+1: -P /System/Volumes/Data => 85%
+1: -P /System/Volumes/Data => 96%
+1: -P /System/Volumes/Data => 100%
+1: -P /System/Volumes/Data => 96%
+1: -P /System/Volumes/Data => 84%
+2: -P /System/Volumes/Data => 85%
+1: -P /System/Volumes/Data => 84%
+2: -P /System/Volumes/Data => 84%
+1: -P /System/Volumes/Data => 84%
+2: -P /System/Volumes/Data => 85%
+1: -P /System/Volumes/Data => 84%
+2: -P /System/Volumes/Data => 84%
+1: -P /System/Volumes/Data => 84%
+2: -P /System/Volumes/Data => 84%
+1: -P /System/Volumes/Data => malformed%
+1: -P /System/Volumes/Data => error%
+1: -P /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live => 85%
+1: -P /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/project/.. => 85%
+1: -P /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live/user/.treehouse => 85%
+1: -P /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6K3SFG7FC4HHDCZA87J5EHY/.test-disposable/live => 85%
+$ tmux kill-server
+
+exit=0
