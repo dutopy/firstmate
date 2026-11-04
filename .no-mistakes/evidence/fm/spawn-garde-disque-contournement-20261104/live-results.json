@@ -1,0 +1,66 @@
+[
+  {
+    "name": "below",
+    "result": "pass"
+  },
+  {
+    "name": "threshold",
+    "result": "pass"
+  },
+  {
+    "name": "full",
+    "result": "pass"
+  },
+  {
+    "name": "cleanup",
+    "result": "pass"
+  },
+  {
+    "name": "scout-short",
+    "result": "pass"
+  },
+  {
+    "name": "long",
+    "result": "pass"
+  },
+  {
+    "name": "missing-reason",
+    "result": "pass"
+  },
+  {
+    "name": "reason-only",
+    "result": "pass"
+  },
+  {
+    "name": "wrong-flag",
+    "result": "pass"
+  },
+  {
+    "name": "blank",
+    "result": "pass"
+  },
+  {
+    "name": "newline",
+    "result": "pass"
+  },
+  {
+    "name": "control",
+    "result": "pass"
+  },
+  {
+    "name": "unreadable",
+    "result": "pass"
+  },
+  {
+    "name": "df-failure",
+    "result": "pass"
+  },
+  {
+    "name": "journal-failure",
+    "result": "pass"
+  },
+  {
+    "name": "rising",
+    "result": "pass"
+  }
+]

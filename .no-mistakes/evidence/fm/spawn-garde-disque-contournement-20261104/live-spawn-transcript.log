@@ -1,0 +1,364 @@
+=== below: disk=84, override=None, reason=None ===
+$ fm-spawn.sh below <disposable-project> --mode no-mistakes --yolo off --backend tmux
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/home/data/below/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned below harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-below worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/pool/.treehouse/project-84cf33/1/project
+
+exit=0
+
+Remaining windows:
+bash
+fm-below
+
+Published metadata:
+window=firstmate:fm-below
+endpoint_task_id=below
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/pool/.treehouse/project-84cf33/1/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-below
+model=default
+effort=default
+guard_base=c7e5d00477fbac38ba69af77d11fa1cb33ea7d78
+spawn_gen=s1793798137.18256.6413
+
+Actual worker terminal:
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/w
+orktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/home/state/.below.treehouse-
+get.18256.24814.result'
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/
+.test-phase/live/below/pool/.treehouse/project-84cf33/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-below/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=below
+Pierres-iMac-Pro:project pierre$ env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dang
+erously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pie
+rre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/home/state
+/below.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0N
+EDE/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-mistakes/worktrees/a97fbe5
+8c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/home/data/below/launch-brief.md')"
+
+
+
+
+
+
+
+
+
+worker payload reached: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/below/pool/.treehouse/project-84cf33/1/project
+
+=== threshold: disk=85, override=None, reason=None ===
+$ fm-spawn.sh threshold <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== full: disk=100, override=None, reason=None ===
+$ fm-spawn.sh full <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 100% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== cleanup: disk=96, override='1', reason='cleanup' ===
+$ fm-spawn.sh cleanup <disposable-project> --mode no-mistakes --yolo off --backend tmux
+warning: disk override at /System/Volumes/Data: 96% used (threshold 85%); reason: cleanup
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/home/data/cleanup/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+warning: disk override at /System/Volumes/Data: 96% used (threshold 85%); reason: cleanup
+spawned cleanup harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-cleanup worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/pool/.treehouse/project-094de9/1/project
+
+exit=0
+
+Remaining windows:
+bash
+fm-cleanup
+
+Published metadata:
+window=firstmate:fm-cleanup
+endpoint_task_id=cleanup
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/pool/.treehouse/project-094de9/1/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-cleanup
+model=default
+effort=default
+guard_base=7d74a7665bcbb7867cfd028d09d7652e66db6e8f
+spawn_gen=s1793798146.23777.30615
+
+Actual worker terminal:
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/w
+orktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/home/state/.cleanup.treeho
+use-get.23777.21359.result'
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/
+.test-phase/live/cleanup/pool/.treehouse/project-094de9/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-cleanup/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=cleanup
+Pierres-iMac-Pro:project pierre$ env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dang
+erously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pie
+rre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/home/sta
+te/cleanup.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7
+ZY0NEDE/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-mistakes/worktrees/a97
+fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/home/data/cleanup/launch-brief.md')"
+
+
+
+
+
+
+
+
+
+worker payload reached: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/cleanup/pool/.treehouse/project-094de9/1/project
+
+Sole audit journal:
+2026-11-04T13:15:42Z task=cleanup disk_percent=96 threshold=85 reason=cleanup
+2026-11-04T13:15:43Z task=cleanup disk_percent=96 threshold=85 reason=cleanup
+
+=== scout-short: disk=96, override='1', reason='x' ===
+$ fm-spawn.sh scout-short <disposable-project>  --scout --backend tmux
+warning: disk override at /System/Volumes/Data: 96% used (threshold 85%); reason: x
+warning: disk override at /System/Volumes/Data: 96% used (threshold 85%); reason: x
+spawned scout-short harness=codex kind=scout window=firstmate:fm-scout-short worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/scout-short/pool/.treehouse/project-1edc86/1/project
+
+exit=0
+
+Remaining windows:
+bash
+fm-scout-short
+
+Published metadata:
+window=firstmate:fm-scout-short
+endpoint_task_id=scout-short
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/scout-short/pool/.treehouse/project-1edc86/1/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/scout-short/project
+harness=codex
+kind=scout
+tasktmp=/tmp/fm-scout-short
+model=default
+effort=default
+guard_base=654cec962ae18223c10dc1c34b20f6b9ab3ac318
+spawn_gen=s1793798155.30290.32262
+
+Actual worker terminal:
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/w
+orktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/scout-short/home/state/.scout-shor
+t.treehouse-get.30290.27696.result'
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/
+.test-phase/live/scout-short/pool/.treehouse/project-1edc86/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-scout-short/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=scout-short
+Pierres-iMac-Pro:project pierre$ env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dang
+erously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pie
+rre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/scout-short/home
+/state/scout-short.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9F
+KYXRMEN7ZY0NEDE/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-mistakes/workt
+rees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/scout-short/home/data/scout-short/laun
+ch-brief.md')"
+
+
+
+
+
+
+
+
+worker payload reached: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/scout-short/pool/.treehouse/project-1edc86/1/project
+
+Sole audit journal:
+2026-11-04T13:15:51Z task=scout-short disk_percent=96 threshold=85 reason=x
+2026-11-04T13:15:52Z task=scout-short disk_percent=96 threshold=85 reason=x
+
+=== long: disk=96, override='1', reason='xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' ===
+$ fm-spawn.sh long <disposable-project> --mode no-mistakes --yolo off --backend tmux
+warning: disk override at /System/Volumes/Data: 96% used (threshold 85%); reason: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/home/data/long/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+warning: disk override at /System/Volumes/Data: 96% used (threshold 85%); reason: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+spawned long harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-long worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/pool/.treehouse/project-cbd3c1/1/project
+
+exit=0
+
+Remaining windows:
+bash
+fm-long
+
+Published metadata:
+window=firstmate:fm-long
+endpoint_task_id=long
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/pool/.treehouse/project-cbd3c1/1/project
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+tasktmp=/tmp/fm-long
+model=default
+effort=default
+guard_base=a2b8b90d793c1cb07cc766a2357c81ddcac1a809
+spawn_gen=s1793798163.39089.21546
+
+Actual worker terminal:
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ treehouse get || printf '%s\n' "$?" > '/Users/pierre/.no-mistakes/w
+orktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/home/state/.long.treehouse-ge
+t.39089.5776.result'
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/
+.test-phase/live/long/pool/.treehouse/project-cbd3c1/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Pierres-iMac-Pro:project pierre$ export GOTMPDIR=/tmp/fm-long/gotmp
+Pierres-iMac-Pro:project pierre$ export FM_TASK_ID=long
+Pierres-iMac-Pro:project pierre$ env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dang
+erously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/Users/pie
+rre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/home/state/
+long.turn-ended'\"]" "$('/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NED
+E/bin/fm-operational-input.sh' encode launch-brief < '/Users/pierre/.no-mistakes/worktrees/a97fbe58c
+975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/home/data/long/launch-brief.md')"
+
+
+
+
+
+
+
+
+
+worker payload reached: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/long/pool/.treehouse/project-cbd3c1/1/project
+
+Sole audit journal:
+2026-11-04T13:15:59Z task=long disk_percent=96 threshold=85 reason=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+2026-11-04T13:16:00Z task=long disk_percent=96 threshold=85 reason=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+=== missing-reason: disk=96, override='1', reason=None ===
+$ fm-spawn.sh missing-reason <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== reason-only: disk=96, override=None, reason='cleanup' ===
+$ fm-spawn.sh reason-only <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== wrong-flag: disk=96, override='true', reason='cleanup' ===
+$ fm-spawn.sh wrong-flag <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== blank: disk=96, override='1', reason='   ' ===
+$ fm-spawn.sh blank <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== newline: disk=96, override='1', reason='cleanup\nforged' ===
+$ fm-spawn.sh newline <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== control: disk=96, override='1', reason='cleanup\tworker' ===
+$ fm-spawn.sh control <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: disk at /System/Volumes/Data is 96% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash
+
+=== unreadable: disk=bad, override='1', reason='cleanup' ===
+$ fm-spawn.sh unreadable <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: unreadable disk usage at /System/Volumes/Data; refusing spawn
+
+exit=1
+
+Remaining windows:
+bash
+
+=== df-failure: disk=error, override='1', reason='cleanup' ===
+$ fm-spawn.sh df-failure <disposable-project> --mode no-mistakes --yolo off --backend tmux
+error: cannot measure disk usage at /System/Volumes/Data; refusing spawn
+
+exit=1
+
+Remaining windows:
+bash
+
+=== journal-failure: disk=96, override='1', reason='cleanup' ===
+$ fm-spawn.sh journal-failure <disposable-project> --mode no-mistakes --yolo off --backend tmux
+/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/bin/fm-pool-lib.sh: line 369: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/journal-failure/home/state/spawn-disk-overrides.log: Is a directory
+error: cannot journal disk override; refusing spawn
+
+exit=1
+
+Remaining windows:
+tmux
+
+=== rising: disk=rising, override=None, reason=None ===
+$ fm-spawn.sh rising <disposable-project> --mode no-mistakes --yolo off --backend tmux
+warning: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6KA7RX9FKYXRMEN7ZY0NEDE/.test-phase/live/rising/home/data/rising/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: disk at /System/Volumes/Data is 85% used (threshold 85%); refusing a new worktree. Emergency bypass requires FM_SPAWN_DISK_OVERRIDE=1 and FM_SPAWN_DISK_OVERRIDE_REASON (one nonblank line, no control characters).
+
+exit=1
+
+Remaining windows:
+bash

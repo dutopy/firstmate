@@ -1,0 +1,24 @@
+ok - disk pressure override (ship)
+ok - disk pressure missing-reason (ship)
+ok - disk pressure empty-reason (ship)
+ok - disk pressure blank-reason (ship)
+ok - disk pressure short-reason (ship)
+ok - disk pressure single-character-reason (scout)
+ok - disk pressure multiline-reason (ship)
+ok - disk pressure control-reason (ship)
+ok - disk pressure long-reason (ship)
+ok - disk pressure reason-only (ship)
+ok - disk pressure wrong-flag (ship)
+ok - disk pressure unreadable (ship)
+ok - disk pressure unmeasurable (ship)
+ok - disk pressure threshold (ship)
+ok - disk pressure below (ship)
+ok - disk pressure scout-threshold (scout)
+ok - disk pressure full (ship)
+ok - disk pressure rising (ship)
+ok - disk pressure scout-rising (scout)
+ok - disk pressure orca-rising (ship)
+ok - (a) a saturated pool warns before dispatch and still spawns
+ok - (b) a full-pool refusal reports effective capacity and action
+ok - (c) an unreadable pool stays unknown, never zero-available
+ok - (d) an isolation timeout with a healthy pool says capacity is not the refusal
