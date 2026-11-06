@@ -1652,9 +1652,11 @@ test_find_resolve_line_only_matches_the_exact_corr_token() {
   for big in $(seq 1 3000); do
     printf 'working [corr=%016x]: unrelated progress line %s\n' "$big" "$big" >> "$status"
   done
-  printf 'blocked: pending-reply-missed corr=aaaaaaaaaaaaaaaa never self-resolves\n' >> "$status"
-  printf 'done [corr=aaaaaaaaaaaaaaaa]: the correlated reply\n' >> "$status"
-  printf 'done [corr=aaaaaaaaaaaaaaaab]: a longer token is not the same id\n' >> "$status"
+  {
+    printf 'blocked: pending-reply-missed corr=aaaaaaaaaaaaaaaa never self-resolves\n'
+    printf 'done [corr=aaaaaaaaaaaaaaaa]: the correlated reply\n'
+    printf 'done [corr=aaaaaaaaaaaaaaaab]: a longer token is not the same id\n'
+  } >> "$status"
   t0=$(date +%s)
   line=$(fm_pending_reply_find_resolve_line "$status" aaaaaaaaaaaaaaaa)
   t1=$(date +%s)
