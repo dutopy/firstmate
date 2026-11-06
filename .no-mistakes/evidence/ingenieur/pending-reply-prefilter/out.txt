@@ -1,0 +1,35 @@
+ok - same-basename self-home corr= is restated onto the parent channel and resolves
+ok - same-basename reply resolves at the recovery failure boundary
+ok - a child-file mate-home sighting is not copied and still escalates
+ok - mechanical helper writes the parent channel from verb, corr, and note
+ok - remote parent-replies.status is not classified as wrong-home
+ok - local parent-replies.status remains wrong-home evidence
+ok - an escalated correlation stays retryable only while undelivered
+ok - all pending-reply tests passed
+--- base lib with same test
+OLD
+/tmp/oldlib.sh: line 111: /tmp/fm-marker-lib.sh: No such file or directory
+/tmp/oldlib.sh: line 113: /tmp/fm-backend.sh: No such file or directory
+/tmp/oldlib.sh: line 115: /tmp/fm-tmux-lib.sh: No such file or directory
+/tmp/oldlib.sh: line 117: /tmp/fm-classify-lib.sh: No such file or directory
+done [corr=aaaaaaaaaaaaaaaa]: the correlated reply
+
+real	0m8.291s
+user	0m1.611s
+sys	0m2.499s
+
+
+real	0m7.731s
+user	0m1.608s
+sys	0m2.536s
+NEW
+done [corr=aaaaaaaaaaaaaaaa]: the correlated reply
+
+real	0m0.009s
+user	0m0.001s
+sys	0m0.007s
+
+
+real	0m0.011s
+user	0m0.002s
+sys	0m0.005s
