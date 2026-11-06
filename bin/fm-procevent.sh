@@ -512,10 +512,26 @@ extension_source_request_id() {  # <adapter> <source-id> <next-sequence> <regist
   printf 'sha256:%s\n' "$digest"
 }
 
+# Sequences only ever grow. A persisted high-water mark keeps a number that was
+# once allocated from being reused after its handled result is archived or
+# removed: the sequence is tied to the source's ingestion receipt, so a reused
+# low number collides with that receipt ("generation conflicts with its
+# ingestion receipt") instead of continuing the stream.
 next_result_sequence() {  # <source-id>
-  local id=$1 inbox seq=1
+  local id=$1 inbox hw=0 stored f n seq tmp
   inbox=$(fm_procevent_inbox_dir "$STATE")
-  while [ -e "$inbox/$id.$seq.result" ]; do seq=$((seq + 1)); done
+  mkdir -p "$inbox" || return 1
+  stored=$(cat "$inbox/.seq-hw-$id" 2>/dev/null || true)
+  case "$stored" in ''|*[!0-9]*) ;; *) hw=$stored ;; esac
+  for f in "$inbox/$id".*.result; do
+    [ -e "$f" ] || continue
+    n=${f%.result}; n=${n##*.}
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    [ "$n" -gt "$hw" ] && hw=$n
+  done
+  seq=$((hw + 1))
+  tmp=$(mktemp "$inbox/.seq-hw-$id.XXXXXX") || return 1
+  printf '%s\n' "$seq" > "$tmp" && mv -f "$tmp" "$inbox/.seq-hw-$id" || { rm -f "$tmp"; return 1; }
   printf '%s\n' "$seq"
 }
 

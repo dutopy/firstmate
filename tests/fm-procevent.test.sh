@@ -3598,4 +3598,16 @@ kill -0 -"$CRASH_PID" 2>/dev/null \
 pass "a group whose leader died to something else is still refused, not signalled"
 kill -KILL -"$CRASH_PID" 2>/dev/null || true
 
+# --- result sequences only grow: archiving handled results must not reuse a number ---
+SEQ_HOME="$TMP_ROOT/seq-home"; SEQ_INBOX="$SEQ_HOME/state/procevent-inbox"; mkdir -p "$SEQ_INBOX"
+eval "$(awk '/^next_result_sequence\(\) \{/{p=1} p{print} p&&/^}/{exit}' "$ROOT/bin/fm-procevent.sh")"
+fm_procevent_inbox_dir() { printf '%s\n' "$SEQ_INBOX"; }
+STATE="$SEQ_HOME/state"
+assert_equals "1" "$(next_result_sequence seq-src)" "a fresh source starts at sequence 1"
+: > "$SEQ_INBOX/seq-src.1.result"; : > "$SEQ_INBOX/seq-src.2.result"; : > "$SEQ_INBOX/seq-src.3.result"
+assert_equals "4" "$(next_result_sequence seq-src)" "the next sequence follows the highest existing result"
+rm -f "$SEQ_INBOX"/seq-src.*.result
+assert_equals "5" "$(next_result_sequence seq-src)" "after every handled result is archived, the sequence continues instead of restarting at 1"
+pass "result sequences never reuse an archived number"
+
 printf '\nall procevent tests passed\n'
