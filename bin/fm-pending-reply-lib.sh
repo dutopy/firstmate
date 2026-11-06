@@ -600,13 +600,17 @@ fm_pending_reply_line_resolves() {  # <line> <corr_id>
 fm_pending_reply_find_resolve_line() {  # <status-file> <corr_id>
   local status_file=$1 corr=$2 line
   [ -f "$status_file" ] || return 0
+  # A resolving line must carry the literal token corr=<id> (fm_pending_reply_text_has_corr),
+  # so one native grep drops every other line before the per-line shell loop. Without it each
+  # open record re-read the whole status file line by line through forks: seconds per record
+  # on a large status file, which stalled the watcher beacon.
   while IFS= read -r line || [ -n "$line" ]; do
     [ -n "$line" ] || continue
     if fm_pending_reply_line_resolves "$line" "$corr"; then
       printf '%s' "$line"
       return 0
     fi
-  done < "$status_file"
+  done < <(grep -F -- "$(fm_pending_reply_corr_token "$corr")" "$status_file" 2>/dev/null || true)
   return 0
 }
 
