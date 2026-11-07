@@ -1074,6 +1074,11 @@ RELAUNCH_UNVERIFIED=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-c
   relaunch ios notaharness - - 2>&1) && fail "an unverified runtime should refuse a remote restart"
 assert_contains "$RELAUNCH_UNVERIFIED" 'unverified remote secondmate harness' \
   "the remote restart verb did not refuse an unverified runtime"
+RELAUNCH_OMP=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh \
+  relaunch ios omp - - 2>&1) || true
+case "$RELAUNCH_OMP" in
+  *'unverified remote secondmate harness'*) fail "omp was refused as an unverified remote secondmate harness" ;;
+esac
 RELAUNCH_ROUTE_META="$REMOTE_HOME/state/parent-route/ios.meta"
 cp "$RELAUNCH_ROUTE_META" "$TMP_ROOT/ios-before-relaunch.meta"
 mkdir -p "$TMP_ROOT/not-a-checkout"
