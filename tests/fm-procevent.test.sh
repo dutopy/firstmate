@@ -3598,4 +3598,31 @@ kill -0 -"$CRASH_PID" 2>/dev/null \
 pass "a group whose leader died to something else is still refused, not signalled"
 kill -KILL -"$CRASH_PID" 2>/dev/null || true
 
+# --- result sequences only grow: archiving handled results must not reuse a number ---
+SEQ_HOME="$TMP_ROOT/seq-home"; SEQ_INBOX="$SEQ_HOME/state/procevent-inbox"; mkdir -p "$SEQ_INBOX"
+. "$ROOT/bin/fm-wake-lib.sh"
+eval "$(awk '/^next_result_sequence\(\) \{/{p=1} p{print} p&&/^}/{exit}' "$ROOT/bin/fm-procevent.sh")"
+fm_procevent_inbox_dir() { printf '%s\n' "$SEQ_INBOX"; }
+STATE="$SEQ_HOME/state"
+assert_equals "1" "$(next_result_sequence seq-src)" "a fresh source starts at sequence 1"
+: > "$SEQ_INBOX/seq-src.1.result"; : > "$SEQ_INBOX/seq-src.2.result"; : > "$SEQ_INBOX/seq-src.3.result"
+assert_equals "4" "$(next_result_sequence seq-src)" "the next sequence follows the highest existing result"
+rm -f "$SEQ_INBOX"/seq-src.*.result
+assert_equals "5" "$(next_result_sequence seq-src)" "after every handled result is archived, the sequence continues instead of restarting at 1"
+pass "result sequences never reuse an archived number"
+
+# Without the mark, receipts of archived results still bound the sequence.
+rm -f "$SEQ_INBOX"/.seq-hw-* "$SEQ_INBOX"/seq-src.*.result
+mkdir -p "$STATE/remote-replies"; : > "$STATE/remote-replies/rcpt-src.1.ingested"; : > "$STATE/remote-replies/rcpt-src.2.ingested"
+assert_equals "3" "$(next_result_sequence rcpt-src)" "a lost mark is rebuilt from ingestion receipts instead of returning a number a receipt already holds"
+pass "a missing high-water mark never returns an already-ingested sequence"
+
+# Concurrent callers never get the same number and the mark never regresses.
+CONC="$TMP_ROOT/conc"; mkdir -p "$CONC"
+for i in 1 2 3 4 5 6 7 8; do ( next_result_sequence conc-src > "$CONC/$i" ) & done; wait
+got=$(cat "$CONC"/[1-8] | sort -n | tr '\n' ' ')
+assert_equals "1 2 3 4 5 6 7 8 " "$got" "eight concurrent calls are handed eight distinct consecutive sequences"
+assert_equals "8" "$(cat "$SEQ_INBOX/.seq-hw-conc-src")" "the persisted mark equals the highest sequence handed out"
+pass "concurrent sequence allocation is serialized and monotone"
+
 printf '\nall procevent tests passed\n'
