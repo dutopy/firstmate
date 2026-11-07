@@ -210,3 +210,40 @@ i=0
 while [ ! -e "$LAB/codex.acted" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
 test "$(cat "$LAB/codex.acted")" = verified
 echo 'ok - codex native attribution rejects foreign processes, title threads, and ambiguous root sessions'
+
+# A hung harness API must not wedge the actor: the first delivery times out and is
+# refused (2), the next one is served, and no stale request is left behind.
+printf 'backend=tmux\nwindow=native:hang\nharness=pi\n' > "$LAB/state/hang.meta"
+mkdir -p "$LAB/state/hang.inbox/handled"
+printf 'instruction\n' > "$LAB/state/hang.inbox/001.msg"
+node "$MODULE" arm "$LAB/state" hang pi "$LAB"
+cat > "$LAB/hang-actor.mjs" <<'JS'
+import {writeFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+const {startNativeInbox}=await import(pathToFileURL(process.argv[2]));
+let calls=0;
+const actor=await startNativeInbox({config:process.argv[3], session:()=>'hang-session', deliver:()=>{
+  if (calls++===0) return new Promise(()=>{});
+  writeFileSync(process.argv[4],'executed');
+}});
+if(!actor) process.exit(2);
+setInterval(()=>{},1000);
+JS
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t native: -n hang -c "$LAB" -- node "$LAB/hang-actor.mjs" "$MODULE" "$LAB/state/hang.native-inbox.config.json" "$LAB/hang.acted"
+i=0
+while [ ! -e "$LAB/state/hang.native-inbox.binding.json" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+test -e "$LAB/state/hang.native-inbox.binding.json"
+rc=0; node "$MODULE" request tmux native:hang "$LAB/state/hang.inbox/001.msg" doorbell || rc=$?
+test "$rc" = 2 || { echo "not ok - hung delivery returned $rc, expected 2"; exit 1; }
+test ! -e "$LAB/state/hang.native-inbox.request.json" || { echo "not ok - refused request left behind"; exit 1; }
+node "$MODULE" request tmux native:hang "$LAB/state/hang.inbox/001.msg" doorbell || { echo "not ok - actor wedged after a hung delivery"; exit 1; }
+test "$(cat "$LAB/hang.acted")" = executed
+echo 'ok - a hung native delivery times out, leaves no request, and does not wedge the actor'
+
+# An actor that dies while a request is pending yields a native failure (2), not
+# "unbound" (1), and removes its request.
+"$REAL_TMUX" -L "$SOCKET" kill-window -t native:hang
+rc=0; node "$MODULE" request tmux native:hang "$LAB/state/hang.inbox/001.msg" doorbell || rc=$?
+test "$rc" = 1 || { echo "not ok - dead actor returned $rc, expected 1 (unbound before publish)"; exit 1; }
+test ! -e "$LAB/state/hang.native-inbox.request.json"
+echo 'ok - a dead actor is refused without leaving a request'

@@ -93,7 +93,7 @@ function live(binding, config, target) {
   return current(config) && meta?.window === target && binding?.generation === config.generation && binding.harness === config.harness
     && typeof binding.session === 'string' && binding.session.length > 0 && binding.started
     && processStart(binding.pid) === binding.started && descendant(binding.pid, binding.root)
-    && sameEndpoint(binding, endpoint(target));
+    && sameEndpoint(binding, endpoint(target, binding.socket));
 }
 export async function arm(state, id, harness, cwd) {
   if (!supported.has(harness)) throw new Error('unsupported native-inbox harness');
@@ -132,7 +132,7 @@ export function startNativeInbox({ config: configPath, session, deliver }) {
       if (!live(binding, config, request.target) || !validRecord(config, request.record) || typeof request.text !== 'string') throw new Error('native request lost its binding');
       // No await between the session check and invoking the harness API.
       if (session() !== sessionID) throw new Error('native session changed');
-      await deliver(request.text);
+      await Promise.race([deliver(request.text), new Promise((_, reject) => setTimeout(() => reject(new Error('native delivery timed out')), 4000).unref())]);
       save(files.response, { nonce: request.nonce, accepted: true });
     } catch (error) {
       save(files.response, { nonce: request.nonce, accepted: false, error: String(error) });
@@ -209,9 +209,10 @@ export async function request(backend, target, record, text) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const response = load(files.response);
     if (response?.nonce === nonce) return response.accepted ? 0 : 2;
-    if (!live(binding, config, target)) return 1;
+    if (!live(binding, config, target)) { if (load(files.request)?.nonce === nonce) remove(files.request); return 2; }
     await pause(50);
   }
+  if (load(files.request)?.nonce === nonce) remove(files.request);
   return 2;
 }
 function executable(command) {

@@ -3421,7 +3421,8 @@ cleanup_firstmate_home_children() {
     fi
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
     if [ -f "$sub_state/$child_id.native-inbox.config.json" ]; then
-      node "$SCRIPT_DIR/fm-native-inbox.mjs" retire "$sub_state" "$child_id" || return 1
+      node "$SCRIPT_DIR/fm-native-inbox.mjs" retire "$sub_state" "$child_id" \
+        || echo "teardown: native-inbox retire failed for $child_id; continuing" >&2
     fi
     status_retire_presentation_task "$sub_state" "$child_id" || return 1
     fm_backlog_atomic_transition remove "$sub_state/$child_id.meta" "task record" "$sub_state" || return 1
@@ -3891,7 +3892,8 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 if [ -f "$STATE/$ID.native-inbox.config.json" ]; then
-  node "$SCRIPT_DIR/fm-native-inbox.mjs" retire "$STATE" "$ID" || exit 1
+  node "$SCRIPT_DIR/fm-native-inbox.mjs" retire "$STATE" "$ID" \
+    || echo "teardown: native-inbox retire failed for $ID; continuing" >&2
 fi
 status_retire_presentation_task "$STATE" "$ID" || exit 1
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
