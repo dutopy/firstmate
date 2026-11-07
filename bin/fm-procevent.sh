@@ -518,21 +518,32 @@ extension_source_request_id() {  # <adapter> <source-id> <next-sequence> <regist
 # low number collides with that receipt ("generation conflicts with its
 # ingestion receipt") instead of continuing the stream.
 next_result_sequence() {  # <source-id>
-  local id=$1 inbox hw=0 stored f n seq tmp
+  local id=$1 inbox rdir hw=0 stored f n seq tmp lock
   inbox=$(fm_procevent_inbox_dir "$STATE")
+  rdir="$STATE/remote-replies"
   mkdir -p "$inbox" || return 1
+  # The read-compute-write below is one critical section: two callers must
+  # never be handed the same number, nor may the mark move backwards.
+  lock="$inbox/.seq-hw-$id.lock"
+  fm_lock_acquire_wait "$lock" || return 1
   stored=$(cat "$inbox/.seq-hw-$id" 2>/dev/null || true)
   case "$stored" in ''|*[!0-9]*) ;; *) hw=$stored ;; esac
-  for f in "$inbox/$id".*.result; do
+  # Seed from every number already used: live results and ingestion receipts
+  # (a receipt outlives its archived result, so a missing mark is rebuilt).
+  for f in "$inbox/$id".*.result "$rdir/$id".*.ingested; do
     [ -e "$f" ] || continue
-    n=${f%.result}; n=${n##*.}
+    n=${f%.result}; n=${n%.ingested}; n=${n##*.}
     case "$n" in ''|*[!0-9]*) continue ;; esac
     [ "$n" -gt "$hw" ] && hw=$n
   done
   seq=$((hw + 1))
-  tmp=$(mktemp "$inbox/.seq-hw-$id.XXXXXX") || return 1
-  printf '%s\n' "$seq" > "$tmp" && mv -f "$tmp" "$inbox/.seq-hw-$id" || { rm -f "$tmp"; return 1; }
-  printf '%s\n' "$seq"
+  tmp=$(mktemp "$inbox/.seq-hw-$id.XXXXXX") || { fm_lock_release "$lock"; return 1; }
+  if printf '%s\n' "$seq" > "$tmp" && mv -f "$tmp" "$inbox/.seq-hw-$id"; then
+    fm_lock_release "$lock"
+    printf '%s\n' "$seq"
+  else
+    rm -f "$tmp"; fm_lock_release "$lock"; return 1
+  fi
 }
 
 cmd_register_extension() {
