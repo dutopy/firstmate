@@ -38,3 +38,6 @@ commands:
 test:
   evidence:
     store_in_repo: true
+
+# No GitHub Actions on this repo (Actions suspended); the ci step passes with no checks.
+no_ci: true
