@@ -573,11 +573,9 @@ test_codex_crewmate_launch_disables_the_hook_layer() {
   # disabling them, so a launch must never reach for it.
   assert_not_contains "$launch" "--dangerously-bypass-hook-trust" \
     "codex crewmate launch ran the operator's untrusted hooks instead of disabling them"
-  # Firstmate goes blind without the turn-end signal, which rides this same
-  # launch rather than any hook.
-  assert_contains "$launch" "notify=" \
-    "codex crewmate launch lost the turn-end notify program"
-  pass "a codex crewmate launches with no hook layer and keeps its turn-end signal"
+  # The child notify program is owned by the native launch wrapper. Its real
+  # completion/foreign-thread transitions are exercised by fm-native-inbox.test.sh.
+  pass "a codex crewmate disables the hook layer instead of bypassing its trust"
 }
 
 test_codex_secondmate_launch_keeps_the_hook_layer() {

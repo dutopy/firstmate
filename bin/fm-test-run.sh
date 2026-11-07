@@ -360,13 +360,13 @@ family_for_basename() {
     fm-pr-state-live-e2e.test.sh|\
     fm-sessionstart-hook-live-e2e.test.sh|fm-sessionstart-instruction-refresh-live-e2e.test.sh|\
     fm-quota-array-dispatch-live-e2e.test.sh|fm-send-secondmate-marker-herdr-e2e.test.sh|\
-    fm-send-inbox-doorbell-live-e2e.test.sh|\
+    fm-send-inbox-doorbell-live-e2e.test.sh|fm-native-inbox-live-e2e.test.sh|\
     fm-calm-claude-mod-plugin.test.sh|fm-calm-claude-mod-live-e2e.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh|fm-worker-guard-live-e2e.test.sh|fm-worker-guard-spawn-lab-e2e.test.sh)
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
-    fm-tmux-agent-liveness.test.sh|\
+    fm-tmux-agent-liveness.test.sh|fm-native-inbox.test.sh|\
     fm-control.test.sh|fm-control-relaunch.test.sh|\
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
     fm-send-inbox.test.sh|fm-spawn-batch.test.sh|\
@@ -1596,7 +1596,10 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
       ;;
-    bin/fm-task-inbox-lib.sh)
+    tests/fm-native-inbox-opencode-launch.mjs)
+      printf '%s\n' live-harness-optin
+      ;;
+    bin/fm-task-inbox-lib.sh|bin/fm-native-inbox.mjs)
       # The steering-inbox record/doorbell/ladder owner: fm-send's data plane
       # (backend-dispatch), the watcher's re-ring check (watcher-wake-lock),
       # and the live doorbell guard against real harnesses.

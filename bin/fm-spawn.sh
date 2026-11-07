@@ -1930,7 +1930,7 @@ launch_template() {
     if [ "$kind" = secondmate ]; then
       printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     else
-      printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+      printf '%s' 'node __NATIVEINBOX__ codex __NATIVEINBOXCFG__ -- codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox --disable hooks "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     fi
     ;;
   opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
@@ -4077,6 +4077,14 @@ if [ "$KIND" != secondmate ]; then
     ;;
   esac
   case "$HARNESS" in
+    pi|codex|opencode)
+      node "$FM_ROOT/bin/fm-native-inbox.mjs" arm "$STATE_REAL" "$ID" "$HARNESS" "$WT" >/dev/null || {
+        echo "error: failed to arm native steering for $ID" >&2
+        exit 1
+      }
+      ;;
+  esac
+  case "$HARNESS" in
   claude*)
     # Semantic busy-state hooks (bin/fm-busy-lib.sh): UserPromptSubmit opens
     # a turn; Stop (normal completion), StopFailure (API-error turn end),
@@ -4146,6 +4154,7 @@ EOF
 // never clear the worker's busy state. The session.idle touch stays the
 // watcher's wake NOTIFICATION, never current-state truth.
 import { execFile } from "node:child_process";
+import { openCodeNativeInbox } from "$FM_ROOT/bin/fm-native-inbox.mjs";
 const busyEvent = (state, event) =>
   new Promise((resolve) => {
     execFile("$FM_ROOT/bin/fm-busy-event.sh", [
@@ -4153,10 +4162,13 @@ const busyEvent = (state, event) =>
       "--gen", "$BUSY_GEN", "--source", "opencode-plugin", "--event", event,
     ], () => resolve());
   });
-export const FmBusyState = async () => {
+export const FmBusyState = async ({ client }) => {
+  const nativeInbox = openCodeNativeInbox(client, "$STATE_REAL/$ID.native-inbox.config.json");
   let activeSession = null;
   return {
+    "chat.message": nativeInbox.message,
     event: async ({ event }) => {
+      nativeInbox.event(event);
       if (event.type === "session.status") {
         const sessionID = event.properties.sessionID;
         const statusType = event.properties.status && event.properties.status.type;
@@ -4202,6 +4214,7 @@ EOF
 // tool calls) and stays a wake NOTIFICATION touch for the watcher, never
 // current-state truth.
 import { execFile } from "node:child_process";
+import { installPiNativeInbox } from "$FM_ROOT/bin/fm-native-inbox.mjs";
 const busyEvent = (state: string, event: string) =>
   new Promise<void>((resolve) => {
     execFile("$FM_ROOT/bin/fm-busy-event.sh", [
@@ -4210,6 +4223,7 @@ const busyEvent = (state: string, event: string) =>
     ], () => resolve());
   });
 export default function (pi: any) {
+  if ("$HARNESS" === "pi") installPiNativeInbox(pi, "$STATE_REAL/$ID.native-inbox.config.json");
   pi.on("agent_start", () => busyEvent("busy", "agent-start"));
   pi.on("agent_settled", (_event: any, ctx: any) => {
     if (ctx && typeof ctx.isIdle === "function" && !ctx.isIdle()) return;
@@ -4654,6 +4668,8 @@ fi
 LAUNCH=${LAUNCH//__BRIEF__/$sq_brief}
 LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
+LAUNCH=${LAUNCH//__NATIVEINBOX__/$(shell_quote "$FM_ROOT/bin/fm-native-inbox.mjs")}
+LAUNCH=${LAUNCH//__NATIVEINBOXCFG__/$(shell_quote "$STATE_REAL/$ID.native-inbox.config.json")}
 LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}
 LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
 LAUNCH=${LAUNCH//__OMPEXT__/$sq_ompext}

@@ -256,6 +256,14 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id>
     # the project, and nothing global is installed.
     gemini) printf '%s\n' "$state/$id.gemini-settings.json" ;;
   esac
+  case "$harness" in
+    pi|codex|opencode)
+      local suffix
+      for suffix in config binding launch request response; do
+        printf '%s\n' "$state/$id.native-inbox.$suffix.json"
+      done
+      ;;
+  esac
 }
 
 # The firstmate-owned global turn-end registry entry a harness mints per task.
