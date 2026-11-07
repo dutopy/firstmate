@@ -75,7 +75,7 @@ unset _fm_classify_nounset
 # verb-aware: a nonterminal working: or paused: line never becomes captain-relevant
 # merely because its prose contains one of those tokens (for example
 # "working: rebased onto merged #76").
-FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'
+FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|reflex-intake|reflex-report|PR ready|checks green|ready in branch|merged'
 
 # The deliberate-external-wait verb. A crew (or firstmate steering it) appends
 #   paused: <reason>
@@ -821,13 +821,13 @@ _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
     return
   fi
   if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-    ident=$(LC_ALL=C /usr/bin/stat -f '%d:%i' "$f" 2>/dev/null) || return 1
-    epoch=$(LC_ALL=C /usr/bin/stat -f '%B' "$f" 2>/dev/null) || epoch=0
-    if [ "$epoch" != 0 ]; then birth=$(LC_ALL=C /usr/bin/stat -f '%FB' "$f" 2>/dev/null) || birth=''; else birth=''; fi
+    ident=$(/usr/bin/stat -f '%d:%i' "$f" 2>/dev/null) || return 1
+    epoch=$(/usr/bin/stat -f '%B' "$f" 2>/dev/null) || epoch=0
+    if [ "$epoch" != 0 ]; then birth=$(/usr/bin/stat -f '%FB' "$f" 2>/dev/null) || birth=''; else birth=''; fi
   else
-    ident=$(LC_ALL=C stat -c '%d:%i' "$f" 2>/dev/null) || return 1
-    epoch=$(LC_ALL=C stat -c '%W' "$f" 2>/dev/null) || epoch=0
-    if [ "$epoch" != 0 ]; then birth=$(LC_ALL=C stat -c '%w' "$f" 2>/dev/null) || birth=''; else birth=''; fi
+    ident=$(stat -c '%d:%i' "$f" 2>/dev/null) || return 1
+    epoch=$(stat -c '%W' "$f" 2>/dev/null) || epoch=0
+    if [ "$epoch" != 0 ]; then birth=$(stat -c '%w' "$f" 2>/dev/null) || birth=''; else birth=''; fi
   fi
   case "$ident$birth" in *$'\t'*|*$'\n'*|'') return 1 ;; esac
   if [ -n "$birth" ]; then printf 'strong:%s:%s' "$ident" "$birth"; else printf 'weak:%s' "$ident"; fi
@@ -840,18 +840,18 @@ _fm_status_file_size() {  # <status-file>
     return
   fi
   if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-    LC_ALL=C /usr/bin/stat -f '%z' "$f" 2>/dev/null
+    /usr/bin/stat -f '%z' "$f" 2>/dev/null
   else
-    LC_ALL=C stat -c '%s' "$f" 2>/dev/null
+    stat -c '%s' "$f" 2>/dev/null
   fi
 }
 
 _fm_status_file_mtime() {  # <status-file>
   local f=$1
   if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-    LC_ALL=C /usr/bin/stat -f '%m' "$f" 2>/dev/null
+    /usr/bin/stat -f '%m' "$f" 2>/dev/null
   else
-    LC_ALL=C stat -c '%Y' "$f" 2>/dev/null
+    stat -c '%Y' "$f" 2>/dev/null
   fi
 }
 
@@ -964,7 +964,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
     chunk_file="$cf.read.$$"
     _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
-    chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
+    chunk_size=$(wc -c < "$chunk_file" 2>/dev/null) \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
     chunk_size=${chunk_size//[[:space:]]/}
     case "$chunk_size" in
