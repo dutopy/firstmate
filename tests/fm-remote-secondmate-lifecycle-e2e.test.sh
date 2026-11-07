@@ -1074,6 +1074,26 @@ RELAUNCH_UNVERIFIED=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-c
   relaunch ios notaharness - - 2>&1) && fail "an unverified runtime should refuse a remote restart"
 assert_contains "$RELAUNCH_UNVERIFIED" 'unverified remote secondmate harness' \
   "the remote restart verb did not refuse an unverified runtime"
+# omp must clear every harness gate: each runs before any other check, so a
+# later, different refusal proves omp got past it while notaharness did not.
+LAUNCH_UNVERIFIED=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh \
+  launch ios notaharness - - tmux 2>&1) && fail "an unverified runtime should refuse a remote launch"
+assert_contains "$LAUNCH_UNVERIFIED" 'unverified remote secondmate harness' \
+  "the remote launch verb did not refuse an unverified runtime"
+LAUNCH_OMP=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh \
+  launch ios omp - - tmux 2>&1) && fail "launch on a non-herdr backend should refuse"
+assert_contains "$LAUNCH_OMP" 'a remote secondmate runs only on the herdr backend' \
+  "omp did not clear the remote launch harness gate"
+assert_not_contains "$LAUNCH_OMP" 'unverified remote secondmate harness' \
+  "the remote launch verb refused omp as an unverified harness"
+SPAWN_UNVERIFIED=$(remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate --harness notaharness --backend tmux 2>&1) \
+  && fail "the parent spawn accepted an unverified remote harness"
+assert_contains "$SPAWN_UNVERIFIED" 'requires a verified harness adapter' \
+  "the parent spawn did not refuse an unverified remote harness"
+SPAWN_OMP=$(remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate --harness omp --backend tmux 2>&1) \
+  && fail "the parent spawn on a non-herdr backend should refuse"
+assert_contains "$SPAWN_OMP" 'a remote secondmate runs only on the herdr backend' \
+  "omp did not clear the parent spawn harness gate"
 RELAUNCH_ROUTE_META="$REMOTE_HOME/state/parent-route/ios.meta"
 cp "$RELAUNCH_ROUTE_META" "$TMP_ROOT/ios-before-relaunch.meta"
 mkdir -p "$TMP_ROOT/not-a-checkout"
@@ -1083,6 +1103,12 @@ RELAUNCH_CHECKPOINT=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-c
   relaunch ios codex - - 2>&1) && fail "a restart with no accountable checkout should refuse"
 assert_contains "$RELAUNCH_CHECKPOINT" 'refusing to relaunch without a checkout whose unlanded work can be accounted for' \
   "the host-local restart did not reach the control plane's own pre-stop checkpoint"
+RELAUNCH_OMP=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh \
+  relaunch ios omp - - 2>&1) && fail "an omp restart with no accountable checkout should refuse"
+assert_contains "$RELAUNCH_OMP" 'refusing to relaunch without a checkout whose unlanded work can be accounted for' \
+  "omp did not clear the restart harness gate and reach the pre-stop checkpoint"
+assert_not_contains "$RELAUNCH_OMP" 'unverified remote secondmate harness' \
+  "the remote restart verb refused omp as an unverified harness"
 cp "$TMP_ROOT/ios-before-relaunch.meta" "$RELAUNCH_ROUTE_META"
 [ "$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh state ios)" = alive ] \
   || fail "a refused remote restart must leave the running agent untouched"
