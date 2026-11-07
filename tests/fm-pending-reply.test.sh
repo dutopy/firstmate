@@ -1644,6 +1644,33 @@ test_tick_skips_terminal_and_reuses_target_observation
 test_tick_visits_settled_resolved_records_without_forking
 test_correlations_reuse_only_for_matching_open_task
 test_tick_end_to_end_missed_then_escalate
+test_find_resolve_line_only_matches_the_exact_corr_token() {
+  local dir status line big t0 t1
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-pr-find.XXXXXX") || fail "cannot create a scratch dir"
+  status="$dir/big.status"
+  : > "$status"
+  for big in $(seq 1 3000); do
+    printf 'working [corr=%016x]: unrelated progress line %s\n' "$big" "$big" >> "$status"
+  done
+  {
+    printf 'blocked: pending-reply-missed corr=aaaaaaaaaaaaaaaa never self-resolves\n'
+    printf 'done [corr=aaaaaaaaaaaaaaaa]: the correlated reply\n'
+    printf 'done [corr=aaaaaaaaaaaaaaaab]: a longer token is not the same id\n'
+  } >> "$status"
+  t0=$(date +%s)
+  line=$(fm_pending_reply_find_resolve_line "$status" aaaaaaaaaaaaaaaa)
+  t1=$(date +%s)
+  assert_equals "done [corr=aaaaaaaaaaaaaaaa]: the correlated reply" "$line" \
+    "the correlated reply is found among unrelated lines"
+  [ $((t1 - t0)) -le 2 ] \
+    || fail "scanning a 3000-line status file took $((t1 - t0))s: unrelated lines must be dropped before the shell loop (about 7s without the prefilter)"
+  line=$(fm_pending_reply_find_resolve_line "$status" bbbbbbbbbbbbbbbb)
+  assert_equals "" "$line" "an id that is not in the file resolves nothing"
+  rm -rf "$dir"
+  pass "find_resolve_line returns only the exact correlated line from a large status file"
+}
+
+test_find_resolve_line_only_matches_the_exact_corr_token
 test_failed_send_discards_undelivered_expectation
 test_remote_repost_waits_for_the_reply_channel
 test_mirrored_remote_reply_never_triggers_a_repost
