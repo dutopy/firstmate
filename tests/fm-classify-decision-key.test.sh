@@ -262,6 +262,42 @@ test_incremental_agrees_with_full_fold_across_appends() {
   pass "the incremental fold matches the full fold across appends in both key positions"
 }
 
+test_timestamp_prefix_preserves_status_grammar() {
+  local verb plain stamped line dir f
+  for verb in working needs-decision blocked 'done' failed note paused resolved captain-held; do
+    plain="$verb [key=before]: [key=after] prose: paused: not a verb"
+    stamped="2026-11-03T04:51:49Z $plain"
+    [ "$(status_line_verb "$stamped")" = "$verb" ] || fail "timestamp hid $verb"
+    [ "$(_fm_decision_key "$stamped")" = before ] || fail "timestamp changed before-colon key precedence"
+    [ "$(status_line_note "$stamped")" = '[key=after] prose: paused: not a verb' ] \
+      || fail "timestamp corrupted note or consumed lower-precedence key"
+    stamped="2026-11-03T04:51:49Z $verb: [key=after] prose: paused: not a verb"
+    [ "$(_fm_decision_key "$stamped")" = after ] || fail "timestamp hid note-head key"
+    [ "$(status_line_note "$stamped")" = 'prose: paused: not a verb' ] || fail "timestamp leaked into note"
+  done
+  dir=$(case_dir timestamp-anchoring)
+  f="$dir/t.status"
+  fm_write_meta "$dir/t.meta" "kind=ship"
+  printf 'needs-decision: [key=x] keep this open\n' > "$f"
+  for line in \
+    '2026-11-03T04:51:49Z done' \
+    '2026-11-03T04:51:49Z note: resolved: [key=x] merely prose' \
+    'prefix 2026-11-03T04:51:49Z resolved: [key=x] not leading' \
+    '2026-11-03T04:51:49Z prose resolved: [key=x] not leading' \
+    '2026-11-03T04:51:49Zresolved: [key=x] no separator' \
+    '2026-11-03T04:51Z resolved: [key=x] incomplete timestamp'; do
+    printf '%s\n' "$line" >> "$f"
+    assert_fold "$f" $'x\tneeds-decision\tkeep this open' "prose cannot impersonate timestamped resolution"
+  done
+  printf '2026-11-03T04:51:49Z resolved [key=x]: accepted\n' >> "$f"
+  assert_fold "$f" '' "timestamped before-colon resolution closes its key"
+  [ "$(status_key_closing_verb "$f" x)" = resolved ] || fail "per-key reader missed timestamped resolution"
+  printf '2026-11-03T04:54:00Z needs-decision: [key=x] choose again\n' >> "$f"
+  [ "$(status_key_closing_verb "$f" x)" = needs-decision ] || fail "per-key reader missed timestamped reopening"
+  pass "optional timestamp preserves known verbs, both key positions, precedence, and anchored transitions"
+}
+
+test_timestamp_prefix_preserves_status_grammar
 test_stated_key_is_honored_in_both_positions
 test_bare_keyless_line_still_folds_to_default
 test_resolution_closes_across_positions

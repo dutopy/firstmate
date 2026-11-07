@@ -1997,7 +1997,7 @@ test_no_run_idle_pane_paused() {
   make_repo_on_branch "$d/wt" fm/feat-pause
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-pause.meta" "window=fm:fm-feat-pause" "worktree=$d/wt" "kind=ship" "harness=claude"
-  printf 'paused: holding for the upstream tool release\n' > "$d/state/feat-pause.status"
+  printf 'done: old completion\n2026-10-13T00:27:45Z paused: holding for the upstream tool release\n' > "$d/state/feat-pause.status"
   FM_FAKE_AXI_STATUS=""
   FM_FAKE_BUSY=0
   arm_idle_record "$d/state" feat-pause
@@ -2009,6 +2009,14 @@ test_no_run_idle_pane_paused() {
   out=$(run_crew_state "$d" feat-pause)
   assert_contains "$out" "state: paused" "continuation prose and trailing blanks preserve the pause"
   assert_contains "$out" "holding for the upstream tool release" "multiline pause preserves its declared reason"
+  printf '2026-11-03T04:51:49Z needs-decision: [key=x] choose the wording\n' >> "$d/state/feat-pause.status"
+  out=$(run_crew_state "$d" feat-pause)
+  assert_contains "$out" "state: parked" "timestamped keyed decision supersedes the pause"
+  assert_contains "$out" "choose the wording" "timestamped keyed decision preserves its note"
+  printf '2026-11-03T04:52:00Z resolved: [key=x] wording accepted\n2026-11-03T04:52:01Z paused: waiting for release\n' >> "$d/state/feat-pause.status"
+  out=$(run_crew_state "$d" feat-pause)
+  assert_contains "$out" "state: paused" "timestamped resolution clears the decision before the new pause"
+  assert_contains "$out" "waiting for release" "latest timestamped pause supplies current detail"
   pass "no run + idle pane on a paused: status reports state: paused with its reason"
 }
 

@@ -215,6 +215,44 @@ test_over_long_decision_note_is_capped_with_a_marker() {
   pass "an over-long open decision is cut to its per-item budget with the shared truncation marker"
 }
 
+test_timestamped_keyed_decisions_and_old_cursor() {
+  local dir state out status cursor whole
+  dir=$(make_case timestamped)
+  state="$dir/state"
+  out="$dir/drain.out"
+  status="$state/produit.status"
+  cursor="$state/.produit.open-decisions-cursor"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-classify-lib.sh"
+  fm_write_meta "$state/produit.meta" "kind=secondmate"
+  printf '2026-11-03T04:51:49Z needs-decision: [key=x] choose the wording\n' > "$status"
+  # A pre-fix cursor already consumed this opener without recognizing it.
+  {
+    printf 'version=8:secondmate\noffset=%s\nident=%s\n' \
+      "$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')" \
+      "$(_fm_open_decisions_file_ident "$status")"
+  } > "$cursor"
+  whole=$(status_open_decisions "$status")
+  [ "$whole" = $'x\tneeds-decision\tchoose the wording' ] \
+    || fail "whole-file fold missed timestamped note-head key: $whole"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "timestamped drain failed"
+  grep -F 'produit [key=x] needs-decision: choose the wording' "$out" >/dev/null \
+    || fail "old cursor hid timestamped decision: $(cat "$out")"
+  # Neither later unrelated completion nor prose may close this secondmate key.
+  printf '2026-11-03T04:52:00Z done: unrelated work\n2026-11-03T04:52:01Z note: resolved: [key=x] merely prose\n' >> "$status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "second timestamped drain failed"
+  grep -F 'produit [key=x] needs-decision: choose the wording' "$out" >/dev/null \
+    || fail "unrelated event closed timestamped decision"
+  printf '2026-11-03T04:53:00Z resolved: [key=x] wording accepted\n' >> "$status"
+  [ -z "$(status_open_decisions "$status")" ] || fail "whole-file fold ignored timestamped resolution"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "resolution drain failed"
+  if grep -F 'OPEN DECISIONS' "$out" >/dev/null; then
+    fail "incremental fold ignored timestamped resolution: $(cat "$out")"
+  fi
+  pass "timestamped keyed decisions survive old cursors and close only on resolution"
+}
+
+test_timestamped_keyed_decisions_and_old_cursor
 test_buried_decision_still_surfaces
 test_over_long_decision_note_is_capped_with_a_marker
 test_explicit_resolution_closes_it
