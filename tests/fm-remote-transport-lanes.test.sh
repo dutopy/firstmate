@@ -132,22 +132,51 @@ SEQ_RESULTS=$(cat "$TMP_ROOT"/seq-* | sort -n)
 SEQ_EXPECTED=$(seq 1 20)
 [ "$SEQ_RESULTS" = "$SEQ_EXPECTED" ] \
   || fail "concurrent sequence claims were not unique and monotonic: $SEQ_RESULTS"
-[ "$(find "$STATE_ROOT/.seq-claims" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = 20 ] \
+[ "$(find "$STATE_ROOT/.seq-claims" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" = 20 ] \
   || fail "concurrent sequence allocations did not retain every durable claim"
-mkdir "$STATE_ROOT/.seq-claims/999998" "$STATE_ROOT/.seq-claims/999999"
+touch "$STATE_ROOT/.seq-claims/999998" "$STATE_ROOT/.seq-claims/999999"
 touch -t 200001010000 "$STATE_ROOT/.seq-claims/999998"
+mkdir "$STATE_ROOT/.seq-claims/999996"
+touch -t 200001010000 "$STATE_ROOT/.seq-claims/999996"
 fm_remote_job_reap_stale "$ACCOUNT_HOME" || fail "sequence claim reaping failed"
 assert_absent "$STATE_ROOT/.seq-claims/999998" "an expired sequence claim survived stale reaping"
+assert_absent "$STATE_ROOT/.seq-claims/999996" "an expired legacy directory claim survived stale reaping"
 assert_present "$STATE_ROOT/.seq-claims/999999" "a fresh sequence claim was reaped"
-mkdir "$STATE_ROOT/.seq-claims/999997"
+touch "$STATE_ROOT/.seq-claims/999997"
 touch -t 200001010000 "$STATE_ROOT/.seq-claims/999997"
 fm_remote_job_reap_stale "$ACCOUNT_HOME" || fail "rate-limited sequence claim reaping failed"
 assert_present "$STATE_ROOT/.seq-claims/999997" "sequence claims were rescanned before the hourly interval"
 touch -t 200001010000 "$STATE_ROOT/.seq-claims-reaped"
 fm_remote_job_reap_stale "$ACCOUNT_HOME" || fail "expired sequence claim reaping failed"
 assert_absent "$STATE_ROOT/.seq-claims/999997" "an expired sequence claim survived the next hourly scan"
-rmdir "$STATE_ROOT/.seq-claims/999999"
+rm "$STATE_ROOT/.seq-claims/999999"
 pass "atomic sequence claims remain unique and reap only after expiry"
+
+# A mkdir implementation that reports success for an existing directory must
+# never let a stale hint reissue a reserved sequence (uutils/coreutils#13970).
+(
+  FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/mkdir-race"
+  fm_remote_job_prepare_state "$ACCOUNT_HOME" || fail "$FM_REMOTE_JOB_ERROR"
+  mkdir "$FM_REMOTE_JOB_SEQ_CLAIMS/1"
+  mkdir() {
+    command mkdir "$@" 2>/dev/null && return 0
+    [ "$#" -eq 1 ] && [ -d "$1" ]
+  }
+  mkdir "$FM_REMOTE_JOB_SEQ_CLAIMS/1" || fail "mkdir fault injection did not activate"
+  SEQ_PIDS=()
+  for i in $(seq 1 20); do
+    fm_remote_job_next_seq > "$TMP_ROOT/fault-seq-$i" &
+    SEQ_PIDS+=("$!")
+  done
+  for pid in "${SEQ_PIDS[@]}"; do
+    wait "$pid" || fail "a sequence allocator failed under faulty mkdir"
+  done
+  SEQ_RESULTS=$(cat "$TMP_ROOT"/fault-seq-* | sort -n)
+  SEQ_EXPECTED=$(seq 2 21)
+  [ "$SEQ_RESULTS" = "$SEQ_EXPECTED" ] \
+    || fail "faulty mkdir reissued a reserved sequence: $SEQ_RESULTS"
+) || exit 1
+pass "sequence claims remain unique when mkdir reports false success"
 
 fm_on() {
   FM_HOME="$LOCAL_HOME" \

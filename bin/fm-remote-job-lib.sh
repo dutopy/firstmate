@@ -14,10 +14,10 @@
 # supervisor, supervisor_start, group, group_start, and armed records while
 # work executes.
 # Stage writes state=queued last. seq is a queue-wide monotonic staging
-# sequence reserved atomically by its persistent .seq-claims directory; the
-# counter is only a forward-moving allocation hint. If the bounded hint walk
-# is exhausted, allocation rescans the claims for the maximum and continues
-# above it. Expired claims are reaped by an independently hourly-rate-limited
+# sequence reserved by exclusive file creation in .seq-claims (Bash noclobber,
+# not mkdir exit status); the counter is only an allocation hint.
+# If the bounded hint walk is exhausted, allocation rescans the claims for the
+# maximum and continues above it. Expired claims are reaped by an hourly-limited
 # sweep. seq is the worker's FIFO ordering key within a home, with the job id
 # as the deterministic tiebreak.
 # FIFO is defined over completed stagings: a stage that returns before another
@@ -600,7 +600,9 @@ fm_remote_job_next_seq() { # [stage-dir destination]
       [ "$recovered" -eq 0 ] || return 1
       maximum=0
       for entry in "$FM_REMOTE_JOB_SEQ_CLAIMS"/*; do
-        [ -d "$entry" ] && [ ! -L "$entry" ] || continue
+        if [ -L "$entry" ] || { [ ! -f "$entry" ] && [ ! -d "$entry" ]; }; then
+          continue
+        fi
         entry=${entry##*/}
         case "$entry" in ''|*[!0-9]*|0) continue ;; esac
         [ "$entry" -le "$maximum" ] || maximum=$entry
@@ -612,8 +614,11 @@ fm_remote_job_next_seq() { # [stage-dir destination]
     attempt=$((attempt + 1))
     value=$((value + 1))
     claim="$FM_REMOTE_JOB_SEQ_CLAIMS/$value"
-    if (umask 077; mkdir "$claim") 2>/dev/null; then
-      chmod 700 "$claim" || return 1
+    # Directories from older writers remain occupied until their normal expiry.
+    # The existence check avoids opening nonregular entries; noclobber, not that
+    # check, arbitrates concurrent creators with O_EXCL.
+    if [ ! -e "$claim" ] && [ ! -L "$claim" ] \
+      && (umask 077; set -C; : > "$claim") 2>/dev/null; then
       fm_remote_job_advance_seq_hint "$value" || true
       if [ -n "$stage" ]; then
         if ! fm_remote_job_write_number "$stage" seq "$value" \
@@ -627,7 +632,7 @@ fm_remote_job_next_seq() { # [stage-dir destination]
       printf '%s\n' "$value"
       return 0
     fi
-    [ -d "$claim" ] && [ ! -L "$claim" ] || return 1
+    [ ! -L "$claim" ] && { [ -f "$claim" ] || [ -d "$claim" ]; } || return 1
   done
 }
 
@@ -849,13 +854,19 @@ fm_remote_job_reap_stale() { # <account-home>
     if [ -n "$tmp" ] && printf '%s\n' "$now" > "$tmp" && chmod 600 "$tmp" \
       && mv -f -- "$tmp" "$marker"; then
       for claim in "$FM_REMOTE_JOB_SEQ_CLAIMS"/*; do
-        [ -d "$claim" ] && [ ! -L "$claim" ] || continue
+        if [ -L "$claim" ] || { [ ! -f "$claim" ] && [ ! -d "$claim" ]; }; then
+          continue
+        fi
         value=${claim##*/}
         case "$value" in ''|*[!0-9]*|0) continue ;; esac
         mtime=$(fm_remote_job_path_mtime "$claim" 2>/dev/null || true)
         case "$mtime" in ''|*[!0-9]*) continue ;; esac
         [ $((now - mtime)) -ge "$FM_REMOTE_JOB_SEQ_CLAIM_REAP_SECONDS" ] || continue
-        rmdir "$claim" 2>/dev/null || true
+        if [ -d "$claim" ]; then
+          rmdir "$claim" 2>/dev/null || true
+        else
+          rm -f -- "$claim" || true
+        fi
       done
     else
       [ -z "$tmp" ] || rm -f -- "$tmp"
