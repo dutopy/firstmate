@@ -784,8 +784,14 @@ rm -f "$CASE_BIN/claude"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$CASE_BIN/omp"
 chmod +x "$CASE_BIN/omp"
 doctor
+expect_code 1 "$DOCTOR_RC" "a stopped herdr server was reported ready while omp was the only harness"
 assert_contains "$DOCTOR_OUT" "required harness=omp:$CASE_BIN/omp" "omp alone did not satisfy remote harness readiness"
-pass "omp alone satisfies the remote harness readiness check"
+assert_contains "$DOCTOR_OUT" 'check herdr-server=fixable:' "the stopped server was not the only gap with omp installed"
+doctor --fix
+expect_code 0 "$DOCTOR_RC" "--fix did not reach readiness with omp as the only harness"
+assert_contains "$DOCTOR_OUT" "required harness=omp:$CASE_BIN/omp" "--fix lost the omp harness"
+assert_contains "$DOCTOR_OUT" 'check herdr-server=ok:' "--fix did not leave the server ready"
+pass "omp alone satisfies the remote harness readiness check, with and without --fix"
 
 # --- --fix may add only owned wrappers for version-manager tools -------------
 
@@ -818,6 +824,18 @@ doctor --fix
 expect_code 0 "$DOCTOR_RC" "--fix did not wrap one discoverable harness when none resolved"
 assert_present "$CASE_HOME/.local/bin/codex" "--fix did not create the first needed harness wrapper"
 assert_absent "$CASE_HOME/.local/bin/grok" "--fix created more harness wrappers than readiness requires"
+
+rm -f "$CASE_HOME/.local/bin/codex"
+rm -f "$MANAGER_BIN/codex" "$MANAGER_BIN/grok"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$MANAGER_BIN/omp"
+chmod +x "$MANAGER_BIN/omp"
+doctor --fix
+expect_code 0 "$DOCTOR_RC" "--fix did not wrap omp when it was the only discoverable harness"
+assert_present "$CASE_HOME/.local/bin/omp" "--fix did not create the omp harness wrapper"
+assert_grep "$MANAGER_BIN/omp" "$CASE_HOME/.local/bin/omp" \
+  "the omp wrapper does not execute the discovered absolute target"
+assert_contains "$DOCTOR_OUT" "required harness=omp:$CASE_HOME/.local/bin/omp" \
+  "the worker PATH did not resolve the generated omp wrapper"
 
 mv "$CASE_BIN/treehouse" "$MANAGER_BIN/treehouse"
 mkdir -p "$CASE_HOME/.local/bin"
