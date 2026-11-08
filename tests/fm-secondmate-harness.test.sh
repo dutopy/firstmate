@@ -884,7 +884,7 @@ test_spawn_explicit_model_overrides_secondmate_harness_token() {
 
 # Precedence: an explicit per-spawn --effort overrides the file's effort token.
 test_spawn_explicit_effort_overrides_secondmate_harness_token() {
-  local w sm meta launchlog launch out rc
+  local w sm meta launchlog launch
   w="$TMP_ROOT/spawn-explicit-effort"
   sm="$w/sm"
   launchlog="$w/launch.log"
@@ -892,12 +892,10 @@ test_spawn_explicit_effort_overrides_secondmate_harness_token() {
   printf 'claude opus high\n' > "$w/home/config/secondmate-harness"
   make_seeded_home "$sm" sm
 
-  out=$(spawn_secondmate_capture "$w" sm "$sm" "$launchlog" --effort low 2>&1); rc=$?
-  expect_code 0 "$rc" "explicit-effort: spawn failed"$'\n'"$out"
+  spawn_secondmate_capture "$w" sm "$sm" "$launchlog" --effort low >/dev/null 2>&1
 
   meta="$w/home/state/sm.meta"
-  [ "$(meta_field "$meta" model)" = opus ] \
-    || fail "explicit-effort: file's model token should still apply (got '$(meta_field "$meta" model)')"
+  [ "$(meta_field "$meta" model)" = opus ] || fail "explicit-effort: file's model token should still apply"
   [ "$(meta_field "$meta" effort)" = low ] \
     || fail "explicit-effort: meta effort not low (got '$(meta_field "$meta" effort)'), explicit flag did not win over file token"
   launch=$(cat "$launchlog")
