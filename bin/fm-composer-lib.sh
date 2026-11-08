@@ -998,8 +998,14 @@ _fm_composer_screen_row() {  # <n> <screen>
 # ghost-strip when styled, plain otherwise, normalize-trim, and strip one
 # matching pair of side border glyphs.
 _fm_composer_row_content() {  # <raw-row> <styled> -> content on stdout
-  local raw=$1 styled=$2 stripped
+  local raw=$1 styled=$2 stripped hint
   if [ "$styled" = 1 ]; then
+    # OMP 18.5.1 puts a bright shortcut before its grey italic explanation.
+    # Strip the complete, styled suffix, never a user's literal shortcut or
+    # hint wording; ghost stripping alone leaves the bright key as a draft.
+    hint=$'\033[38;2;0;180;255m⇧⇥\033[38;2;229;229;231m \033[3m\033[38;2;107;114;128mto change thinking effort'
+    raw=${raw%"$hint"$'\033[0m'}
+    raw=${raw%"$hint"}
     stripped=$(printf '%s\n' "$raw" | fm_composer_strip_ghost)
   else
     stripped=$(printf '%s\n' "$raw" | fm_composer_strip_ansi)

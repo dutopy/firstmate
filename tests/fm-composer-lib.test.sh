@@ -289,6 +289,22 @@ test_matrix_herdr_halfblock_rule_bounds_bare_wrap() {
   pass "matrix: herdr half-block rules bound a bare composer's wrap region"
 }
 
+test_matrix_omp_thinking_hint_is_not_a_draft() {
+  # OMP 18.5.1's live empty composer: a bright shortcut followed by a
+  # grey italic explanation. Removing only grey text leaves a false draft.
+  local hint screen
+  hint=$'\033[38;2;0;180;255m⇧⇥\033[38;2;229;229;231m \033[3m\033[38;2;107;114;128mto change thinking effort\033[0m'
+  screen=$'\033[39m❯ \033[38;2;229;229;231m                        '"$hint"$'\n π · ◑ GPT-6.1 Sol'
+  assert_screen "OMP styled thinking hint" empty "$CAPS_STYLED" "$screen"
+  assert_screen "OMP thinking hint with reset on next row" empty "$CAPS_STYLED" "${screen/$'\033[0m'/}"
+  assert_screen "OMP thinking hint at cursor" empty "$CAPS_TMUX" "$screen" 0
+  assert_screen "OMP draft before thinking hint" pending "$CAPS_TMUX" "${screen/❯ /❯ keep this draft }" 0
+  assert_screen "OMP typed shortcut is still a draft" pending "$CAPS_TMUX" $'❯ ⇧⇥\n π · ◑ GPT-6.1 Sol' 0
+  assert_screen "OMP typed hint wording is still a draft" pending "$CAPS_TMUX" $'❯ ⇧⇥ to change thinking effort\n π · ◑ GPT-6.1 Sol' 0
+  assert_screen "OMP plain thinking hint is unproven" unknown "$CAPS_PLAIN" $'❯                         ⇧⇥ to change thinking effort\n π · ◑ GPT-6.1 Sol'
+  pass "matrix: OMP's styled thinking hint is furniture, not pending input"
+}
+
 test_matrix_omp_status_row_bounds_bare_composer() {
   # omp (Oh My Pi) draws its status line directly BELOW the borderless `❯`
   # composer. Captured live through Herdr on omp 18.1.11 under the captain's
@@ -787,6 +803,7 @@ test_matrix_codex_dim_hint_row
 test_matrix_muse_truecolor_glyph_survives_signal_loss
 test_matrix_cursor_reverse_video_placeholder_remnant
 test_matrix_herdr_halfblock_rule_bounds_bare_wrap
+test_matrix_omp_thinking_hint_is_not_a_draft
 test_matrix_omp_status_row_bounds_bare_composer
 test_matrix_codex_idle_starfield_furniture
 test_matrix_pi_separated_needs_identity
