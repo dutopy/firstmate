@@ -1,0 +1,4 @@
+Actual captured OMP screen classification: pending
+Actual composer row after ghost stripping: ❯                                                                                                               ⇧⇥ 
+
+Base-commit classifier on the same actual screen: pending

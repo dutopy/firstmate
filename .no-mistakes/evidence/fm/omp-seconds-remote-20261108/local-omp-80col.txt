@@ -1,0 +1,104 @@
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate init -q
+
+exit=0
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate config user.email test@example.invalid
+
+exit=0
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate config user.name Disposable Validation
+
+exit=0
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate add .
+
+exit=0
+
+$ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate commit -qm Disposable secondmate seed
+
+exit=0
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/bin/fm-spawn.sh mate /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate --secondmate
+spawned mate harness=omp kind=secondmate mode=secondmate yolo=off window=firstmate:fm-mate worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate
+warning: secondmate mate sync skipped before launch: primary default-branch commit cannot be resolved
+
+exit=0
+
+Persisted parent endpoint record:
+window=firstmate:fm-mate
+endpoint_task_id=mate
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate
+harness=omp
+kind=secondmate
+mode=secondmate
+yolo=off
+tasktmp=/tmp/fm-mate
+model=openai-codex/gpt-6.1-sol
+effort=medium
+guard_base=7fbd552747a655299f4f3fbf5dee7a31f83819a9
+spawn_gen=s1794121232.87643.3676
+home=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate
+projects=
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/bin/fm-control.sh mate relaunch
+error: task mate's composer visibly holds pending text; refusing to type the /quit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'relaunch'
+error: relaunch of mate failed while stopping the old agent, which is still running; its original instructions were restored
+
+exit=1
+
+Endpoint record after configured-effort relaunch:
+window=firstmate:fm-mate
+endpoint_task_id=mate
+worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate
+project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate
+harness=omp
+kind=secondmate
+mode=secondmate
+yolo=off
+tasktmp=/tmp/fm-mate
+model=openai-codex/gpt-6.1-sol
+effort=medium
+guard_base=7fbd552747a655299f4f3fbf5dee7a31f83819a9
+spawn_gen=s1794121232.87643.3676
+home=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/mate
+projects=
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tools/tmux capture-pane -p -t firstmate:fm-mate -S -100
+
+                        ████████████
+                           ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
+                           ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
+                           ▒▒  ██                  █
+                               ██       v18.5.1
+
+       Tip: Find out which model you emotionally abuse the most with `omp
+                                     stats`
+
+ Error: No API key found for openai-codex.
+
+ Use /login, set an API key environment variable, or create
+ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.
+ validation/user/.omp/agent/agent.db
+
+────────────────────────────────────────────────────────────────────────────────
+ Update Available
+ New version 18.18.1 is available. Run: omp update
+────────────────────────────────────────────────────────────────────────────────
+
+❯                                                   ⇧⇥ to change thinking effort
+ π · ◑ GPT-6.1 Sol · 📁 …MBX0B9X56D/.validation/mate · ⑂ master · ◫ 2.5%/272K ⟲
+
+
+exit=0
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tools/tmux display-message -p -t firstmate:fm-mate #{pane_current_command} #{pane_width}x#{pane_height}
+omp 80x24
+
+exit=0
+
+omp 80x24
+
+$ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tools/tmux kill-server
+
+exit=0

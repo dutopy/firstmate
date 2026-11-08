@@ -1,0 +1,5 @@
+ok - per-second profiles replace the full global triplet without leaking omitted axes or other IDs
+ok - C4 spawn: config/secondmate-harness's model+effort tokens thread into the launch and meta
+ok - C5 spawn: an explicit --model overrides config/secondmate-harness's model token; the file's effort token still applies
+ok - C6 spawn: an explicit --effort overrides config/secondmate-harness's effort token; the file's model token still applies
+ok - C7 spawn: an explicit --harness starts with clean model/effort defaults

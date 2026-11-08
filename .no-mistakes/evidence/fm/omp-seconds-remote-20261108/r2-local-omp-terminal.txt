@@ -1,0 +1,40 @@
+
+                                                      ████████████
+                                                         ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
+                                                         ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
+                                                         ▒▒  ██                  █
+                                                             ██       v18.5.1
+
+                                  Tip: Bulk data to classify or triage? Say `jevify` in your message — the
+                                   eval kernel's `judge()` processes the batch and you read only what it
+                                                     flags — watch it glow as you type
+
+ Error: No API key found for openai-codex.
+
+ Use /login, set an API key environment variable, or create
+ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation-live/user/.omp/agent/agent.db
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Update Available
+ New version 18.18.1 is available. Run: omp update
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+❯                                                                                                               ⇧⇥ to change thinking effort
+ π · ◒ GPT-6.1 Sol · 📁 …Q7211TQMBX0B9X56D/.validation-live/mate · ⑂ master · ◫ 2.5%/272K ⟲
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

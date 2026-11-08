@@ -1,0 +1,2 @@
+time="2026-11-08T08:36:15+01:00" level=info msg="Terminal is not available, proceeding without opening an editor"
+time="2026-11-08T08:36:15+01:00" level=fatal msg="instance name `nm-remote` too long: `/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/lima-data/nm-remote/ssh.sock.1234567890123456` must be less than UNIX_PATH_MAX=104 characters, but is 134"

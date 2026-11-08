@@ -1,0 +1,225 @@
++ set -u
+++ dirname tests/fm-remote-secondmate-lifecycle-e2e.test.sh
++ . tests/lib.sh
+++ '[' -n '' ']'
+++ FM_TEST_LIB_SOURCED=1
+++ umask 022
++++ dirname tests/lib.sh
+++ . tests/git-config-helpers.sh
++++ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
++++ GIT_CONFIG_GLOBAL=/dev/null
++++ GIT_CONFIG_NOSYSTEM=1
+++ export FM_GATE_REFUSE_BYPASS=1
+++ FM_GATE_REFUSE_BYPASS=1
+++ unset FM_TASK_ID
+++ unset TASKS_AXI_FILE TASKS_AXI_BACKEND
+++++ dirname tests/lib.sh
++++ cd tests/..
++++ pwd
+++ ROOT=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D
+++ FM_TEST_CLEANUP_DIRS=()
++++ mktemp /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//.fm-test-cleanup.39738.XXXXXX
+++ FM_TEST_CLEANUP_REGISTRY=/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//.fm-test-cleanup.39738.W0KYdX
++++ fm_test_pid_identity 39738
++++ local pid=39738
++++ FM_STATE_OVERRIDE=/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/
++++ bash -c '. "$1"; fm_pid_identity "$2"' _ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/bin/fm-wake-lib.sh 39738
+++ FM_TEST_OWNER_IDENTITY='Sun Nov  8 08:02:36 2026     /bin/bash -x tests/fm-remote-secondmate-lifecycle-e2e.test.sh'
++++ mktemp /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//.fm-test-procevent.39738.XXXXXX
+++ FM_TEST_PROCEVENT_REGISTRY=/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//.fm-test-procevent.39738.PzkvY6
+++ FM_TEST_STUB_MAX_BLOCK_SECONDS=120
+++ export FM_TEST_STUB_MAX_BLOCK_SECONDS
+++ trap fm_test_cleanup EXIT
+++ trap 'fm_test_cleanup; exit 130' INT
+++ trap 'fm_test_cleanup; exit 143' TERM
+++ trap 'fm_test_cleanup; exit 129' HUP
+++ trap 'fm_test_cleanup; exit 131' QUIT
+++ fm_test_pin_mise_toolchain
+++ local home config_dir data_dir
+++ command -v mise
+++ return 0
+++ FM_TEST_ORPHAN_MAX_AGE_SECONDS=3600
+++ '[' 0 '!=' 1 ']'
+++ fm_test_reap_orphans
+++ local marker dir mtime now owner_pid owner_identity current_identity
++++ date +%s
+++ now=1794121356
+++ for marker in '"${TMPDIR:-/tmp}"/fm-*/.fm-test-fixture'
+++ '[' -e /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.UwdBpG/.fm-test-fixture ']'
++++ sed -n 1p /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.UwdBpG/.fm-test-fixture
+++ owner_pid=62055
++++ sed -n '2,$p' /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.UwdBpG/.fm-test-fixture
+++ owner_identity='Sun Nov  8 07:09:23 2026     bash tests/fm-control-relaunch.test.sh'
+++ case "$owner_pid" in
++++ fm_test_pid_identity 62055
+++ current_identity=
+++ current_identity=
+++ '[' -n 'Sun Nov  8 07:09:23 2026     bash tests/fm-control-relaunch.test.sh' ']'
+++ '[' '' = 'Sun Nov  8 07:09:23 2026     bash tests/fm-control-relaunch.test.sh' ']'
++++ stat -c %Y /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.UwdBpG/.fm-test-fixture
++++ stat -f %m /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.UwdBpG/.fm-test-fixture
+++ mtime=1794118338
+++ '[' 3018 -ge 3600 ']'
+++ continue
+++ for marker in '"${TMPDIR:-/tmp}"/fm-*/.fm-test-fixture'
+++ '[' -e /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.kYUjQO/.fm-test-fixture ']'
++++ sed -n 1p /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.kYUjQO/.fm-test-fixture
+++ owner_pid=71980
++++ sed -n '2,$p' /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.kYUjQO/.fm-test-fixture
+++ owner_identity='Sun Nov  8 07:56:24 2026     bash tests/fm-control-relaunch.test.sh'
+++ case "$owner_pid" in
++++ fm_test_pid_identity 71980
+++ current_identity=
+++ current_identity=
+++ '[' -n 'Sun Nov  8 07:56:24 2026     bash tests/fm-control-relaunch.test.sh' ']'
+++ '[' '' = 'Sun Nov  8 07:56:24 2026     bash tests/fm-control-relaunch.test.sh' ']'
++++ stat -c %Y /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.kYUjQO/.fm-test-fixture
++++ stat -f %m /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T//fm-control-auth.kYUjQO/.fm-test-fixture
+++ mtime=1794121142
+++ '[' 214 -ge 3600 ']'
+++ continue
+++ dirname tests/fm-remote-secondmate-lifecycle-e2e.test.sh
++ . tests/remote-herdr-fixture.sh
+++ dirname tests/fm-remote-secondmate-lifecycle-e2e.test.sh
++ . tests/herdr-client-pair-fixture.sh
++ command -v jq
++++ dirname tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+++ cd tests/..
+++ pwd -P
++ ROOT=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D
+++ fm_test_tmproot fm-remote-secondmate-e2e
+++ local prefix=fm-remote-secondmate-e2e root tmp_base
+++ tmp_base=/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/
+++ tmp_base=/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T
++++ mktemp -d /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.XXXXXX
+++ root=/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
++++ cd -P -- /var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
++++ pwd -P
+++ root=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
+++ printf '%s\n%s\n' 39738 'Sun Nov  8 08:02:36 2026     /bin/bash -x tests/fm-remote-secondmate-lifecycle-e2e.test.sh'
+++ printf '%s\n' /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
+++ printf '%s\n' /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
++ TMP_ROOT=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
++ mkdir -p /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
+++ cd /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
+++ pwd -P
++ TMP_ROOT=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
++ PARENT=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent
++ REMOTE_ROOT=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root
++ REMOTE_HOME=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-home
++ LOCAL_HOME=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/local-home
+++ fm_fakebin /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake
+++ local dir=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake fakebin=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin
+++ mkdir -p /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin
+++ printf '%s\n' /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin
++ FAKEBIN=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin
++ SSH_COUNT=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/ssh.count
++ DOCTOR_LOG=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/doctor.log
++ HERDR_STATE=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-herdr.state
++ HERDR_LOG=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-herdr.log
++ TMUX_LOG=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-tmux.log
++ TMUX_STATE=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-tmux.state
++ CLAIMS=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/claims
++ mkdir -p /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/data /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/state /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/config /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/claims
++ trap cleanup EXIT
++ cd /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D
++ tar --exclude=.git --exclude=.no-mistakes --exclude=data --exclude=state --exclude=config -cf - .
++ cd /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root
++ tar -xf -
+: ./.v.sock: pax format cannot archive sockets+ cat
++ chmod +x /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root/bin/tmux
++ install_remote_herdr_fixture /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-herdr.state /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-herdr.log /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/herdr-send-fail /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/herdr.sock
++ local remote_root=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root state=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-herdr.state log=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-herdr.log send_fail=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/herdr-send-fail socket=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/herdr.sock script=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root/bin/herdr
++ mkdir -p /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root/bin
++ cat
++ cat
++ chmod +x /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root/bin/herdr
++ reset_remote_herdr_fixture /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-herdr.state
++ printf '{"next":1,"workspaces":[],"tabs":[],"typed":{},"working":{}}\n'
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root init -q -b main
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root config user.email test@example.com
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root config user.name Test
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root add .
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root commit -qm 'remote fixture root'
++ REMOTE_ORIGIN=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/firstmate-origin.git
++ git init -q --bare /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/firstmate-origin.git
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root remote add origin file:///private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/firstmate-origin.git
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root push -q -u origin main
++ git --git-dir=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/firstmate-origin.git symbolic-ref HEAD refs/heads/main
++ git init -q --bare /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/alpha.git
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects init -q -b main alpha
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects/alpha config user.email test@example.com
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects/alpha config user.name Test
++ printf 'alpha\n'
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects/alpha add README.md
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects/alpha commit -qm init
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects/alpha remote add origin file:///private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/alpha.git
++ git -C /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/projects/alpha push -q -u origin main
++ cat
++ printf 'opencode global-model low\n'
++ mkdir -p /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent/config/secondmate-harness.d
++ printf 'codex per-ios-model high\n'
++ printf 'tmux\n'
++ printf 'primary harness defaults\n'
++ cat
++ chmod +x /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin/fake-ssh
+++ command -v git
++ REAL_GIT=/usr/local/bin/git
++ cat
++ chmod +x /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin/git
+++ printf ios
+++ base64
+++ tr -d '\n'
+++ printf 'Concurrent provisioning charter.\n'
+++ base64
+++ tr -d '\n'
++ printf 'schema=fm-remote-home-provision.v1\nid_b64=%s\ncharter_b64=%s\nproject_count=0\n' aW9z Q29uY3VycmVudCBwcm92aXNpb25pbmcgY2hhcnRlci4K
++ provision_one=52716
++ provision_wait=0
++ '[' '!' -f /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/provision.entered ']'
++ kill -0 52716
++ PATH='/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin:/Users/pierre/.pi/agent/bin:/Users/pierre/.opencode/bin:/Users/pierre/.local/bin:/Users/pierre/.bun/bin:/usr/local/lib/ruby/gems/3.4.0/bin:/usr/local/opt/ruby/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/pierre/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/Little Snitch.app/Contents/Components:/Users/pierre/.local/bin:/Users/pierre/go/bin:/Users/pierre/.cargo/bin:/Users/pierre/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/pierre/_Dev/flutter/bin'
++ FM_HOME=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/concurrent-home
++ provision_wait=1
++ FM_ROOT_OVERRIDE=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root
++ '[' 1 -le 250 ']'
++ /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root/bin/fm-remote-home-provision.sh
++ sleep 0.02
++ '[' '!' -f /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/provision.entered ']'
++ kill -0 52716
++ provision_wait=2
++ '[' 2 -le 250 ']'
++ sleep 0.02
++ '[' '!' -f /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/provision.entered ']'
++ provision_two=52998
++ sleep 0.2
++ PATH='/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/fake/fakebin:/Users/pierre/.pi/agent/bin:/Users/pierre/.opencode/bin:/Users/pierre/.local/bin:/Users/pierre/.bun/bin:/usr/local/lib/ruby/gems/3.4.0/bin:/usr/local/opt/ruby/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/pierre/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/Little Snitch.app/Contents/Components:/Users/pierre/.local/bin:/Users/pierre/go/bin:/Users/pierre/.cargo/bin:/Users/pierre/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/pierre/_Dev/flutter/bin'
++ FM_HOME=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/concurrent-home
++ FM_ROOT_OVERRIDE=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root
++ /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-root/bin/fm-remote-home-provision.sh
+++ grep -cF clone /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/provision-clones
++ '[' 1 -eq 1 ']'
++ touch /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/provision.release
++ wait 52716
++ wait 52998
+++ cat /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/concurrent-home/.fm-secondmate-home
++ '[' ios = ios ']'
+++ grep -cF clone /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/provision-clones
++ '[' 1 -eq 1 ']'
++ pass 'overlapping remote home provisioning serializes through publication and rollback'
++ printf 'ok - %s\n' 'overlapping remote home provisioning serializes through publication and rollback'
+ok - overlapping remote home provisioning serializes through publication and rollback
++ '[' 1 = 1 ']'
++ echo 'ALL TESTS PASSED'
+ALL TESTS PASSED
++ exit 0
++ cleanup
++ local worker_pid= wait_attempt=0
++ touch /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/provision.release /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/seed.release /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/handoff.release /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/inherit.release /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/launch.release
++ FM_HOME=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/parent
++ FM_PROCEVENT_CLAIM_ROOT=/private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/claims
++ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/bin/fm-procevent.sh sweep-home
++ '[' -f /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX/remote-jobs/worker.pid ']'
++ rm -rf -- /private/var/folders/j4/rd9t3mnx3x13f9b1tqr5rd0r0000gn/T/fm-remote-secondmate-e2e.HoMDNX
+
+Diagnostic exit=0

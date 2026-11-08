@@ -1,0 +1,80 @@
+FM_TEST_BEGIN 2026-11-08T07:19:46Z tests/fm-composer-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm_composer_classify_content: a bare shell prompt glyph (>/$/%/#) reads unknown, never empty
+ok - fm_composer_classify_content: stripped unbordered content is unknown except verified agent glyphs
+ok - fm_composer_classify_content: a bare shell prompt carrying a command is not empty
+ok - fm_composer_classify_content: a bare prompt glyph inside a bordered composer box reads empty (claude's own idle composer)
+ok - fm_composer_classify_content: agent prompt glyphs (❯ claude, › codex, ⟩ muse) read empty bordered or bare
+ok - fm_composer_classify_content: an empty composer reads empty
+ok - fm_composer_classify_content: idle matching is limited to proven placeholder positions
+ok - fm_composer_classify_content: idle matching preserves the caller's case mode
+ok - fm_composer_classify_content: real unsubmitted text reads pending (including a popup argument-hint fill)
+ok - matrix: claude's ❯+NBSP row reads empty on every profile in both locales (#1988)
+ok - matrix: codex's dim hint is empty when styling proves it, unknown (never pending) when it cannot
+ok - matrix: muse's ⟩ reads empty everywhere and survives losing the styled-glyph signal
+ok - matrix: cursor's reverse-video placeholder remnant reads empty; real typed text stays pending
+ok - matrix: herdr half-block rules bound a bare composer's wrap region
+ok - matrix: OMP's styled thinking hint is furniture, not pending input
+ok - matrix: omp's status row bounds the bare composer's wrap region
+ok - matrix: codex 0.154's starfield rows are furniture; typed, mixed, and unanchored rows keep their verdicts
+ok - matrix: pi's separated composer needs identity + structure; the blank row alone never proves it
+ok - matrix: opencode's left-bar composer reads empty everywhere and scans the full active run
+ok - matrix: grok's real oversized titled bottom is empty while typed and unproved panes stay safe
+ok - matrix: kimi's bordered shell-glyph box reads empty through the shared owner (spawn's fourth copy retired)
+ok - matrix: the real claude-in-zellij --ansi dump reads empty in both locales
+ok - strict posture: blank and unidentified rows are unknown, never injectable empty
+ok - fm_composer_classify_screen: the bare composer's wrap region stays identified; structure breaks it
+ok - fm_composer_classify_screen: a row-leading agent glyph reanchors the live composer
+ok - fm_composer_classify_screen: a lower dead shell invalidates only cursorless stale composers
+ok - fm_composer_classify_screen: cursorless bare wrap regions participate in verdicts
+ok - fm_composer_classify_screen: cursorless containers reject only contiguous unclaimed activity
+ok - fm_composer_classify_screen: the bottom-most candidate wins; stale banners cannot
+ok - fm_composer_classify_screen: incomplete lower structure invalidates stale boxes
+ok - fm_composer_classify_screen: titled bottoms retain full box geometry
+ok - fm_composer_classify_screen: a proven box tolerates a bottom-border cursor
+ok - fm_composer_extract_selected_content: scopes user content and excludes furniture
+ok - fm_composer_queued_enter_verdict: pending + busy returns empty (queued Enter)
+ok - fm_composer_queued_enter_verdict: pending + idle/unknown stays pending
+ok - fm_composer_queued_enter_verdict: only proven pending is converted
+FM_TEST_END 2026-11-08T07:20:06Z tests/fm-composer-lib.test.sh exit=0 duration_ms=19777 gate_skip=false
+FM_TEST_BEGIN 2026-11-08T07:20:06Z tests/fm-secondmate-restart.test.sh family=secondmate expected_gate_skip=none
+ok - T1 persist is a gate, and asks for open records and task status only
+not ok - a confirmed persist should restart the mate
+unreached: sm1: the restart outcome is unknown: secondmate home cannot be inside the firstmate repo: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-test-run.cbGzQs/w2/tmp/fm-secondmate-restart.OfboBm/order-23958/sm1-home
+summary: 0 of 1 restarted, 0 nudged, 1 unreached: expected exit 0, got 3
+FM_TEST_END 2026-11-08T07:20:22Z tests/fm-secondmate-restart.test.sh exit=1 duration_ms=15889 gate_skip=false
+FM_TEST_BEGIN 2026-11-08T07:20:22Z tests/fm-control-relaunch.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+ok - fm-control relaunch: the guard's script base is the first launch's commit, or empty when unknown
+ok - fm-control relaunch: pending composer text refuses before the exit command is typed
+ok - fm-control relaunch: an unreadable composer fails safe before the exit command is typed
+ok - fm-control relaunch: a linked spawning home preserves committed and unfinished work in the recorded copy
+ok - fm-control relaunch: durable task metadata survives replacement launch publication
+ok - fm-control relaunch: an override reason survives only an unchanged harness/model/effort
+ok - fm-control relaunch: an out-of-profile replacement needs a reason, and a changed triplet drops the old one
+ok - fm-control relaunch: delivery and concurrent task metadata publication serialize
+ok - fm-control relaunch: disabling tracing clears metadata and pane context
+ok - fm-control relaunch: progress and the Firstmate-worktree worker identity reach the replacement
+ok - fm-control relaunch: a ship task refuses without the progress note its replacement needs
+ok - fm-control relaunch: switching harness is one ordinary relaunch, and the old wiring goes with the old agent
+ok - fm-control relaunch: a harness switch resets model and effort unless they are named too
+ok - fm-control relaunch: a prefixed recorded harness can switch adapters transactionally
+ok - fm-control relaunch: a prefixed command requires an explicit replacement harness
+ok - fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with
+ok - native Ultra relaunch preserves its profile and rejects an unsupported model before stopping
+ok - fm-control relaunch: explicit model and effort win over the recorded ones
+ok - fm-control relaunch: refuses to relaunch onto an adapter with no verified mechanics
+ok - fm-control relaunch: the retired incarnation's global turn-end token is revoked
+ok - fm-control relaunch: wiring cleanup failure refuses replacement arming
+ok - fm-control-lib: one owner resolves each harness's turn-end registry entry, and refuses a malformed token
+not ok - a configured secondmate harness should relaunch
+error: secondmate home cannot be inside the firstmate repo: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-control-relaunch.fQsKgG/smpin-24754/smhome
+error: the replacement agent for sm3 could not be launched on codex
+error: sm3's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-control-relaunch.fQsKgG/smpin-24754/smhome: expected exit 0, got 1
+FM_TEST_END 2026-11-08T07:23:21Z tests/fm-control-relaunch.test.sh exit=1 duration_ms=179240 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=2 skipped_gate=0 duration_ms=215759
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=179240 failed=1
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=19777 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=15889 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-control-relaunch.test.sh duration_ms=179240
+FM_TEST_SLOWEST rank=2 script=tests/fm-composer-lib.test.sh duration_ms=19777
+FM_TEST_SLOWEST rank=3 script=tests/fm-secondmate-restart.test.sh duration_ms=15889

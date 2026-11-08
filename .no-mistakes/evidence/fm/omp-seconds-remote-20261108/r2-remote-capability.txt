@@ -1,0 +1,8 @@
+$ docker info --format '{{.ServerVersion}}'
+
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+exit=1
+
+Remote production path requires fm-remote Herdr plus the account Aqua launch agent and remote-job worker (fm-remote-doctor.sh). Installing/registering launchd agents changes system state outside the worktree, so it was not attempted. A host-local tmux substitution would not test the required Herdr path. Existing parent-owned remote restart checks were exercised with a transport fixture, not represented as live remote validation.
+
+Workspace-local Linux VM workaround attempted with limactl start --plain --mount-none --containerd=none template:alpine. Both isolated LIMA_HOME paths refused before startup. Shortest attempted path: /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/l/x/ssh.sock.1234567890123456 (106 characters; UNIX_PATH_MAX requires <104). Even placing LIMA_HOME at the worktree root yields 104 characters, still refused by the documented bound. A shorter outside-worktree state root is forbidden by this phase boundary. Provide a shorter authorized workspace or an isolated ready Linux/SSH/Herdr host to complete live remote validation.

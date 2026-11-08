@@ -1,0 +1,220 @@
++ set -u
++ . /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/tests/lib.sh
+++ '[' -n '' ']'
+++ FM_TEST_LIB_SOURCED=1
+++ umask 022
++++ dirname /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/tests/lib.sh
+++ . /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/tests/git-config-helpers.sh
++++ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
++++ GIT_CONFIG_GLOBAL=/dev/null
++++ GIT_CONFIG_NOSYSTEM=1
+++ export FM_GATE_REFUSE_BYPASS=1
+++ FM_GATE_REFUSE_BYPASS=1
+++ unset FM_TASK_ID
+++ unset TASKS_AXI_FILE TASKS_AXI_BACKEND
+++++ dirname /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/tests/lib.sh
++++ cd /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/tests/..
++++ pwd
+++ ROOT=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code
+++ FM_TEST_CLEANUP_DIRS=()
++++ mktemp /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/.fm-test-cleanup.32568.XXXXXX
+++ FM_TEST_CLEANUP_REGISTRY=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/.fm-test-cleanup.32568.Y30Agw
++++ fm_test_pid_identity 32568
++++ local pid=32568
++++ FM_STATE_OVERRIDE=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp
++++ bash -c '. "$1"; fm_pid_identity "$2"' _ /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/bin/fm-wake-lib.sh 32568
+++ FM_TEST_OWNER_IDENTITY='Sun Nov  8 08:31:42 2026     bash -x /Users/pierre/.no-mistakes/evidence/01M6WYC65Q7211TQMBX0B9X56D/r2-focused-fm-secondmate-restart.sh'
++++ mktemp /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/.fm-test-procevent.32568.XXXXXX
+++ FM_TEST_PROCEVENT_REGISTRY=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/.fm-test-procevent.32568.ABqgYe
+++ FM_TEST_STUB_MAX_BLOCK_SECONDS=120
+++ export FM_TEST_STUB_MAX_BLOCK_SECONDS
+++ trap fm_test_cleanup EXIT
+++ trap 'fm_test_cleanup; exit 130' INT
+++ trap 'fm_test_cleanup; exit 143' TERM
+++ trap 'fm_test_cleanup; exit 129' HUP
+++ trap 'fm_test_cleanup; exit 131' QUIT
+++ fm_test_pin_mise_toolchain
+++ local home config_dir data_dir
+++ command -v mise
+++ return 0
+++ FM_TEST_ORPHAN_MAX_AGE_SECONDS=3600
+++ '[' 1 '!=' 1 ']'
++ RESTART=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/bin/fm-secondmate-restart.sh
++ fm_git_identity fmtest fmtest@example.com
++ export GIT_AUTHOR_NAME=fmtest GIT_AUTHOR_EMAIL=fmtest@example.com
++ GIT_AUTHOR_NAME=fmtest
++ GIT_AUTHOR_EMAIL=fmtest@example.com
++ export GIT_COMMITTER_NAME=fmtest GIT_COMMITTER_EMAIL=fmtest@example.com
++ GIT_COMMITTER_NAME=fmtest
++ GIT_COMMITTER_EMAIL=fmtest@example.com
+++ fm_test_tmproot fm-secondmate-restart
+++ local prefix=fm-secondmate-restart root tmp_base
+++ tmp_base=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp
+++ tmp_base=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp
++++ mktemp -d /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.XXXXXX
+++ root=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
++++ cd -P -- /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
++++ pwd -P
+++ root=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
+++ printf '%s\n%s\n' 32568 'Sun Nov  8 08:31:42 2026     bash -x /Users/pierre/.no-mistakes/evidence/01M6WYC65Q7211TQMBX0B9X56D/r2-focused-fm-secondmate-restart.sh'
+++ printf '%s\n' /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
+++ printf '%s\n' /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
++ TMP_ROOT=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
+++ cd /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
+++ pwd -P
++ TMP_ROOT=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE
++ trap 'rm -rf -- "$TMP_ROOT"' EXIT
++ test_local_restart_uses_the_home_pin_and_reports_what_ran
++ local dir out rc
+++ new_case pin
+++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245
+++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home/state /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home/data /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home/config /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/fake
+++ printf 'claude\n'
+++ :
+++ :
+++ :
+++ printf claude
+++ printf claude
+++ make_stub /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245
+++ local fb=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/fakebin
+++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/fakebin
+++ cat
+++ chmod +x /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/fakebin/tmux
+++ cat
+++ chmod +x /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/fakebin/sleep
+++ printf '%s\n' /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245
++ dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245
++ add_local_mate /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245 sm1
++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245 id=sm1 harness=claude backend=
++ local home=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home smhome=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home
++ fm_git_worktree /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home sm-sm1
++ local repo=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home branch=sm-sm1
++ fm_git_init_commit /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo
++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo
++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo
++ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo init -q -b main
+++ basename /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo
++ printf '# %s\n' sm1-repo
++ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo add README.md
++ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo -c 'user.name=Firstmate Tests' -c user.email=tests@example.invalid commit -qm initial
++ fm_git_add_origin /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo.origin.git
++ local repo=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo remote=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo.origin.git remote_abs
++ git clone --quiet --bare /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo.origin.git
+++ cd /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo.origin.git
+++ pwd
++ remote_abs=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo.origin.git
++ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo remote add origin file:///Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo.origin.git
++ git -C /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-repo worktree add --quiet -b sm-sm1 /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home
++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home/state /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home/data /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home/bin /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home/data/sm1
++ printf '%s\n' sm1
++ printf '# agents\n'
++ printf '# charter\n'
++ echo window=fmses:fm-sm1
++ echo endpoint_task_id=sm1
++ echo worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home
++ echo project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home
++ echo harness=claude
++ echo kind=secondmate
++ echo mode=secondmate
++ echo yolo=off
++ echo model=default
++ echo effort=default
++ echo home=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home
++ '[' -z '' ']'
++ printf '%s\n' fm-sm1
++ printf %s /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/sm1-home
++ arm_answer /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245 sm1
++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245 id=sm1
++ printf %s /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home/state/sm1.inbox
++ printf %s /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home/state/sm1.status
++ printf 'codex\n'
++ printf codex
+++ run_restart /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245 sm1
+++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245
+++ shift
+++ env 'PATH=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/fakebin:/Users/pierre/.pi/agent/bin:/Users/pierre/.opencode/bin:/Users/pierre/.local/bin:/Users/pierre/.bun/bin:/usr/local/lib/ruby/gems/3.4.0/bin:/usr/local/opt/ruby/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/pierre/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/Little Snitch.app/Contents/Components:/Users/pierre/.local/bin:/Users/pierre/go/bin:/Users/pierre/.cargo/bin:/Users/pierre/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/pierre/_Dev/flutter/bin' FM_HOME=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home FM_FAKE_DIR=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/fake FM_SPAWN_NO_GUARD=1 FM_SECONDMATE_PERSIST_POLL=1 FM_SECONDMATE_PERSIST_WAIT=30 FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 FM_SSH_BIN=ssh /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/bin/fm-secondmate-restart.sh sm1
++ out=$'restarted: sm1 (codex)\nsummary: 1 of 1 restarted, 0 nudged, 0 unreached'
++ rc=0
++ expect_code 0 0 $'a pinned local restart should succeed\nrestarted: sm1 (codex)\nsummary: 1 of 1 restarted, 0 nudged, 0 unreached'
++ local expected=0 actual=0 $'label=a pinned local restart should succeed\nrestarted: sm1 (codex)\nsummary: 1 of 1 restarted, 0 nudged, 0 unreached'
++ '[' 0 = 0 ']'
++ assert_contains $'restarted: sm1 (codex)\nsummary: 1 of 1 restarted, 0 nudged, 0 unreached' 'restarted: sm1 (codex)' 'the restart should land on this home'\''s pin and report the runtime that actually came up'
++ case "$1" in
++ :
+++ tail -1
+++ grep '^harness=' /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/pin-1245/home/state/sm1.meta
++ '[' harness=codex = harness=codex ']'
++ pass 'T8 a local restart re-resolves this home'\''s pin and reports the runtime that came up'
++ printf 'ok - %s\n' 'T8 a local restart re-resolves this home'\''s pin and reports the runtime that came up'
+ok - T8 a local restart re-resolves this home's pin and reports the runtime that came up
++ test_remote_mate_restarts_over_the_transport_hop
++ local dir out rc relaunch_line
+++ new_case remote
+++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433
+++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/home/state /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/home/data /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/home/config /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fake
+++ printf 'claude\n'
+++ :
+++ :
+++ :
+++ printf claude
+++ printf claude
+++ make_stub /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433
+++ local fb=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin
+++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin
+++ cat
+++ chmod +x /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin/tmux
+++ cat
+++ chmod +x /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin/sleep
+++ printf '%s\n' /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433
++ dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433
++ setup_remote_case /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433 sm2 ok
++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433 id=sm2 mode=ok
++ local fb=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin
++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/sm2-home
++ echo window=remote:sm2
++ echo endpoint_task_id=sm2
++ echo worktree=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/sm2-home
++ echo project=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/sm2-home
++ echo harness=claude
++ echo kind=secondmate
++ echo mode=secondmate
++ echo yolo=off
++ echo model=default
++ echo effort=default
++ echo home=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/sm2-home
++ echo remote_host=remote-mac
++ echo remote_backend=herdr
++ echo remote_target=fm-remote:2ndmate-sm2
++ printf -- '- %s - remote domain (host: remote-mac; root: /srv/fm; home: /srv/%s; scope: things; projects: p; added 2026-09-03)\n' sm2 sm2
++ cat
++ chmod +x /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin/fake-ssh
++ :
++ export FM_FAKE_SSH_LOG=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/ssh.log
++ FM_FAKE_SSH_LOG=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/ssh.log
++ export FM_FAKE_SSH_MODE=ok
++ FM_FAKE_SSH_MODE=ok
++ export FM_TEST_SSH_BIN=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin/fake-ssh
++ FM_TEST_SSH_BIN=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin/fake-ssh
++ export FM_FAKE_ANSWER_STATUS=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/home/state/sm2.status
++ FM_FAKE_ANSWER_STATUS=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/home/state/sm2.status
++ printf 'claude global-model low\n'
++ mkdir -p /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/home/config/secondmate-harness.d
++ printf 'codex big-model high\n'
+++ run_restart /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433 fm-sm2
+++ local dir=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433
+++ shift
+++ env 'PATH=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin:/Users/pierre/.pi/agent/bin:/Users/pierre/.opencode/bin:/Users/pierre/.local/bin:/Users/pierre/.bun/bin:/usr/local/lib/ruby/gems/3.4.0/bin:/usr/local/opt/ruby/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/pierre/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Library/Apple/usr/bin:/Applications/Little Snitch.app/Contents/Components:/Users/pierre/.local/bin:/Users/pierre/go/bin:/Users/pierre/.cargo/bin:/Users/pierre/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/pierre/_Dev/flutter/bin' FM_HOME=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/home FM_FAKE_DIR=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fake FM_SPAWN_NO_GUARD=1 FM_SECONDMATE_PERSIST_POLL=1 FM_SECONDMATE_PERSIST_WAIT=30 FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 FM_SSH_BIN=/Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE/remote-3433/fakebin/fake-ssh /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/code/bin/fm-secondmate-restart.sh fm-sm2
++ out=$'unreached: sm2: the request to write down its open work could not be delivered: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━; the re-read message could not be delivered either: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nsummary: 0 of 1 restarted, 0 nudged, 1 unreached'
++ rc=3
++ unset FM_FAKE_ANSWER_STATUS
++ expect_code 0 3 $'a remote mate should restart over its transport hop\nunreached: sm2: the request to write down its open work could not be delivered: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━; the re-read message could not be delivered either: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nsummary: 0 of 1 restarted, 0 nudged, 1 unreached'
++ local expected=0 actual=3 $'label=a remote mate should restart over its transport hop\nunreached: sm2: the request to write down its open work could not be delivered: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━; the re-read message could not be delivered either: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nsummary: 0 of 1 restarted, 0 nudged, 1 unreached'
++ '[' 3 = 0 ']'
++ fail $'a remote mate should restart over its transport hop\nunreached: sm2: the request to write down its open work could not be delivered: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━; the re-read message could not be delivered either: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nsummary: 0 of 1 restarted, 0 nudged, 1 unreached: expected exit 0, got 3'
++ printf 'not ok - %s\n' $'a remote mate should restart over its transport hop\nunreached: sm2: the request to write down its open work could not be delivered: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━; the re-read message could not be delivered either: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nsummary: 0 of 1 restarted, 0 nudged, 1 unreached: expected exit 0, got 3'
+not ok - a remote mate should restart over its transport hop
+unreached: sm2: the request to write down its open work could not be delivered: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━; the re-read message could not be delivered either: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+summary: 0 of 1 restarted, 0 nudged, 1 unreached: expected exit 0, got 3
++ exit 1
++ rm -rf -- /Users/pierre/.no-mistakes/worktrees/a97fbe58c975/01M6WYC65Q7211TQMBX0B9X56D/.validation/tmp/fm-secondmate-restart.nLnfLE

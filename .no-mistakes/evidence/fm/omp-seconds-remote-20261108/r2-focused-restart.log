@@ -1,0 +1,4 @@
+ok - T8 a local restart re-resolves this home's pin and reports the runtime that came up
+not ok - a remote mate should restart over its transport hop
+unreached: sm2: the request to write down its open work could not be delivered: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━; the re-read message could not be delivered either: WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+summary: 0 of 1 restarted, 0 nudged, 1 unreached: expected exit 0, got 3
