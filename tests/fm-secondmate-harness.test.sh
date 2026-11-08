@@ -174,6 +174,39 @@ ROWS
   pass "C1 fm-harness.sh secondmate-model/secondmate-effort resolve the optional tokens; bare harness stays empty (backward-compat)"
 }
 
+test_secondmate_per_id_profiles() {
+  local cfg="$TMP_ROOT/per-id/config" profile exp_h exp_m exp_e mode got expected
+  mkdir -p "$cfg/secondmate-harness.d"
+  printf 'claude\n' > "$cfg/crew-harness"
+  printf 'codex global-model high\n' > "$cfg/secondmate-harness"
+  printf 'opencode other-model low\n' > "$cfg/secondmate-harness.d/other"
+  while IFS='^' read -r profile exp_h exp_m exp_e; do
+    rm -f "$cfg/secondmate-harness.d/sm"
+    [ "$profile" = ABSENT ] || printf '%b\n' "$profile" > "$cfg/secondmate-harness.d/sm"
+    for mode in secondmate secondmate-model secondmate-effort; do
+      case "$mode" in
+        secondmate) expected=$exp_h ;;
+        secondmate-model) expected=$exp_m ;;
+        secondmate-effort) expected=$exp_e ;;
+      esac
+      got=$(FM_CONFIG_OVERRIDE="$cfg" "$ROOT/bin/fm-harness.sh" "$mode" sm)
+      [ "$got" = "$expected" ] || fail "$profile: $mode resolved '$got', expected '$expected'"
+    done
+  done <<'ROWS'
+ABSENT^codex^global-model^high
+# empty profile\n^codex^global-model^high
+# comment\n\nomp openai-codex/gpt-6.1-sol medium^omp^openai-codex/gpt-6.1-sol^medium
+opencode deepseek-v4.1-flash^opencode^deepseek-v4.1-flash^
+omp^omp^^
+default^claude^^
+ROWS
+  [ "$(FM_CONFIG_OVERRIDE="$cfg" "$ROOT/bin/fm-harness.sh" secondmate other)" = opencode ] \
+    || fail "one secondmate's profile affected another"
+  [ "$(FM_CONFIG_OVERRIDE="$cfg" "$ROOT/bin/fm-harness.sh" secondmate)" = codex ] \
+    || fail "an ID-less query no longer resolves the global profile"
+  pass "per-second profiles replace the full global triplet without leaking omitted axes or other IDs"
+}
+
 # ===========================================================================
 # A/C) pi-signed process identity and shared Pi marker behavior
 # ===========================================================================
@@ -810,8 +843,9 @@ test_spawn_secondmate_harness_model_and_effort_tokens() {
   w="$TMP_ROOT/spawn-model-effort-tokens"
   sm="$w/sm"
   launchlog="$w/launch.log"
-  mkdir -p "$w/home/config"
-  printf 'claude opus high\n' > "$w/home/config/secondmate-harness"
+  mkdir -p "$w/home/config/secondmate-harness.d"
+  printf 'codex global-model low\n' > "$w/home/config/secondmate-harness"
+  printf 'claude opus high\n' > "$w/home/config/secondmate-harness.d/sm"
   make_seeded_home "$sm" sm
 
   spawn_secondmate_capture "$w" sm "$sm" "$launchlog" >/dev/null 2>&1
@@ -819,6 +853,7 @@ test_spawn_secondmate_harness_model_and_effort_tokens() {
   meta="$w/home/state/sm.meta"
   [ "$(meta_field "$meta" model)" = opus ] || fail "model-effort-tokens: meta model not opus"
   [ "$(meta_field "$meta" effort)" = high ] || fail "model-effort-tokens: meta effort not high (got '$(meta_field "$meta" effort)')"
+  [ ! -e "$sm/config/secondmate-harness.d/sm" ] || fail "per-second profile was inherited"
   launch=$(cat "$launchlog")
   assert_contains "$launch" "claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' --model 'opus' --effort 'high'" \
     "model-effort-tokens: launch did not carry both --model opus and --effort high"
@@ -2639,6 +2674,7 @@ SH
 test_harness_resolution
 test_cursor_marker_detection
 test_secondmate_model_effort_tokens
+test_secondmate_per_id_profiles
 test_pi_signed_detection_and_session_lock_identity
 test_dash_leading_process_names_are_basename_operands
 test_propagate_lib

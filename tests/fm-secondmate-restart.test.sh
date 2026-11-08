@@ -497,7 +497,9 @@ test_remote_mate_restarts_over_the_transport_hop() {
   export FM_FAKE_ANSWER_STATUS="$dir/home/state/sm2.status"
   # The parent's own pin is what the replacement must run on; the remote home's
   # copy of config/secondmate-harness is a different home's file.
-  printf 'codex big-model high\n' > "$dir/home/config/secondmate-harness"
+  printf 'claude global-model low\n' > "$dir/home/config/secondmate-harness"
+  mkdir -p "$dir/home/config/secondmate-harness.d"
+  printf 'codex big-model high\n' > "$dir/home/config/secondmate-harness.d/sm2"
 
   out=$(run_restart "$dir" fm-sm2); rc=$?
   unset FM_FAKE_ANSWER_STATUS

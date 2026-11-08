@@ -122,7 +122,9 @@ git -C "$PARENT/projects/alpha" push -q -u origin main
 cat > "$PARENT/data/projects.md" <<EOF
 - alpha [direct-PR] - alpha project (added 2026-08-02)
 EOF
-printf 'codex\n' > "$PARENT/config/secondmate-harness"
+printf 'opencode global-model low\n' > "$PARENT/config/secondmate-harness"
+mkdir -p "$PARENT/config/secondmate-harness.d"
+printf 'codex per-ios-model high\n' > "$PARENT/config/secondmate-harness.d/ios"
 printf 'tmux\n' > "$PARENT/config/backend"
 printf 'primary harness defaults\n' > "$PARENT/config/crew-harness"
 
@@ -722,6 +724,10 @@ out=$(remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate)
 assert_contains "$out" 'remote=remote-mac backend=herdr' "remote spawn did not report separate host and backend dimensions"
 assert_grep 'remote_host=remote-mac' "$PARENT/state/ios.meta" "parent metadata omitted the remote host"
 assert_grep 'remote_backend=herdr' "$PARENT/state/ios.meta" "parent metadata omitted the remote-local backend"
+assert_grep 'harness=codex' "$PARENT/state/ios.meta" "remote spawn ignored the per-second harness"
+assert_grep 'model=per-ios-model' "$PARENT/state/ios.meta" "remote spawn ignored the per-second model"
+assert_grep 'effort=high' "$PARENT/state/ios.meta" "remote spawn ignored the per-second effort"
+assert_absent "$REMOTE_HOME/config/secondmate-harness.d/ios" "parent profile leaked into the remote home"
 assert_grep 'remote_herdr_session=fm-remote' "$PARENT/state/ios.meta" "parent metadata omitted the pinned remote Herdr session"
 assert_grep 'remote_target=fm-remote:' "$PARENT/state/ios.meta" "parent metadata did not record an fm-remote endpoint"
 assert_grep 'herdr_session=fm-remote' "$REMOTE_HOME/state/parent-route/ios.meta" "remote metadata did not record the pinned Herdr session"

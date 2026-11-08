@@ -976,8 +976,9 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   local dir home out rc
   dir=$(new_case smpin sm3)
   home="$dir/home"
-  mkdir -p "$home/config"
-  printf 'codex some-model high\n' > "$home/config/secondmate-harness"
+  mkdir -p "$home/config/secondmate-harness.d"
+  printf 'claude global-model low\n' > "$home/config/secondmate-harness"
+  printf 'codex some-model high\n' > "$home/config/secondmate-harness.d/sm3"
   mkdir -p "$home/data/sm3"
   printf '# secondmate brief\n' > "$home/data/sm3/brief.md"
   fm_git_worktree "$dir/proj" "$dir/smhome" sm-branch
